@@ -25,6 +25,35 @@ if [ "$MAJOR" -lt 5 ] || { [ "$MAJOR" -eq 5 ] && [ "$MINOR" -lt 10 ]; }; then
 fi
 ok "Swift $SWIFT_VERSION"
 
+# From the macOS 27 SDK on, SwiftUI's @State is a macro whose compiler plugin ships with Xcode only,
+# so the command line tools alone fail with "plugin for module 'SwiftUIMacros' not found".
+SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version 2>/dev/null || echo 0)"
+SDK_MAJOR="${SDK_VERSION%%.*}"
+if [ "${SDK_MAJOR:-0}" -ge 27 ] 2>/dev/null; then
+  DEV_DIR="${DEVELOPER_DIR:-$(xcode-select -p 2>/dev/null || true)}"
+  if [ ! -f "$DEV_DIR/Platforms/MacOSX.platform/Developer/usr/lib/swift/host/plugins/libSwiftUIMacros.dylib" ] &&
+     [ ! -f "$DEV_DIR/usr/lib/swift/host/plugins/libSwiftUIMacros.dylib" ]; then
+    if [ -d /Applications/Xcode.app ]; then
+      fail "The macOS $SDK_VERSION SDK needs Xcode's SwiftUI macros, but the command line tools are selected. Run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
+    fi
+    fail "The macOS $SDK_VERSION SDK needs Xcode (the command line tools alone can't build SwiftUI). Install Xcode from the App Store, open it once, then run: sudo xcode-select -s /Applications/Xcode.app/Contents/Developer"
+  fi
+fi
+
+# Bun and npm bundle the ACP adapters in sidecar/. Bun's installer doesn't always add itself to PATH.
+if ! command -v bun >/dev/null 2>&1 && [ -x "$HOME/.bun/bin/bun" ]; then export PATH="$HOME/.bun/bin:$PATH"; fi
+command -v bun >/dev/null 2>&1 || fail "Bun not found (needed to build, not to run). Install it: curl -fsSL https://bun.sh/install | bash"
+ok "Bun $(bun --version)"
+command -v npm >/dev/null 2>&1 || fail "npm not found (needed to fetch the adapters' packages). Install Node 22 or later: https://nodejs.org"
+
+# A private npm registry that can't be reached (say, off a company VPN) makes npm crash with
+# "Exit handler never called!". The lockfile only needs public packages, so fall back to the public registry.
+NPM_REGISTRY="$(npm config get registry 2>/dev/null || true)"
+if [ -n "$NPM_REGISTRY" ] && ! curl -sS -m 5 -o /dev/null "$NPM_REGISTRY" 2>/dev/null; then
+  warn "npm registry $NPM_REGISTRY is unreachable; using https://registry.npmjs.org/ for this build"
+  export npm_config_registry=https://registry.npmjs.org/
+fi
+
 command -v openssl >/dev/null 2>&1 || fail "openssl not found (it ships with macOS; check your PATH)."
 
 found_agent=0

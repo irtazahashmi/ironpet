@@ -27,7 +27,8 @@ A desktop pet for macOS that keeps an eye on your coding agents and does small t
 ## Requirements
 
 - macOS 14 or later, Apple Silicon or Intel
-- Xcode command line tools (Swift 5.10+)
+- Xcode command line tools (Swift 5.10+). With the macOS 27 SDK, full Xcode instead, selected with `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer` (SwiftUI's macros ship only with Xcode)
+- To build: [Bun](https://bun.sh) and npm, which bundle the chat adapters in `sidecar/`
 - At least one agent CLI, signed in, that speaks ACP: `cursor-agent`, `gemini`, `opencode` and many more run as they are. `claude`, `codex` and `pi` run through small adapters bundled in the app, which need Node 22 or newer on your PATH (or a one-time Bun download that ironpet asks before making)
 - Optional: iTerm2, Wispr Flow
 
