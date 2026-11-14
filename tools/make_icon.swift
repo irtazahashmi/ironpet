@@ -1,5 +1,5 @@
 // Renders the ironpet app icon (1024x1024 PNG): the pet on a wintry rounded tile.
-// Run: swift tools/make_wolf.swift ghost --single /tmp/pet.png && swift tools/make_icon.swift /tmp/pet.png <output.png>
+// Run: swift tools/make_pet.swift ghost --single /tmp/pet.png && swift tools/make_icon.swift /tmp/pet.png <output.png>
 // The input is one high-resolution 192x208-proportioned pet frame.
 import AppKit
 

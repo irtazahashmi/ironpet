@@ -48,7 +48,7 @@ fi
 mkdir -p "$APP/Contents/Resources/acp"
 cp sidecar/out/claude.mjs sidecar/out/codex.mjs sidecar/out/pi.mjs "$APP/Contents/Resources/acp/"
 # Ghost's sprite sheet is drawn in code; bundle it so the pet works without any setup.
-swift tools/make_wolf.swift ghost "$APP/Contents/Resources/spritesheet.png" >/dev/null
+swift tools/make_pet.swift ghost "$APP/Contents/Resources/spritesheet.png" >/dev/null
 
 cat > "$APP/Contents/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
