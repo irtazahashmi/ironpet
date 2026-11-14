@@ -41,11 +41,14 @@ final class ACPClientTests: XCTestCase {
         async let first = client.request("a")
         async let second = client.request("b")
         await settle()
-        XCTAssertEqual(transport.sent.map { $0["method"] as? String }, ["a", "b"])
-        let ids = transport.sent.map { $0["id"] as! Int }
-        // Answer out of order.
-        transport.feed(#"{"jsonrpc":"2.0","id":\#(ids[1]),"result":{"who":"b"}}"# + "\n")
-        transport.feed(#"{"jsonrpc":"2.0","id":\#(ids[0]),"result":{"who":"a"}}"# + "\n")
+        // `async let` children start in no fixed order, so look the ids up by method.
+        XCTAssertEqual(Set(transport.sent.compactMap { $0["method"] as? String }), ["a", "b"])
+        let ids = Dictionary(uniqueKeysWithValues: transport.sent.map { ($0["method"] as! String, $0["id"] as! Int) })
+        XCTAssertNotEqual(ids["a"], ids["b"])
+        // Answer in the opposite order to the one they were sent in.
+        for method in transport.sent.compactMap({ $0["method"] as? String }).reversed() {
+            transport.feed(#"{"jsonrpc":"2.0","id":\#(ids[method]!),"result":{"who":"\#(method)"}}"# + "\n")
+        }
         let (a, b) = try await (first, second)
         XCTAssertEqual(a["who"] as? String, "a")
         XCTAssertEqual(b["who"] as? String, "b")
