@@ -186,11 +186,25 @@ python3 scripts/e2e.py               # end-to-end tests against real agent runs
 
 ### Changing the pet
 
-Ghost is drawn in code, not from image files; `scripts/bundle.sh` generates the sheet into the app. To try another look:
+Ghost is drawn in code, not from image files; `scripts/bundle.sh` generates the sheet into the app. The same script draws five other pets, with every animation Ghost has:
+
+<p align="center"><img src="docs/screenshots/pets.png" width="720" alt="The six pets waving: Ghost the direwolf, Mochi the mint wolf, a hamster, a panda, a bunny and a cat"></p>
+
+| Pet | Look |
+| --- | --- |
+| `ghost` | White direwolf in a Night's Watch cloak (the default) |
+| `mochi` | Mint wolf |
+| `hamster` | Golden hamster with cheek pouches and buck teeth |
+| `panda` | Panda with eye patches and black paws |
+| `bunny` | Lilac bunny with long ears and a cotton tail |
+| `cat` | Grey tabby with green eyes and a curly tail |
+
+To switch, write the pet's sheet to `~/.ironpet/pet/spritesheet.png`, which overrides the bundled one. Rename the pet in Settings → Pet to match:
 
 ```bash
-swift tools/make_wolf.swift mochi     # a mint wolf; writes ~/.ironpet/pet/spritesheet.png, which overrides the bundled sheet
-swift tools/make_wolf.swift ghost --single build/pet.png && swift tools/make_icon.swift build/pet.png Resources/icon-1024.png
+swift tools/make_pet.swift panda      # writes ~/.ironpet/pet/spritesheet.png
+swift tools/make_pet.swift cat build/cat.png   # or anywhere, then pick it under Settings → Pet → Sprite sheet
+swift tools/make_pet.swift ghost --single build/pet.png && swift tools/make_icon.swift build/pet.png Resources/icon-1024.png
 ```
 
 Any sprite sheet in the Codex pet v2 layout (1536 px wide, 8 columns of 192×208 cells) works: put it at `~/.ironpet/pet/spritesheet.png`, or pick it under Settings → Pet → Sprite sheet.

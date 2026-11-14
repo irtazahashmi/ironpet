@@ -7,5 +7,6 @@ cd "$(dirname "$0")/.."
 OUT="${1:-docs/screenshots}"
 mkdir -p build "$OUT"
 swift build
-swift tools/make_wolf.swift ghost build/ghost-sheet.png >/dev/null
+swift tools/make_pet.swift ghost build/ghost-sheet.png >/dev/null
+swift tools/make_pet.swift --lineup "$OUT/pets.png" >/dev/null
 .build/debug/IronPet --render-previews "$OUT" --sprite build/ghost-sheet.png

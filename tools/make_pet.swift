@@ -1,7 +1,10 @@
-// Draws ironpet's baby wolf into a Codex v2 atlas (8 columns of 192x208 cells), plus two extra rows
+// Draws ironpet's pets into a Codex v2 atlas (8 columns of 192x208 cells), plus two extra rows
 // for drinking and stretching, so the sheet is 1536x2704.
-// Themes: "ghost" (white direwolf in a Night's Watch cloak, default) and "mochi" (mint wolf).
-// Run: swift tools/make_wolf.swift [ghost|mochi] [output.png]
+// Pets: "ghost" (white direwolf in a Night's Watch cloak, default), "mochi" (mint wolf), "hamster", "panda",
+// "bunny" and "cat". They share one chibi body and poses; the species changes ears, tail, face and markings.
+// Run: swift tools/make_pet.swift [pet] [output.png]
+//      swift tools/make_pet.swift [pet] --single out.png   one idle pose at 5x, for the app icon
+//      swift tools/make_pet.swift --lineup out.png         every pet side by side, for the README
 import AppKit
 
 // MARK: - Theme
@@ -11,7 +14,11 @@ func rgb(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
             blue: CGFloat(hex & 0xFF) / 255, alpha: alpha)
 }
 
+enum Species { case wolf, hamster, panda, bunny, cat }
+enum Marking { case diamond, stripes }
+
 struct Theme {
+    var species = Species.wolf
     var fur: CGColor
     var furShade: CGColor
     var outline: CGColor
@@ -20,30 +27,61 @@ struct Theme {
     var blush: CGColor
     var iris: CGColor
     var pupil: CGColor?
-    var mark: CGColor?
+    var mark: (shape: Marking, color: CGColor)?
     var tongueOut = false
     var cloak: (cape: CGColor, mantle: CGColor, clasp: CGColor)?
+    /// Ears, feet, paws and arms in a second colour (the panda's black).
+    var limb: CGColor?
+    var eyePatch: CGColor?
+    /// Closed, happy and blinking eyes; light on a dark eye patch.
+    var eyeLine = rgb(0x1E2B2A)
+    var nose = rgb(0x1E2B2A)
+    var noseScale: CGFloat = 1
+    var muzzle = CGSize(width: 66, height: 42)
+    var whiskers = false
+    var teeth = false
+    var tail: CGColor?
 }
 
 let themes: [String: Theme] = [
     "mochi": Theme(fur: rgb(0x9BE8D0), furShade: rgb(0x72CFB2), outline: rgb(0x2C5F56), cream: rgb(0xF5FFFA),
-                   earPink: rgb(0xFFB7C5), blush: rgb(0xFF8FA8, 0.5), iris: rgb(0x1E2B2A), mark: rgb(0x72CFB2)),
+                   earPink: rgb(0xFFB7C5), blush: rgb(0xFF8FA8, 0.5), iris: rgb(0x1E2B2A),
+                   mark: (.diamond, rgb(0x72CFB2))),
     "ghost": Theme(fur: rgb(0xF7F8FA), furShade: rgb(0xD9DFE6), outline: rgb(0x46505C), cream: rgb(0xFFFFFF),
                    earPink: rgb(0xF4C3CC), blush: rgb(0xFF9DB0, 0.4), iris: rgb(0xD7263D), pupil: rgb(0x6E0F1C),
                    tongueOut: true, cloak: (cape: rgb(0x1E2228), mantle: rgb(0x4A4F58), clasp: rgb(0xC9CED6))),
+    "hamster": Theme(species: .hamster, fur: rgb(0xF4B66A), furShade: rgb(0xDE9748), outline: rgb(0x6B4226),
+                     cream: rgb(0xFFF4E2), earPink: rgb(0xF7A9A4), blush: rgb(0xFF8F8F, 0.45), iris: rgb(0x2A1A12),
+                     nose: rgb(0xF08A94), noseScale: 0.55, muzzle: CGSize(width: 74, height: 44), whiskers: true,
+                     teeth: true),
+    "panda": Theme(species: .panda, fur: rgb(0xFBFBFC), furShade: rgb(0xE2E4E8), outline: rgb(0x2B2C33),
+                   cream: rgb(0xFFFFFF), earPink: rgb(0x474852), blush: rgb(0xFF9DB0, 0.45), iris: rgb(0x0E0E12),
+                   limb: rgb(0x2B2C33), eyePatch: rgb(0x2B2C33), eyeLine: rgb(0xF2F2F4), noseScale: 0.75,
+                   tail: rgb(0x2B2C33)),
+    "bunny": Theme(species: .bunny, fur: rgb(0xE6DFF3), furShade: rgb(0xCBC0E3), outline: rgb(0x4E4470),
+                   cream: rgb(0xFBF8FF), earPink: rgb(0xFFC0D4), blush: rgb(0xFF8FB0, 0.45), iris: rgb(0x2B2340),
+                   nose: rgb(0xF58CAB), noseScale: 0.5, muzzle: CGSize(width: 52, height: 34), whiskers: true,
+                   teeth: true, tail: rgb(0xFBF8FF)),
+    "cat": Theme(species: .cat, fur: rgb(0xB9C1CE), furShade: rgb(0x98A2B3), outline: rgb(0x3B4250),
+                 cream: rgb(0xF4F6FA), earPink: rgb(0xF6B5C4), blush: rgb(0xFF9DB0, 0.45), iris: rgb(0x4DAF6A),
+                 pupil: rgb(0x173A22), mark: (.stripes, rgb(0x8C96A8)), nose: rgb(0xF48FA6), noseScale: 0.55,
+                 muzzle: CGSize(width: 54, height: 34), whiskers: true),
 ]
+/// Order of the README lineup.
+let lineup = ["ghost", "mochi", "hamster", "panda", "bunny", "cat"]
 
 var cliArgs = Array(CommandLine.arguments.dropFirst())
 let themeName = cliArgs.first.flatMap { themes[$0] != nil ? $0 : nil } ?? "ghost"
 if cliArgs.first == themeName { cliArgs.removeFirst() }
-let theme = themes[themeName]!
+var theme = themes[themeName]!
 
-let fur = theme.fur
-let furShade = theme.furShade
-let outline = theme.outline
-let cream = theme.cream
-let earPink = theme.earPink
-let blush = theme.blush
+var fur: CGColor { theme.fur }
+var furShade: CGColor { theme.furShade }
+var outline: CGColor { theme.outline }
+var cream: CGColor { theme.cream }
+var earPink: CGColor { theme.earPink }
+var blush: CGColor { theme.blush }
+var limb: CGColor { theme.limb ?? theme.fur }
 let ink = rgb(0x1E2B2A)
 let tongue = rgb(0xFF8FA3)
 let tearBlue = rgb(0x8FD3FF)
@@ -125,61 +163,117 @@ func rotated(_ path: CGPath, around p: CGPoint, by angle: CGFloat) -> CGPath {
 
 // MARK: - Parts (cell coordinates: origin bottom-left, ground at y = 18)
 
-func tailPath(_ angle: CGFloat) -> (CGPath, CGPath) {
-    let p = CGMutablePath()
-    p.move(to: CGPoint(x: 116, y: 38))
-    p.addCurve(to: CGPoint(x: 158, y: 100), control1: CGPoint(x: 160, y: 36), control2: CGPoint(x: 172, y: 70))
-    p.addCurve(to: CGPoint(x: 124, y: 62), control1: CGPoint(x: 146, y: 96), control2: CGPoint(x: 134, y: 78))
-    p.closeSubpath()
+/// The tail and an optional lighter tip, swung by `angle` around the rump. Hamsters have none worth drawing.
+func tailPath(_ angle: CGFloat) -> (shape: CGPath, tip: CGPath?)? {
     let anchor = CGPoint(x: 120, y: 46)
-    return (rotated(p, around: anchor, by: angle), rotated(ellipse(CGPoint(x: 154, y: 90), 20, 24), around: anchor, by: angle))
+    switch theme.species {
+    case .wolf:
+        let p = CGMutablePath()
+        p.move(to: CGPoint(x: 116, y: 38))
+        p.addCurve(to: CGPoint(x: 158, y: 100), control1: CGPoint(x: 160, y: 36), control2: CGPoint(x: 172, y: 70))
+        p.addCurve(to: CGPoint(x: 124, y: 62), control1: CGPoint(x: 146, y: 96), control2: CGPoint(x: 134, y: 78))
+        p.closeSubpath()
+        return (rotated(p, around: anchor, by: angle),
+                rotated(ellipse(CGPoint(x: 154, y: 90), 20, 24), around: anchor, by: angle))
+    case .cat:
+        let p = CGMutablePath()
+        p.move(to: CGPoint(x: 116, y: 36))
+        p.addCurve(to: CGPoint(x: 156, y: 92), control1: CGPoint(x: 156, y: 30), control2: CGPoint(x: 168, y: 64))
+        p.addQuadCurve(to: CGPoint(x: 144, y: 108), control: CGPoint(x: 150, y: 106))
+        let shape = p.copy(strokingWithWidth: 13, lineCap: .round, lineJoin: .round, miterLimit: 1)
+        return (rotated(shape, around: anchor, by: angle * 1.4),
+                rotated(ellipse(CGPoint(x: 146, y: 106), 18, 16), around: anchor, by: angle * 1.4))
+    case .bunny:
+        return (rotated(ellipse(CGPoint(x: 136, y: 36), 28, 26), around: anchor, by: angle * 0.6), nil)
+    case .panda:
+        return (rotated(ellipse(CGPoint(x: 134, y: 38), 20, 18), around: anchor, by: angle * 0.6), nil)
+    case .hamster:
+        return nil
+    }
 }
 
 func earPath(left: Bool) -> (outer: CGPath, inner: CGPath, base: CGPoint) {
     let s: CGFloat = left ? -1 : 1
-    let outer = CGMutablePath()
-    outer.move(to: CGPoint(x: s * 50, y: 22))
-    outer.addQuadCurve(to: CGPoint(x: s * 44, y: 80), control: CGPoint(x: s * 58, y: 60))
-    outer.addQuadCurve(to: CGPoint(x: s * 12, y: 42), control: CGPoint(x: s * 22, y: 70))
-    outer.closeSubpath()
-    let inner = CGMutablePath()
-    inner.move(to: CGPoint(x: s * 42, y: 32))
-    inner.addQuadCurve(to: CGPoint(x: s * 42, y: 68), control: CGPoint(x: s * 48, y: 56))
-    inner.addQuadCurve(to: CGPoint(x: s * 22, y: 42), control: CGPoint(x: s * 28, y: 60))
-    inner.closeSubpath()
-    return (outer, inner, CGPoint(x: s * 32, y: 32))
+    switch theme.species {
+    case .wolf:
+        let outer = CGMutablePath()
+        outer.move(to: CGPoint(x: s * 50, y: 22))
+        outer.addQuadCurve(to: CGPoint(x: s * 44, y: 80), control: CGPoint(x: s * 58, y: 60))
+        outer.addQuadCurve(to: CGPoint(x: s * 12, y: 42), control: CGPoint(x: s * 22, y: 70))
+        outer.closeSubpath()
+        let inner = CGMutablePath()
+        inner.move(to: CGPoint(x: s * 42, y: 32))
+        inner.addQuadCurve(to: CGPoint(x: s * 42, y: 68), control: CGPoint(x: s * 48, y: 56))
+        inner.addQuadCurve(to: CGPoint(x: s * 22, y: 42), control: CGPoint(x: s * 28, y: 60))
+        inner.closeSubpath()
+        return (outer, inner, CGPoint(x: s * 32, y: 32))
+    case .cat:
+        // Wider-set and more upright than the wolf's.
+        let outer = CGMutablePath()
+        outer.move(to: CGPoint(x: s * 56, y: 20))
+        outer.addQuadCurve(to: CGPoint(x: s * 48, y: 78), control: CGPoint(x: s * 60, y: 60))
+        outer.addQuadCurve(to: CGPoint(x: s * 16, y: 42), control: CGPoint(x: s * 30, y: 68))
+        outer.closeSubpath()
+        let inner = CGMutablePath()
+        inner.move(to: CGPoint(x: s * 48, y: 32))
+        inner.addQuadCurve(to: CGPoint(x: s * 46, y: 66), control: CGPoint(x: s * 52, y: 56))
+        inner.addQuadCurve(to: CGPoint(x: s * 26, y: 42), control: CGPoint(x: s * 32, y: 60))
+        inner.closeSubpath()
+        return (outer, inner, CGPoint(x: s * 34, y: 32))
+    case .hamster:
+        return (ellipse(CGPoint(x: s * 38, y: 44), 30, 28), ellipse(CGPoint(x: s * 38, y: 46), 17, 15), CGPoint(x: s * 34, y: 34))
+    case .panda:
+        return (ellipse(CGPoint(x: s * 42, y: 42), 36, 34), ellipse(CGPoint(x: s * 42, y: 44), 18, 16), CGPoint(x: s * 38, y: 32))
+    case .bunny:
+        // Long ears leaning a little outwards; kept short enough that the tips stay in the cell mid-jump.
+        let base = CGPoint(x: s * 22, y: 34)
+        let tilt = -s * 0.2
+        return (rotated(ellipse(CGPoint(x: s * 24, y: 60), 28, 58), around: base, by: tilt),
+                rotated(ellipse(CGPoint(x: s * 24, y: 62), 13, 42), around: base, by: tilt), base)
+    }
 }
 
-func cheekTufts() -> CGPath {
-    let p = CGMutablePath()
-    for s: CGFloat in [-1, 1] {
-        p.move(to: CGPoint(x: s * 48, y: 2))
-        p.addLine(to: CGPoint(x: s * 66, y: -16))
-        p.addLine(to: CGPoint(x: s * 50, y: -18))
-        p.addLine(to: CGPoint(x: s * 58, y: -30))
-        p.addLine(to: CGPoint(x: s * 36, y: -30))
-        p.closeSubpath()
+/// Extra head shapes that share the head's outline: the wolf's cheek fur, the hamster's cheek pouches.
+func cheeks() -> CGPath? {
+    switch theme.species {
+    case .wolf:
+        let p = CGMutablePath()
+        for s: CGFloat in [-1, 1] {
+            p.move(to: CGPoint(x: s * 48, y: 2))
+            p.addLine(to: CGPoint(x: s * 66, y: -16))
+            p.addLine(to: CGPoint(x: s * 50, y: -18))
+            p.addLine(to: CGPoint(x: s * 58, y: -30))
+            p.addLine(to: CGPoint(x: s * 36, y: -30))
+            p.closeSubpath()
+        }
+        return p
+    case .hamster:
+        let p = CGMutablePath()
+        p.addPath(ellipse(CGPoint(x: -42, y: -16), 50, 42))
+        p.addPath(ellipse(CGPoint(x: 42, y: -16), 50, 42))
+        return p
+    case .panda, .bunny, .cat:
+        return nil
     }
-    return p
 }
 
 func drawEye(_ ctx: CGContext, at c: CGPoint, style: Eyes, look: CGPoint, left: Bool) {
     let shift = CGPoint(x: c.x + look.x * 4, y: c.y + look.y * 4)
     switch style {
     case .open(let amount) where amount < 0.3:
-        stroke(ctx, 4) { $0.move(to: CGPoint(x: c.x - 9, y: c.y)); $0.addLine(to: CGPoint(x: c.x + 9, y: c.y)) }
+        stroke(ctx, 4, theme.eyeLine) { $0.move(to: CGPoint(x: c.x - 9, y: c.y)); $0.addLine(to: CGPoint(x: c.x + 9, y: c.y)) }
     case .open(let amount):
         fill(ctx, ellipse(shift, 21, 26 * amount), theme.iris)
         if let pupil = theme.pupil { fill(ctx, ellipse(CGPoint(x: shift.x, y: shift.y - 1), 11, 14 * amount), pupil) }
         fill(ctx, ellipse(CGPoint(x: shift.x - 3, y: shift.y + 5 * amount), 8, 8 * amount), cream)
         fill(ctx, ellipse(CGPoint(x: shift.x + 4, y: shift.y - 5 * amount), 4, 4 * amount), cream)
     case .happy:
-        stroke(ctx, 4.5) {
+        stroke(ctx, 4.5, theme.eyeLine) {
             $0.move(to: CGPoint(x: c.x - 10, y: c.y - 3))
             $0.addQuadCurve(to: CGPoint(x: c.x + 10, y: c.y - 3), control: CGPoint(x: c.x, y: c.y + 12))
         }
     case .closed:
-        stroke(ctx, 4.5) {
+        stroke(ctx, 4.5, theme.eyeLine) {
             $0.move(to: CGPoint(x: c.x - 10, y: c.y + 2))
             $0.addQuadCurve(to: CGPoint(x: c.x + 10, y: c.y + 2), control: CGPoint(x: c.x, y: c.y - 9))
         }
@@ -188,7 +282,7 @@ func drawEye(_ ctx: CGContext, at c: CGPoint, style: Eyes, look: CGPoint, left: 
         if let pupil = theme.pupil { fill(ctx, ellipse(CGPoint(x: shift.x, y: shift.y - 3), 10, 12), pupil) }
         fill(ctx, ellipse(CGPoint(x: shift.x - 3, y: shift.y + 2), 7, 7), cream)
         let s: CGFloat = left ? -1 : 1
-        stroke(ctx, 3.5, outline) {
+        stroke(ctx, 3.5, theme.eyePatch == nil ? outline : theme.eyeLine) {
             $0.move(to: CGPoint(x: c.x - s * 2, y: c.y + 20))
             $0.addLine(to: CGPoint(x: c.x + s * 12, y: c.y + 15))
         }
@@ -208,6 +302,11 @@ func drawMouth(_ ctx: CGContext, _ mouth: Mouth) {
             t.addRoundedRect(in: CGRect(x: -5.5, y: -34, width: 11, height: 14), cornerWidth: 5.5, cornerHeight: 5.5)
             fill(ctx, t, tongue)
             stroke(ctx, 1.5, rgb(0xE06A80)) { $0.move(to: CGPoint(x: 0, y: -23)); $0.addLine(to: CGPoint(x: 0, y: -30)) }
+        }
+        if theme.teeth {
+            let t = CGPath(roundedRect: CGRect(x: -5, y: -30, width: 10, height: 10), cornerWidth: 2, cornerHeight: 2, transform: nil)
+            fill(ctx, t, rgb(0xFFFFFF))
+            stroke(ctx, 1.5, outline) { $0.addPath(t); $0.move(to: CGPoint(x: 0, y: -21)); $0.addLine(to: CGPoint(x: 0, y: -30)) }
         }
         stroke(ctx, 3.5) {
             $0.move(to: CGPoint(x: -10, y: -21))
@@ -237,16 +336,17 @@ func paw(_ c: CGPoint) -> CGPath { ellipse(c, 22, 18) }
 
 // MARK: - Character
 
-func drawWolf(_ ctx: CGContext, _ pose: Pose) {
+func drawPet(_ ctx: CGContext, _ pose: Pose) {
     ctx.saveGState()
     // Scale the whole character about the ground point so jumps stay inside the cell.
     ctx.translateBy(x: 96, y: 18 + pose.y)
     ctx.scaleBy(x: 0.8, y: 0.8 * pose.squash)
     ctx.translateBy(x: -96, y: -18)
 
-    let (tail, tailTip) = tailPath(pose.tail)
-    silhouette(ctx, [(tail, fur)])
-    ctx.saveGState(); ctx.addPath(tail); ctx.clip(); fill(ctx, tailTip, cream); ctx.restoreGState()
+    if let (tail, tailTip) = tailPath(pose.tail) {
+        silhouette(ctx, [(tail, theme.tail ?? fur)])
+        if let tailTip { ctx.saveGState(); ctx.addPath(tail); ctx.clip(); fill(ctx, tailTip, cream); ctx.restoreGState() }
+    }
 
     let bodyX = 96 + pose.lean * 0.5
     let headCenter = CGPoint(x: 96 + pose.lean + pose.head.x, y: 120 + pose.head.y)
@@ -255,11 +355,14 @@ func drawWolf(_ ctx: CGContext, _ pose: Pose) {
     let left = earPath(left: true), right = earPath(left: false)
     let leftEar = rotated(left.outer, around: left.base, by: pose.ears)
     let rightEar = rotated(right.outer, around: right.base, by: -pose.ears - pose.earTwitch)
-    let headParts = [leftEar, rightEar, cheekTufts(), ellipse(.zero, 120, 98)].compactMap { $0.copy(using: &headT) }
+    let earColor = theme.limb ?? fur
+    let headShapes: [(CGPath?, CGColor)] = [(leftEar, earColor), (rightEar, earColor), (cheeks(), fur), (ellipse(.zero, 120, 98), fur)]
+    let headParts = headShapes.compactMap { path, color in path?.copy(using: &headT).map { ($0, color) } }
 
+    let feet = theme.limb ?? furShade
     let bodyParts: [(CGPath, CGColor)] = [
-        (ellipse(CGPoint(x: 78, y: 26 + pose.leftFoot), 28, 18), furShade),
-        (ellipse(CGPoint(x: 114, y: 26 + pose.rightFoot), 28, 18), furShade),
+        (ellipse(CGPoint(x: 78, y: 26 + pose.leftFoot), 28, 18), feet),
+        (ellipse(CGPoint(x: 114, y: 26 + pose.rightFoot), 28, 18), feet),
         (ellipse(CGPoint(x: bodyX, y: 56), 76, 64), fur),
     ]
 
@@ -288,11 +391,11 @@ func drawWolf(_ ctx: CGContext, _ pose: Pose) {
         }
         mantle.closeSubpath()
         silhouette(ctx, [(mantle, cloak.mantle)])
-        silhouette(ctx, headParts.map { ($0, fur) })
+        silhouette(ctx, headParts)
         let clasp = ellipse(CGPoint(x: bodyX + 30, y: 72), 11, 11)
         silhouette(ctx, [(clasp, cloak.clasp)])
     } else {
-        silhouette(ctx, bodyParts + headParts.map { ($0, fur) })
+        silhouette(ctx, bodyParts + headParts)
         fill(ctx, ellipse(CGPoint(x: bodyX, y: 50), 46, 40), cream)
     }
 
@@ -301,27 +404,55 @@ func drawWolf(_ ctx: CGContext, _ pose: Pose) {
     ctx.concatenate(headT)
     fill(ctx, rotated(left.inner, around: left.base, by: pose.ears), earPink)
     fill(ctx, rotated(right.inner, around: right.base, by: -pose.ears - pose.earTwitch), earPink)
-    if let markColor = theme.mark {
+    switch theme.mark {
+    case let (.diamond, color)?:
         let mark = CGMutablePath()
         mark.move(to: CGPoint(x: 0, y: 44)); mark.addLine(to: CGPoint(x: 9, y: 30))
         mark.addLine(to: CGPoint(x: 0, y: 22)); mark.addLine(to: CGPoint(x: -9, y: 30)); mark.closeSubpath()
-        fill(ctx, mark, markColor)
+        fill(ctx, mark, color)
+    case let (.stripes, color)?:
+        stroke(ctx, 5, color) {
+            for (x, low) in [(-13, 34), (0, 28), (13, 34)] as [(CGFloat, CGFloat)] {
+                $0.move(to: CGPoint(x: x, y: 46)); $0.addLine(to: CGPoint(x: x * 0.8, y: low))
+            }
+        }
+    case nil:
+        break
     }
     let muzzleShift = CGPoint(x: pose.look.x * 3, y: pose.look.y * 2)
-    fill(ctx, ellipse(CGPoint(x: muzzleShift.x, y: -20 + muzzleShift.y), 66, 42), cream)
+    let muzzleY = -20 + (42 - theme.muzzle.height) / 3
+    fill(ctx, ellipse(CGPoint(x: muzzleShift.x, y: muzzleY + muzzleShift.y), theme.muzzle.width, theme.muzzle.height), cream)
     fill(ctx, ellipse(CGPoint(x: -40, y: -10), 18, 10), blush)
     fill(ctx, ellipse(CGPoint(x: 40, y: -10), 18, 10), blush)
+    if let patch = theme.eyePatch {
+        // Panda patches droop outwards, like a teardrop on its side.
+        for s: CGFloat in [-1, 1] {
+            let c = CGPoint(x: s * 27, y: 3)
+            fill(ctx, rotated(ellipse(c, 34, 42), around: c, by: s * 0.6), patch)
+        }
+    }
     drawEye(ctx, at: CGPoint(x: -26 + pose.look.x * 3, y: 6 + pose.look.y * 3), style: pose.eyes, look: pose.look, left: true)
     drawEye(ctx, at: CGPoint(x: 26 + pose.look.x * 3, y: 6 + pose.look.y * 3), style: pose.eyes, look: pose.look, left: false)
     ctx.saveGState()
     ctx.translateBy(x: muzzleShift.x, y: muzzleShift.y)
+    if theme.whiskers {
+        stroke(ctx, 1.8, outline.copy(alpha: 0.55) ?? outline) {
+            for s: CGFloat in [-1, 1] {
+                for (dy, rise) in [(-15, 4), (-21, -2)] as [(CGFloat, CGFloat)] {
+                    $0.move(to: CGPoint(x: s * 22, y: dy)); $0.addLine(to: CGPoint(x: s * 52, y: dy + rise))
+                }
+            }
+        }
+    }
     let nose = CGMutablePath()
     nose.move(to: CGPoint(x: -8, y: -9))
     nose.addQuadCurve(to: CGPoint(x: 8, y: -9), control: CGPoint(x: 0, y: -5))
     nose.addQuadCurve(to: CGPoint(x: 0, y: -18), control: CGPoint(x: 6, y: -16))
     nose.addQuadCurve(to: CGPoint(x: -8, y: -9), control: CGPoint(x: -6, y: -16))
-    fill(ctx, nose, ink)
-    fill(ctx, ellipse(CGPoint(x: -2, y: -10), 4, 2.5), rgb(0xFFFFFF, 0.7))
+    // Smaller noses shrink towards the mouth so the two still meet.
+    var noseT = CGAffineTransform(translationX: 0, y: -17).scaledBy(x: theme.noseScale, y: theme.noseScale).translatedBy(x: 0, y: 17)
+    fill(ctx, nose.copy(using: &noseT) ?? nose, theme.nose)
+    fill(ctx, ellipse(CGPoint(x: -2, y: -10).applying(noseT), 4 * theme.noseScale, 2.5 * theme.noseScale), rgb(0xFFFFFF, 0.7))
     drawMouth(ctx, pose.mouth)
     ctx.restoreGState()
     if pose.tear {
@@ -340,8 +471,8 @@ func drawWolf(_ ctx: CGContext, _ pose: Pose) {
         fill(ctx, ellipse(CGPoint(x: 96, y: 45), 12, 10), fur)
         for dx: CGFloat in [-7, -2.5, 2.5, 7] { fill(ctx, ellipse(CGPoint(x: 96 + dx, y: 53 + (abs(dx) > 5 ? -2 : 0)), 4, 4), fur) }
         fill(ctx, CGPath(rect: CGRect(x: 62, y: 22, width: 68, height: 4), transform: nil), laptopEdge)
-        silhouette(ctx, [(paw(CGPoint(x: 76, y: 70 + max(0, pose.typing) * 6)), fur),
-                         (paw(CGPoint(x: 116, y: 70 + max(0, -pose.typing) * 6)), fur)])
+        silhouette(ctx, [(paw(CGPoint(x: 76, y: 70 + max(0, pose.typing) * 6)), limb),
+                         (paw(CGPoint(x: 116, y: 70 + max(0, -pose.typing) * 6)), limb)])
     } else if let lift = pose.cup {
         let low = CGPoint(x: bodyX + 2, y: 56)
         let high = CGPoint(x: headCenter.x + 14, y: headCenter.y - 32)
@@ -361,14 +492,14 @@ func drawWolf(_ ctx: CGContext, _ pose: Pose) {
         fill(ctx, CGPath(rect: CGRect(x: -30, y: -30, width: 60, height: 36 - 14 * lift), transform: nil), water)
         fill(ctx, CGPath(rect: CGRect(x: -9, y: -14, width: 4, height: 30), transform: nil), rgb(0xFFFFFF, 0.75))
         ctx.restoreGState()
-        silhouette(ctx, [(paw(CGPoint(x: -17, y: -6).applying(t)), fur), (paw(CGPoint(x: 17, y: -8).applying(t)), fur)])
+        silhouette(ctx, [(paw(CGPoint(x: -17, y: -6).applying(t)), limb), (paw(CGPoint(x: 17, y: -8).applying(t)), limb)])
     } else if pose.reach == nil {
         var paws: [(CGPath, CGColor)] = []
-        paws.append((paw(CGPoint(x: bodyX - 20, y: pose.askPaw ? 86 : 50)), fur))
+        paws.append((paw(CGPoint(x: bodyX - 20, y: pose.askPaw ? 86 : 50)), limb))
         if pose.chinPaw {
-            paws.append((paw(CGPoint(x: headCenter.x + 18, y: headCenter.y - 44)), fur))
+            paws.append((paw(CGPoint(x: headCenter.x + 18, y: headCenter.y - 44)), limb))
         } else if pose.wave == nil {
-            paws.append((paw(CGPoint(x: bodyX + 20, y: 50)), fur))
+            paws.append((paw(CGPoint(x: bodyX + 20, y: 50)), limb))
         }
         silhouette(ctx, paws)
     }
@@ -378,7 +509,7 @@ func drawWolf(_ ctx: CGContext, _ pose: Pose) {
         let arm = CGMutablePath()
         arm.move(to: shoulder); arm.addLine(to: hand)
         let armShape = arm.copy(strokingWithWidth: 18, lineCap: .round, lineJoin: .round, miterLimit: 1)
-        silhouette(ctx, [(armShape, fur), (paw(hand), fur)])
+        silhouette(ctx, [(armShape, limb), (paw(hand), limb)])
     }
     if let reach = pose.reach {
         // Elbows bend out around the big head so the arms stay visible.
@@ -391,8 +522,8 @@ func drawWolf(_ ctx: CGContext, _ pose: Pose) {
             let arm = CGMutablePath()
             arm.move(to: shoulder)
             arm.addQuadCurve(to: hand, control: elbow)
-            arms.append((arm.copy(strokingWithWidth: 17, lineCap: .round, lineJoin: .round, miterLimit: 1), fur))
-            arms.append((paw(hand), fur))
+            arms.append((arm.copy(strokingWithWidth: 17, lineCap: .round, lineJoin: .round, miterLimit: 1), limb))
+            arms.append((paw(hand), limb))
         }
         silhouette(ctx, arms)
     }
@@ -565,8 +696,33 @@ if cliArgs.first == "--single", cliArgs.count > 1 {
     let single = CGContext(data: nil, width: cellW * scale, height: cellH * scale, bitsPerComponent: 8, bytesPerRow: 0,
                            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
     single.scaleBy(x: CGFloat(scale), y: CGFloat(scale))
-    drawWolf(single, Pose())
+    drawPet(single, Pose())
     try! NSBitmapImageRep(cgImage: single.makeImage()!).representation(using: .png, properties: [:])!
+        .write(to: URL(fileURLWithPath: cliArgs[1]))
+    print("wrote \(cliArgs[1])")
+    exit(0)
+}
+
+// `--lineup out.png`: every pet waving at 2x with its name underneath, transparent, for the README.
+if cliArgs.first == "--lineup", cliArgs.count > 1 {
+    let scale = 2, label = 30
+    let strip = CGContext(data: nil, width: cellW * scale * lineup.count, height: (cellH + label) * scale, bitsPerComponent: 8,
+                          bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+    strip.scaleBy(x: CGFloat(scale), y: CGFloat(scale))
+    NSGraphicsContext.current = NSGraphicsContext(cgContext: strip, flipped: false)
+    let attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 17, weight: .semibold),
+                                                     .foregroundColor: NSColor(srgbRed: 0.53, green: 0.56, blue: 0.6, alpha: 1)]
+    for (i, name) in lineup.enumerated() {
+        theme = themes[name]!
+        strip.saveGState()
+        strip.translateBy(x: CGFloat(i * cellW), y: CGFloat(label))
+        drawPet(strip, rowPoses(3)[1])
+        strip.restoreGState()
+        let text = NSAttributedString(string: name.prefix(1).uppercased() + name.dropFirst(), attributes: attributes)
+        text.draw(at: CGPoint(x: CGFloat(i * cellW) + (CGFloat(cellW) - text.size().width) / 2, y: 6))
+    }
+    try! NSBitmapImageRep(cgImage: strip.makeImage()!).representation(using: .png, properties: [:])!
         .write(to: URL(fileURLWithPath: cliArgs[1]))
     print("wrote \(cliArgs[1])")
     exit(0)
@@ -582,7 +738,7 @@ func drawCell(row: Int, col: Int, mirrored: Bool = false, _ pose: Pose) {
     ctx.translateBy(x: CGFloat(col * cellW), y: CGFloat(height - (row + 1) * cellH))
     ctx.clip(to: CGRect(x: 0, y: 0, width: cellW, height: cellH))
     if mirrored { ctx.translateBy(x: CGFloat(cellW), y: 0); ctx.scaleBy(x: -1, y: 1) }
-    drawWolf(ctx, pose)
+    drawPet(ctx, pose)
     ctx.restoreGState()
 }
 
