@@ -81,13 +81,13 @@ final class IronPetPanel: NSPanel {
     init<Content: View>(model: IronPetWindowModel, session: ChatSession?, content: Content) {
         self.model = model
         self.session = session
-        // A titled window with a hidden title bar: native resizing from every edge and corner.
+        // A titled window with a transparent, title-less bar: native resizing from every edge and corner, and the
+        // standard close, minimize and zoom buttons over the sidebar.
         super.init(contentRect: CGRect(origin: .zero, size: Self.savedSize),
-                   styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+                   styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         title = Self.title
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
-        hideInertWindowButtons()
         backgroundColor = .windowBackgroundColor
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -102,6 +102,13 @@ final class IronPetPanel: NSPanel {
         setContentSize(Self.savedSize)
         let center = NotificationCenter.default
         observers = [
+            // Minimizing hides the window without closing it; tell the pet, as close() does.
+            center.addObserver(forName: NSWindow.didMiniaturizeNotification, object: self, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.onVisibilityChange?(false) }
+            },
+            center.addObserver(forName: NSWindow.didDeminiaturizeNotification, object: self, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.onVisibilityChange?(true) }
+            },
             center.addObserver(forName: NSWindow.didEndLiveResizeNotification, object: self, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated {
                     guard let size = self?.frame.size else { return }
@@ -131,12 +138,6 @@ final class IronPetPanel: NSPanel {
     private var onChat: Bool { session != nil && model.section == .chat }
 
     override var canBecomeKey: Bool { true }
-
-    /// AppKit re-shows the buttons on layout, key and appearance changes. Hide them again each pass.
-    override func update() {
-        super.update()
-        hideInertWindowButtons()
-    }
 
     /// The new key window is only known once AppKit has finished moving focus.
     override func resignKey() {

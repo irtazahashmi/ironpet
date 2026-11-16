@@ -141,16 +141,32 @@ final class IronPetWindowTests: XCTestCase {
 
     // MARK: Background and title bar
 
-    func testTheTitleBarKeepsTheCloseButtonAndDropsTheInertOnes() throws {
+    /// The preview renderer cannot show an active title bar, so the window chrome is checked here: the standard
+    /// buttons exist, are visible and enabled, and the title bar is transparent with no title.
+    func testTheWindowKeepsItsStandardButtonsOverTheSidebar() throws {
         let panel = panel()
-        XCTAssertTrue(panel.styleMask.contains(.closable))
-        let close = try XCTUnwrap(panel.standardWindowButton(.closeButton))
-        XCTAssertFalse(close.isHidden)
-        XCTAssertTrue(close.isEnabled)
+        for style: NSWindow.StyleMask in [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView] {
+            XCTAssertTrue(panel.styleMask.contains(style), "missing \(style)")
+        }
+        XCTAssertTrue(panel.titlebarAppearsTransparent)
+        XCTAssertEqual(panel.titleVisibility, .hidden)
+        // AppKit re-lays the title bar on update; the buttons must survive that.
         panel.update()
-        XCTAssertFalse(try XCTUnwrap(panel.standardWindowButton(.closeButton)).isHidden)
-        XCTAssertTrue(try XCTUnwrap(panel.standardWindowButton(.miniaturizeButton)).isHidden)
-        XCTAssertTrue(try XCTUnwrap(panel.standardWindowButton(.zoomButton)).isHidden)
+        for type in [NSWindow.ButtonType.closeButton, .miniaturizeButton, .zoomButton] {
+            let button = try XCTUnwrap(panel.standardWindowButton(type), "no \(type) button")
+            XCTAssertFalse(button.isHidden, "\(type) is hidden")
+            XCTAssertTrue(button.isEnabled, "\(type) is disabled")
+        }
+    }
+
+    func testMinimizingTellsTheWindowOwnerItIsHidden() {
+        let panel = panel()
+        var visibility: [Bool] = []
+        panel.onVisibilityChange = { visibility.append($0) }
+        NotificationCenter.default.post(name: NSWindow.didMiniaturizeNotification, object: panel)
+        NotificationCenter.default.post(name: NSWindow.didDeminiaturizeNotification, object: panel)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.1))
+        XCTAssertEqual(visibility, [false, true])
     }
 
     func testTheCloseButtonHidesTheWindowLikeTheOldXDid() {
