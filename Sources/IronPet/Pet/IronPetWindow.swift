@@ -331,7 +331,6 @@ struct IronPetWindowView: View {
         }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
-        .background(.ultraThinMaterial)
         .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: 22) }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             Button(action: actions.onSettings) {
@@ -346,6 +345,8 @@ struct IronPetWindowView: View {
             .help("Open ironpet Settings (⌘,)")
         }
         .frame(width: 190)
+        // The whole column, insets included, is glass over the window background: a half-strength material, so the pattern stays visible through it.
+        .background { Rectangle().fill(.ultraThinMaterial).opacity(0.5) }
     }
 
     private func row(_ section: IronPetSection) -> some View {

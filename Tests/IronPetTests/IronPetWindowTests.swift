@@ -255,4 +255,41 @@ final class IronPetWindowTests: XCTestCase {
         XCTAssertEqual(corner.greenComponent, expected.greenComponent, accuracy: 0.01)
         XCTAssertEqual(corner.blueComponent, expected.blueComponent, accuracy: 0.01)
     }
+
+    /// Captures a real window from the window server, which draws the sidebar's material over what is behind it.
+    private func capture(background: String, scheme: NSAppearance.Name) throws -> NSBitmapImageRep {
+        var config = ConfigStore.shared.config
+        config.chat.background = background
+        ConfigStore.shared.usePreview(config)
+        let model = IronPetWindowModel()
+        model.section = .alerts
+        let view = IronPetWindowView(model: model, store: SessionStore(), signals: SignalStore(), tasks: tasks(), chat: nil,
+                                     meetings: nil, actions: .none)
+        let panel = IronPetPanel(model: model, session: nil, content: view)
+        panel.appearance = NSAppearance(named: scheme)
+        panel.setContentSize(CGSize(width: 780, height: 560))
+        panel.setFrameOrigin(CGPoint(x: 60, y: 60))
+        panel.orderFrontRegardless()
+        defer { panel.orderOut(nil) }
+        RunLoop.main.run(until: Date().addingTimeInterval(1))
+        guard let image = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(panel.windowNumber),
+                                                  [.boundsIgnoreFraming, .bestResolution]) else {
+            throw XCTSkip("The window server gave no image of the window (no display).")
+        }
+        return NSBitmapImageRep(cgImage: image)
+    }
+
+    func testTheBackgroundShowsThroughTheGlassSidebar() throws {
+        let saved = ConfigStore.shared.config
+        defer { ConfigStore.shared.usePreview(saved) }
+        for scheme in [NSAppearance.Name.aqua, .darkAqua] {
+            let plain = try capture(background: ChatBackground.defaultID, scheme: scheme)
+            let patterned = try capture(background: "paws", scheme: scheme)
+            // The blank lower part of the sidebar: x 10 to 180 pt, y 260 to 500 pt.
+            let scale = CGFloat(plain.pixelsWide) / 780
+            let region = CGRect(x: 10 * scale, y: 260 * scale, width: 170 * scale, height: 240 * scale)
+            XCTAssertGreaterThan(differing(plain, patterned, in: region), Int(region.width * region.height) / 2,
+                                 "the sidebar does not show the chosen background in \(scheme.rawValue)")
+        }
+    }
 }
