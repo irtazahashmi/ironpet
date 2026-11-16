@@ -116,21 +116,19 @@ struct ChatView: View {
 
     private var header: some View {
         GlassGroup {
-            ZStack {
-                HStack(spacing: 10) {
-                    HStack(spacing: 8) {
-                        PetAvatar(size: 30)
-                        Text(ConfigStore.shared.config.pet.name)
-                            .font(.system(size: 13, weight: .semibold))
-                            .lineLimit(1)
-                    }
-                    .padding(.leading, 4)
-                    .padding(.trailing, 16)
-                    .padding(.vertical, 4)
-                    .chromeGlass(in: Capsule())
-                    Spacer(minLength: 8)
-                    headerControls
+            HStack(spacing: 10) {
+                HStack(spacing: 8) {
+                    PetAvatar(size: 30)
+                    Text(ConfigStore.shared.config.pet.name)
+                        .font(.system(size: 13, weight: .semibold))
+                        .lineLimit(1)
                 }
+                .padding(.leading, 4)
+                .padding(.trailing, 16)
+                .padding(.vertical, 4)
+                .chromeGlass(in: Capsule())
+                Spacer(minLength: 8)
+                headerControls
             }
         }
         .padding(.horizontal, 12)
