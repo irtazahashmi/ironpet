@@ -5,7 +5,6 @@ import SwiftUI
 struct ChatView: View {
     @ObservedObject var session: ChatSession
     @ObservedObject private var config = ConfigStore.shared
-    let close: () -> Void
     @FocusState private var inputFocused: Bool
     @State private var showSettings = false
     @State private var follow = TranscriptFollow()
@@ -74,7 +73,6 @@ struct ChatView: View {
         .glassBar(.bottom) { composer }
         .frame(minWidth: Self.minimumSize.width, maxWidth: .infinity,
                minHeight: Self.minimumSize.height, maxHeight: .infinity)
-        .background { ChatBackdrop() }
         // The window has a hidden, transparent title bar; without this its 28pt safe area sits empty above the header.
         .ignoresSafeArea(.container, edges: .top)
         .onAppear { inputFocused = true }
@@ -99,22 +97,19 @@ struct ChatView: View {
         GlassGroup {
             ZStack {
                 HStack(spacing: 10) {
-                    closeButtonPill
-                    Spacer()
+                    HStack(spacing: 8) {
+                        PetAvatar(size: 30)
+                        Text(ConfigStore.shared.config.pet.name)
+                            .font(.system(size: 13, weight: .semibold))
+                            .lineLimit(1)
+                    }
+                    .padding(.leading, 4)
+                    .padding(.trailing, 16)
+                    .padding(.vertical, 4)
+                    .chromeGlass(in: Capsule())
+                    Spacer(minLength: 8)
                     headerControls
                 }
-                HStack(spacing: 8) {
-                    PetAvatar(size: 30)
-                    Text(ConfigStore.shared.config.pet.name)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
-                }
-                .padding(.leading, 4)
-                .padding(.trailing, 16)
-                .padding(.vertical, 4)
-                .chromeGlass(in: Capsule())
-                // Equal insets keep the pill centered and a long name clear of the side pills.
-                .padding(.horizontal, 96)
             }
         }
         .padding(.horizontal, 12)
@@ -136,12 +131,6 @@ struct ChatView: View {
         }
         .padding(4)
         .chromeGlass(in: Capsule())
-    }
-
-    private var closeButtonPill: some View {
-        iconButton("xmark", help: "Close (Esc)", action: close)
-            .padding(4)
-            .chromeGlass(in: Capsule())
     }
 
     /// Project, agent, model and dictation live behind one button, so the header and composer stay clear.

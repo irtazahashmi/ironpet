@@ -109,4 +109,113 @@ final class IronPetWindowTests: XCTestCase {
         XCTAssertEqual(library.meetings.last?.hasTranscript, true)
         XCTAssertEqual(library.meetings.last?.hasSummary, false)
     }
+
+    // MARK: Background and title bar
+
+    func testTheTitleBarKeepsTheCloseButtonAndDropsTheInertOnes() throws {
+        let panel = panel()
+        XCTAssertTrue(panel.styleMask.contains(.closable))
+        let close = try XCTUnwrap(panel.standardWindowButton(.closeButton))
+        XCTAssertFalse(close.isHidden)
+        XCTAssertTrue(close.isEnabled)
+        panel.update()
+        XCTAssertFalse(try XCTUnwrap(panel.standardWindowButton(.closeButton)).isHidden)
+        XCTAssertTrue(try XCTUnwrap(panel.standardWindowButton(.miniaturizeButton)).isHidden)
+        XCTAssertTrue(try XCTUnwrap(panel.standardWindowButton(.zoomButton)).isHidden)
+    }
+
+    func testTheCloseButtonHidesTheWindowLikeTheOldXDid() {
+        let panel = panel()
+        var closed = 0
+        var visibility: [Bool] = []
+        panel.onClose = { closed += 1 }
+        panel.onVisibilityChange = { visibility.append($0) }
+        panel.orderFront(nil)
+        panel.performClose(nil)
+        XCTAssertFalse(panel.isVisible)
+        XCTAssertEqual(closed, 1)
+        XCTAssertEqual(visibility, [false])
+    }
+
+    func testEscClosesAnIdleChat() {
+        let session = ChatSession(restore: false)
+        let panel = IronPetPanel.chat(session)
+        var closed = 0
+        panel.onClose = { closed += 1 }
+        panel.orderFront(nil)
+        panel.cancelOperation(nil)
+        XCTAssertFalse(panel.isVisible)
+        XCTAssertEqual(closed, 1)
+    }
+
+    private func render(section: IronPetSection, background: String, scheme: ColorScheme) -> NSBitmapImageRep? {
+        var config = ConfigStore.shared.config
+        config.chat.background = background
+        ConfigStore.shared.usePreview(config)
+        let model = IronPetWindowModel()
+        model.section = section
+        let store = SessionStore()
+        let view = IronPetWindowView(model: model, store: store, signals: SignalStore(), tasks: tasks(), chat: nil,
+                                     meetings: nil, actions: .none)
+            .frame(width: IronPetPanel.minimumSize.width, height: IronPetPanel.minimumSize.height)
+            .environment(\.colorScheme, scheme)
+        let host = NSHostingView(rootView: view)
+        let window = NSWindow(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+        window.contentView = host
+        host.frame = CGRect(origin: .zero, size: host.fittingSize)
+        host.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.3))
+        guard let rep = host.bitmapImageRepForCachingDisplay(in: host.bounds) else { return nil }
+        host.cacheDisplay(in: host.bounds, to: rep)
+        return rep
+    }
+
+    /// Counts pixels in `region` (top-left origin) that differ between two renders.
+    private func differing(_ a: NSBitmapImageRep, _ b: NSBitmapImageRep, in region: CGRect) -> Int {
+        var count = 0
+        for y in Int(region.minY)..<Int(region.maxY) {
+            for x in Int(region.minX)..<Int(region.maxX) {
+                guard let p = a.colorAt(x: x, y: y)?.usingColorSpace(.sRGB), let q = b.colorAt(x: x, y: y)?.usingColorSpace(.sRGB)
+                else { continue }
+                if abs(p.redComponent - q.redComponent) + abs(p.greenComponent - q.greenComponent) + abs(p.blueComponent - q.blueComponent) > 0.004 {
+                    count += 1
+                }
+            }
+        }
+        return count
+    }
+
+    func testEverySectionShowsTheChosenBackgroundInBothAppearances() throws {
+        let saved = ConfigStore.shared.config
+        defer { ConfigStore.shared.usePreview(saved) }
+        let pagePixels = { (rep: NSBitmapImageRep) in
+            // Right of the 190 pt sidebar, the page; pixels are at backing scale.
+            let scale = CGFloat(rep.pixelsWide) / IronPetPanel.minimumSize.width
+            return CGRect(x: 200 * scale, y: 0, width: CGFloat(rep.pixelsWide) - 200 * scale, height: CGFloat(rep.pixelsHigh))
+        }
+        for section in [IronPetSection.agents, .alerts, .tasks, .actions] {
+            for scheme in [ColorScheme.light, .dark] {
+                let plain = try XCTUnwrap(render(section: section, background: ChatBackground.defaultID, scheme: scheme))
+                let patterned = try XCTUnwrap(render(section: section, background: "paws", scheme: scheme))
+                XCTAssertGreaterThan(differing(plain, patterned, in: pagePixels(plain)), 1000,
+                                     "\(section) \(scheme) does not show the chosen background")
+            }
+        }
+    }
+
+    func testNoBackgroundLeavesThePageOnTheWindowColor() throws {
+        let saved = ConfigStore.shared.config
+        defer { ConfigStore.shared.usePreview(saved) }
+        let rep = try XCTUnwrap(render(section: .alerts, background: ChatBackground.defaultID, scheme: .light))
+        // The empty-state page has nothing in its lower right corner.
+        let scale = CGFloat(rep.pixelsWide) / IronPetPanel.minimumSize.width
+        let corner = try XCTUnwrap(rep.colorAt(x: Int(700 * scale), y: Int(460 * scale))?.usingColorSpace(.sRGB))
+        let window = try XCTUnwrap(NSColor.windowBackgroundColor.usingColorSpace(.sRGB))
+        // windowBackgroundColor resolves per appearance; the host drew it under the aqua appearance.
+        var expected: NSColor = window
+        NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance { expected = NSColor.windowBackgroundColor.usingColorSpace(.sRGB) ?? window }
+        XCTAssertEqual(corner.redComponent, expected.redComponent, accuracy: 0.01)
+        XCTAssertEqual(corner.greenComponent, expected.greenComponent, accuracy: 0.01)
+    }
 }

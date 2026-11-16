@@ -71,11 +71,11 @@ final class IronPetPanel: NSPanel {
         self.session = session
         // A titled window with a hidden title bar: native resizing from every edge and corner.
         super.init(contentRect: CGRect(origin: .zero, size: Self.savedSize),
-                   styleMask: [.titled, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
+                   styleMask: [.titled, .closable, .resizable, .fullSizeContentView], backing: .buffered, defer: false)
         title = Self.title
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
-        hideStandardWindowButtons()
+        hideInertWindowButtons()
         backgroundColor = .windowBackgroundColor
         level = .floating
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
@@ -118,7 +118,7 @@ final class IronPetPanel: NSPanel {
     /// AppKit re-shows the buttons on layout, key and appearance changes. Hide them again each pass.
     override func update() {
         super.update()
-        hideStandardWindowButtons()
+        hideInertWindowButtons()
     }
 
     /// The new key window is only known once AppKit has finished moving focus.
@@ -287,10 +287,14 @@ struct IronPetWindowView: View {
     let actions: SessionActions
 
     var body: some View {
-        HStack(spacing: 0) {
-            sidebar
-            Divider()
-            detail.frame(maxWidth: .infinity, maxHeight: .infinity)
+        // One background under the sidebar and the page; the sidebar is glass over it.
+        ZStack {
+            ChatBackdrop()
+            HStack(spacing: 0) {
+                sidebar
+                Divider()
+                detail.frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
     }
 
@@ -305,6 +309,8 @@ struct IronPetWindowView: View {
             ForEach(shown) { row($0) }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(.ultraThinMaterial)
         .safeAreaInset(edge: .top, spacing: 0) { Color.clear.frame(height: 22) }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             Button(action: actions.onSettings) {
@@ -339,7 +345,7 @@ struct IronPetWindowView: View {
     @ViewBuilder private var detail: some View {
         if model.section == .chat, let chat {
             // The chat draws its own floating header up to the top edge.
-            ChatView(session: chat, close: actions.onClose)
+            ChatView(session: chat)
         } else {
             VStack(spacing: 0) {
                 switch model.section {

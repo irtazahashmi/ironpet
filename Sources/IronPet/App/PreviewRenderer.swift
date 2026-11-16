@@ -24,11 +24,11 @@ enum PreviewRenderer {
         for (file, preview) in [("chat", ChatSession.Preview.done), ("chat-approval", .approval), ("chat-markdown", .markdown)] {
             let session = ChatSession(restore: false)
             session.loadPreview(preview)
-            render(ChatView(session: session, close: {}).frame(width: 520, height: 640).panel(), to: dir, file)
+            render(ChatView(session: session).frame(width: 520, height: 640).panel(), to: dir, file)
         }
         let settings = ChatSession(restore: false)
         settings.loadPreview(.done)
-        render(ChatView(session: settings, close: {}, settingsOnly: true).panel(), to: dir, "chat-settings")
+        render(ChatView(session: settings, settingsOnly: true).panel(), to: dir, "chat-settings")
 
         let sessions = SessionStore()
         sessions.loadPreview(sampleSessions)
@@ -56,6 +56,17 @@ enum PreviewRenderer {
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks-light", scheme: .light)
         let noTasks = TaskStore(database: Database.open(path: nil, migrations: TaskStore.migrations).database)
         render(list(sessions, tasks: noTasks, on: .tasks), to: dir, "tasks-empty")
+
+        // One chat background across the whole window, behind the glass sidebar, in both appearances.
+        var patterned = config
+        patterned.chat.background = "paws"
+        ConfigStore.shared.usePreview(patterned)
+        for section in IronPetSection.allCases where section != .automations {
+            for (suffix, scheme) in [("dark", ColorScheme.dark), ("light", .light)] {
+                render(list(sessions, tasks: tasks, on: section), to: dir, "bg-\(section.rawValue)-\(suffix)", scheme: scheme)
+            }
+        }
+        ConfigStore.shared.usePreview(config)
 
         let done = Bubble(id: "done", symbol: AgentStatus.done.symbol, tint: AgentStatus.done.tint, title: "demo-app: Done",
                           subtitle: "Claude Code", body: "Edited 3 files · Fixed the flaky login test.",
@@ -228,7 +239,7 @@ enum PreviewRenderer {
 private extension View {
     /// Rounded window look, since the real panels' blur and shadow don't render offscreen.
     func panel() -> some View {
-        background(Color(nsColor: .windowBackgroundColor))
+        background { ChatBackdrop() }
             .clipShape(RoundedRectangle(cornerRadius: 12))
             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.primary.opacity(0.12), lineWidth: 1))
             .padding(1)

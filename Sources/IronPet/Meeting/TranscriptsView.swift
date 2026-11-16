@@ -57,6 +57,9 @@ struct TranscriptsView: View {
             }
         }
         .listStyle(.inset)
+        .scrollContentBackground(.hidden)
+        // Rows sit on a light material so their text stays readable over a patterned background.
+        .background(.thinMaterial)
         .frame(width: 230)
     }
 
