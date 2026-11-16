@@ -186,9 +186,15 @@ final class IronPetWindowTests: XCTestCase {
         let store = SessionStore()
         let view = IronPetWindowView(model: model, store: store, signals: SignalStore(), tasks: tasks(), chat: nil,
                                      meetings: nil, actions: .none)
+        return bitmap(of: view, scheme: scheme)
+    }
+
+    /// Draws `view` at the window's minimum size under the given appearance, the way the preview renderer does.
+    private func bitmap(of view: some View, scheme: ColorScheme) -> NSBitmapImageRep? {
+        let sized = view
             .frame(width: IronPetPanel.minimumSize.width, height: IronPetPanel.minimumSize.height)
             .environment(\.colorScheme, scheme)
-        let host = NSHostingView(rootView: view)
+        let host = NSHostingView(rootView: sized)
         let window = NSWindow(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
         window.contentView = host
@@ -236,15 +242,17 @@ final class IronPetWindowTests: XCTestCase {
     func testNoBackgroundLeavesThePageOnTheWindowColor() throws {
         let saved = ConfigStore.shared.config
         defer { ConfigStore.shared.usePreview(saved) }
-        let rep = try XCTUnwrap(render(section: .alerts, background: ChatBackground.defaultID, scheme: .light))
+        let page = try XCTUnwrap(render(section: .alerts, background: ChatBackground.defaultID, scheme: .light))
+        // What the window color draws in the same host. Comparing with a reference render, not a constant, keeps the
+        // test independent of how the machine resolves windowBackgroundColor.
+        let reference = try XCTUnwrap(bitmap(of: Color(nsColor: .windowBackgroundColor), scheme: .light))
         // The empty-state page has nothing in its lower right corner.
-        let scale = CGFloat(rep.pixelsWide) / IronPetPanel.minimumSize.width
-        let corner = try XCTUnwrap(rep.colorAt(x: Int(700 * scale), y: Int(460 * scale))?.usingColorSpace(.sRGB))
-        let window = try XCTUnwrap(NSColor.windowBackgroundColor.usingColorSpace(.sRGB))
-        // windowBackgroundColor resolves per appearance; the host drew it under the aqua appearance.
-        var expected: NSColor = window
-        NSAppearance(named: .aqua)?.performAsCurrentDrawingAppearance { expected = NSColor.windowBackgroundColor.usingColorSpace(.sRGB) ?? window }
+        let scale = CGFloat(page.pixelsWide) / IronPetPanel.minimumSize.width
+        let (x, y) = (Int(700 * scale), Int(460 * scale))
+        let corner = try XCTUnwrap(page.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
+        let expected = try XCTUnwrap(reference.colorAt(x: x, y: y)?.usingColorSpace(.sRGB))
         XCTAssertEqual(corner.redComponent, expected.redComponent, accuracy: 0.01)
         XCTAssertEqual(corner.greenComponent, expected.greenComponent, accuracy: 0.01)
+        XCTAssertEqual(corner.blueComponent, expected.blueComponent, accuracy: 0.01)
     }
 }
