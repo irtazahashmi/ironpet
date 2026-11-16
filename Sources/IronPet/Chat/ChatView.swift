@@ -2,6 +2,21 @@ import AppKit
 import ImageIO
 import SwiftUI
 
+extension View {
+    /// A column of at most `maxWidth` points, centered in the width it is given. Below that it fills the width.
+    /// The padding sits inside the cap when `includesPadding` is set, and outside it otherwise.
+    func chatColumn(maxWidth: CGFloat, padding: CGFloat, includesPadding: Bool = false) -> some View {
+        SwiftUI.Group {
+            if includesPadding {
+                self.padding(.horizontal, padding).frame(maxWidth: maxWidth)
+            } else {
+                self.frame(maxWidth: maxWidth).padding(padding)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
 struct ChatView: View {
     @ObservedObject var session: ChatSession
     @ObservedObject private var config = ConfigStore.shared
@@ -43,6 +58,10 @@ struct ChatView: View {
     /// `--render-previews` only: draw the settings popover's content on its own, since a popover can't render offscreen.
     var settingsOnly = false
     static let minimumSize = CGSize(width: 360, height: 320)
+    /// The message column (assistant text, tool rows, user bubbles) stops growing here and stays centered, so lines
+    /// stay readable in a wide window. The composer is the column plus its own side padding.
+    static let columnWidth: CGFloat = 768
+    static let composerWidth: CGFloat = 840
     /// The row SwiftUI reports at the top of the transcript. Tests compare it before and after content arrives, because
     /// the scroll offset in points moves when SwiftUI re-estimates the heights of rows that are not on screen.
     nonisolated(unsafe) static var topRowForTesting: UUID?
@@ -332,7 +351,7 @@ struct ChatView: View {
                     Color.clear.frame(height: 1).id("bottom")
                 }
                 .scrollTargetLayout()
-                .padding(14)
+                .chatColumn(maxWidth: Self.columnWidth, padding: 14)
                 .background(ScrollObserver(activity: scrollActivity) { metrics, userDriven in
                     scrollMetricsChanged(metrics, userDriven: userDriven, proxy: proxy)
                 })
@@ -814,7 +833,7 @@ struct ChatView: View {
             queueRows
             composerBar
         }
-        .padding(.horizontal, 12)
+        .chatColumn(maxWidth: Self.composerWidth, padding: 12, includesPadding: true)
         .padding(.top, 6)
         .padding(.bottom, 12)
         .onChange(of: session.voice.phase) { _, phase in
