@@ -285,6 +285,7 @@ struct IronPetWindowView: View {
     /// Nil in previews, which cannot build the Automations section; its row is hidden then.
     var settings: SettingsModel?
     let actions: SessionActions
+    @ObservedObject private var config = ConfigStore.shared
 
     var body: some View {
         // One background under the sidebar and the page; the sidebar is glass over it.
@@ -369,6 +370,8 @@ struct IronPetWindowView: View {
                 }
             }
             .padding(.top, 10)
+            // A photo behind unfilled rows would hide their text; the built-in patterns are faint enough without it.
+            .background { if config.config.chat.background == ChatBackground.customID { Rectangle().fill(.thinMaterial) } }
         }
     }
 }
@@ -384,7 +387,6 @@ struct SessionActions {
     var onAskMeeting: ([URL]) -> Void = { _ in }
     /// The folder of the meeting being recorded or summarized, if any.
     var meetingInProgress: () -> URL? = { nil }
-    var onClose: () -> Void = {}
     var onSettings: () -> Void = {}
 
     static let none = SessionActions(onJump: { _ in }, onAsk: { _ in }, onTrick: { _ in }, onTellGhost: { _ in },
