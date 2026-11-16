@@ -354,9 +354,9 @@ struct IronPetWindowView: View {
                 case .agents: AgentsSection(store: store, onJump: actions.onJump)
                 case .alerts: AlertsSection(signals: signals, onAsk: actions.onAsk)
                 case .tasks:
-                    PageHeader(title: IronPetSection.tasks.title) { EmptyView() }
                     TaskListView(tasks: tasks, onTellGhost: actions.onTellGhost, onOpenThread: actions.onOpenThread,
                                  onOpenSession: actions.onOpenSession)
+                        .pageHeader(IronPetSection.tasks.title)
                 case .transcripts:
                     if let meetings {
                         TranscriptsView(library: meetings, activeFolder: actions.meetingInProgress, onAsk: actions.onAskMeeting)
@@ -364,12 +364,11 @@ struct IronPetWindowView: View {
                 case .actions: ActionsSection(onTrick: actions.onTrick)
                 case .automations:
                     if let settings {
-                        PageHeader(title: IronPetSection.automations.title) { EmptyView() }
                         AutomationsSettings(model: settings).frame(maxHeight: .infinity)
+                            .pageHeader(IronPetSection.automations.title)
                     }
                 }
             }
-            .padding(.top, 10)
             // A photo behind unfilled rows would hide their text; the built-in patterns are faint enough without it.
             .background { if config.config.chat.background == ChatBackground.customID { Rectangle().fill(.thinMaterial) } }
         }
@@ -399,15 +398,34 @@ struct PageHeader<Trailing: View>: View {
     @ViewBuilder let trailing: () -> Trailing
 
     var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 6) {
-                Text(title).font(.system(size: 15, weight: .semibold))
-                Spacer()
-                trailing()
-            }
-            .padding(.horizontal, 16)
-            .frame(height: 32)
-            Divider()
+        HStack(spacing: 6) {
+            Text(title).font(.system(size: 15, weight: .semibold))
+            Spacer()
+            trailing()
         }
+        .padding(.horizontal, 16)
+        .frame(height: 32)
+    }
+}
+
+extension View {
+    /// Puts a glass panel at the top of a section, the width of the section, with the window background showing
+    /// through it. The section scrolls under the panel. The top padding covers the transparent title bar.
+    func pageHeader<Trailing: View>(_ title: String, @ViewBuilder trailing: @escaping () -> Trailing = { EmptyView() }) -> some View {
+        safeAreaInset(edge: .top, spacing: 0) {
+            GlassPanel { PageHeader(title: title, trailing: trailing).padding(.top, 10) }
+        }
+    }
+}
+
+/// The glass strip used by every section's header and by the chat header: a material with a hairline below it.
+struct GlassPanel<Content: View>: View {
+    @ViewBuilder let content: () -> Content
+
+    var body: some View {
+        content()
+            .frame(maxWidth: .infinity)
+            .background(.ultraThinMaterial)
+            .overlay(alignment: .bottom) { Divider() }
     }
 }

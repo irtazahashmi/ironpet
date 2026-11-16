@@ -81,11 +81,13 @@ struct ChatView: View {
             }
         }
         .glassBar(.top) {
-            VStack(spacing: 0) {
-                header
-                if session.findOpen {
-                    FindBar(query: $findQuery, label: findLabel, hasMatches: !findMatches.isEmpty,
-                            focusTick: session.findFocusTick, step: stepFind, close: closeFind)
+            GlassPanel {
+                VStack(spacing: 0) {
+                    header
+                    if session.findOpen {
+                        FindBar(query: $findQuery, label: findLabel, hasMatches: !findMatches.isEmpty,
+                                focusTick: session.findFocusTick, step: stepFind, close: closeFind)
+                    }
                 }
             }
         }

@@ -49,4 +49,24 @@ final class ChatColumnTests: XCTestCase {
         XCTAssertEqual(composer.minX, 12, accuracy: 0.5)
         XCTAssertEqual(composer.width, 360 - 24, accuracy: 0.5)
     }
+
+    /// Where the section's content starts when it has the shared glass header, and how wide that content is.
+    func testEverySectionHeaderIsOneGlassStripThatTheContentSitsBelow() {
+        var result = CGRect.zero
+        let view = Color.clear
+            .background(GeometryReader { g in Color.clear.preference(key: FrameKey.self, value: g.frame(in: .named("root"))) })
+            .pageHeader("Agents") { Text("1") }
+            .frame(width: 600, height: 300)
+            .coordinateSpace(name: "root")
+            .onPreferenceChange(FrameKey.self) { result = $0 }
+        let host = NSHostingView(rootView: view)
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 600, height: 300), styleMask: [.borderless], backing: .buffered, defer: false)
+        window.contentView = host
+        host.frame = CGRect(x: 0, y: 0, width: 600, height: 300)
+        host.layoutSubtreeIfNeeded()
+        RunLoop.main.run(until: Date().addingTimeInterval(0.2))
+        // 10 pt under the title bar plus the 32 pt row; the strip spans the whole width.
+        XCTAssertEqual(result.minY, 42, accuracy: 0.5)
+        XCTAssertEqual(result.width, 600, accuracy: 0.5)
+    }
 }

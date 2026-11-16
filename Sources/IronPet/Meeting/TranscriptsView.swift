@@ -18,7 +18,6 @@ struct TranscriptsView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            PageHeader(title: IronPetSection.transcripts.title) { EmptyView() }
             if library.meetings.isEmpty {
                 EmptyState(symbol: "waveform", title: "No meetings yet",
                            detail: "Start one from \(ConfigStore.shared.config.pet.name)'s right-click menu; its transcript and summary show up here.")
@@ -30,6 +29,7 @@ struct TranscriptsView: View {
                 }
             }
         }
+        .pageHeader(IronPetSection.transcripts.title)
         .onAppear {
             library.reload()
             if selection == nil || !library.meetings.contains(where: { $0.id == selection }) { selection = library.meetings.first?.id }
