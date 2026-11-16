@@ -452,6 +452,9 @@ struct GlassPanel<Content: View>: View {
         content()
             .frame(maxWidth: .infinity)
             .background(.ultraThinMaterial)
-            .overlay(alignment: .bottom) { Divider() }
+            .overlay(alignment: .bottom) {
+                // An explicit line: a Divider takes its direction from the container it lands in and turned vertical in the chat's bar.
+                Rectangle().fill(Color(nsColor: .separatorColor)).frame(height: 1)
+            }
     }
 }

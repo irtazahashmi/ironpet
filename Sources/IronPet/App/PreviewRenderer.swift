@@ -61,13 +61,19 @@ enum PreviewRenderer {
         let noTasks = TaskStore(database: Database.open(path: nil, migrations: TaskStore.migrations).database)
         render(list(sessions, tasks: noTasks, on: .tasks), to: dir, "tasks-empty")
 
-        // One chat background across the whole window, behind the glass sidebar, in both appearances.
         var patterned = config
         patterned.chat.background = "paws"
+        // The same pages in a real window, so the screenshots show the title bar, selection and glass as they are.
+        // Automations needs the app's settings model; this one is built from sample automations in a temp folder.
+        let settingsModel = sampleSettings(chat: chat, config: patterned)
         ConfigStore.shared.usePreview(patterned)
-        for section in IronPetSection.allCases where section != .automations {
+        for section in IronPetSection.allCases {
             for (suffix, scheme) in [("dark", ColorScheme.dark), ("light", .light)] {
-                render(list(sessions, tasks: tasks, on: section), to: dir, "bg-\(section.rawValue)-\(suffix)", scheme: scheme)
+                let model = IronPetWindowModel()
+                model.section = section
+                let view = IronPetWindowView(model: model, store: sessions, signals: signals, tasks: tasks, chat: chat,
+                                             meetings: meetings, settings: settingsModel, actions: .none)
+                renderWindow(model: model, session: chat, content: view, to: dir, "real-\(section.rawValue)-\(suffix)", scheme: scheme)
             }
         }
         ConfigStore.shared.usePreview(config)
@@ -108,6 +114,52 @@ enum PreviewRenderer {
 
     private static func render(_ view: some View, to dir: URL, _ name: String, scheme: ColorScheme = .dark) {
         guard let rep = snapshot(view, scheme: scheme) else { return }
+        let file = dir.appendingPathComponent("\(name).png")
+        try? rep.representation(using: .png, properties: [:])?.write(to: file)
+        print("wrote \(file.path)")
+    }
+
+    private static func sampleSettings(chat: ChatSession, config: Config) -> SettingsModel {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-preview-\(UUID().uuidString)")
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let paths = AutomationPaths(file: folder.appendingPathComponent("automations.json"),
+                                    directory: folder.appendingPathComponent("automations"))
+        let store = AutomationStore(paths: paths, defaults: { AutomationMigration.defaults(from: config, sentryConfigured: false) },
+                                    builtIns: [AutomationDefaults.reviewTasks()], watch: false)
+        let telegram = TelegramBridge(
+            client: TelegramAPI(token: { nil }), host: chat, tokens: TelegramToken.shared,
+            storage: .init(users: { [] }, add: { _ in }, remove: { _ in }, offset: { 0 }, setOffset: { _ in }))
+        let model = SettingsModel(actions: .init(suspendHotKeys: { _ in }, buildPet: { _ in }),
+                                  announcer: Announcer(notifier: Notifier()), telegram: telegram)
+        model.automations = AutomationService(store: store, engine: AutomationEngine(env: .init()))
+        return model
+    }
+
+    /// Draws the ironpet window in a real `IronPetPanel` (traffic lights, sidebar selection and the blur of its
+    /// materials) and captures that window from the window server. The offscreen `snapshot` cannot: a borderless
+    /// window has no title bar, draws the sidebar selection black and does not blur materials.
+    /// Falls back to nil when the window server gives no image (no display), and the caller skips the file.
+    static func renderWindow(model: IronPetWindowModel, session: ChatSession?, content: some View, to dir: URL,
+                             _ name: String, scheme: ColorScheme) {
+        let panel = IronPetPanel(model: model, session: session, content: content)
+        panel.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
+        panel.setContentSize(CGSize(width: 780, height: 560))
+        panel.setFrameOrigin(CGPoint(x: 60, y: 60))
+        // An inactive app draws the traffic lights grey.
+        NSApp.setActivationPolicy(.regular)
+        panel.makeKeyAndOrderFront(nil)
+        NSRunningApplication.current.activate(options: [.activateAllWindows])
+        NSApp.activate(ignoringOtherApps: true)
+        RunLoop.main.run(until: Date().addingTimeInterval(1.0))
+        panel.makeKeyAndOrderFront(nil)
+        RunLoop.main.run(until: Date().addingTimeInterval(0.8))
+        defer { panel.orderOut(nil) }
+        guard let image = CGWindowListCreateImage(.null, .optionIncludingWindow, CGWindowID(panel.windowNumber),
+                                                  [.boundsIgnoreFraming, .bestResolution]) else {
+            print("no window image for \(name)")
+            return
+        }
+        let rep = NSBitmapImageRep(cgImage: image)
         let file = dir.appendingPathComponent("\(name).png")
         try? rep.representation(using: .png, properties: [:])?.write(to: file)
         print("wrote \(file.path)")
