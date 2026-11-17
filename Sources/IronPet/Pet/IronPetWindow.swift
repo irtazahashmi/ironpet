@@ -347,7 +347,7 @@ struct IronPetWindowView: View {
         }
         .frame(width: 190)
         // The whole column, insets included, is glass over the window background: a half-strength material, so the pattern stays visible through it.
-        .background { Rectangle().fill(.ultraThinMaterial).opacity(0.5) }
+        .background { Rectangle().fill(.ultraThinMaterial).opacity(IronPetGlass.strength) }
     }
 
     private func row(_ section: IronPetSection) -> some View {
@@ -446,6 +446,12 @@ extension View {
     }
 }
 
+/// How much of the material the sidebar and the headers use: half, so the pattern behind the window shows through the
+/// glass instead of blurring away.
+enum IronPetGlass {
+    static let strength = 0.5
+}
+
 /// The glass strip used by every section's header and by the chat header: a material with a hairline below it.
 struct GlassPanel<Content: View>: View {
     @ViewBuilder let content: () -> Content
@@ -453,7 +459,7 @@ struct GlassPanel<Content: View>: View {
     var body: some View {
         content()
             .frame(maxWidth: .infinity)
-            .background(.ultraThinMaterial)
+            .background { Rectangle().fill(.ultraThinMaterial).opacity(IronPetGlass.strength) }
             .overlay(alignment: .bottom) {
                 // An explicit line: a Divider takes its direction from the container it lands in and turned vertical in the chat's bar.
                 Rectangle().fill(Color(nsColor: .separatorColor)).frame(height: 1)

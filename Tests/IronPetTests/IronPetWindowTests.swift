@@ -308,4 +308,18 @@ final class IronPetWindowTests: XCTestCase {
                                  "the sidebar does not show the chosen background in \(scheme.rawValue)")
         }
     }
+
+    func testTheBackgroundShowsThroughTheGlassHeader() throws {
+        let saved = ConfigStore.shared.config
+        defer { ConfigStore.shared.usePreview(saved) }
+        for scheme in [NSAppearance.Name.aqua, .darkAqua] {
+            let plain = try capture(background: ChatBackground.defaultID, scheme: scheme)
+            let patterned = try capture(background: "paws", scheme: scheme)
+            // The blank middle of the Alerts header, between its title and "Clear all": x 300 to 650 pt, y 8 to 36 pt.
+            let scale = CGFloat(plain.pixelsWide) / 780
+            let region = CGRect(x: 300 * scale, y: 8 * scale, width: 350 * scale, height: 28 * scale)
+            XCTAssertGreaterThan(differing(plain, patterned, in: region), Int(region.width * region.height) / 2,
+                                 "the header does not show the chosen background in \(scheme.rawValue)")
+        }
+    }
 }
