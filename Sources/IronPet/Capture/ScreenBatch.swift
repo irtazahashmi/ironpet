@@ -81,4 +81,15 @@ enum ScreenBatchLoader {
     static func counts(_ logs: [Int64], tasks: TaskStore) -> [Int64: Int] {
         Dictionary(uniqueKeysWithValues: logs.map { ($0, suggestions(of: $0, tasks: tasks).count) })
     }
+
+    /// How many spans were redacted in each send, for the badge on its row.
+    static func redactions(_ logs: [Int64], capture: CaptureStore) -> [Int64: Int] {
+        let records = capture.sendLog(limit: 1_000)
+        var result: [Int64: Int] = [:]
+        for id in logs {
+            guard let record = records.first(where: { $0.id == id }) else { continue }
+            result[id] = record.items.reduce(0) { $0 + (capture.item(id: $1)?.redactions.count ?? 0) }
+        }
+        return result
+    }
 }

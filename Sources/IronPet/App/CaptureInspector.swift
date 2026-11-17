@@ -33,7 +33,7 @@ struct CaptureInspectorView: View {
                     .labelsHidden().frame(width: 150)
                     TextField("Search", text: $search).textFieldStyle(.roundedBorder)
                 }
-                .padding(8)
+                .padding(.horizontal, ScreenLayout.inset).padding(.vertical, 8)
                 List(shown, selection: $selection) { row in
                     VStack(alignment: .leading, spacing: 2) {
                         HStack {
@@ -46,7 +46,10 @@ struct CaptureInspectorView: View {
                         Text(row.body.isEmpty ? "(text dropped)" : String(row.body.prefix(100))).font(.caption).foregroundStyle(.secondary).lineLimit(2)
                     }
                     .tag(row.id)
+                    .padding(.vertical, 2)
                 }
+                .listStyle(.inset)
+                .scrollContentBackground(.hidden)
             }
             .frame(minWidth: 220, idealWidth: 360)
             detail
@@ -123,7 +126,7 @@ struct CaptureInspectorView: View {
                         }
                     }
                 }
-                .padding(12)
+                .padding(ScreenLayout.inset)
             }
         } else {
             Text(rows.isEmpty ? "Nothing has been captured yet." : "Select an item.").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)

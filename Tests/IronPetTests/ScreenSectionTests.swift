@@ -12,17 +12,51 @@ final class ScreenSectionTests: XCTestCase {
                        "1595 items, 2 waiting, 1028 kept on this Mac")
     }
 
-    func testSendLogRowsListNewestFirstFromASeededStore() {
-        let store = CaptureStore.inMemory()
+    private let utc = TimeZone(identifier: "UTC")!
+    private let en = Locale(identifier: "en_GB")
+
+    private func record(_ id: Int64, _ at: Date, items: Int = 8) -> CaptureSendRecord {
+        CaptureSendRecord(id: id, at: at, harness: "claude", model: "haiku", items: Array(1...Int64(items)), bytes: 18_814, outcome: "sent")
+    }
+
+    func testRowsListNewestFirstWithTimeAndItemCount() {
         let base = Date(timeIntervalSince1970: 1_800_000_000)
-        store.logSend(harness: "claude", model: "sonnet", items: [1, 2], bytes: 900, outcome: "ok", now: base)
-        store.logSend(harness: "cursor", model: "auto", items: [3], bytes: 120, outcome: "failed", now: base.addingTimeInterval(60))
-        let rows = ScreenSectionText.rows(store.sendLog())
-        XCTAssertEqual(rows.count, 2)
-        XCTAssertTrue(rows[0].title.hasSuffix("cursor / auto"))
-        XCTAssertEqual(rows[0].detail, "1 items, 120 bytes, failed")
-        XCTAssertTrue(rows[1].title.hasSuffix("claude / sonnet"))
-        XCTAssertEqual(rows[1].detail, "2 items, 900 bytes, ok")
+        let rows = ScreenSectionText.rows([record(1, base, items: 1), record(2, base.addingTimeInterval(60))], locale: en, timeZone: utc)
+        XCTAssertEqual(rows.map(\.id), [2, 1])
+        XCTAssertEqual(rows[0].items, "8 items")
+        XCTAssertEqual(rows[1].items, "1 item")
+        XCTAssertTrue(rows[0].time.hasSuffix("8:01"), rows[0].time)
+    }
+
+    func testSuggestionAndRedactionBadgesShowOnlyAboveZero() {
+        let log = [record(1, Date()), record(2, Date().addingTimeInterval(1)), record(3, Date().addingTimeInterval(2))]
+        let rows = ScreenSectionText.rows(log, suggestions: [1: 0, 2: 1, 3: 2], redactions: [1: 0, 2: 1, 3: 3])
+        XCTAssertEqual(rows.map(\.suggestions), ["2 suggestions", "1 suggestion", nil])
+        XCTAssertEqual(rows.map(\.redacted), ["3 redacted", "1 redacted", nil])
+        XCTAssertEqual(rows.map(\.hasSuggestions), [true, true, false])
+        XCTAssertNil(ScreenSectionText.rows(log)[0].suggestions)
+    }
+
+    func testRowsGroupByDay() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = utc
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let earlier = now.addingTimeInterval(-3_600)
+        let yesterday = now.addingTimeInterval(-86_400)
+        let old = now.addingTimeInterval(-5 * 86_400)
+        let rows = ScreenSectionText.rows([record(1, old), record(2, yesterday), record(3, earlier), record(4, now)], locale: en, timeZone: utc)
+        let days = ScreenSectionText.days(rows, now: now, calendar: calendar, locale: en)
+        XCTAssertEqual(days.map(\.title).prefix(2), ["Today", "Yesterday"])
+        XCTAssertEqual(days.count, 3)
+        XCTAssertEqual(days[0].rows.map(\.id), [4, 3])
+        XCTAssertEqual(days[2].rows.map(\.id), [1])
+        XCTAssertFalse(["Today", "Yesterday"].contains(days[2].title))
+    }
+
+    func testBatchFactsNameAgentOnceWithSizeAndRedactions() {
+        let facts = ScreenBatchText.facts(record(1, Date()), redactions: CaptureRedactor.Report())
+        XCTAssertTrue(facts.hasPrefix("claude / haiku, 8 items, "))
+        XCTAssertTrue(facts.hasSuffix("nothing redacted"))
     }
 
     func testScreenSectionComesAfterTranscriptsAndIsAlwaysListed() {

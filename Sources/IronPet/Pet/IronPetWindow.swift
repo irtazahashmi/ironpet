@@ -644,6 +644,7 @@ struct IronPetWindowView: View {
                                       onOpenSettings: actions.onScreenSettings, onAppear: { service.refreshModel() },
                                       loadBatch: { id in ScreenBatchLoader.load(id, capture: service.store, tasks: tasks) },
                                       loadCounts: { ids in ScreenBatchLoader.counts(ids, tasks: tasks) },
+                                      loadRedactions: { ids in ScreenBatchLoader.redactions(ids, capture: service.store) },
                                       onAccept: { id in _ = try? tasks.accept(id) }, onSkip: { id in tasks.skip(id) })
                     } else {
                         ScreenSection(model: CaptureStatusModel(), tab: $model.screenTab, onOpenSettings: actions.onScreenSettings)
