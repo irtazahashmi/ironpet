@@ -249,6 +249,7 @@ private struct ScreenSendRowView: View {
 /// One send: the items it carried, the redaction summary, and every suggestion it produced with what happened to it.
 struct ScreenBatchView: View {
     let batch: ScreenBatch
+    var showsBack = true
     var onBack: () -> Void = {}
     var onAccept: (String) -> Void = { _ in }
     var onSkip: (String) -> Void = { _ in }
@@ -257,8 +258,10 @@ struct ScreenBatchView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
-            Button { onBack() } label: { Label("Sent to the agent", systemImage: "chevron.left") }
-                .buttonStyle(.link)
+            if showsBack {
+                Button { onBack() } label: { Label("Sent to the agent", systemImage: "chevron.left") }
+                    .buttonStyle(.link)
+            }
             let record = batch.record
             VStack(alignment: .leading, spacing: 4) {
                 Text(record.at.formatted(date: .complete, time: .shortened)).font(.title3.weight(.semibold))

@@ -54,6 +54,7 @@ enum PreviewRenderer {
                                      meetings: meetings, actions: .none)
                 .frame(width: 780, height: 560).panel()
         }
+        ScreenDesignOptions.render(to: dir.appendingPathComponent("designs"))
         render(list(sessions, tasks: tasks, on: .chat), to: dir, "window-chat")
         render(list(sessions, tasks: tasks, on: .transcripts), to: dir, "transcripts")
         // The same section mid-run: the row and the header show the stage, and Regenerate is disabled for the other meeting.
@@ -273,7 +274,7 @@ enum PreviewRenderer {
         return board
     }
 
-    private static func render(_ view: some View, to dir: URL, _ name: String, scheme: ColorScheme = .dark) {
+    static func render(_ view: some View, to dir: URL, _ name: String, scheme: ColorScheme = .dark) {
         guard let rep = snapshot(view, scheme: scheme) else { return }
         let file = dir.appendingPathComponent("\(name).png")
         try? rep.representation(using: .png, properties: [:])?.write(to: file)
