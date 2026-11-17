@@ -148,28 +148,30 @@ struct ScreenSection: View {
     }
 
     private var header: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(spacing: 12) {
+            Picker("Screen", selection: $tab) {
+                ForEach(ScreenTab.allCases) { Text($0.title).tag($0) }
+            }
+            .pickerStyle(.segmented).labelsHidden().fixedSize()
+            .frame(maxWidth: .infinity)
             HStack(alignment: .firstTextBaseline, spacing: 28) {
                 ScreenStat(value: model.itemCount, label: "Captured")
                 ScreenStat(value: model.pendingCount, label: "Waiting")
                 ScreenStat(value: model.localOnlyCount, label: "Kept on this Mac")
                 Spacer(minLength: 0)
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
             if !config.config.screenCapture.enabled {
                 HStack {
                     Label("Screen capture is off", systemImage: "pause.circle").foregroundStyle(.secondary)
                     Button("Open Settings", action: onOpenSettings)
                 }
                 .font(.callout)
+                .frame(maxWidth: .infinity, alignment: .leading)
             }
-            Picker("Screen", selection: $tab) {
-                ForEach(ScreenTab.allCases) { Text($0.title).tag($0) }
-            }
-            .pickerStyle(.segmented).labelsHidden().frame(maxWidth: 320)
         }
         .padding(.horizontal, ScreenLayout.inset)
         .padding(.vertical, 12)
-        .frame(maxWidth: .infinity, alignment: .leading)
     }
 
     @ViewBuilder private var sent: some View {
