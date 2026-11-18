@@ -50,12 +50,34 @@ final class TranscriptBlankTests: XCTestCase {
         walk(panel.contentView as Any, 0)
         // Reply text is a text view. Its accessibility frame is not clipped by the scroll view and lags behind scrolling,
         // so ask AppKit which part of each text view is visible.
-        func walkViews(_ view: NSView) {
-            if view is ChatTextView, view.visibleRect.height > 1 { count += 1 }
-            view.subviews.forEach(walkViews)
-        }
-        if let content = panel.contentView { walkViews(content) }
+        count += textViews(in: panel).filter { $0.visible }.count
         return count
+    }
+
+    /// Every reply text view with the part of it that lies inside the scroll view's visible area, from geometry alone.
+    private func textViews(in panel: NSPanel) -> [(frame: CGRect, visible: Bool)] {
+        guard let clip = scrollView(panel)?.contentView else { return [] }
+        var found: [(CGRect, Bool)] = []
+        func walk(_ view: NSView) {
+            if view is ChatTextView {
+                let frame = view.convert(view.bounds, to: clip)
+                found.append((frame, frame.intersection(clip.bounds).height > 1))
+            }
+            view.subviews.forEach(walk)
+        }
+        if let content = panel.contentView { walk(content) }
+        return found
+    }
+
+    /// What a failing run needs to say about the machine, because the runner differs from a developer's Mac.
+    private func environment(_ panel: NSPanel) -> String {
+        let scroll = scrollView(panel)
+        let screen = panel.screen
+        return "os=\(ProcessInfo.processInfo.operatingSystemVersionString) screen=\(String(describing: screen?.frame)) "
+            + "scale=\(String(describing: screen?.backingScaleFactor)) window=\(panel.frame) key=\(panel.isKeyWindow) "
+            + "visible=\(panel.isVisible) clip=\(String(describing: scroll?.contentView.bounds)) "
+            + "doc=\(String(describing: scroll?.documentView?.frame)) "
+            + "textViews=\(textViews(in: panel).map { "\($0.frame.integral) \($0.visible)" })"
     }
 
     private func thread() -> [ChatSession.Item] {
@@ -157,8 +179,10 @@ final class TranscriptBlankTests: XCTestCase {
         scroll.contentView.scroll(to: NSPoint(x: 0, y: doc.bounds.height + 3000))
         // Look right after the jump. Later, a pinned transcript scrolls itself back to the end, and a slower runner gets
         // there within a fraction of a second, which puts text views back on screen.
+        scroll.reflectScrolledClipView(scroll.contentView)
+        panel.contentView?.layoutSubtreeIfNeeded()
         spin(0.05)
-        XCTAssertEqual(visibleRows(panel), 0, "the detector reported rows for a viewport past the content")
+        XCTAssertEqual(visibleRows(panel), 0, "the detector reported rows for a viewport past the content: " + environment(panel))
         panel.close()
     }
 
