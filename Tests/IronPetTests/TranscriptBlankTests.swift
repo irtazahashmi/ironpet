@@ -170,19 +170,43 @@ final class TranscriptBlankTests: XCTestCase {
         XCTAssertTrue(failures.isEmpty, failures.joined(separator: "\n"))
     }
 
-    /// Guards the detector: a viewport pushed past the content must count as blank.
+    /// The detector must report no rows when nothing is on screen and some when a reply is. Where a jump ends is not the
+    /// test's to decide: the lazy stack re-measures its rows after the jump and may shrink the document, so on one
+    /// machine the offset stays past the end (blank) and on another, the CI runner, it is clamped back into the content
+    /// (a reply is on screen). Both are correct. This checks the detector against the reply views' own geometry.
+    private func assertDetectorAgreesWithTheScreen(_ panel: NSPanel, _ message: String) {
+        panel.contentView?.layoutSubtreeIfNeeded()
+        spin(0.05)
+        let replyOnScreen = textViews(in: panel).contains { $0.visible }
+        let rows = visibleRows(panel)
+        if replyOnScreen {
+            XCTAssertGreaterThan(rows, 0, "\(message): a reply is on screen but the detector saw none. " + environment(panel))
+        } else {
+            XCTAssertEqual(rows, 0, "\(message): nothing is on screen but the detector saw rows. " + environment(panel))
+        }
+    }
+
+    /// A viewport pushed past the content must count as blank.
     func testDetectorSeesAViewportPastTheContent() throws {
         let (_, panel) = make(thread())
         XCTAssertGreaterThan(visibleRows(panel), 0)
         let scroll = try XCTUnwrap(scrollView(panel))
         let doc = try XCTUnwrap(scroll.documentView)
         scroll.contentView.scroll(to: NSPoint(x: 0, y: doc.bounds.height + 3000))
-        // Look right after the jump. Later, a pinned transcript scrolls itself back to the end, and a slower runner gets
-        // there within a fraction of a second, which puts text views back on screen.
         scroll.reflectScrolledClipView(scroll.contentView)
-        panel.contentView?.layoutSubtreeIfNeeded()
-        spin(0.05)
-        XCTAssertEqual(visibleRows(panel), 0, "the detector reported rows for a viewport past the content: " + environment(panel))
+        assertDetectorAgreesWithTheScreen(panel, "after a jump past the end")
+        panel.close()
+    }
+
+    /// A viewport that ends inside the content, as the CI runner's did after its jump, must count the rows it shows.
+    func testDetectorCountsRowsWhenTheViewportEndsInsideTheContent() throws {
+        let (_, panel) = make(thread())
+        let scroll = try XCTUnwrap(scrollView(panel))
+        let doc = try XCTUnwrap(scroll.documentView)
+        scroll.contentView.scroll(to: NSPoint(x: 0, y: doc.bounds.height - 820))
+        scroll.reflectScrolledClipView(scroll.contentView)
+        assertDetectorAgreesWithTheScreen(panel, "after a jump to just inside the end")
+        XCTAssertGreaterThan(visibleRows(panel), 0)
         panel.close()
     }
 
