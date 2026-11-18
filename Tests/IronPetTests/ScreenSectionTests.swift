@@ -69,6 +69,8 @@ final class ScreenSectionTests: XCTestCase {
         var row = CaptureStore.InspectRow(id: 1, at: Date(), app: "x", appName: "X", threadKey: "k", threadTitle: "t", kind: "conversation",
                                           url: nil, version: 1, newMessages: 0, body: "", state: "new", reason: nil, secret: nil,
                                           calendar: nil, task: nil, related: nil, sentAt: nil)
+        XCTAssertEqual(CaptureInspectorView.secretText(row), "Not checked yet")
+        row.state = "ready"
         XCTAssertEqual(CaptureInspectorView.secretText(row), "Not checked by a model")
         row.secret = 0.93
         row.state = "local"

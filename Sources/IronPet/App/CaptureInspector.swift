@@ -228,7 +228,7 @@ struct CaptureInspectorView: View {
 
     /// The secret score the model gave the text, or that no model has looked at it.
     static func secretText(_ row: CaptureStore.InspectRow) -> String {
-        guard let secret = row.secret else { return "Not checked by a model" }
+        guard let secret = row.secret else { return CaptureDecisionFilter.notCheckedLabel(state: row.state, secret: nil) ?? "Not checked yet" }
         let score = secret.formatted(.number.precision(.fractionLength(2)))
         return row.reason == CaptureDecisionFilter.flaggedReason ? "Score \(score), flagged" : "Score \(score), clear"
     }

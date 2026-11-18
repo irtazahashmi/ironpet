@@ -30,7 +30,7 @@ enum ScreenPreviews {
         store.setState(mail, "sent", secret: 0.02, task: 0.31)
         store.setState(flagged, "local", reason: CaptureDecisionFilter.flaggedReason, secret: 0.93)
         store.setState(builds, "sent", secret: 0.01)
-        store.setState(unchecked, "new")
+        store.setState(unchecked, "ready")
         func send(_ ago: TimeInterval, _ items: [Int64], bytes: Int) { store.logSend(harness: "claude", model: "haiku", items: items, bytes: bytes, outcome: "sent", now: now.addingTimeInterval(-ago)) }
         send(5 * 86_400, [builds], bytes: 400)          // 1
         send(30 * 3_600, [mail, builds], bytes: 2_100)  // 2
