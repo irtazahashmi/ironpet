@@ -31,7 +31,6 @@ final class TranscriptBlankTests: XCTestCase {
     }
 
     /// Text rows that SwiftUI realized and that lie inside the scroll view's visible area.
-    /// Reply text is a selectable text view (a text area), the rest is static text.
     private func visibleRows(_ panel: NSPanel) -> Int {
         guard let scroll = scrollView(panel), let window = scroll.window else { return -1 }
         let area = window.convertToScreen(scroll.convert(scroll.bounds, to: nil))
@@ -41,16 +40,21 @@ final class TranscriptBlankTests: XCTestCase {
             var children = node.accessibilityChildren() ?? []
             if children.isEmpty, let view = element as? NSView { children = view.subviews }
             for child in children {
-                if let item = child as? NSAccessibilityProtocol, [.staticText, .textArea].contains(item.accessibilityRole()) {
+                if let item = child as? NSAccessibilityProtocol, item.accessibilityRole() == .staticText {
                     let frame = item.accessibilityFrame()
-                    // A text view reports its whole frame even where a scroll view clips it, so ask AppKit what is visible.
-                    let clipped = (child as? NSView).map { $0.visibleRect.height <= 1 } ?? false
-                    if frame.height > 1, frame.intersects(area), !clipped { count += 1 }
+                    if frame.height > 1, frame.intersects(area) { count += 1 }
                 }
                 walk(child, depth + 1)
             }
         }
         walk(panel.contentView as Any, 0)
+        // Reply text is a text view. Its accessibility frame is not clipped by the scroll view and lags behind scrolling,
+        // so ask AppKit which part of each text view is visible.
+        func walkViews(_ view: NSView) {
+            if view is ChatTextView, view.visibleRect.height > 1 { count += 1 }
+            view.subviews.forEach(walkViews)
+        }
+        if let content = panel.contentView { walkViews(content) }
         return count
     }
 
