@@ -155,8 +155,9 @@ final class TranscriptBlankTests: XCTestCase {
         let scroll = try XCTUnwrap(scrollView(panel))
         let doc = try XCTUnwrap(scroll.documentView)
         scroll.contentView.scroll(to: NSPoint(x: 0, y: doc.bounds.height + 3000))
-        // An AppKit text view leaves the accessibility tree a pass later than a SwiftUI Text. The blank repair waits 0.55 s.
-        spin(0.3)
+        // Look right after the jump. Later, a pinned transcript scrolls itself back to the end, and a slower runner gets
+        // there within a fraction of a second, which puts text views back on screen.
+        spin(0.05)
         XCTAssertEqual(visibleRows(panel), 0, "the detector reported rows for a viewport past the content")
         panel.close()
     }
