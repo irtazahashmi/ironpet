@@ -3,6 +3,19 @@ import SwiftUI
 import XCTest
 @testable import IronPet
 
+/// Which rows lie in the scroll view's visible area, as a function of geometry alone. The live-window tests below read
+/// the same rule from a real panel. This is the rule they are guarding, and it can be tested without a window.
+enum ViewportGeometry {
+    /// A row counts when more than a point of it lies inside the clip bounds.
+    static func isVisible(_ row: CGRect, in clip: CGRect) -> Bool {
+        row.height > 1 && row.intersection(clip).height > 1
+    }
+
+    static func visibleCount(of rows: [CGRect], in clip: CGRect) -> Int {
+        rows.filter { isVisible($0, in: clip) }.count
+    }
+}
+
 /// The transcript viewport must never show only the background while the chat has messages.
 @MainActor
 final class TranscriptBlankTests: XCTestCase {
@@ -61,7 +74,7 @@ final class TranscriptBlankTests: XCTestCase {
         func walk(_ view: NSView) {
             if view is ChatTextView {
                 let frame = view.convert(view.bounds, to: clip)
-                found.append((frame, frame.intersection(clip.bounds).height > 1))
+                found.append((frame, ViewportGeometry.isVisible(frame, in: clip.bounds)))
             }
             view.subviews.forEach(walk)
         }
@@ -188,6 +201,9 @@ final class TranscriptBlankTests: XCTestCase {
 
     /// A viewport pushed past the content must count as blank.
     func testDetectorSeesAViewportPastTheContent() throws {
+        // A live transcript scrolls itself back to the end on its own schedule, so where this jump ends depends on the
+        // machine. The rule itself is tested without a window in the ViewportGeometry tests below, on every machine.
+        try skipOnCI()
         let (_, panel) = make(thread())
         XCTAssertGreaterThan(visibleRows(panel), 0)
         let scroll = try XCTUnwrap(scrollView(panel))
@@ -200,6 +216,7 @@ final class TranscriptBlankTests: XCTestCase {
 
     /// A viewport that ends inside the content, as the CI runner's did after its jump, must count the rows it shows.
     func testDetectorCountsRowsWhenTheViewportEndsInsideTheContent() throws {
+        try skipOnCI()
         let (_, panel) = make(thread())
         let scroll = try XCTUnwrap(scrollView(panel))
         let doc = try XCTUnwrap(scroll.documentView)
@@ -274,5 +291,31 @@ final class TranscriptBlankTests: XCTestCase {
         // testRepairBringsRowsBackAfterOvershoot still covers a jump that does leave the viewport empty.
         XCTAssertLessThanOrEqual(ChatView.blankRepairsForTesting, 2, "the repair kept firing")
         panel.close()
+    }
+
+    // MARK: Geometry rule, no window
+
+    private let rows = [CGRect(x: 0, y: 0, width: 400, height: 300), CGRect(x: 0, y: 310, width: 400, height: 718),
+                        CGRect(x: 0, y: 1038, width: 400, height: 40)]
+
+    /// A viewport pushed past the content must count as blank: it reports 0 rows.
+    func testAViewportPastTheContentReportsNoRows() {
+        let contentHeight: CGFloat = 1078
+        XCTAssertEqual(ViewportGeometry.visibleCount(of: rows, in: CGRect(x: 0, y: contentHeight + 3000, width: 400, height: 640)), 0)
+        XCTAssertEqual(ViewportGeometry.visibleCount(of: rows, in: CGRect(x: 0, y: contentHeight, width: 400, height: 640)), 0)
+    }
+
+    /// A viewport that ends inside the content, as the CI runner's did after its jump, reports the rows it shows.
+    func testAViewportInsideTheContentReportsItsRows() {
+        XCTAssertEqual(ViewportGeometry.visibleCount(of: rows, in: CGRect(x: 0, y: 458, width: 400, height: 640)), 2)
+        XCTAssertEqual(ViewportGeometry.visibleCount(of: rows, in: CGRect(x: 0, y: 0, width: 400, height: 640)), 2)
+        XCTAssertEqual(ViewportGeometry.visibleCount(of: rows, in: CGRect(x: 0, y: 400, width: 400, height: 2000)), 2)
+    }
+
+    /// A row that is only touched, or sliver-thin, is not on screen.
+    func testARowThatOnlyTouchesTheViewportIsNotCounted() {
+        XCTAssertFalse(ViewportGeometry.isVisible(CGRect(x: 0, y: 0, width: 400, height: 300), in: CGRect(x: 0, y: 300, width: 400, height: 640)))
+        XCTAssertFalse(ViewportGeometry.isVisible(CGRect(x: 0, y: 250, width: 400, height: 50.5), in: CGRect(x: 0, y: 300, width: 400, height: 640)))
+        XCTAssertFalse(ViewportGeometry.isVisible(CGRect(x: 0, y: 100, width: 400, height: 0.5), in: CGRect(x: 0, y: 0, width: 400, height: 640)))
     }
 }
