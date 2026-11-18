@@ -643,7 +643,7 @@ struct IronPetWindowView: View {
                         ScreenSection(model: service.model, tab: $model.screenTab, store: service.store,
                                       onOpenSettings: actions.onScreenSettings, onAppear: { service.refreshModel() },
                                       loadBatch: { id in ScreenBatchLoader.load(id, capture: service.store, tasks: tasks) },
-                                      loadCounts: { ids in ScreenBatchLoader.counts(ids, tasks: tasks) },
+                                      loadSuggestions: { ids in ScreenBatchLoader.suggestionsByLog(ids, tasks: tasks) },
                                       loadRedactions: { ids in ScreenBatchLoader.redactions(ids, capture: service.store) },
                                       onAccept: { id in _ = try? tasks.accept(id) }, onSkip: { id in tasks.skip(id) })
                     } else {

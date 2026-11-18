@@ -54,7 +54,6 @@ enum PreviewRenderer {
                                      meetings: meetings, actions: .none)
                 .frame(width: 780, height: 560).panel()
         }
-        ScreenDesignOptions.render(to: dir.appendingPathComponent("designs"))
         render(list(sessions, tasks: tasks, on: .chat), to: dir, "window-chat")
         render(list(sessions, tasks: tasks, on: .transcripts), to: dir, "transcripts")
         // The same section mid-run: the row and the header show the stage, and Regenerate is disabled for the other meeting.
@@ -65,63 +64,7 @@ enum PreviewRenderer {
         // The window opens on Alerts when no agent needs you or is working.
         render(list(SessionStore(), tasks: tasks), to: dir, "alerts")
         render(list(sessions, tasks: tasks, on: .actions), to: dir, "actions")
-        // The Screen section: counts and two sends, then with capture off.
-        let screenStatus = CaptureStatusModel()
-        screenStatus.itemCount = 1_595
-        screenStatus.pendingCount = 2
-        screenStatus.localOnlyCount = 1_028
-        let day: TimeInterval = 86_400
-        screenStatus.sendLog = [
-            CaptureSendRecord(id: 5, at: Date(), harness: "claude", model: "haiku", items: Array(1...8), bytes: 18_814, outcome: "2 suggestions"),
-            CaptureSendRecord(id: 4, at: Date().addingTimeInterval(-3_600), harness: "claude", model: "haiku", items: [4, 5, 6], bytes: 2_310, outcome: "no suggestions"),
-            CaptureSendRecord(id: 3, at: Date().addingTimeInterval(-day), harness: "claude", model: "haiku", items: [1, 2], bytes: 880, outcome: "1 suggestion"),
-            CaptureSendRecord(id: 2, at: Date().addingTimeInterval(-5 * day), harness: "claude", model: "haiku", items: [3], bytes: 400, outcome: "no suggestions"),
-        ]
-        let sampleCounts: ([Int64]) -> [Int64: Int] = { _ in [5: 2, 3: 1, 4: 0] }
-        let sampleRedactions: ([Int64]) -> [Int64: Int] = { _ in [4: 1] }
-        let screenConfig = ConfigStore.shared.config
-        var captureOn = screenConfig
-        captureOn.screenCapture.enabled = true
-        ConfigStore.shared.usePreview(captureOn)
-        for (name, width, scheme) in [("screen", 600.0, ColorScheme.dark), ("screen-narrow", 420.0, .dark), ("screen-wide", 1_000.0, .dark), ("screen-light", 600.0, .light)] {
-            render(ScreenSection(model: screenStatus, tab: .constant(.sent), loadCounts: sampleCounts, loadRedactions: sampleRedactions)
-                .frame(width: width, height: 460).panel(), to: dir, name, scheme: scheme)
-        }
-        var captureOff = screenConfig
-        captureOff.screenCapture.enabled = false
-        ConfigStore.shared.usePreview(captureOff)
-        render(ScreenSection(model: screenStatus, tab: .constant(.sent), loadCounts: sampleCounts, loadRedactions: sampleRedactions)
-            .frame(width: 600, height: 460).panel(), to: dir, "screen-off")
-        ConfigStore.shared.usePreview(screenConfig)
-        // The Captures tab, with two stored items.
-        let capturesStore = CaptureStore(database: Database.open(path: nil, migrations: CaptureStore.migrations).database)
-        for (thread, text) in [("slack:acme/ana", "Please send the invoice by Friday"), ("mail:rent", "Rent is due on the 1st")] {
-            let item = CaptureItem(app: CaptureApp(bundleId: "com.tinyspeck.slackmacgap", name: "Slack"), threadKey: thread, threadTitle: thread,
-                                   content: .conversation(title: thread, isGroup: false, messages: [CaptureMessage(author: "Ana", text: text)]), parser: "preview")
-            _ = try? capturesStore.ingest(item)
-        }
-        render(ScreenSection(model: screenStatus, tab: .constant(.captures), store: capturesStore).frame(width: 900, height: 560).panel(), to: dir, "screen-captures")
-        render(ScreenSection(model: screenStatus, tab: .constant(.captures), store: capturesStore).frame(width: 560, height: 460).panel(), to: dir, "screen-captures-narrow")
-        // One send opened: its items, and a suggestion that is waiting, accepted and rejected.
-        let batch = ScreenBatch(
-            record: screenStatus.sendLog[0],
-            items: [ScreenBatch.Item(id: 4, app: "Slack", title: "slack:acme/ana", at: Date().addingTimeInterval(-300), state: "sent",
-                                     body: "Ana: please send the invoice by Friday", redactions: CaptureRedactor.Report()),
-                    ScreenBatch.Item(id: 5, app: "Mail", title: "Invoice 42", at: Date().addingTimeInterval(-200), state: "sent",
-                                     body: "", redactions: CaptureRedactor.Report())],
-            suggestions: [ScreenBatch.Suggestion(id: "a", kind: "new_task", title: "Send the invoice", quote: "please send the invoice by Friday",
-                                                 outcome: .pending(id: "a")),
-                          ScreenBatch.Suggestion(id: "b", kind: "update", title: "Pay the rent", quote: "rent paid",
-                                                 outcome: .accepted(task: "pay-the-rent", title: "Pay the rent")),
-                          ScreenBatch.Suggestion(id: "c", kind: "new_task", title: "Call Sam", quote: "call Sam", outcome: .rejected(note: "already done"))],
-            redactions: CaptureRedactor.Report())
-        render(ScrollView { ScreenBatchView(batch: batch).padding(ScreenLayout.inset).frame(maxWidth: .infinity, alignment: .leading) }
-            .frame(width: 600, height: 560).panel(), to: dir, "screen-batch")
-        render(ScrollView { ScreenBatchView(batch: batch).padding(ScreenLayout.inset).frame(maxWidth: .infinity, alignment: .leading) }
-            .frame(width: 420, height: 560).panel(), to: dir, "screen-batch-narrow")
-        let emptyBatch = ScreenBatch(record: screenStatus.sendLog[1], items: [], suggestions: [], redactions: CaptureRedactor.Report())
-        render(ScrollView { ScreenBatchView(batch: emptyBatch).padding(ScreenLayout.inset).frame(maxWidth: .infinity, alignment: .leading) }
-            .frame(width: 420, height: 300).panel(), to: dir, "screen-batch-empty")
+        ScreenPreviews.render(to: dir.appendingPathComponent("screen"))
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks")
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks-light", scheme: .light)
         let noTasks = TaskStore(database: Database.open(path: nil, migrations: TaskStore.migrations).database)

@@ -77,6 +77,11 @@ enum ScreenBatchLoader {
         return ScreenBatch(record: record, items: items, suggestions: suggestions(of: log, tasks: tasks), redactions: report)
     }
 
+    /// The suggestions each send produced, for the cards on the timeline.
+    static func suggestionsByLog(_ logs: [Int64], tasks: TaskStore) -> [Int64: [ScreenBatch.Suggestion]] {
+        Dictionary(uniqueKeysWithValues: logs.map { ($0, suggestions(of: $0, tasks: tasks)) })
+    }
+
     /// How many suggestions each send produced, for the count on its row.
     static func counts(_ logs: [Int64], tasks: TaskStore) -> [Int64: Int] {
         Dictionary(uniqueKeysWithValues: logs.map { ($0, suggestions(of: $0, tasks: tasks).count) })

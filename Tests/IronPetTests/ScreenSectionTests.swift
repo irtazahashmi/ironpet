@@ -53,6 +53,30 @@ final class ScreenSectionTests: XCTestCase {
         XCTAssertFalse(["Today", "Yesterday"].contains(days[2].title))
     }
 
+    func testQuietBatchesCollapseIntoOneLine() {
+        XCTAssertEqual(ScreenSectionText.quietTitle(1), "1 batch, nothing found")
+        XCTAssertEqual(ScreenSectionText.quietTitle(3), "3 batches, nothing found")
+    }
+
+    func testOutcomeChipsAndDetails() {
+        XCTAssertEqual(ScreenBatchText.outcomeShort(.pending(id: "a")), "Pending")
+        XCTAssertEqual(ScreenBatchText.outcomeShort(.accepted(task: "t", title: "Pay")), "Accepted")
+        XCTAssertEqual(ScreenBatchText.outcomeDetail(.rejected(note: "done already")), "done already")
+        XCTAssertNil(ScreenBatchText.outcomeDetail(.pending(id: "a")))
+    }
+
+    func testCaptureDetailWords() {
+        var row = CaptureStore.InspectRow(id: 1, at: Date(), app: "x", appName: "X", threadKey: "k", threadTitle: "t", kind: "conversation",
+                                          url: nil, version: 1, newMessages: 0, body: "", state: "new", reason: nil, secret: nil,
+                                          calendar: nil, task: nil, related: nil, sentAt: nil)
+        XCTAssertEqual(CaptureInspectorView.secretText(row), "Not checked by a model")
+        row.secret = 0.93
+        row.state = "local"
+        row.reason = CaptureDecisionFilter.flaggedReason
+        XCTAssertEqual(CaptureInspectorView.secretText(row).hasSuffix("flagged"), true)
+        XCTAssertTrue(CaptureInspectorView.stateText(row).hasPrefix("Kept on this Mac. Still flagged"))
+    }
+
     func testBatchFactsNameAgentOnceWithSizeAndRedactions() {
         let facts = ScreenBatchText.facts(record(1, Date()), redactions: CaptureRedactor.Report())
         XCTAssertTrue(facts.hasPrefix("claude / haiku, 8 items, "))
