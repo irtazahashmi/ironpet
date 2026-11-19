@@ -79,6 +79,27 @@ enum PreviewRenderer {
         // The window opens on Alerts when no agent needs you or is working.
         render(list(SessionStore(), tasks: tasks), to: dir, "alerts")
         render(list(sessions, tasks: tasks, on: .actions), to: dir, "actions")
+        // Notifications, from made-up entries: one unread and open with its description and links, one read, one without links.
+        let notificationStore = NotificationStore(database: Database.open(path: nil, migrations: NotificationStore.migrations).database)
+        _ = notificationStore.add(NotificationDraft(source: "release-notes", type: .backgroundResult, title: "Release notes",
+                                                    description: "Drafted the notes for **v2.4**.\n\n- 3 fixes\n- 1 new setting\n\nOne item needs a decision before it ships.",
+                                                    links: [NotificationLink(.url, "https://example.com/releases/2.4", label: "Draft on the wiki"),
+                                                            NotificationLink(.thread, "preview-thread", label: "Run in chat history")]))
+        let readEntry = notificationStore.add(NotificationDraft(source: "water", type: .reminder, title: "Time for water", description: "Drink a glass of water."))
+        _ = notificationStore.add(NotificationDraft(source: NotificationItem.systemSource, type: .approval, title: "Ghost wants to: run swift test",
+                                                    description: "swift test --filter DemoTests"))
+        if let readEntry { notificationStore.markRead(readEntry.id) }
+        let notificationsModel = NotificationsModel(store: notificationStore)
+        notificationsModel.select(notificationStore.list().last { $0.type == .backgroundResult }?.id ?? "")
+        func notificationsWindow(scheme: ColorScheme) -> some View {
+            let model = IronPetWindowModel(defaults: UserDefaults(suiteName: "ironpet-previews") ?? .standard)
+            model.section = .notifications
+            return IronPetWindowView(model: model, agents: AgentsAPI(store: sessions), alerts: AlertsAPI(store: signals), tasks: tasks, notifications: notificationsModel, chat: Self.chatModel(chat),
+                                     meetings: meetings, actions: .none)
+                .frame(width: 780, height: 560).panel()
+        }
+        render(notificationsWindow(scheme: .dark), to: dir, "notifications")
+        render(notificationsWindow(scheme: .light), to: dir, "notifications-light", scheme: .light)
         // The Screen section: recent captures and the search field, with capture on and off, then a search.
         let capturesStore = CaptureStore(database: Database.open(path: nil, migrations: CaptureStore.migrations).database)
         let slack = CaptureApp(bundleId: "com.tinyspeck.slackmacgap", name: "Slack"), browser = CaptureApp(bundleId: "com.apple.Safari", name: "Safari")
@@ -138,7 +159,10 @@ enum PreviewRenderer {
         // Automations needs the app's settings model; this one is built from sample automations in a temp folder.
         let settingsModel = sampleSettings(chat: chat, config: patterned)
         settingsModel.capture = ScreenAPI(service: CaptureService(store: capturesStore, config: { ConfigStore.shared.config.screenCapture }))
+        patterned.voiceMode.enabled = true
         ConfigStore.shared.usePreview(patterned)
+        let idleVoice = VoiceConversation(frontDesk: FrontDesk())
+        let voiceThreads = Self.sampleVoiceThreads
         for section in IronPetSection.allCases {
             for (suffix, scheme) in [("dark", ColorScheme.dark), ("light", .light)] {
                 for collapsed in [false, true] {
@@ -148,12 +172,13 @@ enum PreviewRenderer {
                     model.todayShown = true
                     model.section = section
                     let view = IronPetWindowView(model: model, agents: AgentsAPI(store: sessions), alerts: AlertsAPI(store: signals), tasks: tasks, chat: Self.chatModel(chat),
-                                                 meetings: meetings, settings: settingsModel, brief: brief, actions: .none)
+                                                 meetings: meetings, settings: settingsModel, brief: brief, voice: idleVoice,
+                                                 voiceThreads: { voiceThreads }, actions: .none)
                     renderWindow(model: model, session: chat, content: view, to: dir,
                                  "real-\(section.rawValue)-\(suffix)\(collapsed ? "-collapsed" : "")", scheme: scheme)
                     if collapsed, section == .agents {
-                        // The rail label for Tasks, the fourth icon: 56 pt below the top, then 42 pt per icon.
-                        model.hoverRail(RailTip(name: "Tasks", shortcut: "⌘4", frame: CGRect(x: 36, y: 182, width: 40, height: 38)),
+                        // The rail label for Tasks, the fifth icon: 56 pt below the top, then 42 pt per icon.
+                        model.hoverRail(RailTip(name: "Tasks", shortcut: "⌘5", frame: CGRect(x: 36, y: 224, width: 40, height: 38)),
                                         hovering: true)
                         renderWindow(model: model, session: chat, content: view, to: dir,
                                      "real-\(section.rawValue)-\(suffix)-collapsed-tip", scheme: scheme)
@@ -197,9 +222,48 @@ enum PreviewRenderer {
         var speechOn = patterned
         speechOn.voice.enabled = true
         speechOn.speech.enabled = true
+        speechOn.voiceMode.enabled = true
         ConfigStore.shared.usePreview(speechOn)
         for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
-            render(VoiceSettings(model: settingsModel).frame(width: 560, height: 1000).panel(), to: dir, "settings-voice" + suffix, scheme: scheme)
+            render(VoiceSettings(model: settingsModel).frame(width: 560, height: 1500).panel(), to: dir, "settings-voice" + suffix, scheme: scheme)
+        }
+        // The whole Settings window over the chat background.
+        ConfigStore.shared.usePreview(patterned)
+        for tab in ["general", "screen"] {
+            settingsModel.tab = tab
+            for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
+                render(SettingsView(model: settingsModel).frame(height: 600), to: dir, "settings-window-\(tab)" + suffix, scheme: scheme)
+            }
+        }
+        // Voice mode's pill in each state, with what was heard.
+        let pills: [(VoiceConversation.State, VoiceConversation.Mode, String?, String)] = [
+            (.listening, .microphone, nil, "listening"), (.thinking, .microphone, "What's going on with my jobs?", "thinking"),
+            (.speaking, .microphone, "What's going on with my jobs?", "speaking"), (.listening, .wispr, nil, "wispr"),
+        ]
+        for (state, mode, heard, name) in pills {
+            let conversation = VoiceConversation(frontDesk: FrontDesk())
+            conversation.loadPreview(state: state, mode: mode, heard: heard)
+            for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
+                render(VoicePillView(conversation: conversation, petName: "Ghost", onEnd: {}).padding(16),
+                       to: dir, "voice-pill-\(name)" + suffix, scheme: scheme)
+            }
+        }
+        // The Voice page: off, ready with past conversations, and mid-conversation.
+        let talking = VoiceConversation(frontDesk: FrontDesk())
+        talking.loadPreview(state: .speaking, mode: .microphone, heard: "What's going on with my jobs?",
+                            reply: "Two jobs are running. The login fix is almost done, and lint is waiting for your OK.")
+        func voicePage(_ conversation: VoiceConversation) -> some View {
+            VoiceSection(conversation: conversation, onToggle: {}, onOpenThread: { _ in }, onOpenSettings: {},
+                         loadThreads: { voiceThreads }).frame(width: 600, height: 620).panel()
+        }
+        var voiceOff = speechOn
+        voiceOff.voiceMode.enabled = false
+        ConfigStore.shared.usePreview(voiceOff)
+        render(voicePage(idleVoice), to: dir, "voice-page-off")
+        ConfigStore.shared.usePreview(speechOn)
+        for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
+            render(voicePage(idleVoice), to: dir, "voice-page" + suffix, scheme: scheme)
+            render(voicePage(talking), to: dir, "voice-page-talking" + suffix, scheme: scheme)
         }
         let speaking = ChatSession(restore: false)
         speaking.loadPreview(.done)
@@ -665,4 +729,21 @@ private struct PetScene: View {
             }
         }
     }
+}
+
+extension PreviewRenderer {
+    /// Voice conversations for the Voice page's list; never the user's own threads.
+    static let sampleVoiceThreads: [ChatThread] = {
+        let now = Date()
+        func thread(_ id: String, _ said: [String], hoursAgo: Double) -> ChatThread {
+            ChatThread(id: id, title: said[0], workspace: "/tmp", updatedAt: now.addingTimeInterval(-hoursAgo * 3600),
+                       items: said.flatMap { [ChatSession.Item(kind: .user($0)), ChatSession.Item(kind: .assistant("Okay."))] },
+                       agent: "claude", voice: true)
+        }
+        return [
+            thread("v1", ["What's going on with my jobs?", "Start the lint fix in ironpet", "Cancel that"], hoursAgo: 1),
+            thread("v2", ["Anything need me?"], hoursAgo: 5),
+            thread("v3", ["What's on my calendar today?", "Remind me to send the invoice"], hoursAgo: 26),
+        ]
+    }()
 }

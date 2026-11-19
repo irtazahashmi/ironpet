@@ -13,6 +13,8 @@ struct ChatOrigin: Codable, Equatable, Hashable {
     static let automationClient = "automation"
     /// A prompt or follow-up that a background job ran.
     static let jobClient = "job"
+    /// Something the user said in voice mode on the Mac.
+    static let voiceClient = "voice"
 
     static func telegram(chat: Int64) -> ChatOrigin { ChatOrigin(client: telegramClient, ref: String(chat)) }
 }
@@ -113,6 +115,8 @@ struct ChatThreadInfo: Codable, Equatable, Identifiable {
     /// The automation whose run this thread holds, if any.
     var automation: String?
     var automationName: String?
+    /// A voice-mode conversation on the Mac.
+    var voice: Bool?
 
     var isAutomationRun: Bool { automation != nil }
 }
@@ -286,7 +290,7 @@ final class ChatAPI {
 
     private var currentThreads: [ChatThreadInfo] {
         session.history.map { ChatThreadInfo(id: $0.id, title: $0.title, workspace: $0.workspace, updatedAt: $0.updatedAt, agent: $0.agent,
-                                             automation: $0.automation, automationName: $0.automationName) }
+                                             automation: $0.automation, automationName: $0.automationName, voice: $0.voice) }
     }
 
     private var currentOptions: ChatOptions {

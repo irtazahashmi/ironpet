@@ -72,6 +72,7 @@ final class SpeechPlayer: ObservableObject {
     private var reading: Task<Void, Never>?
     private var previewing: Task<Void, Error>?
     private var reader: SpeechChunkReader?
+    private var saying: Task<Void, Error>?
 
     init(player: ClipPlaying? = nil) {
         self.player = player ?? ClipPlayer()
@@ -95,11 +96,34 @@ final class SpeechPlayer: ObservableObject {
         speakingID = id
         phase = .preparing
         reading = Task { [weak self] in
-            await self?.read(chunks)
+            do {
+                try await self?.read(chunks)
+            } catch is CancellationError {
+            } catch {
+                if !Task.isCancelled { self?.onFailure?(error.localizedDescription) }
+            }
             // A stopped read must not clear the state of the reply that replaced it.
             guard !Task.isCancelled else { return }
             self?.finish()
         }
+    }
+
+    /// Reads `markdown` and returns once it has been spoken, for voice mode, which has its own switch. Throws what the
+    /// server answered, or `CancellationError` when `stop()` cut it short.
+    func say(_ markdown: String) async throws {
+        stop()
+        let chunks = SpeechText.chunks(of: markdown)
+        guard !chunks.isEmpty else { return }
+        phase = .preparing
+        let task = Task<Void, Error> { [weak self] in try await self?.read(chunks) }
+        saying = task
+        defer {
+            if saying == task {
+                saying = nil
+                finish()
+            }
+        }
+        try await task.value
     }
 
     /// Speaks one short line regardless of the switch, for Settings' Preview. Throws what the server answered, or
@@ -135,25 +159,21 @@ final class SpeechPlayer: ObservableObject {
         reading = nil
         reader?.cancel()
         reader = nil
+        saying?.cancel()
+        saying = nil
         player.stop()
         finish()
     }
 
-    private func read(_ chunks: [String]) async {
+    private func read(_ chunks: [String]) async throws {
         let reader = SpeechProducer(synthesize: synthesize).reader(for: chunks)
         self.reader = reader
         while true {
-            do {
-                guard !Task.isCancelled, let audio = try await reader.next() else { return }
-                phase = .playing
-                try await player.play(audio)
-            } catch is CancellationError {
-                return
-            } catch {
-                guard !Task.isCancelled else { return }
-                onFailure?(error.localizedDescription)
-                return
-            }
+            try Task.checkCancellation()
+            guard let audio = try await reader.next() else { return }
+            try Task.checkCancellation()
+            phase = .playing
+            try await player.play(audio)
         }
     }
 

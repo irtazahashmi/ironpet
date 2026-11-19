@@ -39,10 +39,16 @@ final class PetController: NSObject {
     var extraMenuItems: () -> [NSMenuItem] = { [] }
     var onRefresh: ((PetMood) -> Void)?
     var chatMood: () -> PetMood? = { nil }
+    /// A voice conversation's mood, which wins over agents, alerts and nudges while it runs.
+    var voiceMood: () -> PetMood? = { nil }
     var onChatToggle: (() -> Void)?
     /// "Ask Ghost" on an alert: open the chat with this prompt ready to send.
     var onAsk: ((String) -> Void)?
     var onCapture: ((_ region: Bool) -> Void)?
+    /// The Notifications section. Set before the window first opens.
+    var notifications: NotificationsModel? {
+        didSet { notifications?.opener = notificationOpener() }
+    }
     /// The Tasks section's list. Falls back to an empty list.
     var tasks: TasksAPI?
     /// The Automations section. Set before the window first opens.
@@ -51,6 +57,11 @@ final class PetController: NSObject {
     var onSettings: (() -> Void)?
     /// Opens Settings on the Screen tab.
     var onScreenSettings: (() -> Void)?
+    /// Voice mode's conversation for the Voice section, its button, and Settings on the Voice tab. Set before the window
+    /// first opens.
+    var voiceConversation: VoiceConversation?
+    var onVoiceToggle: (() -> Void)?
+    var onVoiceSettings: (() -> Void)?
     /// The Chat section's session and the Transcripts section's meetings. Set before the window first opens.
     var chat: ChatSession?
     /// The chat API the window draws. Set with `chat`.
@@ -227,6 +238,12 @@ final class PetController: NSObject {
     }
 
     func refreshMood() {
+        if let voice = voiceMood() {
+            lastActivity = Date()
+            view.show(voice, badge: 0)
+            onRefresh?(view.mood)
+            return
+        }
         if let nudge, nudge.until > Date() {
             shown(nudge.mood, badge: 0)
             onRefresh?(view.mood)
@@ -282,6 +299,28 @@ final class PetController: NSObject {
         refreshMood()
     }
 
+    /// A bubble was clicked: show the Notifications page with this entry open.
+    func openNotification(_ id: String) {
+        windowModel.focusNotification = id
+        showWindow(.notifications)
+    }
+
+    private func notificationOpener() -> NotificationLinkOpener {
+        var opener = NotificationLinkOpener()
+        opener.openThread = { [weak self] id in self?.onOpenThread?(id) }
+        opener.openSession = { [weak self] id in
+            guard let self else { return }
+            if let session = store.sessions[id] { return jump(to: session) }
+            onOpenSession?(id)
+        }
+        opener.openTask = { [weak self] id in
+            self?.windowModel.focusTask = id
+            self?.windowModel.section = .tasks
+        }
+        opener.openAlert = { [weak self] _ in self?.windowModel.section = .alerts }
+        return opener
+    }
+
     private func syncChat() {
         guard isChatVisible != chatShown else { return }
         chatShown = isChatVisible
@@ -316,10 +355,17 @@ final class PetController: NSObject {
                 if !isChatVisible { builtWindow?.close() }
                 onScreenSettings?()
             },
-            onBriefOpen: { [weak self] target in self?.openBrief(target) })
+            onBriefOpen: { [weak self] target in self?.openBrief(target) },
+            onVoiceToggle: { [weak self] in self?.onVoiceToggle?() },
+            onVoiceSettings: { [weak self] in
+                guard let self else { return }
+                if !isChatVisible { builtWindow?.close() }
+                onVoiceSettings?()
+            })
         let window = IronPetPanel(model: windowModel, session: chatModel, content: IronPetWindowView(
-            model: windowModel, agents: agentList, alerts: alertList, tasks: taskList, chat: chatModel, meetings: meetingsAPI,
-            settings: settings, brief: brief, actions: actions))
+            model: windowModel, agents: agentList, alerts: alertList, tasks: taskList, notifications: notifications ?? .empty, chat: chatModel,
+            meetings: meetingsAPI, settings: settings, brief: brief, voice: voiceConversation, actions: actions))
+        window.hasVoice = voiceConversation != nil
         window.onVisibilityChange = { [weak self] visible in
             guard let self else { return }
             syncChat()

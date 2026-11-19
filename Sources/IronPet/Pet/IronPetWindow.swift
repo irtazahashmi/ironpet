@@ -3,15 +3,17 @@ import SwiftUI
 
 /// A page of the ironpet window, in sidebar order.
 enum IronPetSection: String, CaseIterable, Identifiable {
-    case chat, agents, alerts, tasks, transcripts, screen, actions, automations, today
+    case chat, voice, agents, alerts, notifications, tasks, transcripts, screen, actions, automations, today
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .chat: return "Chat"
+        case .voice: return "Voice"
         case .agents: return "Agents"
         case .alerts: return "Alerts"
+        case .notifications: return "Notifications"
         case .tasks: return "Tasks"
         case .transcripts: return "Transcripts"
         case .screen: return "Screen"
@@ -24,8 +26,10 @@ enum IronPetSection: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .chat: return "bubble.left.and.bubble.right"
+        case .voice: return "mic"
         case .agents: return "person.2"
         case .alerts: return "bell"
+        case .notifications: return "tray"
         case .tasks: return "checklist"
         case .transcripts: return "waveform"
         case .screen: return "rectangle.dashed.badge.record"
@@ -35,10 +39,14 @@ enum IronPetSection: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The sections the sidebar lists, in order. Chat, Transcripts and Automations need their backing object. Today is
-    /// listed only while a brief or recap automation is on, and comes last so the other rows keep their ⌘N.
-    static func shown(chat: Bool, transcripts: Bool, automations: Bool, today: Bool = false) -> [IronPetSection] {
-        allCases.filter { ($0 != .chat || chat) && ($0 != .transcripts || transcripts) && ($0 != .automations || automations) && ($0 != .today || today) }
+    /// The sections the sidebar lists, in order. Chat, Voice, Transcripts and Automations need their backing object. Today
+    /// is listed only while a brief or recap automation is on, and comes last so the other rows keep their ⌘N.
+    static func shown(chat: Bool, voice: Bool = false, transcripts: Bool, automations: Bool, today: Bool = false,
+                      notifications: Bool = true) -> [IronPetSection] {
+        allCases.filter {
+            ($0 != .chat || chat) && ($0 != .voice || voice) && ($0 != .transcripts || transcripts) && ($0 != .automations || automations)
+                && ($0 != .today || today) && ($0 != .notifications || notifications)
+        }
     }
 
     /// The section ⌘1 to ⌘9 select: the Nth row of `sections`. Nil for ⌘0, any other key, or a digit past the last row.
@@ -62,7 +70,7 @@ enum IronPetSection: String, CaseIterable, Identifiable {
 
     /// The sections that show what a bubble would announce, so bubbles wait while one is open. The others leave them
     /// visible, so an approval is not missed while reading a transcript or editing an automation.
-    var hidesBubbles: Bool { [.chat, .agents, .alerts, .tasks, .actions, .today].contains(self) }
+    var hidesBubbles: Bool { [.chat, .agents, .alerts, .notifications, .tasks, .actions, .today].contains(self) }
 
     /// Agents that need the user win; otherwise alerts when there are some and no agent is working, then tasks that
     /// wait on the user or on Add / Skip.
@@ -106,6 +114,8 @@ final class IronPetWindowModel: ObservableObject {
     @Published var briefKind: Brief.Kind = .brief
     /// A task or meeting a Today row opened. The Tasks and Transcripts pages show it, then clear it.
     @Published var focusTask: String?
+    /// A notification a bubble opened. The Notifications page expands it, then clears it.
+    @Published var focusNotification: String?
     @Published var focusMeeting: String?
     /// True when the sidebar shows only the section icons. Saved, so it survives closing the window and restarting.
     @Published var sidebarCollapsed: Bool {
@@ -128,6 +138,12 @@ final class IronPetWindowModel: ObservableObject {
     }
 
     func toggleSidebar() { sidebarCollapsed.toggle() }
+
+    /// A bubble was clicked: show the Notifications page with this entry open.
+    func openNotification(_ id: String) {
+        focusNotification = id
+        section = .notifications
+    }
 
     /// The width of the column as it is now: the rail's, or the sidebar's own.
     var columnWidth: CGFloat { sidebarCollapsed ? Self.railWidth : sidebarWidth }
@@ -184,6 +200,8 @@ struct IronPetWindowView: View {
     @ObservedObject var agents: AgentsAPI
     @ObservedObject var alerts: AlertsAPI
     @ObservedObject var tasks: TasksAPI
+    /// The Notifications page. Left at `empty` in tests and previews that do not show it; its row is hidden then.
+    @ObservedObject var notifications = NotificationsModel.empty
     /// Nil in previews and tests that do not show it; its row is hidden then.
     var chat: ChatViewModel?
     var meetings: MeetingsAPI?
@@ -191,6 +209,10 @@ struct IronPetWindowView: View {
     var settings: SettingsModel?
     /// The Today page's content. Nil in tests that do not show it.
     var brief: BriefModel?
+    /// Voice mode's conversation, for the Voice page. Nil in previews and tests that do not show it; its row is hidden then.
+    var voice: VoiceConversation?
+    /// The Voice page's past conversations. Sample threads in previews.
+    var voiceThreads: @Sendable () -> [ChatThread] = { VoiceHistory.threads() }
     let actions: SessionActions
     @ObservedObject private var config = SettingsAPI.live
 
@@ -234,7 +256,8 @@ struct IronPetWindowView: View {
     }
 
     private var shown: [IronPetSection] {
-        IronPetSection.shown(chat: chat != nil, transcripts: meetings != nil, automations: settings != nil, today: model.todayShown)
+        IronPetSection.shown(chat: chat != nil, voice: voice != nil, transcripts: meetings != nil, automations: settings != nil,
+                             today: model.todayShown, notifications: notifications !== NotificationsModel.empty)
     }
 
     private var collapsed: Bool { model.sidebarCollapsed }
@@ -348,6 +371,7 @@ struct IronPetWindowView: View {
         switch section {
         case .agents: return agents.sessions.count
         case .alerts: return alerts.alerts.count
+        case .notifications: return notifications.unread
         case .tasks: return tasks.activeCount + tasks.suggestions.count
         default: return 0
         }
@@ -361,8 +385,15 @@ struct IronPetWindowView: View {
             VStack(spacing: 0) {
                 switch model.section {
                 case .chat: EmptyView()
+                case .voice:
+                    if let voice {
+                        VoiceSection(conversation: voice, onToggle: actions.onVoiceToggle, onOpenThread: actions.onOpenThread,
+                                     onOpenSettings: actions.onVoiceSettings, loadThreads: voiceThreads)
+                    }
                 case .agents: AgentsSection(agents: agents)
                 case .alerts: AlertsSection(alerts: alerts, onAsk: actions.onAsk)
+                case .notifications:
+                    NotificationsSection(model: notifications, store: notifications.store, focus: $model.focusNotification)
                 case .tasks:
                     TaskListView(tasks: tasks, onTellGhost: actions.onTellGhost, onOpenThread: actions.onOpenThread,
                                  onOpenSession: actions.onOpenSession, focus: $model.focusTask)
@@ -408,6 +439,10 @@ struct SessionActions {
     var onScreenSettings: () -> Void = {}
     /// A row of the Today page.
     var onBriefOpen: (Brief.Target) -> Void = { _ in }
+    /// The Voice page's button: starts or ends a conversation.
+    var onVoiceToggle: () -> Void = {}
+    /// Opens Settings on the Voice tab.
+    var onVoiceSettings: () -> Void = {}
 
     static let none = SessionActions(onAsk: { _ in }, onTrick: { _ in }, onTellGhost: { _ in },
                                      onOpenThread: { _ in }, onOpenSession: { _ in })

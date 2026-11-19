@@ -10,7 +10,7 @@ final class AssistantAPI {
 
     func handles(_ name: String) -> Bool { AssistantMCP.handles(name) }
 
-    func callTool(_ name: String, _ args: [String: Any]) -> Result<Any, JobError> {
-        AssistantMCP.call(name, args, context: context)
+    func callTool(_ name: String, _ args: [String: Any], fromVoice: Bool = false) -> Result<Any, JobError> {
+        AssistantMCP.call(name, args, context: context, fromVoice: fromVoice)
     }
 }

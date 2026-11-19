@@ -1,19 +1,22 @@
 import AppKit
 import SwiftUI
 
-// `IronPet automations …`, `IronPet tasks …` and `IronPet mcp` talk to the running app and never open a window.
+// `IronPet automations …`, `IronPet tasks …`, `IronPet notifications …` and `IronPet mcp` talk to the running app and never open a window.
 if CommandLine.arguments.dropFirst().first == "automations" {
     exit(AutomationCLI.run(Array(CommandLine.arguments.dropFirst(2))))
 }
 if CommandLine.arguments.dropFirst().first == "tasks" {
     exit(TaskCLI.run(Array(CommandLine.arguments.dropFirst(2))))
 }
+if CommandLine.arguments.dropFirst().first == "notifications" {
+    exit(NotificationCLI.run(Array(CommandLine.arguments.dropFirst(2))))
+}
 if CommandLine.arguments.dropFirst().first == "skills" {
     exit(SkillCLI.run(Array(CommandLine.arguments.dropFirst(2))))
 }
 if ["mcp", "mcp-stdio"].contains(CommandLine.arguments.dropFirst().first ?? "") {
     // A background job's session must not start or steer jobs, so its bridge asks for the job scope.
-    exit(AutomationCLI.stdioBridge(path: ProcessInfo.processInfo.environment[MCPEndpoint.scopeVariable] == "job" ? MCPEndpoint.jobPath : "/mcp"))
+    exit(AutomationCLI.stdioBridge(path: MCPEndpoint.path(forScope: ProcessInfo.processInfo.environment[MCPEndpoint.scopeVariable])))
 }
 
 if CommandLine.arguments.contains("--uninstall") {
