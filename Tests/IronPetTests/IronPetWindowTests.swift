@@ -72,7 +72,8 @@ final class IronPetWindowTests: XCTestCase {
         let all = IronPetSection.shown(chat: true, voice: true, transcripts: true, automations: true)
         XCTAssertEqual(IronPetSection.forShortcut("2", in: all), .voice)
         XCTAssertEqual(IronPetSection.forShortcut("3", in: all), .agents)
-        XCTAssertEqual(IronPetSection.forShortcut("9", in: all), .automations)
+        // Voice and Notifications both add a row, so ⌘9 is Actions and Automations has no number.
+        XCTAssertEqual(IronPetSection.forShortcut("9", in: all), .actions)
     }
 
     func testHiddenRowsDoNotTakeANumber() {
