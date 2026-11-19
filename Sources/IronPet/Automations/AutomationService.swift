@@ -594,7 +594,7 @@ final class AutomationService {
         var buttons: [AutomationNotice.Button] = []
         if let url { buttons.append(.init(title: "Open", primary: true) { NSWorkspace.shared.open(url) }) }
         let extras = Self.notificationFields(action)
-        if let problem = extras.problem { record(a.id, "failed", "bubble: " + problem) }
+        if let problem = extras.problem { record(a.id, "ok", "bubble: " + problem) }
         let tint: AutomationNotice.Tint = level == "bad" ? .bad : level == "warn" ? .warn : level == "good" ? .good : .info
         post(AutomationNotice(id: Self.itemBubbleID(a.id, item: ["id": key], fallback: key),
                                 symbol: text(action, "symbol") ?? "bell.fill", tint: tint, title: title, subtitle: text(action, "subtitle"),
@@ -619,7 +619,7 @@ final class AutomationService {
         guard let title = text(action, "title") else { return "an alert needs a title" }
         let level = severity(action, default: "warn")
         let extras = Self.notificationFields(action)
-        if let problem = extras.problem { record(a.id, "failed", "alert: " + problem) }
+        if let problem = extras.problem { record(a.id, "ok", "alert: " + problem) }
         // The description and links count only when given, so an alert without them keeps the fingerprint it had before they existed.
         let extraKey = extras.description == nil && extras.links.isEmpty ? [] : [extras.description ?? "", extras.links.map { "\($0.kind.rawValue):\($0.ref)" }.joined(separator: ",")]
         let fingerprint = AutomationState.hash(text(action, "version")
