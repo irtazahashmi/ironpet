@@ -91,6 +91,11 @@ final class TaskStore: ObservableObject {
                 DROP TABLE IF EXISTS task_suggestion_outcomes;
                 """)
         },
+        // Numbered above every migration in the app (memory's 510 is the highest), so a database already past 510 still runs it.
+        .init(520, "tasks: labels", sql: """
+            CREATE TABLE IF NOT EXISTS task_labels(task TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL,
+                                                   PRIMARY KEY(task, key)) WITHOUT ROWID;
+            """),
     ]
 
     /// A source reference as stored: a JSON object, keys sorted.
@@ -164,18 +169,21 @@ final class TaskStore: ObservableObject {
 
     @discardableResult
     func create(title: String, notes: String = "", status: TaskStatus = .backlog, source: TaskSource, due: Date? = nil,
-                links: [TaskLink] = [], waitingOn: String? = nil, sourceRef: String? = nil, by: String) throws -> TaskItem {
+                links: [TaskLink] = [], waitingOn: String? = nil, sourceRef: String? = nil, labels: [String: String] = [:],
+                by: String) throws -> TaskItem {
+        guard labels.count <= TaskValidator.maxLabels else { throw TaskError(message: "at most \(TaskValidator.maxLabels) labels") }
         let title = try TaskValidator.title(title)
         let notes = try TaskValidator.notes(notes)
         let waitingOn = try TaskValidator.waitingOn(waitingOn)
         let id = AutomationValidator.slug(title, taken: Set(tasks.map(\.id)).union(deletedIDs()))
         let time = now()
         let item = TaskItem(id: id, title: title, notes: notes, status: status, source: source, due: due, links: links,
-                            created: time, updated: time, closed: status == .done ? time : nil, waitingOn: waitingOn, sourceRef: sourceRef)
+                            created: time, updated: time, closed: status == .done ? time : nil, waitingOn: waitingOn, sourceRef: sourceRef, labels: labels)
         try database.write { db in
             try Self.save(item, db)
             try Self.log(db, id, time, by, .created, "\(status.rawValue): \(title)" + (waitingOn.map { " (waiting on \($0))" } ?? "")
-                         + (sourceRef.map { " [source: \(source.rawValue) \($0)]" } ?? ""))
+                         + (sourceRef.map { " [source: \(source.rawValue) \($0)]" } ?? "")
+                         + (labels.isEmpty ? "" : " [labels: \(Self.describe(labels))]"))
         }
         reload()
         didChange(id)
@@ -185,7 +193,8 @@ final class TaskStore: ObservableObject {
     /// Applies the fields that are present. `note` goes to history only, so the agent can say why it changed something.
     @discardableResult
     func update(_ id: String, title: String? = nil, notes: String? = nil, status: TaskStatus? = nil, due: Date?? = nil,
-                links: [TaskLink]? = nil, waitingOn: String?? = nil, note: String? = nil, by: String) throws -> TaskItem {
+                links: [TaskLink]? = nil, waitingOn: String?? = nil, addLabels: [String: String] = [:], removeLabels: [String] = [],
+                note: String? = nil, by: String) throws -> TaskItem {
         guard var item = task(id) else { throw TaskError(message: "no task with id \"\(id)\"") }
         let time = now()
         var events: [(TaskEvent.Kind, String)] = []
@@ -205,6 +214,19 @@ final class TaskStore: ObservableObject {
         if let waitingOn {
             let waitingOn = try TaskValidator.waitingOn(waitingOn)
             if waitingOn != item.waitingOn { item.waitingOn = waitingOn; events.append((.edited, "waiting on: \(waitingOn ?? "none")")) }
+        }
+        if !addLabels.isEmpty || !removeLabels.isEmpty {
+            var labels = item.labels
+            for key in removeLabels { labels[key] = nil }
+            for (key, value) in addLabels { labels[key] = value }
+            guard labels.count <= TaskValidator.maxLabels else { throw TaskError(message: "at most \(TaskValidator.maxLabels) labels") }
+            if labels != item.labels {
+                let removed = Set(item.labels.keys).subtracting(labels.keys).sorted()
+                let added = labels.filter { item.labels[$0.key] != $0.value }
+                events.append((.edited, "labels: " + ((added.isEmpty ? [] : ["set \(Self.describe(added))"])
+                                                      + (removed.isEmpty ? [] : ["removed \(removed.joined(separator: ", "))"])).joined(separator: "; ")))
+                item.labels = labels
+            }
         }
         if let status, status != item.status {
             events.append((status == .done ? .closed : .status, "\(item.status.rawValue) → \(status.rawValue)"))
@@ -238,12 +260,23 @@ final class TaskStore: ObservableObject {
         try database.write { db in
             try db.execute("DELETE FROM task_items WHERE id = ?", [id])
             try db.execute("DELETE FROM task_links WHERE task = ?", [id])
+            try db.execute("DELETE FROM task_labels WHERE task = ?", [id])
             try db.execute("DELETE FROM task_due_marks WHERE task = ?", [id])
             // The history stays until prune, so a deleted task can still be explained.
             try Self.log(db, id, time, by, .deleted, item.title)
         }
         reload()
         didChange(id)
+    }
+
+    /// `a=1, b=2`, keys sorted.
+    nonisolated static func describe(_ labels: [String: String]) -> String {
+        TaskLabels.describe(labels)
+    }
+
+    /// Every label in use, sorted, for the filter menu.
+    var allLabels: [(key: String, value: String)] {
+        Set(tasks.flatMap { $0.labels.map { [$0.key, $0.value] } }).sorted { ($0[0], $0[1]) < ($1[0], $1[1]) }.map { (key: $0[0], value: $0[1]) }
     }
 
     // MARK: Suggestions
@@ -431,6 +464,7 @@ final class TaskStore: ObservableObject {
         do {
             try database.write { db in
                 try db.execute("DELETE FROM task_links WHERE task IN (SELECT id FROM task_items WHERE status = 'done' AND closed < ?)", [cutoff])
+                try db.execute("DELETE FROM task_labels WHERE task IN (SELECT id FROM task_items WHERE status = 'done' AND closed < ?)", [cutoff])
                 try db.execute("DELETE FROM task_items WHERE status = 'done' AND closed < ?", [cutoff])
                 try db.execute("DELETE FROM task_due_marks WHERE task NOT IN (SELECT id FROM task_items)")
                 try db.execute("DELETE FROM task_events WHERE at < ? AND task NOT IN (SELECT id FROM task_items)", [cutoff])
@@ -459,6 +493,11 @@ final class TaskStore: ObservableObject {
                           let ref = row[2] as? String else { continue }
                     links[task, default: []].append(TaskLink(kind: kind, ref: ref, label: row[3] as? String))
                 }
+                var labels: [String: [String: String]] = [:]
+                for row in try db.rows("SELECT task, key, value FROM task_labels") {
+                    guard let task = row[0] as? String, let key = row[1] as? String, let value = row[2] as? String else { continue }
+                    labels[task, default: [:]][key] = value
+                }
                 let items = try db.rows("SELECT id, title, notes, status, source, due, created, updated, closed, waiting_on, source_ref FROM task_items").compactMap { row -> TaskItem? in
                     guard let id = row[0] as? String, let title = row[1] as? String,
                           let status = (row[3] as? String).flatMap(TaskStatus.init(rawValue:)),
@@ -468,7 +507,7 @@ final class TaskStore: ObservableObject {
                                     due: (row[5] as? Double).map(Date.init(timeIntervalSince1970:)), links: links[id] ?? [],
                                     created: Date(timeIntervalSince1970: created), updated: Date(timeIntervalSince1970: updated),
                                     closed: (row[8] as? Double).map(Date.init(timeIntervalSince1970:)), waitingOn: row[9] as? String,
-                                    sourceRef: row[10] as? String)
+                                    sourceRef: row[10] as? String, labels: labels[id] ?? [:])
                 }
                 let suggested = try db.rows("""
                     SELECT id, title, due, notes, url, meeting, automation, automation_name, created, waiting_on, source_ref
@@ -508,6 +547,10 @@ final class TaskStore: ObservableObject {
         for (position, link) in item.links.enumerated() {
             try db.execute("INSERT INTO task_links(task, position, kind, ref, label) VALUES(?, ?, ?, ?, ?)",
                            [item.id, position, link.kind.rawValue, link.ref, link.label])
+        }
+        try db.execute("DELETE FROM task_labels WHERE task = ?", [item.id])
+        for (key, value) in item.labels {
+            try db.execute("INSERT INTO task_labels(task, key, value) VALUES(?, ?, ?)", [item.id, key, value])
         }
     }
 

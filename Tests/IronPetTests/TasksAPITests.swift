@@ -95,6 +95,22 @@ final class TasksAPITests: XCTestCase {
         XCTAssertEqual(api.tasks.list().count, 2)
     }
 
+    func testLabelsAreSetFilteredAddedAndRemovedThroughTheAPI() throws {
+        let a = try api.tasks.create(CreateTaskRequest(title: "Merge it", source: .agent, labels: ["merge": "auto", "repo": "band"]))
+        _ = try api.tasks.create(CreateTaskRequest(title: "Other", source: .agent, labels: ["merge": "manual"]))
+        XCTAssertEqual(api.tasks.list(TaskListRequest(labels: ["merge": "auto"])).map(\.id), [a.id])
+        XCTAssertEqual(api.tasks.list(TaskListRequest(labels: ["merge": "auto", "repo": "web"])).count, 0)
+        let changed = try api.tasks.update(UpdateTaskRequest(id: a.id, labels: ["ci": "green"], removeLabels: ["repo"]))
+        XCTAssertEqual(changed.labels, ["merge": "auto", "ci": "green"])
+        let untouched = try api.tasks.update(UpdateTaskRequest(id: a.id, title: "Merge it now"))
+        XCTAssertEqual(untouched.labels, changed.labels, "other changes keep labels")
+        XCTAssertTrue(api.tasks.allLabels.contains { $0.key == "ci" && $0.value == "green" })
+        let tooMany = Dictionary(uniqueKeysWithValues: (0..<21).map { ("k\($0)", "v") })
+        XCTAssertThrowsError(try api.tasks.create(CreateTaskRequest(title: "Many", source: .agent, labels: tooMany))) {
+            XCTAssertEqual(($0 as? APIError)?.code, .invalid)
+        }
+    }
+
     func testChangesArriveOnTheEventBus() throws {
         let item = try api.tasks.create(CreateTaskRequest(title: "Watch events", source: .user))
         try api.tasks.close(CloseTaskRequest(id: item.id, note: "x"))

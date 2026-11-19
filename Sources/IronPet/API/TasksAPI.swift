@@ -6,6 +6,8 @@ struct TaskListRequest: Codable, Equatable {
     var statuses: [TaskStatus]?
     /// Adds done tasks when `statuses` is nil.
     var includeDone = false
+    /// Only tasks that have all of these labels with these values.
+    var labels: [String: String] = [:]
 }
 
 struct TaskWithHistory: Codable, Equatable {
@@ -22,6 +24,8 @@ struct CreateTaskRequest: Codable, Equatable {
     var links: [TaskLink] = []
     var waitingOn: String?
     var sourceRef: String?
+    /// Key/value labels, such as `merge=auto`. Data for filtering, never instructions.
+    var labels: [String: String] = [:]
     /// Who is asking: `user`, `agent:mcp`, `agent:cli`. It goes to the task's history.
     var by = "user"
 }
@@ -38,6 +42,10 @@ struct UpdateTaskRequest: Codable, Equatable {
     var links: [TaskLink]?
     /// A blank name clears who the task waits on.
     var waitingOn: String?
+    /// Labels to add or overwrite. Other labels stay.
+    var labels: [String: String] = [:]
+    /// Label keys to remove.
+    var removeLabels: [String] = []
     /// Goes to the history only, to say why something changed.
     var note: String?
     var by = "user"
@@ -100,6 +108,8 @@ final class TasksAPI: ObservableObject {
     var suggestions: [TaskSuggestion] { store.suggestions }
     /// What the Tasks section counts: tasks that need the user or are moving, not ones waiting on someone else.
     var activeCount: Int { store.activeCount }
+    /// Every label in use, sorted, for a filter.
+    var allLabels: [(key: String, value: String)] { store.allLabels }
     /// Why tasks are only in memory, when the database could not be opened.
     var unavailable: String? { store.unavailable }
 
@@ -107,8 +117,9 @@ final class TasksAPI: ObservableObject {
     func history(_ id: String) -> [TaskEvent] { store.history(id) }
 
     func list(_ request: TaskListRequest = TaskListRequest()) -> [TaskItem] {
-        if let statuses = request.statuses { return store.ordered.filter { statuses.contains($0.status) } }
-        return request.includeDone ? store.ordered : store.ordered.filter { $0.status != .done }
+        let matching = store.ordered.filter { item in request.labels.allSatisfy { item.labels[$0.key] == $0.value } }
+        if let statuses = request.statuses { return matching.filter { statuses.contains($0.status) } }
+        return request.includeDone ? matching : matching.filter { $0.status != .done }
     }
 
     func get(_ id: String) throws -> TaskWithHistory {
@@ -122,7 +133,7 @@ final class TasksAPI: ObservableObject {
     func create(_ request: CreateTaskRequest) throws -> TaskItem {
         try run {
             try store.create(title: request.title, notes: request.notes, status: request.status, source: request.source, due: request.due,
-                             links: request.links, waitingOn: request.waitingOn, sourceRef: request.sourceRef, by: request.by)
+                             links: request.links, waitingOn: request.waitingOn, sourceRef: request.sourceRef, labels: request.labels, by: request.by)
         }
     }
 
@@ -131,7 +142,8 @@ final class TasksAPI: ObservableObject {
         try run {
             try store.update(request.id, title: request.title, notes: request.notes, status: request.status,
                              due: request.clearDue ? .some(nil) : request.due.map { .some($0) },
-                             links: request.links, waitingOn: request.waitingOn.map { .some($0) }, note: request.note, by: request.by)
+                             links: request.links, waitingOn: request.waitingOn.map { .some($0) }, addLabels: request.labels,
+                             removeLabels: request.removeLabels, note: request.note, by: request.by)
         }
     }
 
