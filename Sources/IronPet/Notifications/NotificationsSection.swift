@@ -6,7 +6,8 @@ import SwiftUI
 /// their own.
 struct NotificationLinkOpener {
     var openURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
-    var openFile: (URL) -> Void = { NSWorkspace.shared.open($0) }
+    /// Reveals rather than opens: a script or agent wrote the path, and opening could launch an app or a script.
+    var openFile: (URL) -> Void = { NSWorkspace.shared.activateFileViewerSelecting([$0]) }
     var openThread: (String) -> Void = { _ in }
     var openSession: (String) -> Void = { _ in }
     var openTask: (String) -> Void = { _ in }
