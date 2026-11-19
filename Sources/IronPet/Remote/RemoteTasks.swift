@@ -58,7 +58,9 @@ struct RemoteTasks {
     func list(query: [String: [String]]) throws -> [String: Any] {
         try available()
         var request = TaskListRequest()
-        let statuses = (query["status"] ?? []).flatMap { $0.split(separator: ",").map(String.init) }
+        let given: [String] = query["status"] ?? []
+        var statuses: [String] = []
+        for value in given { statuses += value.split(separator: ",").map(String.init) }
         if !statuses.isEmpty { request.statuses = try statuses.map { try TaskValidator.status($0) } }
         request.includeDone = ["1", "true"].contains(query["include_done"]?.first ?? "")
         var labels: [String: Any] = [:]
