@@ -30,7 +30,7 @@ final class ChatAPITests: XCTestCase {
             deliver.append(onEvent)
         }
         api = APITestSupport.makeAPI(events: events, chat: session)
-        api.chat.onTurn { [unowned self] origin, event in heard.append((origin, event)) }
+        _ = api.chat.onTurn { [unowned self] origin, event in heard.append((origin, event)) }
         previousThreads = ThreadStore.directory
         threads = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-api-threads-\(UUID().uuidString)")
         ThreadStore.directory = threads

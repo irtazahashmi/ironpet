@@ -11,6 +11,8 @@ final class ChatHarness {
     let model: ChatViewModel
 
     init(session: ChatSession? = nil, voice: VoiceController? = nil, draftDirectory: URL? = nil) {
+        // A turn builds its memory preamble from the memory folder, which a test must never read or write for real.
+        TestMemory.isolate()
         let session = session ?? ChatSession(restore: false)
         self.session = session
         session.events = events

@@ -10,6 +10,7 @@ enum APITestSupport {
                         automations: [Automation] = [], clock: AutomationTestClock = AutomationTestClock(),
                         signals: SignalStore? = nil, bubbles: BubbleStore? = nil, sessions: SessionStore? = nil, chat: ChatSession? = nil,
                         meeting: MeetingController? = nil, meetingLibrary: MeetingLibrary? = nil, config: ConfigStore? = nil, petFolders: IronPetAPI.PetFolders? = nil, usage: UsageStore? = nil) -> IronPetAPI {
+        TestMemory.isolate()
         let tasks = TaskStore(database: memoryDatabase(), now: now, keepDoneDays: { 30 })
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-api-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
