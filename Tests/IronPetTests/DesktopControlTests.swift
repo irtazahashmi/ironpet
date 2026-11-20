@@ -485,17 +485,20 @@ final class DesktopControlTests: XCTestCase {
 
     @MainActor
     func testApprovalBubbleAnswersAndTimesOut() async {
-        var shown: [DesktopApproval] = [], dismissed: [DesktopApproval] = []
         var decide: ((Bool) -> Void)?
-        let approvals = DesktopApprovals(timeout: 0.05, present: { request, answer in shown.append(request); decide = answer }, dismiss: { dismissed.append($0) })
+        var dismissed: [DesktopApproval] = []
         let request = DesktopApproval(title: "press button \"Send\"", detail: "x")
-        async let yes = approvals.ask(request)
-        try? await Task.sleep(nanoseconds: 10_000_000)
+        // The answering half uses a long timeout so a slow runner cannot time the question out before the answer.
+        let answering = DesktopApprovals(timeout: 60, present: { _, answer in decide = answer }, dismiss: { dismissed.append($0) })
+        async let yes = answering.ask(request)
+        while decide == nil { await Task.yield() }
         decide?(true)
         let approved = await yes
         XCTAssertTrue(approved)
         XCTAssertTrue(dismissed.isEmpty)
-        let timedOut = await approvals.ask(request)
+        // The time-out half never answers, so only the timeout can finish it.
+        let timingOut = DesktopApprovals(timeout: 0.05, present: { _, _ in }, dismiss: { dismissed.append($0) })
+        let timedOut = await timingOut.ask(request)
         XCTAssertFalse(timedOut)
         XCTAssertEqual(dismissed, [request], "a timed out question leaves no bubble behind")
     }
