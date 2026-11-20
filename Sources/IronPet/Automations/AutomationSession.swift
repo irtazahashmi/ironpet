@@ -27,20 +27,21 @@ enum AutomationSession {
 
     /// `agentOverride` and `turnRunner` let tests run a scripted agent.
     static func run(_ automation: Automation, prompt: String, workspace: URL, timeout: TimeInterval = 900,
-                    agentOverride: ACPAgent? = nil, turnRunner: TurnRunner? = nil, now: Date = Date()) async -> Result<String, AutomationError> {
+                    agentOverride: ACPAgent? = nil, turnRunner: TurnRunner? = nil, now: Date = Date(),
+                    fork: String? = nil, onNote: ((String) -> Void)? = nil) async -> Result<String, AutomationError> {
         guard let agent = agentOverride ?? AgentCatalog.agent(id: AutomationPrompt.agentID(automation)) else {
             return .failure(.init(message: "no agent is available"))
         }
         try? FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
 
         var earlier: ChatThread?
-        if automation.action.session == "own", let last = ThreadStore.latest(automation: automation.id),
+        if automation.action.effectiveSession == "own", let last = ThreadStore.latest(automation: automation.id),
            (last.runs ?? 0) < ownRunLimit, last.agent == agent.id {
             earlier = last
         }
         // The prompt goes in as written: a slash skill such as `/am-check-emails 1` only works as the first thing in the message.
         let turn = ACPTurn(prompt: prompt, preamble: nil, workspace: workspace, resume: earlier?.id, model: automation.action.model,
-                           images: [], files: [], allowedTools: automation.action.allowedTools, disallowedTools: automation.action.disallowedTools)
+                           images: [], files: [], allowedTools: automation.action.allowedTools, disallowedTools: automation.action.disallowedTools, fork: fork)
 
         var backend: ACPBackend?
         var run = turnRunner
@@ -78,6 +79,7 @@ enum AutomationSession {
         watchdog.cancel()
         task.cancel()
         sessionID = sessionID ?? backend?.sessionID ?? earlier?.id
+        if case .unsupported(let why)? = backend?.forkOutcome { onNote?("fork not supported by \(agent.name), ran as new (\(why))") }
         backend?.cancel()
         backend?.shutdown()
 

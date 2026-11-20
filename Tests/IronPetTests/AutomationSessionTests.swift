@@ -43,7 +43,7 @@ final class AutomationSessionTests: AutomationTestCase {
     private func job(session: String? = "new", quiet: String? = nil, allowed: [String]? = nil, denied: [String]? = nil,
                      model: String? = nil, prompt: String = "/am-check-emails 1") -> Automation {
         Automation(id: "mail", name: "Check mail", trigger: .init(type: "interval", minutes: 60, clock: "wall"),
-                   action: .init(type: "prompt", prompt: prompt, agent: "cursor", model: model, quiet: quiet, session: session,
+                   action: .init(type: "prompt", prompt: prompt, agent: "cursor", model: model, quiet: quiet.map { .init(stringLiteral: $0) }, session: session,
                                  allowedTools: allowed, disallowedTools: denied))
     }
 
@@ -57,7 +57,7 @@ final class AutomationSessionTests: AutomationTestCase {
             let rig = makeRig([job(session: session)])
             var sessionRuns = 0
             var chatMessages: [String] = []
-            rig.service.runSession = { _, _ in sessionRuns += 1; return .success("x") }
+            rig.service.runSession = { _, _, _ in sessionRuns += 1; return .success("x") }
             rig.service.sendToChat = { _, message in chatMessages.append(message); return true }
             run(rig, minutes: 60)
             XCTAssertEqual(sessionRuns, 0)
@@ -70,7 +70,7 @@ final class AutomationSessionTests: AutomationTestCase {
         let rig = makeRig([job()])
         var chatMessages: [String] = []
         rig.service.sendToChat = { _, message in chatMessages.append(message); return true }
-        rig.service.runSession = { [unowned self] a, prompt in await AutomationSession.run(a, prompt: prompt, workspace: dir, turnRunner: scripted) }
+        rig.service.runSession = { [unowned self] a, prompt, _ in await AutomationSession.run(a, prompt: prompt, workspace: dir, turnRunner: scripted) }
         run(rig, minutes: 60)
         await until("first run") { ThreadStore.recent().count == 1 }
         run(rig, minutes: 60)
@@ -125,7 +125,7 @@ final class AutomationSessionTests: AutomationTestCase {
     func testQuietReplyShowsNothingButStaysInHistoryAndThread() async {
         reply = "NOTHING_NEW"
         let rig = makeRig([job(quiet: "NOTHING_NEW")])
-        rig.service.runSession = { [unowned self] a, prompt in await AutomationSession.run(a, prompt: prompt, workspace: dir, turnRunner: scripted) }
+        rig.service.runSession = { [unowned self] a, prompt, _ in await AutomationSession.run(a, prompt: prompt, workspace: dir, turnRunner: scripted) }
         run(rig, minutes: 60)
         await until("the quiet run") { rig.service.history("mail", limit: 5).first?["output"] as? String == "no changes" }
         XCTAssertNil(rig.notices.last("automation:mail"))
@@ -159,7 +159,7 @@ final class AutomationSessionTests: AutomationTestCase {
 
     func testItemDataKeepsAPromptInTheReadOnlyBackgroundRun() {
         let rig = makeRig([job(prompt: "Look at {{item.title}}")])
-        rig.service.runSession = { _, _ in .success("") }
+        rig.service.runSession = { _, _, _ in .success("") }
         XCTAssertFalse(rig.service.runsInSession(rig.store.automations[0]))
         XCTAssertTrue(rig.service.runsInSession(job()))
         XCTAssertFalse(rig.service.runsInSession(job(session: "chat")))
@@ -174,13 +174,13 @@ final class AutomationSessionTests: AutomationTestCase {
             return nil
         }
         let bad = await errors(["type": "prompt", "prompt": "x", "session": "thread:abc"])
-        XCTAssertTrue(bad?.contains("action.session must be one of chat, new, own") == true, bad ?? "no error")
+        XCTAssertTrue(bad?.contains("action.session must be one of main, chat, new, own, fork") == true, bad ?? "no error")
         let notArray = await errors(["type": "prompt", "prompt": "x", "session": "new", "disallowedTools": "Bash"])
         XCTAssertNotNil(notArray)
         let notStrings = await errors(["type": "prompt", "prompt": "x", "session": "new", "allowedTools": [1, 2]])
         XCTAssertNotNil(notStrings)
         let withoutSession = await errors(["type": "prompt", "prompt": "x", "allowedTools": ["Bash"]])
-        XCTAssertTrue(withoutSession?.contains("only applies when action.session is new or own") == true, withoutSession ?? "no error")
+        XCTAssertTrue(withoutSession?.contains("only applies when action.session is new, own or fork") == true, withoutSession ?? "no error")
         let good = await errors(["type": "prompt", "prompt": "x", "session": "own", "allowedTools": ["Bash(gh:*)"], "disallowedTools": ["WebFetch"]])
         XCTAssertNil(good)
 

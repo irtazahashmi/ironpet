@@ -200,7 +200,7 @@ final class NotificationServiceTests: AutomationTestCase {
 
     private func job(quiet: String? = nil) -> Automation {
         Automation(id: "mail", name: "Check mail", trigger: .init(type: "interval", minutes: 60, clock: "wall"),
-                   action: .init(type: "prompt", prompt: "Check my mail", agent: "cursor", quiet: quiet, session: "own"))
+                   action: .init(type: "prompt", prompt: "Check my mail", agent: "cursor", quiet: quiet.map { .init(stringLiteral: $0) }, session: "own"))
     }
 
     private let report = "Checked 3 mails.\n\nTwo need a reply:\n- Invoice from a vendor\n- Question about Friday\n\nThe third is a newsletter."
@@ -210,7 +210,7 @@ final class NotificationServiceTests: AutomationTestCase {
         let rig = makeRig([job()])
         rig.service.notifications = store
         rig.service.latestThread = { _ in "thread-7" }
-        rig.service.runSession = { [report] _, _ in .success(report) }
+        rig.service.runSession = { [report] _, _, _ in .success(report) }
         run(rig, minutes: 60)
         await until("the notification") { self.store.list().count == 1 }
 
@@ -231,7 +231,7 @@ final class NotificationServiceTests: AutomationTestCase {
     func testAQuietRunStoresNothing() async {
         let rig = makeRig([job(quiet: "NOTHING_NEW")])
         rig.service.notifications = store
-        rig.service.runSession = { _, _ in .success("NOTHING_NEW") }
+        rig.service.runSession = { _, _, _ in .success("NOTHING_NEW") }
         run(rig, minutes: 60)
         await until("the quiet run") { rig.service.history("mail", limit: 5).first?["output"] as? String == "no changes" }
         XCTAssertTrue(store.list().isEmpty)

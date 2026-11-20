@@ -15,6 +15,9 @@ final class ChatSession: ObservableObject {
             case error(String)
             /// A form the agent asked and the user answered or skipped.
             case form(ElicitationRecord)
+            /// A system notice from IronPet. The first line is the visible label, the rest is shown when it is expanded.
+            /// Empty text means the item only carries `meta` and draws nothing.
+            case notice(String)
         }
         var id = UUID()
         var kind: Kind
@@ -23,6 +26,10 @@ final class ChatSession: ObservableObject {
         var origin: String?
         /// The earlier message this one answers, when the user used Reply.
         var reply: Reply?
+        /// Context for the agent that the chat never draws. Set only by IronPet code.
+        var meta: [ItemMeta]?
+        /// True once `meta` has gone to the agent in a turn.
+        var metaSent: Bool?
     }
 
     /// A reference to an earlier message, kept with the message that answers it. It stores the full text, so the agent
@@ -50,6 +57,8 @@ final class ChatSession: ObservableObject {
         var reply: Reply? = nil
         /// The id of the automation that sent the message. Those are never put back in the Mac input.
         var automation: String? = nil
+        /// A turn that only delivers pending system notices. It has no text and never reaches the draft.
+        var notice = false
     }
 
     /// What happened to a turn that an automation started, for `onAutomation`.
@@ -245,7 +254,7 @@ final class ChatSession: ObservableObject {
     var onThreadLeft: ((String) -> Void)?
     private var automationRun: String?
     /// The `quiet` reply of an automation, by id. A turn whose final reply is exactly that text is hidden.
-    var quietReply: (String) -> String? = { _ in nil }
+    var quietReply: (String) -> [String]? = { _ in nil }
     private var turnOrigin: ChatOrigin?
 
     private(set) var threadID: String? {
@@ -660,33 +669,44 @@ final class ChatSession: ObservableObject {
 
     /// Starts a turn. Returns false, without sending, when no folder is chosen or the hooks are missing.
     @discardableResult
-    private func start(prompt: String, shots: [URL], from client: ChatOrigin? = nil, reply: Reply? = nil, automation: String? = nil) -> Bool {
+    private func start(prompt: String, shots: [URL], from client: ChatOrigin? = nil, reply: Reply? = nil, automation: String? = nil,
+                       silent: Bool = false) -> Bool {
         var prompt = prompt
-        if client != nil || automation != nil, workspace == nil {
+        let pendingMeta = items.flatMap { $0.meta != nil && $0.metaSent != true ? $0.meta! : [] }
+        // A notice turn with nothing left to deliver (a message went first and took it) has nothing to do.
+        if silent, pendingMeta.isEmpty { return true }
+        let background = client != nil || automation != nil || silent
+        if background, workspace == nil {
             // No chat has a folder yet. The no-project folder is what a chat with no code context uses.
             try? FileManager.default.createDirectory(at: Self.scratchWorkspace, withIntermediateDirectories: true)
             workspace = Self.scratchWorkspace
             needsWorkspace = false
         }
         // A message from another client uses the chat as it is, so it does not wait for a folder pick.
-        guard client != nil || automation != nil || !needsWorkspace, let workspace else {
+        guard background || !needsWorkspace, let workspace else {
             needsWorkspace = true
             return false
         }
-        if client != nil || automation != nil, state == .done || state == .failed { state = .idle }
-        if prompt.isEmpty { prompt = client == nil ? "Help me with what's on my screen." : "Help me with the attached file." }
+        if background, state == .done || state == .failed { state = .idle }
+        if prompt.isEmpty, !silent { prompt = client == nil ? "Help me with what's on my screen." : "Help me with the attached file." }
         let origin = client?.client ?? (automation != nil ? Self.automationOrigin : nil)
-        items += shots.map { Item(kind: .screenshot($0.path), origin: origin) }
-        items.append(Item(kind: .user(prompt), origin: origin, reply: reply))
+        if !silent {
+            items += shots.map { Item(kind: .screenshot($0.path), origin: origin) }
+            items.append(Item(kind: .user(prompt), origin: origin, reply: reply))
+        }
         let preamble = threadID == nil ? MemoryPreamble.build(store: FileMemoryStore.shared, workspace: workspace, firstMessage: prompt) : nil
         turnOrigin = client
-        turnSpoken = client == nil && automation == nil
+        turnSpoken = client == nil && automation == nil && !silent
         turnAskedApproval = false
         if let client { onTurn?(client, .started) }
         automationRun = automation
         if let automation { onAutomation?(automation, .started) }
-        let sent = reply.map { Self.replyPrompt($0, text: prompt) } ?? prompt
-        run(ACPTurn(prompt: Self.withVoiceMode(sent, on: voiceModeOn()), preamble: preamble, workspace: workspace, resume: threadID, model: model,
+        // Pending notices go with this turn once. What the user, a client or a tool wrote cannot contain a genuine meta tag.
+        for index in items.indices where items[index].meta != nil && items[index].metaSent != true { items[index].metaSent = true }
+        let sent = MetaTag.escape(reply.map { Self.replyPrompt($0, text: prompt) } ?? prompt)
+        var text = silent ? MetaTag.triggerLead : Self.withVoiceMode(sent, on: voiceModeOn())
+        if !pendingMeta.isEmpty { text += "\n\n" + MetaTag.block(pendingMeta) }
+        run(ACPTurn(prompt: text, preamble: preamble, workspace: workspace, resume: threadID, model: model,
                     images: shots.filter(ImageIntake.isImageFile), files: shots.filter { !ImageIntake.isImageFile($0) }))
         return true
     }
@@ -740,6 +760,8 @@ final class ChatSession: ObservableObject {
         queue.removeAll { $0.origin != nil }
         for message in queue { if let id = message.automation { onAutomation?(id, .cancelled(reason)) } }
         queue.removeAll { $0.automation != nil }
+        // A notice turn has no text for the draft. The notice stays pending and goes with the next turn.
+        queue.removeAll { $0.notice }
         guard !queue.isEmpty else { return }
         let text = queue.map(\.text).filter { !$0.isEmpty }.joined(separator: "\n\n")
         let earlier = restoredDraft
@@ -753,7 +775,7 @@ final class ChatSession: ObservableObject {
     /// Sends the oldest queued message through the normal path.
     private func sendNextQueued() {
         guard let next = queue.first else { return }
-        if start(prompt: next.text, shots: next.attachments, from: next.origin, reply: next.reply, automation: next.automation) {
+        if start(prompt: next.text, shots: next.attachments, from: next.origin, reply: next.reply, automation: next.automation, silent: next.notice) {
             queue.removeFirst()
         } else {
             restoreQueue()
@@ -790,6 +812,24 @@ final class ChatSession: ObservableObject {
         return start(prompt: prompt, shots: [], automation: automation)
     }
 
+    /// Posts a system notice into the chat. It is a message with metadata, never a user message. `text` goes to the agent
+    /// with the next turn, once, in an `<ironpet-meta>` block. A non-nil `title` also shows one line in the transcript, with
+    /// `text` shown when expanded. With no title the notice draws nothing. A newer unsent notice with the same `kind`
+    /// replaces the older one. `triggersTurn` starts a turn on the notice, behind the running turn if there is one.
+    func postSystemNotice(kind: String, text: String, title: String?, triggersTurn: Bool) {
+        let body = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty else { return }
+        items.removeAll { $0.metaSent != true && $0.meta?.contains { $0.source == kind } == true }
+        let visible = title.map { $0.components(separatedBy: .newlines).joined(separator: " ") + "\n\n" + body } ?? ""
+        items.append(Item(kind: .notice(visible), origin: nil, meta: [ItemMeta(source: kind, text: body)]))
+        guard triggersTurn else { return }
+        if isRunning {
+            if !queue.contains(where: \.notice) { queue.append(QueuedMessage(text: "", attachments: [], notice: true)) }
+        } else {
+            start(prompt: "", shots: [], silent: true)
+        }
+    }
+
     /// True while a message from this automation is queued or its turn is running.
     func hasAutomationRun(_ id: String) -> Bool {
         automationRun == id || queue.contains { $0.automation == id }
@@ -807,11 +847,11 @@ final class ChatSession: ObservableObject {
     /// calls do not matter, since a check runs tools before it finds nothing to report. The turn stays when the agent
     /// wrote any other text, asked for an approval or a form. A message the user typed waits in the queue, so it is never in the removed range. Returns true when it removed the turn.
     private func hideQuietTurn() -> Bool {
-        guard let id = automationRun, let quiet = quietReply(id)?.trimmingCharacters(in: .whitespacesAndNewlines), !quiet.isEmpty,
+        guard let id = automationRun, let replies = quietReply(id), !replies.isEmpty,
               !turnAskedApproval,
               let start = items.lastIndex(where: { if case .user = $0.kind { return true } else { return false } }),
               items[start].origin == Self.automationOrigin,
-              lastAnswer()?.trimmingCharacters(in: .whitespacesAndNewlines) == quiet else { return false }
+              let quiet = lastAnswer()?.trimmingCharacters(in: .whitespacesAndNewlines), replies.contains(quiet) else { return false }
         let rest = items[(start + 1)...]
         let onlyQuiet = rest.allSatisfy { item in
             switch item.kind {
@@ -830,7 +870,7 @@ final class ChatSession: ObservableObject {
     func hasPendingApproval(_ id: UUID) -> Bool { approvals.contains { $0.id == id } }
 
     /// Messages waiting for the agent, not counting automations'.
-    var userQueueCount: Int { queue.filter { $0.automation == nil }.count }
+    var userQueueCount: Int { queue.filter { $0.automation == nil && !$0.notice }.count }
 
     /// Forgets a sender's queued messages and the answer it was waiting for.
     func cancel(from origin: ChatOrigin) {

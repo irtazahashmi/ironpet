@@ -68,7 +68,12 @@ final class AutomationService {
     var runPrompt: (_ automation: Automation, _ prompt: String) async -> Result<String, AutomationError> = { _, _ in .failure(.init(message: "no agent")) }
     /// Runs a `prompt` action whose `session` is `new` or `own`, in its own thread with the agent's full tools. Returns the
     /// final reply. Without it (tests), those prompts run in the restricted background session.
-    var runSession: ((_ automation: Automation, _ prompt: String) async -> Result<String, AutomationError>)?
+    /// `fork` is the main chat's agent session to start from, for `session: fork`; nil for the other sessions.
+    var runSession: ((_ automation: Automation, _ prompt: String, _ fork: String?) async -> Result<String, AutomationError>)?
+    /// The main chat's agent session id for a `fork` run, or nil when the chat has none or uses another agent than the automation.
+    var forkSource: (_ automation: Automation) -> String? = { _ in nil }
+    /// Posts a system notice to the main chat: kind, title (the visible line), text (what the agent reads), whether it starts a turn.
+    var postNotice: ((_ kind: String, _ title: String, _ text: String, _ triggersTurn: Bool) -> Void)?
     /// Puts a message into the chat the user is looking at, as a queued message that runs with the chat's tools. Returns
     /// false when the chat took nothing. Without it (tests, no chat), a `prompt` action runs in the background.
     var sendToChat: ((_ automationID: String, _ message: String) -> Bool)?
@@ -325,18 +330,38 @@ final class AutomationService {
             }
         case "prompt" where runsInSession(a):
             let prompt = AutomationTemplate.render(a.action.prompt ?? "", values: values)
+            var fork: String?
+            if a.action.effectiveSession == "fork" {
+                fork = forkSource(a)
+                if fork == nil {
+                    let agent = AutomationPrompt.agentID(a)
+                    record(a.id, "warning", "fork not supported by \(AgentCatalog.agent(id: agent)?.name ?? agent), ran as new")
+                }
+            }
+            let toChat = a.action.effectiveReport == "chat" && postNotice != nil
             return runInBackground(a, done: fire.finished) { [self] in
-                switch await runSession?(a, prompt) ?? .failure(.init(message: "no agent")) {
+                switch await runSession?(a, prompt, fork) ?? .failure(.init(message: "no agent")) {
                 case .success(let answer):
-                    // The reply that means nothing happened: no bubble, but the run and its thread stay recorded.
-                    if let quiet = a.action.quiet?.trimmingCharacters(in: .whitespacesAndNewlines), !quiet.isEmpty,
-                       answer.trimmingCharacters(in: .whitespacesAndNewlines) == quiet {
+                    let trimmed = answer.trimmingCharacters(in: .whitespacesAndNewlines)
+                    // The reply that means nothing happened: no bubble or notice, but the run and its thread stay recorded.
+                    if a.action.quietReplies.contains(trimmed) || (toChat && trimmed.isEmpty) {
                         record(a.id, "ok", "no changes")
+                        afterRun(a)
+                    } else if toChat {
+                        record(a.id, "ok", "posted to chat: " + trimmed)
+                        postNotice?("automation:\(a.id)", Self.noticeTitle(a), trimmed, true)
                         afterRun(a)
                     } else {
                         finish(a, ok: true, text: answer, fire: fire, background: true, thread: latestThread(a.id))
                     }
-                case .failure(let error): finish(a, ok: false, text: error.message, fire: fire, thread: latestThread(a.id))
+                case .failure(let error):
+                    if toChat {
+                        record(a.id, "failed", error.message)
+                        postNotice?("automation:\(a.id)", Self.noticeTitle(a) + " failed", error.message, false)
+                        afterRun(a)
+                    } else {
+                        finish(a, ok: false, text: error.message, fire: fire, thread: latestThread(a.id))
+                    }
                 }
             }
         case "prompt" where runsInChat(a):
@@ -393,6 +418,11 @@ final class AutomationService {
             rest = rest[close.upperBound...]
         }
         return false
+    }
+
+    /// The line a system notice shows in the chat.
+    static func noticeTitle(_ a: Automation) -> String {
+        "Automation: " + a.name.components(separatedBy: .newlines).joined(separator: " ")
     }
 
     /// The line the chat shows above the prompt, so the user can see where the message came from.
