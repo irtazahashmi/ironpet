@@ -3,3 +3,6 @@ build/
 .swiftpm/
 __pycache__/
 .DS_Store
+.tools/
+iOS/*.xcodeproj/
+iOS/IronPetRemote/Info.plist

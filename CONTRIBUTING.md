@@ -27,6 +27,10 @@ swift test                # unit tests: config parsing, shortcuts, hook install/
 
 Check your change in the installed app, not just with `swift build`. Things like global hotkeys, Screen Recording and notifications only behave properly from `/Applications/IronPet.app`, signed with the `ironpet-dev` identity that `install.sh` creates.
 
+### iOS app
+
+`iOS/project.yml` describes the Xcode project. `xcodegen generate` in `iOS/` writes it, and `xcodebuild test -project iOS/IronPetRemote.xcodeproj -scheme IronPetRemote -destination 'platform=iOS Simulator,name=iPhone 17'` runs the tests. The app is simulator-only until it has a signing team. The Mac side is tested by `swift test`, which also runs the IronPetKit tests.
+
 ### End-to-end tests
 
 `python3 scripts/e2e.py [scenario ...]` relaunches the installed app with `--test-mode` and drives it through test-only endpoints and the real windows. Most scenarios run real `cursor-agent` and Claude Code turns, so they use your agent quota and need both signed in, with both agents turned on under Settings → General. The `setup` and `settings` scenarios click through the native windows using accessibility, so your terminal needs Accessibility permission and you shouldn't type while they run. Scenarios that change `config.json` or the hook files restore your copies afterwards.

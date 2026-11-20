@@ -3,7 +3,10 @@ import PackageDescription
 
 let package = Package(
     name: "IronPet",
-    platforms: [.macOS(.v14)],
+    platforms: [.macOS(.v14), .iOS(.v17)],
+    products: [
+        .library(name: "IronPetKit", targets: ["IronPetKit"]),
+    ],
     dependencies: [
         .package(url: "https://github.com/adam-fowler/jmespath.swift", exact: "1.0.3"),
         .package(path: "Vendor/QuickJS-Swift"),
@@ -28,6 +31,9 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-service-context.git", exact: "1.3.0"),
     ],
     targets: [
+        // The wire types and the client the iOS app shares with tests. It imports only Foundation, CryptoKit and Security, so it builds for iOS.
+        .target(name: "IronPetKit", path: "Sources/IronPetKit"),
+        .testTarget(name: "IronPetKitTests", dependencies: ["IronPetKit"], path: "Tests/IronPetKitTests"),
         .target(name: "IronPetObjC", path: "Sources/IronPetObjC"),
         .executableTarget(name: "IronPet", dependencies: ["IronPetObjC", .product(name: "JMESPath", package: "jmespath.swift"), .product(name: "QuickJS", package: "QuickJS-Swift"), .product(name: "FluidAudio", package: "FluidAudio"), .product(name: "Hummingbird", package: "hummingbird"), .product(name: "HummingbirdWebSocket", package: "hummingbird-websocket"), .product(name: "NIOTransportServices", package: "swift-nio-transport-services")], path: "Sources/IronPet"),
         .testTarget(name: "IronPetTests", dependencies: ["IronPet"], path: "Tests/IronPetTests", resources: [.copy("Fixtures")]),
