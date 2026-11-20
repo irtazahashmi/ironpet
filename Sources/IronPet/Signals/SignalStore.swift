@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 
 /// An open item that deserves a look: CI that failed, a review waiting on you, a production error. Automations create
 /// them with `alert` actions. The alerts list shows them until they are dismissed or the automation resolves them,
@@ -22,8 +25,11 @@ struct Signal: Identifiable, Equatable, Codable {
 }
 
 @MainActor
-final class SignalStore: ObservableObject {
-    @Published private(set) var signals: [Signal] = [] {
+final class SignalStore {
+    /// Fires before `signals` changes.
+    let changes = ChangeSignal()
+    private(set) var signals: [Signal] = [] {
+        willSet { changes.send() }
         didSet { events?.publish(.alertsChanged) }
     }
     /// Where changes are published for API clients.
@@ -78,3 +84,10 @@ extension SignalStore {
         if let signal = DatabaseNotice.signal(for: database) { add(signal, notify: true) }
     }
 }
+
+#if canImport(Combine)
+
+extension SignalStore: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif

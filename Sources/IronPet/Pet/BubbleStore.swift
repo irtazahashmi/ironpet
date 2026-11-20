@@ -1,8 +1,14 @@
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 
 @MainActor
-final class BubbleStore: ObservableObject {
-    @Published private(set) var bubbles: [Bubble] = [] {
+final class BubbleStore {
+    /// Fires before `bubbles` or `petOnLeft` change.
+    let changes = ChangeSignal()
+    private(set) var bubbles: [Bubble] = [] {
+        willSet { changes.send() }
         didSet {
             // Dismissal, expiry and the limit all remove bubbles; a client that saw `bubble.shown` needs to hear about each.
             let kept = Set(bubbles.map(\.id))
@@ -10,7 +16,7 @@ final class BubbleStore: ObservableObject {
         }
     }
     /// Which side of the bubbles the pet is on, so the tail points at him.
-    @Published var petOnLeft = false
+    var petOnLeft = false { willSet { changes.send() } }
     private var hovering = false
     static let limit = 4
     /// Called when a bubble goes away through `dismiss`, whether the user closed it or code did.
@@ -66,3 +72,10 @@ final class BubbleStore: ObservableObject {
         if kept.count != bubbles.count { bubbles = kept }
     }
 }
+
+#if canImport(Combine)
+
+extension BubbleStore: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif

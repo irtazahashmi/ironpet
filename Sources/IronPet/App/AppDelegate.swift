@@ -65,6 +65,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var testControl: TestControl?
     private var timers: [Timer] = []
     private var cancellables: Set<AnyCancellable> = []
+    private var changeTokens: [ChangeToken] = []
+    private var shownAppearance: String?
+    private var appliedConfig = Config()
     private let config = ConfigStore.shared
     /// Stores publish their changes here. It exists before the API, which needs the database.
     private let events = APIEventBus()
@@ -95,14 +98,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = makeMainMenu()
         config.events = events
         // Light or dark from Settings → General, applied app-wide. "System" clears the override and follows macOS.
-        config.$config
-            .map(\.window.appearance)
-            .removeDuplicates()
-            .sink { name in
-                NSApp.appearance = name == "light" ? NSAppearance(named: .aqua)
-                    : name == "dark" ? NSAppearance(named: .darkAqua) : nil
-            }
-            .store(in: &cancellables)
+        // The signal fires before `config` changes, so the new value is read one main-actor turn later.
+        let applyAppearance = { [weak self] in
+            guard let self, config.config.window.appearance != shownAppearance else { return }
+            let name = config.config.window.appearance
+            shownAppearance = name
+            NSApp.appearance = name == "light" ? NSAppearance(named: .aqua)
+                : name == "dark" ? NSAppearance(named: .darkAqua) : nil
+        }
+        applyAppearance()
+        changeTokens.append(config.changes.observe { DispatchQueue.main.async { applyAppearance() } })
         store.events = events
         signals.events = events
         announcer.bubbles.events = events
@@ -202,12 +207,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.pet.refreshMood() }
             .store(in: &cancellables)
-        config.$config
-            .removeDuplicates()
-            .scan((Config(), config.config)) { ($0.1, $1) }
-            .dropFirst()
-            .sink { [weak self] old, new in self?.apply(config: new, previous: old) }
-            .store(in: &cancellables)
+        appliedConfig = config.config
+        changeTokens.append(config.changes.observe { [weak self] in
+            DispatchQueue.main.async {
+                guard let self, self.config.config != self.appliedConfig else { return }
+                let previous = self.appliedConfig
+                self.appliedConfig = self.config.config
+                self.apply(config: self.config.config, previous: previous)
+            }
+        })
 
         setUpAutomations()
         // After the API exists: the hotkeys read the settings model, which builds the Telegram bridge over `api.chat`.

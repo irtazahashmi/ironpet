@@ -1,11 +1,15 @@
-import Combine
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 
 /// The agent sessions Ghost watches (Cursor, Claude Code, Codex and others), folded from their hook events.
 @MainActor
-final class AgentsAPI: ObservableObject {
+final class AgentsAPI {
+    /// Fires before anything this API reads changes.
+    let changes = ChangeSignal()
     private let store: SessionStore
-    private var forwarding: AnyCancellable?
+    private var forwarding: [ChangeToken] = []
 
     /// Brings the session's terminal or editor to the front. Only the Mac can do this, so the app owner sets it.
     var focusHandler: ((AgentSession) -> Void)?
@@ -14,7 +18,9 @@ final class AgentsAPI: ObservableObject {
 
     init(store: SessionStore) {
         self.store = store
-        forwarding = store.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        forwarding = [
+            store.changes.observe { [weak self] in self?.changes.send() },
+        ]
     }
 
     /// Sessions that are not idle, most urgent first.
@@ -55,3 +61,10 @@ final class AgentsAPI: ObservableObject {
         "What is going on with the \(session.source.displayName) session in \(session.workspaceName)? It is \(session.status.label.lowercased())."
     }
 }
+
+#if canImport(Combine)
+
+extension AgentsAPI: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif

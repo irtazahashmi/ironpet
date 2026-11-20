@@ -1,18 +1,22 @@
 import AppKit
-import Combine
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 
 /// What Settings, the Screen section and the pet menu show about screen capture.
 @MainActor
-final class CaptureStatusModel: ObservableObject {
-    @Published var running = false
-    @Published var accessibility = true
-    @Published var screenRecording = false
-    @Published var paused = false
-    @Published var pausedUntil: Date?
-    @Published var captureCount = 0
-    @Published var lastCapture: Date?
-    @Published var lastSkip: String?
+final class CaptureStatusModel {
+    /// Fires before any of these change.
+    let changes = ChangeSignal()
+    var running = false { willSet { changes.send() } }
+    var accessibility = true { willSet { changes.send() } }
+    var screenRecording = false { willSet { changes.send() } }
+    var paused = false { willSet { changes.send() } }
+    var pausedUntil: Date? { willSet { changes.send() } }
+    var captureCount = 0 { willSet { changes.send() } }
+    var lastCapture: Date? { willSet { changes.send() } }
+    var lastSkip: String? { willSet { changes.send() } }
 }
 
 /// A source that reports nothing and reads nothing. Test mode uses it, so an automated run never touches the real screen.
@@ -240,3 +244,10 @@ final class CaptureService: @unchecked Sendable {
         }
     }
 }
+
+#if canImport(Combine)
+
+extension CaptureStatusModel: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif

@@ -1,4 +1,3 @@
-import Combine
 import Foundation
 
 struct BriefRequest: Codable, Equatable {
@@ -35,8 +34,8 @@ final class TodayAPI {
         set { source.calendar = newValue }
     }
 
-    /// Fires when anything a brief reads may have changed.
-    var changes: AnyPublisher<Void, Never> { source.changes }
+    /// Fires when anything a brief reads may have changed, before it changes.
+    var changes: ChangeSignal { source.changes }
 
     func brief(_ request: BriefRequest) -> Brief { source.build(request.kind, weekdays: request.weekdays, day: request.day) }
 }

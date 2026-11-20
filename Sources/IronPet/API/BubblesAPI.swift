@@ -1,5 +1,7 @@
-import Combine
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 
 struct BubbleActionInfo: Codable, Equatable, Identifiable {
     var id: String
@@ -40,13 +42,17 @@ struct PressBubbleRequest: Codable, Equatable {
 /// The bubbles beside the pet. A button press goes through the table of actions the bubbles registered, so any client can
 /// press one, not only the view that draws it.
 @MainActor
-final class BubblesAPI: ObservableObject {
+final class BubblesAPI {
+    /// Fires before anything this API reads changes.
+    let changes = ChangeSignal()
     private let store: BubbleStore
-    private var forwarding: AnyCancellable?
+    private var forwarding: [ChangeToken] = []
 
     init(store: BubbleStore) {
         self.store = store
-        forwarding = store.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        forwarding = [
+            store.changes.observe { [weak self] in self?.changes.send() },
+        ]
     }
 
     /// The bubbles for the view that draws them. A bubble can carry live SwiftUI content, so a client that cannot draw it uses `list`.
@@ -97,3 +103,10 @@ final class BubblesAPI: ObservableObject {
         }
     }
 }
+
+#if canImport(Combine)
+
+extension BubblesAPI: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif

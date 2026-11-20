@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 
 struct HookEvent {
     let source: AgentSource
@@ -9,8 +12,11 @@ struct HookEvent {
 
 /// Folds hook events into per-session status and a single pet-level summary.
 @MainActor
-final class SessionStore: ObservableObject {
-    @Published private(set) var sessions: [String: AgentSession] = [:] {
+final class SessionStore {
+    /// Fires before `sessions` changes.
+    let changes = ChangeSignal()
+    private(set) var sessions: [String: AgentSession] = [:] {
+        willSet { changes.send() }
         didSet { events?.publish(.agentsChanged) }
     }
     /// Where changes are published for API clients.
@@ -323,3 +329,10 @@ final class SessionStore: ObservableObject {
         return line.count > 80 ? String(line.prefix(77)) + "…" : line
     }
 }
+
+#if canImport(Combine)
+
+extension SessionStore: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif
