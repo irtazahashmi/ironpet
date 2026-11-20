@@ -1,6 +1,8 @@
-import Combine
 import CryptoKit
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 
 /// Where automations live on disk. `~/.ironpet/automations.json` is the list, and `~/.ironpet/automations/` holds
 /// state that is not meant for hand editing. Runtime state is in `ironpet.db`. Tests point both elsewhere.
@@ -22,13 +24,18 @@ struct AutomationPaths {
 /// seconds. A file that does not validate is ignored: the last good list stays active and `onInvalid` is called once
 /// per distinct problem.
 @MainActor
-final class AutomationStore: ObservableObject {
-    @Published private(set) var automations: [Automation] = [] {
+final class AutomationStore {
+    /// Fires before `automations` or `error` changes.
+    let changes = ChangeSignal()
+    private(set) var automations: [Automation] = [] {
+        willSet { changes.send() }
         didSet { if automations != oldValue { events?.publish(.automationsChanged) } }
     }
     /// Where `automations.changed` is published for API clients.
     weak var events: APIEventBus?
-    @Published private(set) var error: String?
+    private(set) var error: String? {
+        willSet { changes.send() }
+    }
     let paths: AutomationPaths
     /// Called with the problems when the file on disk is invalid.
     var onInvalid: ((String) -> Void)?
@@ -128,6 +135,35 @@ final class AutomationStore: ObservableObject {
         (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
     }
 }
+
+extension AutomationStore {
+    /// Whether an enabled digest automation exists.
+    var hasEnabledDigest: Bool { automations.contains { $0.enabled && $0.action.type == "digest" } }
+
+    /// Calls `apply` with the current value now, then again whenever it changes. The signal fires before the list changes, so the
+    /// value is read one main-actor turn later. An unrelated automation changing does not call `apply`.
+    func observeDigestShown(_ apply: @escaping @MainActor (Bool) -> Void) -> ChangeToken {
+        var applied = hasEnabledDigest
+        apply(applied)
+        return changes.observe { [weak self] in
+            DispatchQueue.main.async {
+                // Safe: `DispatchQueue.main` runs this block on the main thread, which is the main actor's executor.
+                MainActor.assumeIsolated {
+                    guard let self, self.hasEnabledDigest != applied else { return }
+                    applied = self.hasEnabledDigest
+                    apply(applied)
+                }
+            }
+        }
+    }
+}
+
+#if canImport(Combine)
+
+extension AutomationStore: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif
 
 /// What the old `config.json` reminders and integrations become on the first launch with automations.
 enum AutomationMigration {

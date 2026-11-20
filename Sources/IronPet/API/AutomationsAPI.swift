@@ -1,5 +1,7 @@
-import Combine
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 
 enum AutomationApproval: String, Codable, Equatable {
     case pending, rejected
@@ -77,13 +79,17 @@ struct AutomationRunResult: Codable, Equatable {
 
 /// Reminders, watchers and scheduled jobs: list, get, create, update, pause, resume, run, history, approve and reject.
 @MainActor
-final class AutomationsAPI: ObservableObject {
+final class AutomationsAPI {
+    /// Fires before anything this API reads changes.
+    let changes = ChangeSignal()
     private let service: AutomationService
-    private var forwarding: AnyCancellable?
+    private var forwarding: [ChangeToken] = []
 
     init(service: AutomationService) {
         self.service = service
-        forwarding = service.store.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        forwarding = [
+            service.store.changes.observe { [weak self] in self?.changes.send() },
+        ]
     }
 
     // MARK: Reading
@@ -231,3 +237,10 @@ final class AutomationsAPI: ObservableObject {
         }
     }
 }
+
+#if canImport(Combine)
+
+extension AutomationsAPI: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif

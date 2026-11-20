@@ -547,11 +547,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.pet.showBrief(brief.kind, day: brief.window.start)
             }
         }
-        automations.$automations
-            .map { list in list.contains { $0.enabled && $0.action.type == "digest" } }
-            .removeDuplicates()
-            .sink { [weak self] shown in self?.pet.setTodayShown(shown) }
-            .store(in: &cancellables)
+        changeTokens.append(automations.observeDigestShown { [weak self] shown in self?.pet.setTodayShown(shown) })
     }
 
     /// Builds Ghost's memory on the shared database: the store with its index, the one-time cleanup of the old folder layout, the
