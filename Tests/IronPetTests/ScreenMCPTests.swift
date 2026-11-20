@@ -7,11 +7,13 @@ final class ScreenMCPTests: XCTestCase {
     private var store: CaptureStore!
     private let slack = CaptureApp(bundleId: "com.tinyspeck.slackmacgap", name: "Slack")
     private let safari = CaptureApp(bundleId: "com.apple.Safari", name: "Safari")
-    private let now = Date()
+    /// Set in setUp, not at declaration: XCTest creates every test instance when the suite starts, so a stored `Date()` can be minutes old by the time a test runs.
+    private var now = Date()
     private var ids: [Int64] = []
 
     override func setUp() async throws {
         try await super.setUp()
+        now = Date()
         store = CaptureFixtures.store()
         func add(_ app: CaptureApp, _ title: String, _ lines: [String], url: String? = nil, ago: TimeInterval) throws -> Int64 {
             guard case .stored(let id) = try store.ingest(app: app, title: title, url: url, trigger: .typingPause, lines: lines, now: now.addingTimeInterval(-ago)) else { throw XCTSkip("not stored") }
