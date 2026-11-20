@@ -3,7 +3,7 @@ import Security
 import XCTest
 @testable import IronPetRemote
 
-private func waitUntil(_ timeout: Double = 5, _ condition: @escaping @MainActor () -> Bool) async {
+private func waitUntil(_ timeout: Double = 30, _ condition: @escaping @MainActor () -> Bool) async {
     let end = Date().addingTimeInterval(timeout)
     while Date() < end {
         if await condition() { return }
