@@ -175,6 +175,51 @@ final class RemoteAPITests: XCTestCase {
         XCTAssertTrue(h.api.tasks.history(task.id).contains { $0.by == "remote:\(paired.deviceID)" })
     }
 
+    private func encoded(_ id: String) -> String {
+        id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? id
+    }
+
+    func testTaskRoutesFindAnIdWithUmlautsThroughThePercentEncodedPath() async throws {
+        let paired = try await h.pairDevice()
+        let task = try h.api.tasks.create(CreateTaskRequest(title: "Ask the Bezirksjugendwart MFR Süd-Nord about a b", source: .user))
+        XCTAssertTrue(task.id.contains("ü"))
+        let path = "/v1/tasks/\(encoded(task.id))"
+        XCTAssertTrue(path.contains("%C3%BC"))
+        let got = try await h.request("GET", path, token: paired.token)
+        XCTAssertEqual(got.status, 200)
+        let patched = try await h.request("PATCH", path, token: paired.token, body: ["title": "Renamed", "notes": "n", "status": "in_progress"])
+        XCTAssertEqual(patched.status, 200)
+        XCTAssertEqual(h.api.tasks.task(task.id)?.title, "Renamed")
+        XCTAssertEqual(h.api.tasks.task(task.id)?.notes, "n")
+        XCTAssertEqual(h.api.tasks.task(task.id)?.status, .inProgress)
+        let closed = try await h.request("POST", path + "/close", token: paired.token, body: ["note": "done"])
+        XCTAssertEqual(closed.status, 200)
+        XCTAssertEqual(h.api.tasks.task(task.id)?.status, .done)
+    }
+
+    func testEveryKindOfIdIsDecodedExactlyOnce() async throws {
+        let paired = try await h.pairDevice()
+        for title in ["Größe prüfen", "Café öffnen", "Straße"] {
+            let task = try h.api.tasks.create(CreateTaskRequest(title: title, source: .user))
+            let reply = try await h.request("GET", "/v1/tasks/\(encoded(task.id))", token: paired.token)
+            XCTAssertEqual(reply.status, 200, task.id)
+        }
+        // These ids cannot be made by the slug, so the 404 message shows what the server decoded.
+        for id in ["50%-done", "fix 🐞 now", "two words", "a%2Fb", "süd"] {
+            let reply = try await h.request("GET", "/v1/tasks/\(encoded(id))", token: paired.token)
+            XCTAssertEqual(reply.status, 404)
+            let message = (reply.json["error"] as? [String: Any])?["message"] as? String
+            XCTAssertEqual(message, "no task with id \"\(id)\"", id)
+        }
+    }
+
+    func testSuggestionRoutesDecodeTheId() async throws {
+        let paired = try await h.pairDevice()
+        let reply = try await h.request("POST", "/v1/suggestions/\(encoded("süd 🐞"))/reject", token: paired.token, body: [:])
+        XCTAssertEqual(reply.status, 404)
+        XCTAssertTrue(String(decoding: reply.data, as: UTF8.self).contains("süd 🐞"))
+    }
+
     // S7
     func testClosingNeedsANote() async throws {
         let paired = try await h.pairDevice()
