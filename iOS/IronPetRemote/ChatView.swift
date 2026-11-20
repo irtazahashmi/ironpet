@@ -42,11 +42,6 @@ struct ChatView: View {
                 }
             }
             .sheet(isPresented: $showThreads) { ThreadsSheet(model: model) }
-            .alert("Cannot do that now", isPresented: Binding(get: { model.conflictMessage != nil }, set: { if !$0 { model.conflictMessage = nil } })) {
-                Button("OK", role: .cancel) {}
-            } message: {
-                Text(model.conflictMessage ?? "")
-            }
             .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
                 guard case .success(let urls) = result else { return }
                 for url in urls {

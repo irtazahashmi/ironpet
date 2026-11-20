@@ -110,7 +110,7 @@ final class PhaseThreeUITests: XCTestCase {
         XCTAssertTrue(thread.waitForExistence(timeout: 10))
         thread.tap()
         app.buttons["open-on-mac-button"].tap()
-        XCTAssertTrue(app.staticTexts["The agent is working. Stop it first, or wait for it to finish."].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.alerts.staticTexts["The agent is working. Stop it first, or wait for it to finish."].waitForExistence(timeout: 10))
         attach("conflict")
     }
 }
