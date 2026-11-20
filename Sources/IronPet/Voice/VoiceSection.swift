@@ -12,6 +12,7 @@ struct VoiceSection: View {
 
     @ObservedObject private var config = SettingsAPI.live
     @State private var threads: [ChatThread] = []
+    @State private var search = ""
     @State private var enabling = false
     @State private var enableError: String?
     @StateObject private var player = VoiceAPI.standalone(settings: .live)
@@ -23,25 +24,31 @@ struct VoiceSection: View {
     private var wispr: Bool { active ? conversation.mode == .wispr : settings.listenWith == Config.VoiceMode.wispr }
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 20) {
-                talk
-                if settings.enabled { quickSettings }
-                history
-            }
-            .padding(20)
-            .frame(maxWidth: 560, alignment: .leading)
-            .frame(maxWidth: .infinity)
-        }
-        .frame(maxHeight: .infinity)
-        .pageHeader(IronPetSection.voice.title) {
+        // The search field filters the past conversations; the button and the settings above them are not rows.
+        ListScreen(title: IronPetSection.voice.title, search: $search, trailing: {
             Button(action: onOpenSettings) { Image(systemName: "gearshape") }
                 .buttonStyle(.borderless)
                 .help("Voice settings")
                 .accessibilityLabel("Voice settings")
+        }) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 20) {
+                    talk
+                    if settings.enabled { quickSettings }
+                    history
+                }
+                .padding(20)
+                .listColumn()
+            }
+            .frame(maxHeight: .infinity)
         }
         .onAppear(perform: refresh)
         .onChange(of: state) { if $0 == .idle { refresh() } }
+    }
+
+    /// The past conversations whose title or summary line contains `query`.
+    nonisolated static func filter(_ threads: [ChatThread], query: String) -> [ChatThread] {
+        ListSearch.filter(threads, query: query, title: \.title, description: { summary(of: $0) })
     }
 
     // MARK: Talk
@@ -159,24 +166,16 @@ struct VoiceSection: View {
                 Text("Conversations show up here, and in the chat's history, once you have talked with \(petName).")
                     .font(.caption).foregroundStyle(.secondary)
             }
-            ForEach(threads) { thread in
-                Button { onOpenThread(thread.id) } label: {
-                    HStack(spacing: 10) {
-                        Image(systemName: "mic.fill").foregroundStyle(.secondary).accessibilityHidden(true)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(thread.title).lineLimit(1)
-                            Text(Self.summary(of: thread)).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                        Spacer(minLength: 8)
-                        Text(thread.updatedAt.formatted(date: .abbreviated, time: .shortened))
-                            .font(.caption).foregroundStyle(.secondary)
-                    }
-                    .padding(.vertical, 6)
-                    .padding(.horizontal, 10)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 8))
+            let shown = Self.filter(threads, query: search)
+            if !threads.isEmpty, shown.isEmpty { NoMatches().frame(height: 160) }
+            ForEach(shown) { thread in
+                ListRow(title: thread.title, description: Self.summary(of: thread), onOpen: { onOpenThread(thread.id) },
+                        leading: { ListRowIcon(symbol: "mic.fill") },
+                        extra: { EmptyView() },
+                        trailing: { _ in
+                            Text(thread.updatedAt.formatted(date: .abbreviated, time: .shortened))
+                                .font(.caption).foregroundStyle(.secondary)
+                        })
                 .help("Open in the chat")
             }
         }

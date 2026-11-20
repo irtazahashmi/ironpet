@@ -397,7 +397,6 @@ struct IronPetWindowView: View {
                 case .tasks:
                     TaskListView(tasks: tasks, onTellGhost: actions.onTellGhost, onOpenThread: actions.onOpenThread,
                                  onOpenSession: actions.onOpenSession, focus: $model.focusTask)
-                        .pageHeader(IronPetSection.tasks.title)
                 case .transcripts:
                     if let meetings {
                         TranscriptsView(meetings: meetings, focus: $model.focusMeeting)
@@ -413,7 +412,6 @@ struct IronPetWindowView: View {
                 case .automations:
                     if let settings {
                         AutomationsSettings(model: settings).frame(maxHeight: .infinity)
-                            .pageHeader(IronPetSection.automations.title)
                     }
                 case .today:
                     if let brief {

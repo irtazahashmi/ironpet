@@ -20,8 +20,6 @@ struct TaskDetailPage: View {
     @FocusState private var titleFocused: Bool
     @FocusState private var waitingFocused: Bool
 
-    private static let readingWidth: CGFloat = 680
-
     var body: some View {
         if let task = tasks.task(id) {
             VStack(spacing: 0) {
@@ -36,10 +34,9 @@ struct TaskDetailPage: View {
                         labels(task)
                         details(task)
                     }
-                    .frame(maxWidth: Self.readingWidth, alignment: .leading)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.horizontal, 20)
+                    .padding(.horizontal, ListScreenMetrics.gutter + 4)
                     .padding(.vertical, 14)
+                    .listColumn()
                 }
             }
             .onAppear { sync(task) }
@@ -63,18 +60,7 @@ struct TaskDetailPage: View {
         if editingNotes { editingNotes = false } else { onBack() }
     }
 
-    private var backBar: some View {
-        HStack {
-            Button(action: goBack) { Label("Tasks", systemImage: "chevron.left") }
-                .buttonStyle(.borderless)
-                .keyboardShortcut(.cancelAction)
-                .accessibilityLabel("Back to the task list")
-                .help("Back to the list (Esc)")
-            Spacer()
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 6)
-    }
+    private var backBar: some View { ListBackBar(section: "Tasks", onBack: goBack) }
 
     // MARK: Header
 

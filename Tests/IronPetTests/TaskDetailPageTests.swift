@@ -21,11 +21,11 @@ final class TaskDetailPageTests: XCTestCase {
 
     func testNavigationOpensAndCloses() {
         var nav = TaskNavigation()
-        XCTAssertNil(nav.openTask)
+        XCTAssertNil(nav.opened)
         nav.open("a")
-        XCTAssertEqual(nav.openTask, "a")
+        XCTAssertEqual(nav.opened, "a")
         nav.close()
-        XCTAssertNil(nav.openTask)
+        XCTAssertNil(nav.opened)
     }
 
     // S2: markdown to attributed string
