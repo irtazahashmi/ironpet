@@ -42,12 +42,15 @@ enum AssetKind: String, Codable {
 
 /// One file a client can download and cache. Compare `sha256` with the copy it holds to know whether it is stale.
 struct AssetEntry: Codable, Equatable, Identifiable {
-    /// `sprite:<file name>` or `background:<file name>`.
+    /// `sprite:<file name>` or `background:<file name>` for a file of its own. `pet.sprite` and `chat.background` name the sheet and the image in use now.
     var id: String
     var kind: AssetKind
     var name: String
     var sha256: String
     var bytes: Int
+    /// Pixel size, for a sprite sheet.
+    var width: Int? = nil
+    var height: Int? = nil
 }
 
 struct AssetManifest: Codable, Equatable {
@@ -114,7 +117,11 @@ final class PetAPI {
     }
 
     /// Makes a gallery entry the pet.
-    func select(_ entry: PetEntry) { settings.update { PetLibrary.select(entry, in: &$0) } }
+    func select(_ entry: PetEntry) {
+        let before = settings.config.pet.sprite
+        settings.update { PetLibrary.select(entry, in: &$0) }
+        if settings.config.pet.sprite != before { events?.publish(.assetsChanged) }
+    }
 
     /// Copies a sprite sheet into the pet library and makes it the pet.
     @discardableResult
@@ -145,7 +152,9 @@ final class PetAPI {
         } else if request.id != ChatBackground.defaultID, ChatBackground.builtIn(request.id) == nil {
             throw APIError.notFound("no background with id \"\(request.id)\"")
         }
+        let before = settings.config.chat.background
         settings.update { $0.chat.background = request.id }
+        if request.id != before, request.id == ChatBackground.customID || before == ChatBackground.customID { events?.publish(.assetsChanged) }
     }
 
     /// Copies an image into the backgrounds folder and makes it the chat background. The previous custom image is removed.
@@ -161,30 +170,69 @@ final class PetAPI {
 
     // MARK: Assets
 
-    /// Every file a client can download: the pet sheets and the custom background image. The built-in backgrounds are
-    /// drawn from their ids, so they have no file.
+    /// Every file a client can download: the pet sheets, the sheet the pet shows now (`pet.sprite`) and the custom background
+    /// image. A sheet that is not in the atlas layout is left out, as the gallery skips it. The built-in backgrounds are drawn
+    /// from their ids, so they have no file.
     func manifest() async -> AssetManifest {
-        let (library, bundled, backgrounds, custom) = (library, bundled, backgrounds, settings.config.chat.customImage)
-        let assets = await Task.detached { () -> [AssetEntry] in
-            var byName: [String: URL] = [:]
-            for url in PetLibrary.sheetFiles(in: bundled) { byName[url.lastPathComponent] = url }
-            // A sheet in the user's folder replaces a bundled one of the same name.
-            for url in PetLibrary.sheetFiles(in: library) { byName[url.lastPathComponent] = url }
-            var entries = byName.keys.sorted().compactMap { Self.entry(.sprite, byName[$0]!) }
-            if let custom, let image = Self.entry(.background, backgrounds.appendingPathComponent(custom)) { entries.append(image) }
-            return entries
-        }.value
-        return AssetManifest(assets: assets)
+        AssetManifest(assets: await resolvedAssets().map(\.entry))
     }
 
     /// The bytes of an asset from `manifest`.
     func assetData(_ id: String) async throws -> Data {
-        let manifest = await manifest()
-        guard manifest.assets.contains(where: { $0.id == id }) else { throw APIError.notFound("no asset with id \"\(id)\"") }
-        let (library, bundled, backgrounds) = (library, bundled, backgrounds)
-        guard let url = Self.url(for: id, library: library, bundled: bundled, backgrounds: backgrounds),
-              let data = try? Data(contentsOf: url) else { throw APIError.failed("the asset could not be read") }
+        guard let asset = await resolvedAssets().first(where: { $0.entry.id == id }) else { throw APIError.notFound("no asset with id \"\(id)\"") }
+        return try Self.read(asset.url)
+    }
+
+    /// The bytes of the asset with this content hash. Two ids can share one hash (`pet.sprite` and the gallery entry it is).
+    func assetData(sha256: String) async throws -> (entry: AssetEntry, data: Data) {
+        guard let asset = await resolvedAssets().first(where: { $0.entry.sha256 == sha256 }) else { throw APIError.notFound("no asset with this hash") }
+        return (asset.entry, try Self.read(asset.url))
+    }
+
+    nonisolated private static func read(_ url: URL) throws -> Data {
+        guard let data = try? Data(contentsOf: url) else { throw APIError.failed("the asset could not be read") }
         return data
+    }
+
+    private struct ResolvedAsset { var entry: AssetEntry; var url: URL }
+
+    /// The hashes of every sheet cost a read of each file, and a phone asks for the manifest on each mood change. The result is kept
+    /// until a file's name, size or date changes, or the pet or background setting does.
+    private var resolvedCache: (key: [String], assets: [ResolvedAsset])?
+
+    private func resolvedAssets() async -> [ResolvedAsset] {
+        let (library, bundled, backgrounds, custom, sprite) = (library, bundled, backgrounds, settings.config.chat.customImage, settings.config.pet.sprite)
+        let spriteFile = (sprite.flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) })
+            .flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]) }
+        let key = signature() + PetFolderSignature(folder: Paths.petDir).items
+            + ["sprite|\(sprite ?? "")|\(spriteFile?.fileSize ?? 0)|\(spriteFile?.contentModificationDate?.timeIntervalSince1970 ?? 0)", "custom|\(custom ?? "")"]
+        if let cached = resolvedCache, cached.key == key { return cached.assets }
+        let assets = await Task.detached { () -> [ResolvedAsset] in
+            var byName: [String: URL] = [:]
+            for url in PetLibrary.sheetFiles(in: bundled) { byName[url.lastPathComponent] = url }
+            // A sheet in the user's folder replaces a bundled one of the same name.
+            for url in PetLibrary.sheetFiles(in: library) { byName[url.lastPathComponent] = url }
+            var assets = byName.keys.sorted().compactMap { name in Self.entry(.sprite, byName[name]!).map { ResolvedAsset(entry: $0, url: byName[name]!) } }
+            // The sheet the pet shows now, under one id whatever its file is called. Same order as `Atlas.loadDefault`.
+            var candidates: [URL] = []
+            if let sprite, !sprite.isEmpty { candidates.append(URL(fileURLWithPath: (sprite as NSString).expandingTildeInPath)) }
+            candidates += [Paths.petDir.appendingPathComponent("spritesheet.webp"), Paths.petDir.appendingPathComponent("spritesheet.png")]
+            candidates += PetLibrary.sheetFiles(in: bundled).filter { $0.deletingPathExtension().lastPathComponent.lowercased() == "ghost" }
+            if let url = candidates.first(where: { Self.entry(.sprite, $0) != nil }), var active = Self.entry(.sprite, url) {
+                active.id = "pet.sprite"
+                assets.insert(ResolvedAsset(entry: active, url: url), at: 0)
+            }
+            if let custom, !custom.contains("/") {
+                let url = backgrounds.appendingPathComponent(custom)
+                if var image = Self.entry(.background, url) {
+                    image.id = "chat.background"
+                    assets.append(ResolvedAsset(entry: image, url: url))
+                }
+            }
+            return assets
+        }.value
+        resolvedCache = (key, assets)
+        return assets
     }
 
     /// Publishes `assets.changed` when a sheet or the custom image was added, removed or rewritten since the last check.
@@ -202,21 +250,14 @@ final class PetAPI {
     }
 
     nonisolated private static func entry(_ kind: AssetKind, _ url: URL) -> AssetEntry? {
+        var size: (width: Int, height: Int)?
+        if kind == .sprite {
+            guard let found = Atlas.pixelSize(of: url), Atlas.isValid(width: found.width, height: found.height) else { return nil }
+            size = found
+        }
         guard let data = try? Data(contentsOf: url) else { return nil }
         let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
-        return AssetEntry(id: "\(kind.rawValue):\(url.lastPathComponent)", kind: kind, name: url.lastPathComponent, sha256: hash, bytes: data.count)
-    }
-
-    nonisolated private static func url(for id: String, library: URL, bundled: URL?, backgrounds: URL) -> URL? {
-        let parts = id.split(separator: ":", maxSplits: 1).map(String.init)
-        guard parts.count == 2, !parts[1].contains("/") else { return nil }
-        switch parts[0] {
-        case "sprite":
-            let user = library.appendingPathComponent(parts[1])
-            if FileManager.default.fileExists(atPath: user.path) { return user }
-            return bundled?.appendingPathComponent(parts[1])
-        case "background": return backgrounds.appendingPathComponent(parts[1])
-        default: return nil
-        }
+        return AssetEntry(id: "\(kind.rawValue):\(url.lastPathComponent)", kind: kind, name: url.lastPathComponent, sha256: hash, bytes: data.count,
+                          width: size?.width, height: size?.height)
     }
 }

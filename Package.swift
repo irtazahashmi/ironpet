@@ -31,11 +31,11 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-service-context.git", exact: "1.3.0"),
     ],
     targets: [
-        // The wire types and the client the iOS app shares with tests. It imports only Foundation, CryptoKit and Security, so it builds for iOS.
+        // The wire types, the client and the sprite atlas that the iOS app and the Mac app share. It imports only Foundation, CryptoKit, Security, CoreGraphics and ImageIO, so it builds for iOS.
         .target(name: "IronPetKit", path: "Sources/IronPetKit"),
         .testTarget(name: "IronPetKitTests", dependencies: ["IronPetKit"], path: "Tests/IronPetKitTests"),
         .target(name: "IronPetObjC", path: "Sources/IronPetObjC"),
-        .executableTarget(name: "IronPet", dependencies: ["IronPetObjC", .product(name: "JMESPath", package: "jmespath.swift"), .product(name: "QuickJS", package: "QuickJS-Swift"), .product(name: "FluidAudio", package: "FluidAudio"), .product(name: "Hummingbird", package: "hummingbird"), .product(name: "HummingbirdWebSocket", package: "hummingbird-websocket"), .product(name: "NIOTransportServices", package: "swift-nio-transport-services")], path: "Sources/IronPet"),
+        .executableTarget(name: "IronPet", dependencies: ["IronPetKit", "IronPetObjC", .product(name: "JMESPath", package: "jmespath.swift"), .product(name: "QuickJS", package: "QuickJS-Swift"), .product(name: "FluidAudio", package: "FluidAudio"), .product(name: "Hummingbird", package: "hummingbird"), .product(name: "HummingbirdWebSocket", package: "hummingbird-websocket"), .product(name: "NIOTransportServices", package: "swift-nio-transport-services")], path: "Sources/IronPet"),
         .testTarget(name: "IronPetTests", dependencies: ["IronPet"], path: "Tests/IronPetTests", resources: [.copy("Fixtures")]),
     ]
 )

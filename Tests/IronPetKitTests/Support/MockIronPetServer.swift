@@ -38,6 +38,13 @@ final class MockIronPetServer: @unchecked Sendable {
     private var buffer: [RemoteEvent] = []
     private var _gapOnNextConnect = false
     private var _socketURLs: [String] = []
+    private var _pet = RemotePet(name: "Ghost", mood: "idle", badge: 0, tricks: ["Wave", "Jump", "Dance", "Zoomies"])
+    private var _bubbles: [RemoteBubble] = MockIronPetServer.sampleBubbles
+    private var _agents: [RemoteAgent] = MockIronPetServer.sampleAgents
+    private var _alerts: [RemoteAlert] = MockIronPetServer.sampleAlerts
+    private var _today: [String: RemoteToday] = ["brief": MockIronPetServer.sampleBrief, "recap": MockIronPetServer.sampleRecap]
+    private var _assetData: [String: Data] = [:]
+    private var _assets: [RemoteAsset] = []
     private let encoder = WireJSON.makeEncoder()
     private(set) var port: UInt16 = 0
     private let tlsIdentity: SecIdentity?
@@ -63,6 +70,36 @@ final class MockIronPetServer: @unchecked Sendable {
         RemoteSuggestion(id: "s-2", title: "Check the flaky build", origin: "automation", originDetail: "CI watcher (a1)"),
     ]
 
+    static let sampleBubbles: [RemoteBubble] = [
+        RemoteBubble(id: "session:a", symbol: "checkmark.circle.fill", title: "demo-app: Done", body: "Edited 3 files",
+                     actions: [RemoteBubbleAction(id: "act-open", title: "Open", style: "primary"), RemoteBubbleAction(id: "act-snooze", title: "Snooze")]),
+        RemoteBubble(id: "approval:1", symbol: "hand.raised.fill", title: "Ghost wants to: Run this command?", macOnly: true),
+    ]
+
+    static let sampleAgents: [RemoteAgent] = [
+        RemoteAgent(id: "s-needs", status: .needsInput, statusLabel: "Needs input", workspace: "demo-app", prompt: "Fix the login test",
+                    detail: "Allow npm test?", summary: "Edited login.ts"),
+        RemoteAgent(id: "s-run", source: "codex", sourceName: "Codex", status: .running, statusLabel: "Running", workspace: "api"),
+        RemoteAgent(id: "s-done", status: .done, statusLabel: "Done", workspace: "docs", summary: "Edited 2 files", editedFiles: ["/a/README.md", "/a/SPEC.md"],
+                    lastResponse: "Updated the docs."),
+    ]
+
+    static let sampleAlerts: [RemoteAlert] = [
+        RemoteAlert(id: "al-ci", title: "CI failed on main", subtitle: "build #42", label: "CI failed", mood: "failed", url: "https://example.com/build/42"),
+        RemoteAlert(id: "al-pr", title: "Review requested", label: "Review", canAsk: false),
+    ]
+
+    static let sampleBrief = RemoteToday(kind: "brief", title: "Morning brief", lines: ["1 task needs you"], sections: [
+        TodaySection(id: "tasks", title: "Needs you", items: [TodayItem(id: "i-task", symbol: "checklist", title: "Review the contract", target: TodayTarget(type: .task, id: "t-needs"))]),
+        TodaySection(id: "agents", title: "Agents", items: [TodayItem(id: "i-session", symbol: "terminal", title: "demo-app", target: TodayTarget(type: .session, id: "s-needs"))]),
+        TodaySection(id: "alerts", title: "Alerts", items: [TodayItem(id: "i-alert", symbol: "exclamationmark.triangle", title: "CI failed", target: TodayTarget(type: .alert, id: "al-ci", url: "https://example.com/build/42"))]),
+        TodaySection(id: "meetings", title: "Meetings", items: [TodayItem(id: "i-meeting", symbol: "person.2", title: "Standup", target: TodayTarget(type: .meeting, id: "2026-01-01-standup"))]),
+    ])
+
+    static let sampleRecap = RemoteToday(kind: "recap", title: "Today's recap", sections: [
+        TodaySection(id: "done", title: "Finished", items: [TodayItem(id: "r-1", title: "Ship the beta", target: TodayTarget(type: .task, id: "t-done"))]),
+    ])
+
     // MARK: State
 
     var baseURL: URL { URL(string: "\(tlsIdentity == nil ? "http" : "https")://127.0.0.1:\(port)")! }
@@ -85,6 +122,22 @@ final class MockIronPetServer: @unchecked Sendable {
     /// The request target of every socket upgrade, such as `/v1/events?since=3`.
     var socketURLs: [String] { lock.lock(); defer { lock.unlock() }; return _socketURLs }
     var openSocketCount: Int { lock.lock(); defer { lock.unlock() }; return sockets.count }
+
+    var pet: RemotePet { get { lock.lock(); defer { lock.unlock() }; return _pet } set { lock.lock(); _pet = newValue; lock.unlock() } }
+    var bubbles: [RemoteBubble] { get { lock.lock(); defer { lock.unlock() }; return _bubbles } set { lock.lock(); _bubbles = newValue; lock.unlock() } }
+    var agents: [RemoteAgent] { get { lock.lock(); defer { lock.unlock() }; return _agents } set { lock.lock(); _agents = newValue; lock.unlock() } }
+    var alerts: [RemoteAlert] { get { lock.lock(); defer { lock.unlock() }; return _alerts } set { lock.lock(); _alerts = newValue; lock.unlock() } }
+    /// The sheet the Mac serves as `pet.sprite`. Setting a new one changes the manifest, like picking another pet on the Mac.
+    func setSprite(_ data: Data) {
+        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        let atlas = Atlas.load(data: data)
+        lock.lock()
+        _assetData[hash] = data
+        _assets.removeAll { $0.id == "pet.sprite" }
+        _assets.insert(RemoteAsset(id: "pet.sprite", name: "sheet.png", sha256: hash, bytes: data.count, width: atlas == nil ? nil : Atlas.width,
+                                   height: atlas.map { $0.rows.count * Int(Atlas.cell.height) }), at: 0)
+        lock.unlock()
+    }
 
     func count(_ line: String) -> Int { requests.filter { $0.line == line }.count }
 
@@ -201,6 +254,7 @@ final class MockIronPetServer: @unchecked Sendable {
             return fail(connection, 401, "unauthorized", "unauthorized")
         }
         let parts = request.path.split(separator: "/").map(String.init)
+        if routeResources(request, parts, connection) { return }
         switch (request.method, parts.count) {
         case ("POST", 2) where request.path == APIPath.pair: pair(request, connection)
         case ("GET", 3) where parts[1] == "pair": poll(parts[2], request, connection)
@@ -218,6 +272,69 @@ final class MockIronPetServer: @unchecked Sendable {
         case ("POST", 4) where parts[1] == "suggestions" && parts[3] == "reject": reject(parts[2], connection)
         default: fail(connection, 404, "not_found", "not found")
         }
+    }
+
+    // MARK: Phase 2 routes
+
+    /// Answers the pet, bubble, agent, alert, today and asset routes. Returns false for any other request.
+    private func routeResources(_ request: Recorded, _ parts: [String], _ connection: NWConnection) -> Bool {
+        guard parts.count >= 2, parts[0] == "v1" else { return false }
+        let get = request.method == "GET", post = request.method == "POST"
+        switch (parts[1], parts.count) {
+        case ("pet", 2) where get: respond(connection, 200, pet)
+        case ("pet", 4) where post && parts[2] == "tricks": respond(connection, 200, Data("{}".utf8))
+        case ("bubbles", 2) where get: respond(connection, 200, BubbleListResponse(bubbles: bubbles))
+        case ("bubbles", 5) where post && parts[3] == "actions":
+            lock.lock()
+            let found = _bubbles.first { $0.id == parts[2] }
+            let known = found.map { !$0.macOnly && $0.actions.contains { $0.id == parts[4] } } ?? false
+            if known { _bubbles.removeAll { $0.id == parts[2] } }
+            lock.unlock()
+            guard known else { fail(connection, 404, "not_found", "no such action"); return true }
+            respond(connection, 200, Data("{}".utf8))
+            publish(RemoteEvent.bubbleDismissed, id: parts[2])
+        case ("agents", 2) where get: respond(connection, 200, AgentListResponse(agents: agents))
+        case ("agents", 3) where get:
+            guard let agent = agents.first(where: { $0.id == parts[2] }) else { fail(connection, 404, "not_found", "no session"); return true }
+            respond(connection, 200, agent)
+        case ("agents", 4) where post && parts[3] == "acknowledge":
+            lock.lock()
+            let known = _agents.contains { $0.id == parts[2] }
+            _agents.removeAll { $0.id == parts[2] }
+            lock.unlock()
+            guard known else { fail(connection, 404, "not_found", "no session"); return true }
+            respond(connection, 200, Data("{}".utf8))
+            publish(RemoteEvent.agentsChanged)
+        case ("agents", 4) where post && parts[3] == "ask": respond(connection, 200, Data(#"{"outcome":"sent"}"#.utf8))
+        case ("alerts", 2) where get: respond(connection, 200, AlertListResponse(alerts: alerts))
+        case ("alerts", 3) where post && parts[2] == "dismiss-all":
+            lock.lock(); _alerts = []; lock.unlock()
+            respond(connection, 200, Data("{}".utf8))
+            publish(RemoteEvent.alertsChanged)
+        case ("alerts", 4) where post && parts[3] == "dismiss":
+            lock.lock()
+            let known = _alerts.contains { $0.id == parts[2] }
+            _alerts.removeAll { $0.id == parts[2] }
+            lock.unlock()
+            guard known else { fail(connection, 404, "not_found", "no alert"); return true }
+            respond(connection, 200, Data("{}".utf8))
+            publish(RemoteEvent.alertsChanged)
+        case ("alerts", 4) where post && parts[3] == "ask": respond(connection, 200, Data(#"{"outcome":"sent"}"#.utf8))
+        case ("today", 2) where get:
+            let kind = request.query.split(separator: "&").compactMap { $0.hasPrefix("kind=") ? String($0.dropFirst(5)) : nil }.first ?? "brief"
+            lock.lock(); let today = _today[kind]; lock.unlock()
+            guard let today else { fail(connection, 400, "invalid", "kind must be brief or recap"); return true }
+            respond(connection, 200, today)
+        case ("assets", 3) where get && parts[2] == "manifest":
+            lock.lock(); let assets = _assets; lock.unlock()
+            respond(connection, 200, AssetManifestResponse(assets: assets))
+        case ("assets", 3) where get:
+            lock.lock(); let data = _assetData[parts[2]]; lock.unlock()
+            guard let data else { fail(connection, 404, "not_found", "no asset"); return true }
+            respond(connection, 200, data)
+        default: return false
+        }
+        return true
     }
 
     private func pair(_ request: Recorded, _ connection: NWConnection) {

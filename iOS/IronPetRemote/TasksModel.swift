@@ -11,11 +11,11 @@ final class TasksModel {
     var errorMessage: String?
 
     @ObservationIgnored let client: IronPetClient
-    @ObservationIgnored private let events: EventConnection
+    @ObservationIgnored private let events: any EventSignalSource
     @ObservationIgnored private let onUnauthorized: () -> Void
     @ObservationIgnored private var listener: Task<Void, Never>?
 
-    init(client: IronPetClient, events: EventConnection? = nil, onUnauthorized: @escaping () -> Void) {
+    init(client: IronPetClient, events: (any EventSignalSource)? = nil, onUnauthorized: @escaping () -> Void) {
         self.client = client
         self.events = events ?? EventConnection(client: client)
         self.onUnauthorized = onUnauthorized

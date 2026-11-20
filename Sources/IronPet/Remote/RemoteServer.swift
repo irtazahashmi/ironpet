@@ -42,7 +42,8 @@ struct RemoteGate: RouterMiddleware {
         } catch {
             response = RemoteServer.errorResponse(error)
         }
-        response.headers[.cacheControl] = "no-store"
+        // Asset routes set their own cache rule: the files hold no personal data and a hash names them for good.
+        if response.headers[.cacheControl] == nil { response.headers[.cacheControl] = "no-store" }
         let elapsed = ContinuousClock.now - started
         let ms = Int(elapsed.components.seconds * 1000 + elapsed.components.attoseconds / 1_000_000_000_000_000)
         service.log(RemoteAccessRow(at: Date(), deviceID: context.device?.id, method: request.method.rawValue,
@@ -325,6 +326,77 @@ final class RemoteServer {
             let body = try await Self.object(request, context)
             return try await self.call(context) { try $0.reject(id, body) }
         }
+        addResourceRoutes(to: router)
+    }
+
+    /// Pet, bubbles, agents, alerts, today and assets (phase 2).
+    private func addResourceRoutes(to router: Router<RemoteContext>) {
+        router.get("/v1/pet") { [self] _, context in await self.resources(context) { await $0.pet() } }
+        router.post("/v1/pet/tricks/:name") { [self] _, context in
+            let name = Self.parameter(context, "name")
+            return await self.resources(context) { try $0.trick(name) }
+        }
+        router.get("/v1/bubbles") { [self] _, context in await self.resources(context) { $0.bubbles() } }
+        router.post("/v1/bubbles/:id/actions/:action") { [self] _, context in
+            let id = Self.parameter(context, "id"), action = Self.parameter(context, "action")
+            return await self.resources(context) { try $0.press(bubble: id, action: action) }
+        }
+        router.get("/v1/agents") { [self] _, context in await self.resources(context) { $0.agents() } }
+        router.get("/v1/agents/:id") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.resources(context) { try $0.agent(id) }
+        }
+        router.post("/v1/agents/:id/acknowledge") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.resources(context) { try $0.acknowledge(id) }
+        }
+        router.post("/v1/agents/:id/ask") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.resources(context) { try await $0.askAboutAgent(id) }
+        }
+        router.get("/v1/alerts") { [self] _, context in await self.resources(context) { $0.alerts() } }
+        router.post("/v1/alerts/dismiss-all") { [self] _, context in await self.resources(context) { $0.dismissAllAlerts() } }
+        router.post("/v1/alerts/:id/dismiss") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.resources(context) { try $0.dismissAlert(id) }
+        }
+        router.post("/v1/alerts/:id/ask") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.resources(context) { try await $0.askAboutAlert(id) }
+        }
+        router.get("/v1/today") { [self] request, context in
+            let kind = Self.query(request)["kind"]?.first
+            return await self.resources(context) { try $0.today(kind: kind) }
+        }
+        router.get("/v1/assets/manifest") { [self] _, context in await self.resources(context) { await $0.manifest() } }
+        router.get("/v1/assets/:sha256") { [self] request, context in
+            let hash = Self.parameter(context, "sha256").lowercased()
+            return await self.asset(hash, request: request, context)
+        }
+    }
+
+    /// A file by content hash. The hash is its name for good, so the answer is cacheable for a year and a repeat request with the same
+    /// `If-None-Match` gets 304.
+    private func asset(_ hash: String, request: Request, _ context: RemoteContext) async -> Response {
+        guard context.device != nil else { return Self.error(401, "unauthorized", "unauthorized") }
+        let etag = "\"\(hash)\""
+        do {
+            let found = try await RemoteResources(api: api, device: context.device?.id ?? "").asset(sha256: hash)
+            var headers: HTTPFields = [.cacheControl: "private, max-age=31536000, immutable", .eTag: etag]
+            if request.headers[.ifNoneMatch] == etag { return Response(status: .notModified, headers: headers) }
+            headers[.contentType] = found.contentType
+            return Response(status: .ok, headers: headers, body: .init(byteBuffer: ByteBuffer(bytes: found.data)))
+        } catch {
+            return Self.errorResponse(RemoteFailure(error))
+        }
+    }
+
+    /// Runs a call on `IronPetAPI` on the main actor and turns its result or error into a response.
+    private func resources(_ context: RemoteContext, status: Int = 200, _ body: @MainActor (RemoteResources) async throws -> [String: Any]) async -> Response {
+        guard let device = context.device else { return Self.error(401, "unauthorized", "unauthorized") }
+        do { return Self.json(status, try await body(RemoteResources(api: api, device: device.id))) } catch {
+            return Self.errorResponse(RemoteFailure(error))
+        }
     }
 
     /// Runs a task call on the main actor, as every other client of `IronPetAPI` does, and turns its result or error into a response.
@@ -438,6 +510,12 @@ final class RemoteServer {
             throw RemoteFailure.invalid("the body must be a JSON object")
         }
         return object
+    }
+
+    /// A path parameter with its percent escapes decoded, as the phone's URL encoder writes a trick named "Drink water".
+    nonisolated static func parameter(_ context: RemoteContext, _ name: String) -> String {
+        let raw = context.parameters.get(name) ?? ""
+        return raw.removingPercentEncoding ?? raw
     }
 
     nonisolated static func query(_ request: Request) -> [String: [String]] {

@@ -46,6 +46,7 @@ targets:
     sources:
       - IronPetRemoteTests
       - ../Tests/IronPetKitTests/Support/MockIronPetServer.swift
+      - ../Tests/IronPetKitTests/Support/TestSheets.swift
     dependencies:
       - target: IronPetRemote
       - package: IronPetKit
@@ -60,6 +61,7 @@ targets:
     sources:
       - IronPetRemoteUITests
       - ../Tests/IronPetKitTests/Support/MockIronPetServer.swift
+      - ../Tests/IronPetKitTests/Support/TestSheets.swift
     dependencies:
       - target: IronPetRemote
       - package: IronPetKit

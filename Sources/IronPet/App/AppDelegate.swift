@@ -606,7 +606,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 id: Self.desktopApprovalID(request), symbol: "hand.raised.fill", tint: .warn, title: request.title,
                 subtitle: "An agent wants to act on your Mac.", body: request.detail,
                 buttons: [.init(title: "Approve", primary: true) { decide(true) }, .init(title: "Reject", destructive: true) { decide(false) }],
-                systemNotification: true))
+                systemNotification: true, macOnly: true))
         }, dismiss: { [weak self] request in self?.announcer.bubbles.dismiss(Self.desktopApprovalID(request)) })
         desktopApprovals = approvals
         var dependencies = DesktopService.Dependencies(privacy: capture.privacy)
