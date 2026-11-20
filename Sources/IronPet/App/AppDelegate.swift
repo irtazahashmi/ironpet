@@ -314,9 +314,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pet.settings = settingsModel
         pet.onSettings = { [weak self] in self?.showSettings(tab: nil) }
         pet.onScreenSettings = { [weak self] in self?.showSettings(tab: "screen") }
-        pet.voiceConversation = voiceMode.conversation
-        pet.onVoiceToggle = { [weak self] in self?.voiceMode.toggle() }
-        pet.onVoiceSettings = { [weak self] in self?.showSettings(tab: "voice") }
         settingsModel.showScreenSection = { [weak self] in self?.pet.showWindow(.screen) }
         setUpScreenCapture(database)
         setUpDesktopControl()
@@ -432,6 +429,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // After the turn's own state change has been handled.
             DispatchQueue.main.async { self.openJob(id) }
         }.store(in: &cancellables)
+        chat.voiceModeOn = { ConfigStore.shared.config.voiceMode.enabled }
         chat.jobFollowUp = { [weak service] thread, text in
             guard let service, let job = service.job(thread: thread), job.state.isActive else { return false }
             return (try? service.followUp(job.id, message: text)) != nil

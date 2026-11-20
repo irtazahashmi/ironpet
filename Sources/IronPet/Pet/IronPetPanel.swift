@@ -20,8 +20,6 @@ final class IronPetPanel: NSPanel {
     private(set) var autoHidden = false
     private let model: IronPetWindowModel
     private let session: ChatViewModel?
-    /// Whether the window has a Voice page, so ⌘N counts its row.
-    var hasVoice = false
     private var observers: [NSObjectProtocol] = []
 
     init<Content: View>(model: IronPetWindowModel, session: ChatViewModel?, content: Content) {
@@ -130,7 +128,7 @@ final class IronPetPanel: NSPanel {
 
     /// The rows the sidebar shows; ⌘1 to ⌘9 index into this list.
     private var sidebarSections: [IronPetSection] {
-        IronPetSection.shown(chat: session != nil, voice: hasVoice, transcripts: true, automations: true, today: model.todayShown)
+        IronPetSection.shown(chat: session != nil, transcripts: true, automations: true, today: model.todayShown)
     }
 
     private var onChat: Bool { session != nil && model.section == .chat }

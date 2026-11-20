@@ -68,12 +68,12 @@ final class IronPetWindowTests: XCTestCase {
         XCTAssertNil(IronPetSection.forShortcut(nil, in: all))
     }
 
-    func testVoiceComesRightAfterChat() {
-        let all = IronPetSection.shown(chat: true, voice: true, transcripts: true, automations: true)
-        XCTAssertEqual(IronPetSection.forShortcut("2", in: all), .voice)
-        XCTAssertEqual(IronPetSection.forShortcut("3", in: all), .agents)
-        // Voice and Notifications both add a row, so ⌘9 is Actions and Automations has no number.
-        XCTAssertEqual(IronPetSection.forShortcut("9", in: all), .actions)
+    func testNoVoiceRowInTheSidebar() {
+        let all = IronPetSection.shown(chat: true, transcripts: true, automations: true)
+        XCTAssertFalse(IronPetSection.allCases.map(\.rawValue).contains("voice"))
+        XCTAssertEqual(IronPetSection.forShortcut("2", in: all), .agents)
+        // Nine rows with Chat, Notifications and Today hidden: ⌘9 is Automations.
+        XCTAssertEqual(IronPetSection.forShortcut("9", in: all), .automations)
     }
 
     func testHiddenRowsDoNotTakeANumber() {

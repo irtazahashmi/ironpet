@@ -3,14 +3,13 @@ import SwiftUI
 
 /// A page of the ironpet window, in sidebar order.
 enum IronPetSection: String, CaseIterable, Identifiable {
-    case chat, voice, agents, alerts, notifications, tasks, transcripts, screen, actions, automations, today
+    case chat, agents, alerts, notifications, tasks, transcripts, screen, actions, automations, today
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .chat: return "Chat"
-        case .voice: return "Voice"
         case .agents: return "Agents"
         case .alerts: return "Alerts"
         case .notifications: return "Notifications"
@@ -26,7 +25,6 @@ enum IronPetSection: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .chat: return "bubble.left.and.bubble.right"
-        case .voice: return "mic"
         case .agents: return "person.2"
         case .alerts: return "bell"
         case .notifications: return "tray"
@@ -39,12 +37,12 @@ enum IronPetSection: String, CaseIterable, Identifiable {
         }
     }
 
-    /// The sections the sidebar lists, in order. Chat, Voice, Transcripts and Automations need their backing object. Today
+    /// The sections the sidebar lists, in order. Chat, Transcripts and Automations need their backing object. Today
     /// is listed only while a brief or recap automation is on, and comes last so the other rows keep their ⌘N.
-    static func shown(chat: Bool, voice: Bool = false, transcripts: Bool, automations: Bool, today: Bool = false,
+    static func shown(chat: Bool, transcripts: Bool, automations: Bool, today: Bool = false,
                       notifications: Bool = true) -> [IronPetSection] {
         allCases.filter {
-            ($0 != .chat || chat) && ($0 != .voice || voice) && ($0 != .transcripts || transcripts) && ($0 != .automations || automations)
+            ($0 != .chat || chat) && ($0 != .transcripts || transcripts) && ($0 != .automations || automations)
                 && ($0 != .today || today) && ($0 != .notifications || notifications)
         }
     }
@@ -209,10 +207,6 @@ struct IronPetWindowView: View {
     var settings: SettingsModel?
     /// The Today page's content. Nil in tests that do not show it.
     var brief: BriefModel?
-    /// Voice mode's conversation, for the Voice page. Nil in previews and tests that do not show it; its row is hidden then.
-    var voice: VoiceConversation?
-    /// The Voice page's past conversations. Sample threads in previews.
-    var voiceThreads: @Sendable () -> [ChatThread] = { VoiceHistory.threads() }
     let actions: SessionActions
     @ObservedObject private var config = SettingsAPI.live
 
@@ -256,7 +250,7 @@ struct IronPetWindowView: View {
     }
 
     private var shown: [IronPetSection] {
-        IronPetSection.shown(chat: chat != nil, voice: voice != nil, transcripts: meetings != nil, automations: settings != nil,
+        IronPetSection.shown(chat: chat != nil, transcripts: meetings != nil, automations: settings != nil,
                              today: model.todayShown, notifications: notifications !== NotificationsModel.empty)
     }
 
@@ -385,11 +379,6 @@ struct IronPetWindowView: View {
             VStack(spacing: 0) {
                 switch model.section {
                 case .chat: EmptyView()
-                case .voice:
-                    if let voice {
-                        VoiceSection(conversation: voice, onToggle: actions.onVoiceToggle, onOpenThread: actions.onOpenThread,
-                                     onOpenSettings: actions.onVoiceSettings, loadThreads: voiceThreads)
-                    }
                 case .agents: AgentsSection(agents: agents)
                 case .alerts: AlertsSection(alerts: alerts, onAsk: actions.onAsk)
                 case .notifications:
@@ -437,11 +426,6 @@ struct SessionActions {
     var onScreenSettings: () -> Void = {}
     /// A row of the Today page.
     var onBriefOpen: (Brief.Target) -> Void = { _ in }
-    /// The Voice page's button: starts or ends a conversation.
-    var onVoiceToggle: () -> Void = {}
-    /// Opens Settings on the Voice tab.
-    var onVoiceSettings: () -> Void = {}
-
     static let none = SessionActions(onAsk: { _ in }, onTrick: { _ in }, onTellGhost: { _ in },
                                      onOpenThread: { _ in }, onOpenSession: { _ in })
 }

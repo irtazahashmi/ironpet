@@ -1,5 +1,9 @@
 import Foundation
+#if canImport(SQLite3)
 import SQLite3
+#else
+import CSQLite
+#endif
 
 /// ironpet's common app database, `~/.ironpet/ironpet.db`, on the system SQLite in WAL mode. It is opened once and shared.
 /// This layer knows nothing about the features that use it: each feature contributes ordered `Migration`s that create its own
