@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 
 /// A past (or running) meeting: one folder under `~/.ironpet/meetings`.
 struct MeetingRecord: Identifiable, Equatable {
@@ -21,8 +24,11 @@ struct MeetingRecord: Identifiable, Equatable {
 /// The Transcripts section's list. Reads only the folder names and the start of each summary; the full texts are read
 /// when a meeting is opened, off the main thread.
 @MainActor
-final class MeetingLibrary: ObservableObject {
-    @Published private(set) var meetings: [MeetingRecord] = [] {
+final class MeetingLibrary {
+    /// Fires before `meetings` changes.
+    let changes = ChangeSignal()
+    private(set) var meetings: [MeetingRecord] = [] {
+        willSet { changes.send() }
         didSet { if meetings != oldValue { events?.publish(.meetingsChanged) } }
     }
     /// Where `meetings.changed` is published for API clients.
@@ -90,3 +96,10 @@ final class MeetingLibrary: ObservableObject {
         return (try? handle.read(upToCount: 4096)).flatMap { String(decoding: $0, as: UTF8.self) }
     }
 }
+
+#if canImport(Combine)
+
+extension MeetingLibrary: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif

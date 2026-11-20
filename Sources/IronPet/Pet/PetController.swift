@@ -35,6 +35,7 @@ final class PetController: NSObject {
     private var nudge: (mood: PetMood, until: Date)?
     private var nudgeGeneration = 0
     private var cancellables: Set<AnyCancellable> = []
+    private var changeTokens: [ChangeToken] = []
 
     var extraMenuItems: () -> [NSMenuItem] = { [] }
     var onRefresh: ((PetMood) -> Void)?
@@ -111,17 +112,18 @@ final class PetController: NSObject {
         view.onDragEnded = { [weak self] in self?.saveOrigin() }
         view.contextMenu = { [weak self] in self?.makeMenu() ?? NSMenu() }
 
-        store.$sessions
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
-                self?.lastActivity = Date()
-                self?.refreshMood()
-            }
-            .store(in: &cancellables)
-        signals.$signals
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in self?.refreshMood() }
-            .store(in: &cancellables)
+        // The signals fire before the stores change, so the pet reads them one main-actor turn later.
+        changeTokens = [
+            store.changes.observe { [weak self] in
+                DispatchQueue.main.async {
+                    self?.lastActivity = Date()
+                    self?.refreshMood()
+                }
+            },
+            signals.changes.observe { [weak self] in
+                DispatchQueue.main.async { self?.refreshMood() }
+            },
+        ]
     }
 
     func show() {

@@ -1,5 +1,7 @@
-import Combine
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 
 /// A JSON merge patch (RFC 7386) over the settings: objects merge, any other value replaces, `null` restores the default.
 struct PatchSettingsRequest: Codable, Equatable {
@@ -9,19 +11,23 @@ struct PatchSettingsRequest: Codable, Equatable {
 /// The settings in `config.json`: get, patch, and the `settings.changed` event. Every client changes settings through
 /// the one validation path (`Config.sanitized`), so no client can store a value another would reject.
 ///
-/// This is an `ObservableObject` so the Settings pages redraw when a setting changes, here or by a hand edit of the file.
+/// This is an `ObservableObject` on Apple platforms, so the Settings pages redraw when a setting changes, here or by a hand edit of the file.
 @MainActor
-final class SettingsAPI: ObservableObject {
+final class SettingsAPI {
+    /// Fires before anything this API reads changes.
+    let changes = ChangeSignal()
     /// The running app's settings, for views deep in the tree that read one value. `IronPetAPI` sets it to its own, so there is
     /// one instance.
     static var live = SettingsAPI(store: .shared)
 
     private let store: ConfigStore
-    private var forwarding: AnyCancellable?
+    private var forwarding: [ChangeToken] = []
 
     init(store: ConfigStore) {
         self.store = store
-        forwarding = store.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        forwarding = [
+            store.changes.observe { [weak self] in self?.changes.send() },
+        ]
     }
 
     var config: Config { store.config }
@@ -93,3 +99,10 @@ final class SettingsAPI: ObservableObject {
         return result
     }
 }
+
+#if canImport(Combine)
+
+extension SettingsAPI: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif

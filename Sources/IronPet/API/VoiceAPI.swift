@@ -1,5 +1,7 @@
-import Combine
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 
 struct SpeakRequest: Codable, Equatable {
     /// The reply as markdown. Only its prose is spoken: code, tables and emoji are skipped.
@@ -36,7 +38,9 @@ struct VoiceStatus: Codable, Equatable {
 /// Speak, stop and transcribe. Speaking either plays on this Mac's speaker (`speak`) or hands the audio to the caller (`audio`),
 /// so a remote client can play it on its own. Both use the voice server in Settings → Voice.
 @MainActor
-final class VoiceAPI: ObservableObject {
+final class VoiceAPI {
+    /// Fires before the speaker or the settings it reads change.
+    let changes = ChangeSignal()
     private let speech: SpeechPlayer
     private let settings: SettingsAPI
 
@@ -50,12 +54,18 @@ final class VoiceAPI: ObservableObject {
         return try await TelegramVoice.transcribe(audio, name: name, with: transcriber)
     }
 
-    private var forwarding: AnyCancellable?
+    private var forwarding: [ChangeToken] = []
+    #if canImport(Combine)
+    /// `SpeechPlayer` is not on `ChangeSignal` yet, so its publisher is forwarded here.
+    private var speechForwarding: AnyCancellable?
+    #endif
 
     init(speech: SpeechPlayer, settings: SettingsAPI) {
         self.speech = speech
         self.settings = settings
-        forwarding = speech.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }
+        #if canImport(Combine)
+        speechForwarding = speech.objectWillChange.sink { [weak self] in self?.changes.send() }
+        #endif
         // The player and every client decide from the same settings.
         speech.isEnabled = { [weak settings] in settings?.config.speech.enabled ?? false }
     }
@@ -128,3 +138,10 @@ final class VoiceAPI: ObservableObject {
         }
     }
 }
+
+#if canImport(Combine)
+
+extension VoiceAPI: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif

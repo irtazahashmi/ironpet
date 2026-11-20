@@ -1,18 +1,24 @@
-import Combine
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 
 /// Alerts: what automations reported and left open until the user or the automation closes them.
 @MainActor
-final class AlertsAPI: ObservableObject {
+final class AlertsAPI {
+    /// Fires before anything this API reads changes.
+    let changes = ChangeSignal()
     private let store: SignalStore
-    private var forwarding: AnyCancellable?
+    private var forwarding: [ChangeToken] = []
 
     /// Starts a conversation about an alert: shows the chat with the alert's prompt in the input. The app owner sets it.
     var askHandler: ((String) -> Void)?
 
     init(store: SignalStore) {
         self.store = store
-        forwarding = store.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        forwarding = [
+            store.changes.observe { [weak self] in self?.changes.send() },
+        ]
     }
 
     /// Open alerts, newest first.
@@ -42,3 +48,10 @@ final class AlertsAPI: ObservableObject {
         askHandler(prompt)
     }
 }
+
+#if canImport(Combine)
+
+extension AlertsAPI: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif

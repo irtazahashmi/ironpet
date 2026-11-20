@@ -1,13 +1,18 @@
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 
 /// The task list Ghost keeps, in `ironpet.db`. The agent owns it: it creates, updates and closes tasks through `call`
 /// (MCP tools and the CLI). The UI can only mark a task done, delete it, and add or skip suggestions from meetings and
 /// watcher automations.
 /// Every change is a row in `task_events`, so nothing an agent rewrites is lost.
 @MainActor
-final class TaskStore: ObservableObject {
-    @Published private(set) var tasks: [TaskItem] = []
-    @Published private(set) var suggestions: [TaskSuggestion] = []
+final class TaskStore {
+    /// Fires before `tasks` or `suggestions` change.
+    let changes = ChangeSignal()
+    private(set) var tasks: [TaskItem] = [] { willSet { changes.send() } }
+    private(set) var suggestions: [TaskSuggestion] = [] { willSet { changes.send() } }
 
     nonisolated static let migrations: [Database.Migration] = [
         .init(200, "tasks: items, links, events, suggestions", sql: """
@@ -559,3 +564,10 @@ final class TaskStore: ObservableObject {
                        [task, at.timeIntervalSince1970, by, kind.rawValue, detail])
     }
 }
+
+#if canImport(Combine)
+
+extension TaskStore: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif

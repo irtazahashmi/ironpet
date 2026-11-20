@@ -1,5 +1,7 @@
 import Foundation
+#if canImport(Combine)
 import Combine
+#endif
 
 /// User settings in `~/.ironpet/config.json`. The file only needs the keys the user changed: whatever it has is
 /// laid over the defaults below. Defaults are conservative: nothing that reaches the network or copies
@@ -443,15 +445,18 @@ struct Config: Codable, Equatable {
 
 /// The live config for the UI. Picks up hand edits to the file within a couple of seconds.
 @MainActor
-final class ConfigStore: ObservableObject {
+final class ConfigStore {
     static let shared = ConfigStore()
 
-    @Published private(set) var config: Config {
+    /// Fires before `config` or `error` change.
+    let changes = ChangeSignal()
+    private(set) var config: Config {
+        willSet { changes.send() }
         didSet { if config != oldValue { events?.publish(.settingsChanged) } }
     }
     /// Where changes are published for API clients.
     weak var events: APIEventBus?
-    @Published private(set) var error: String?
+    private(set) var error: String? { willSet { changes.send() } }
     private var stamp: Date?
     private var timer: Timer?
 
@@ -517,3 +522,10 @@ final class ConfigStore: ObservableObject {
         (try? FileManager.default.attributesOfItem(atPath: Config.file.path))?[.modificationDate] as? Date
     }
 }
+
+#if canImport(Combine)
+
+extension ConfigStore: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif

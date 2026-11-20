@@ -1,11 +1,16 @@
-import Combine
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 
 /// Every bubble ironpet shows, kept in `ironpet.db` (`notification_items`, `notification_links`) so the Notifications section can
 /// show the full text later. The description lives in the row itself, so a long report needs no file. Notifications are never
 /// deleted by the user; rows older than `retention` are pruned at launch and once a day.
 @MainActor
-final class NotificationStore: ObservableObject {
+final class NotificationStore {
+    /// Fires before `unreadCount` or `revision` change.
+    let changes = ChangeSignal()
+
     nonisolated static let retention: TimeInterval = 90 * 86_400
 
     nonisolated static let migrations: [Database.Migration] = [
@@ -19,9 +24,9 @@ final class NotificationStore: ObservableObject {
     ]
 
     /// How many are unread. Drives the sidebar badge.
-    @Published private(set) var unreadCount = 0
+    private(set) var unreadCount = 0 { willSet { changes.send() } }
     /// Changes whenever a row is added or marked read, so a view knows to read the list again.
-    @Published private(set) var revision = 0
+    private(set) var revision = 0 { willSet { changes.send() } }
 
     /// Where changes are published. `IronPetAPI` sets it.
     var events: APIEventBus?
@@ -166,3 +171,10 @@ final class NotificationStore: ObservableObject {
         return item
     }
 }
+
+#if canImport(Combine)
+
+extension NotificationStore: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif

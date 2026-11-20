@@ -1,5 +1,7 @@
-import Combine
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 
 /// A meeting as a client that cannot read the Mac's folders sees it.
 struct MeetingInfo: Codable, Equatable, Identifiable {
@@ -65,10 +67,16 @@ struct MeetingStatus: Codable, Equatable {
 ///
 /// This is an `ObservableObject` so the transcripts page and the recording panel redraw as meetings change.
 @MainActor
-final class MeetingsAPI: ObservableObject {
+final class MeetingsAPI {
+    /// Fires before the recording, the library or a regeneration change.
+    let changes = ChangeSignal()
     private let controller: MeetingController
     private let library: MeetingLibrary
-    private var forwarding: Set<AnyCancellable> = []
+    private var forwarding: [ChangeToken] = []
+    #if canImport(Combine)
+    /// `MeetingController` is not on `ChangeSignal` yet, so its publisher is forwarded here.
+    private var controllerForwarding: AnyCancellable?
+    #endif
 
     /// Opens the chat with these files attached. The app owner sets it.
     var askHandler: (([URL]) -> Void)?
@@ -76,9 +84,13 @@ final class MeetingsAPI: ObservableObject {
     init(controller: MeetingController, library: MeetingLibrary) {
         self.controller = controller
         self.library = library
-        controller.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &forwarding)
-        library.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &forwarding)
-        library.regenerator.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }.store(in: &forwarding)
+        #if canImport(Combine)
+        controllerForwarding = controller.objectWillChange.sink { [weak self] _ in self?.changes.send() }
+        #endif
+        forwarding = [
+            library.changes.observe { [weak self] in self?.changes.send() },
+            library.regenerator.changes.observe { [weak self] in self?.changes.send() },
+        ]
     }
 
     // MARK: Library
@@ -232,3 +244,10 @@ final class MeetingsAPI: ObservableObject {
         return record
     }
 }
+
+#if canImport(Combine)
+
+extension MeetingsAPI: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif
