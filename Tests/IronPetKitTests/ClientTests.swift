@@ -1,0 +1,83 @@
+import XCTest
+@testable import IronPetKit
+
+final class ClientTests: XCTestCase {
+    var server: MockIronPetServer!
+
+    override func setUpWithError() throws {
+        server = MockIronPetServer()
+        try server.start()
+    }
+
+    override func tearDown() { server.stop() }
+
+    func paired() -> IronPetClient { IronPetClient(endpoint: ServerEndpoint(baseURL: server.baseURL), token: server.token) }
+
+    // MARK: Pairing
+
+    func testPairsAfterAllow() async throws {
+        let link = try PairingLink(parsing: server.pairingLink)
+        let waiting = expectation(description: "waiting")
+        let device = try await PairingFlow(link: link, deviceName: "Test phone", pollInterval: .milliseconds(10)).run { waiting.fulfill() }
+        await fulfillment(of: [waiting], timeout: 1)
+        XCTAssertEqual(device.token, server.token)
+        XCTAssertEqual(device.deviceID, server.deviceID)
+        XCTAssertEqual(server.requests.first?.json["device_name"] as? String, "Test phone")
+        XCTAssertEqual(server.requests.first?.json["code"] as? String, server.code)
+        XCTAssertEqual(server.count("GET /v1/pair/pairing-1"), 2, "one pending poll, then allowed")
+    }
+
+    func testDenied() async throws {
+        server.outcome = .deny
+        let flow = PairingFlow(link: try PairingLink(parsing: server.pairingLink), deviceName: "Phone", pollInterval: .milliseconds(10))
+        do { _ = try await flow.run(); XCTFail("expected a denial") } catch { XCTAssertEqual(error as? ClientError, .pairingDenied) }
+    }
+
+    func testWrongCodeIsRefused() async throws {
+        let flow = PairingFlow(link: try PairingLink(parsing: "ironpet://pair?u=\(server.baseURL.absoluteString)&c=wrong"), deviceName: "Phone")
+        do { _ = try await flow.run(); XCTFail("expected a refusal") } catch {
+            guard case .api(let status, _, _) = error as? ClientError else { return XCTFail("\(error)") }
+            XCTAssertEqual(status, 401)
+        }
+    }
+
+    // MARK: Requests
+
+    func testListsTasksWithTheToken() async throws {
+        let tasks = try await paired().tasks()
+        XCTAssertEqual(tasks.count, MockIronPetServer.sampleTasks.count)
+        let request = try XCTUnwrap(server.requests.last)
+        XCTAssertEqual(request.headers["authorization"], "Bearer \(server.token)")
+        XCTAssertEqual(request.query, "include_done=1")
+    }
+
+    func testUnauthorizedWithAToken() async throws {
+        server.tokenValid = false
+        do { _ = try await paired().tasks(); XCTFail("expected 401") } catch { XCTAssertEqual(error as? ClientError, .unauthorized) }
+    }
+
+    func testAcceptRejectCloseAndNote() async throws {
+        let client = paired()
+        _ = try await client.acceptSuggestion(id: "s-1")
+        try await client.rejectSuggestion(id: "s-2")
+        _ = try await client.closeTask(id: "t-needs", note: "done and checked")
+        _ = try await client.addNote(id: "t-backlog", note: "a note")
+        _ = try await client.setStatus(id: "t-backlog", status: .inProgress, note: "started")
+        XCTAssertEqual(server.requests.map(\.line), ["POST /v1/suggestions/s-1/accept", "POST /v1/suggestions/s-2/reject", "POST /v1/tasks/t-needs/close",
+                                                      "PATCH /v1/tasks/t-backlog", "PATCH /v1/tasks/t-backlog"])
+        XCTAssertEqual(server.requests[2].json["note"] as? String, "done and checked")
+        XCTAssertEqual(server.requests[4].json["status"] as? String, "in_progress")
+        XCTAssertEqual(server.requests[4].json["note"] as? String, "started")
+    }
+
+    func testRevokeSelf() async throws {
+        try await paired().revokeSelf()
+        XCTAssertEqual(server.requests.last?.line, "DELETE /v1/devices/me")
+    }
+
+    func testApiErrorKeepsTheMessage() async throws {
+        do { _ = try await paired().closeTask(id: "t-needs", note: ""); XCTFail("expected 400") } catch {
+            XCTAssertEqual(error as? ClientError, .api(status: 400, code: "invalid", message: "note is required"))
+        }
+    }
+}

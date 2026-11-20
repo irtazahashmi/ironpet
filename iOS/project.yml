@@ -1,0 +1,79 @@
+name: IronPetRemote
+options:
+  bundleIdPrefix: dev.ironpet
+  deploymentTarget:
+    iOS: "17.0"
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+settings:
+  base:
+    SWIFT_VERSION: "5.10"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Simulator only for now. Signing comes with the team that owns the app.
+    CODE_SIGN_STYLE: Automatic
+    CODE_SIGN_IDENTITY: "-"
+    DEVELOPMENT_TEAM: ""
+packages:
+  IronPetKit:
+    path: ..
+targets:
+  IronPetRemote:
+    type: application
+    platform: iOS
+    sources: [IronPetRemote]
+    dependencies:
+      - package: IronPetKit
+        product: IronPetKit
+    info:
+      path: IronPetRemote/Info.plist
+      properties:
+        CFBundleDisplayName: IronPet Remote
+        UILaunchScreen: {}
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
+        NSCameraUsageDescription: IronPet Remote scans the pairing QR code that your Mac shows.
+        NSLocalNetworkUsageDescription: IronPet Remote talks to IronPet on your Mac over your local network.
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ironpet.remote
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: "1"
+  IronPetRemoteTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - IronPetRemoteTests
+      - ../Tests/IronPetKitTests/Support/MockIronPetServer.swift
+    dependencies:
+      - target: IronPetRemote
+      - package: IronPetKit
+        product: IronPetKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ironpet.remote.tests
+        GENERATE_INFOPLIST_FILE: YES
+  IronPetRemoteUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - IronPetRemoteUITests
+      - ../Tests/IronPetKitTests/Support/MockIronPetServer.swift
+    dependencies:
+      - target: IronPetRemote
+      - package: IronPetKit
+        product: IronPetKit
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ironpet.remote.uitests
+        GENERATE_INFOPLIST_FILE: YES
+schemes:
+  IronPetRemote:
+    build:
+      targets:
+        IronPetRemote: all
+    test:
+      targets:
+        - IronPetRemoteTests
+        - IronPetRemoteUITests
