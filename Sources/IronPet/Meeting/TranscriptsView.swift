@@ -12,7 +12,9 @@ struct TranscriptsView: View {
         self.focus = focus
     }
 
+    /// The meeting open in full. Nil shows the list.
     @State private var selection: String?
+    @State private var search = ""
     @State private var page: Page = .summary
     @State private var text: String?
     @State private var confirmDelete = false
@@ -21,29 +23,27 @@ struct TranscriptsView: View {
     enum Page: String, CaseIterable { case summary = "Summary", transcript = "Transcript" }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if meetings.meetings.isEmpty {
-                EmptyState(symbol: "waveform", title: "No meetings yet",
-                           detail: "Start one from \(SettingsAPI.live.config.pet.name)'s right-click menu; its transcript and summary show up here.")
-            } else {
-                HStack(spacing: 0) {
-                    list
-                    Divider()
-                    detail.frame(maxWidth: .infinity, maxHeight: .infinity)
-                }
-            }
-        }
-        .pageHeader(IronPetSection.transcripts.title) {
+        ListScreen(title: IronPetSection.transcripts.title, search: $search, detailOpen: selection != nil, trailing: {
             if let progress = meetings.regenerationProgress {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.small)
                     Text(progress.label).font(.caption).foregroundStyle(.secondary)
                 }
             }
+        }) {
+            VStack(spacing: 0) {
+                if meetings.meetings.isEmpty {
+                    EmptyState(symbol: "waveform", title: "No meetings yet",
+                               detail: "Start one from \(SettingsAPI.live.config.pet.name)'s right-click menu; its transcript and summary show up here.")
+                } else if selected != nil {
+                    detail
+                } else {
+                    list
+                }
+            }
         }
         .onAppear {
             meetings.reload()
-            if selection == nil || !meetings.meetings.contains(where: { $0.id == selection }) { selection = meetings.meetings.first?.id }
             selectFocus()
             load()
         }
@@ -67,46 +67,52 @@ struct TranscriptsView: View {
 
     private var selected: MeetingRecord? { meetings.meetings.first { $0.id == selection } }
 
-    private var list: some View {
-        List(selection: $selection) {
-            ForEach(meetings.meetings) { meeting in
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(meeting.date.formatted(date: .abbreviated, time: .shortened))
-                        .font(.system(size: 12.5, weight: .medium))
-                    if meetings.regenerationID == meeting.id, let progress = meetings.regenerationProgress {
-                        HStack(spacing: 5) {
-                            ProgressView().controlSize(.mini)
-                            Text(progress.label).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                        }
-                    } else {
-                        Text(meeting.preview.isEmpty ? (meeting.folder == meetings.activeFolder ? "Recording…" : "No transcript") : meeting.preview)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
+    /// What the Transcripts search looks at: the date as the row shows it, and the preview.
+    static func title(_ meeting: MeetingRecord) -> String { meeting.date.formatted(date: .abbreviated, time: .shortened) }
+
+    static func filter(_ meetings: [MeetingRecord], query: String) -> [MeetingRecord] {
+        ListSearch.filter(meetings, query: query, title: title, description: \.preview)
+    }
+
+    @ViewBuilder private var list: some View {
+        let shown = Self.filter(meetings.meetings, query: search)
+        if shown.isEmpty {
+            NoMatches()
+        } else {
+            ListScroll {
+                ForEach(shown) { meeting in
+                    let recording = meeting.folder == meetings.activeFolder
+                    ListRow(title: Self.title(meeting),
+                            description: meeting.preview.isEmpty ? (recording ? "Recording…" : "No transcript") : meeting.preview,
+                            emphasized: true, onOpen: { page = .summary; selection = meeting.id },
+                            leading: { ListRowIcon(symbol: recording ? "record.circle" : "waveform", color: recording ? .red : .secondary) },
+                            extra: {
+                                if meetings.regenerationID == meeting.id, let progress = meetings.regenerationProgress {
+                                    HStack(spacing: 5) {
+                                        ProgressView().controlSize(.mini)
+                                        Text(progress.label).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                                    }
+                                }
+                            },
+                            trailing: { _ in EmptyView() })
                 }
-                .padding(.vertical, 2)
-                .tag(meeting.id)
             }
         }
-        .listStyle(.inset)
-        .scrollContentBackground(.hidden)
-        // Rows sit on a light material so their text stays readable over a patterned background.
-        .background(.thinMaterial)
-        .frame(width: 230)
     }
 
     @ViewBuilder private var detail: some View {
         if let meeting = selected {
             VStack(alignment: .leading, spacing: 0) {
+                ListBackBar(section: "Transcripts", onBack: { selection = nil })
                 // At the narrowest window the Ask label would be cut, so it falls back to its icon.
                 ViewThatFits(in: .horizontal) {
                     toolbar(meeting, askLabel: true)
                     toolbar(meeting, askLabel: false)
                 }
                 .controlSize(.small)
-                .padding(.horizontal, 12)
+                .padding(.horizontal, ListScreenMetrics.gutter)
                 .padding(.vertical, 8)
+                .listColumn()
                 Divider()
                 ScrollView {
                     Group {
@@ -119,11 +125,13 @@ struct TranscriptsView: View {
                     }
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(16)
+                    .listColumn()
                 }
                 if let message = error ?? meetings.regenerationErrors[meeting.id] {
                     Text(message).font(.caption).foregroundStyle(.red).padding(8)
                 }
             }
+            .onExitCommand { selection = nil }
             .confirmationDialog("Move this meeting to the Trash?", isPresented: $confirmDelete) {
                 Button("Move to Trash", role: .destructive) { delete(meeting) }
             } message: {
@@ -198,7 +206,7 @@ struct TranscriptsView: View {
         do {
             try meetings.delete(meeting.id)
             error = nil
-            selection = meetings.meetings.first?.id
+            selection = nil
         } catch {
             self.error = (error as? APIError)?.message ?? error.localizedDescription
         }

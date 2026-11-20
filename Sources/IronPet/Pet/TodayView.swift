@@ -8,40 +8,52 @@ struct TodayView: View {
     @Binding var kind: Brief.Kind
     let onOpen: (Brief.Target) -> Void
 
+    @State private var search = ""
+
     var body: some View {
-        content
-            .pageHeader(IronPetSection.today.title) {
-                Picker("Show", selection: Binding(get: { kind }, set: { kind = $0; model.picked() })) {
-                    ForEach(Brief.Kind.allCases) { Text($0.pickerTitle).tag($0) }
-                }
-                .pickerStyle(.segmented)
-                .labelsHidden()
-                .fixedSize()
-                .accessibilityLabel("Brief or recap")
+        ListScreen(title: IronPetSection.today.title, search: $search, trailing: {
+            Picker("Show", selection: Binding(get: { kind }, set: { kind = $0; model.picked() })) {
+                ForEach(Brief.Kind.allCases) { Text($0.pickerTitle).tag($0) }
             }
-            .onAppear { model.setVisible(true) }
-            .onDisappear { model.setVisible(false) }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+            .accessibilityLabel("Brief or recap")
+        }) {
+            content
+        }
+        .onAppear { model.setVisible(true) }
+        .onDisappear { model.setVisible(false) }
+    }
+
+    /// The items of a brief whose title or subtitle contain `query`. Sections left empty are dropped.
+    static func filter(_ sections: [Brief.Section], query: String) -> [Brief.Section] {
+        sections.compactMap { section in
+            var kept = section
+            kept.items = ListSearch.filter(section.items, query: query, title: \.title, description: \.subtitle)
+            return kept.items.isEmpty ? nil : kept
+        }
     }
 
     @ViewBuilder private var content: some View {
         if let brief = model.briefs[kind], !brief.isEmpty {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 2) {
+            let sections = Self.filter(brief.sections, query: search)
+            if sections.isEmpty {
+                NoMatches()
+            } else {
+                ListScroll {
                     Text(Self.dateLine(kind, kind == .recap ? brief.window.start : brief.window.end))
                         .font(.system(size: 12))
                         .foregroundStyle(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.top, 4)
-                    ForEach(brief.sections.filter { !$0.items.isEmpty }) { section in
-                        SectionTitle(section.title)
+                        .padding(.horizontal, 2)
+                    ForEach(sections) { section in
+                        ListGroupTitle(section.title)
                         ForEach(section.items) { item in
                             BriefRow(item: item, onOpen: onOpen)
                         }
                     }
                 }
-                .padding(6)
             }
-            .frame(maxHeight: .infinity)
         } else {
             EmptyState(symbol: kind.symbol, title: kind.emptyText, detail: Self.emptyDetail(kind))
         }
@@ -59,44 +71,22 @@ struct TodayView: View {
     }
 }
 
+/// A row opens the task, session, alert or meeting it names in that section, which is its detail page.
 private struct BriefRow: View {
     let item: Brief.Item
     let onOpen: (Brief.Target) -> Void
-    @State private var hovering = false
 
     var body: some View {
-        Button { onOpen(item.target) } label: {
-            HStack(alignment: .top, spacing: 10) {
-                Image(systemName: item.symbol)
-                    .font(.system(size: 13))
-                    .foregroundStyle(tint)
-                    .frame(width: 18, height: 18)
-                    .accessibilityHidden(true)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(item.title)
-                        .font(.system(size: 13, weight: .medium))
-                        .lineLimit(2)
-                    if let subtitle = item.subtitle, !subtitle.isEmpty {
-                        Text(subtitle)
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .lineLimit(2)
-                    }
-                }
-                Spacer(minLength: 4)
-                Image(systemName: "chevron.right")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(.tertiary)
-                    .opacity(hovering ? 1 : 0)
-                    .accessibilityHidden(true)
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(hovering ? 0.06 : 0)))
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .onHover { hovering = $0 }
+        ListRow(title: item.title, description: item.subtitle, onOpen: { onOpen(item.target) },
+                leading: { ListRowIcon(symbol: item.symbol, color: tint) },
+                extra: { EmptyView() },
+                trailing: { hovering in
+                    Image(systemName: "chevron.right")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(.tertiary)
+                        .opacity(hovering ? 1 : 0)
+                        .accessibilityHidden(true)
+                })
         .help(help)
         .accessibilityLabel([item.title, item.subtitle].compactMap { $0 }.joined(separator: ", "))
         .accessibilityHint(help)

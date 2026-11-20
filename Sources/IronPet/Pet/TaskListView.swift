@@ -19,6 +19,9 @@ struct TaskListView: View {
     /// The label the list is filtered by, as `key=value`. Nil shows every task.
     @State private var labelFilter: String?
     @State private var nav = TaskNavigation()
+    /// The suggestion open in full. Suggestions have no page of their own in the store, so they get a simple one.
+    @State private var suggestionNav = ListNavigation<String>()
+    @State private var search = ""
 
     enum Content: Equatable { case unavailable, empty, list }
 
@@ -26,17 +29,42 @@ struct TaskListView: View {
     static func content(unavailable: Bool, isEmpty: Bool) -> Content { !isEmpty ? .list : unavailable ? .unavailable : .empty }
 
     var body: some View {
-        // The list stays in the hierarchy under the detail page so its scroll position survives opening a task.
-        ZStack {
-            listPage
-                .opacity(nav.openTask == nil ? 1 : 0)
-                .allowsHitTesting(nav.openTask == nil)
-                .accessibilityHidden(nav.openTask != nil)
-            if let id = nav.openTask {
-                TaskDetailPage(tasks: tasks, id: id, onBack: { nav.close() }, onOpen: open(_:))
-                    .background(Color(nsColor: .windowBackgroundColor).opacity(0.001))
-                    .transition(.opacity)
+        ListScreen(title: IronPetSection.tasks.title, search: $search, detailOpen: nav.opened != nil || suggestionNav.opened != nil, trailing: { labelFilterMenu }) {
+            // The list stays in the hierarchy under the detail page so its scroll position survives opening a task.
+            ZStack {
+                listPage
+                    .opacity(isDetailOpen ? 0 : 1)
+                    .allowsHitTesting(!isDetailOpen)
+                    .accessibilityHidden(isDetailOpen)
+                if let id = nav.opened {
+                    TaskDetailPage(tasks: tasks, id: id, onBack: { nav.close() }, onOpen: open(_:))
+                        .background(Color(nsColor: .windowBackgroundColor).opacity(0.001))
+                        .transition(.opacity)
+                } else if let id = suggestionNav.opened {
+                    suggestionPage(id)
+                        .background(Color(nsColor: .windowBackgroundColor).opacity(0.001))
+                        .transition(.opacity)
+                }
             }
+        }
+    }
+
+    private var isDetailOpen: Bool { nav.opened != nil || suggestionNav.opened != nil }
+
+    @ViewBuilder private func suggestionPage(_ id: String) -> some View {
+        if let suggestion = tasks.suggestions.first(where: { $0.id == id }) {
+            ListDetailPage(section: "Tasks", onBack: { suggestionNav.close() }) {
+                Text(suggestion.title).font(.system(size: 24, weight: .bold)).textSelection(.enabled)
+                HStack(spacing: 6) {
+                    Button("Add") { _ = try? tasks.accept(AcceptSuggestionRequest(id: suggestion.id)); suggestionNav.close() }
+                    Button("Skip") { tasks.skip(suggestion.id); suggestionNav.close() }
+                }
+                .buttonStyle(.bordered)
+                TaskDetailView(detail: TaskDetail(suggestion: suggestion), onOpen: open(_:))
+            }
+        } else {
+            // The suggestion was added or skipped elsewhere while it was open.
+            Color.clear.onAppear { suggestionNav.close() }
         }
     }
 
@@ -45,40 +73,38 @@ struct TaskListView: View {
             if let reason = tasks.unavailable {
                 DatabaseBanner(reason: reason)
             }
-            let content = Self.content(unavailable: tasks.unavailable != nil, isEmpty: tasks.suggestions.isEmpty && open.isEmpty && done.isEmpty)
+            let content = Self.content(unavailable: tasks.unavailable != nil, isEmpty: tasks.suggestions.isEmpty && tasks.all.isEmpty)
+            let nothingShown = suggestionRows.isEmpty && open.isEmpty && done.isEmpty
             if content == .unavailable {
                 Spacer()
             } else if content == .empty {
                 EmptyState(symbol: "checklist", title: "No tasks yet",
                            detail: "Ask \(petName) to keep track of something, or finish a meeting.")
+            } else if nothingShown {
+                NoMatches()
             } else {
-                labelFilterBar
                 ScrollViewReader { proxy in
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
+                    ListScroll {
                         suggestions
                         ForEach([TaskStatus.needsYou, .inProgress, .backlog], id: \.self) { status in
                             let items = open.filter { $0.waitingOn == nil && $0.status == status }
                             if !items.isEmpty {
-                                SectionTitle(status.title)
+                                ListGroupTitle(status.title)
                                 ForEach(items) { row($0) }
                             }
                         }
                         if !waiting.isEmpty {
-                            SectionTitle("Waiting on others")
+                            ListGroupTitle("Waiting on others")
                             ForEach(waiting) { row($0) }
                         }
                         doneSection
                     }
-                    .padding(6)
-                }
-                .frame(maxHeight: .infinity)
-                .onAppear { reveal(focus.wrappedValue, proxy) }
-                .onChange(of: focus.wrappedValue) { reveal(focus.wrappedValue, proxy) }
+                    .onAppear { reveal(focus.wrappedValue, proxy) }
+                    .onChange(of: focus.wrappedValue) { reveal(focus.wrappedValue, proxy) }
                 }
             }
             Divider()
-            tellGhost
+            tellGhost.listColumn()
         }
     }
 
@@ -86,13 +112,22 @@ struct TaskListView: View {
 
     private var open: [TaskItem] { tasks.all.filter { $0.status != .done && matches($0) } }
 
-    private func matches(_ task: TaskItem) -> Bool {
-        guard let labelFilter else { return true }
-        return task.labels.contains { "\($0.key)=\($0.value)" == labelFilter }
+    /// A task shows when it has the chosen label and its title or notes contain the search text.
+    func matches(_ task: TaskItem) -> Bool {
+        Self.matches(task, label: labelFilter, query: search)
     }
 
-    /// A menu of the labels in use. Picking one shows only tasks with it; the chip clears it.
-    @ViewBuilder private var labelFilterBar: some View {
+    static func matches(_ task: TaskItem, label: String?, query: String) -> Bool {
+        if let label, !task.labels.contains(where: { "\($0.key)=\($0.value)" == label }) { return false }
+        return ListSearch.matches(query, in: [task.title, task.notes])
+    }
+
+    private var suggestionRows: [TaskSuggestion] {
+        tasks.suggestions.filter { ListSearch.matches(search, in: [$0.title]) }
+    }
+
+    /// A menu of the labels in use, in the title row. Picking one shows only tasks with it; the chip clears it.
+    @ViewBuilder private var labelFilterMenu: some View {
         let labels = tasks.allLabels
         if !labels.isEmpty || labelFilter != nil {
             HStack(spacing: 6) {
@@ -115,11 +150,8 @@ struct TaskListView: View {
                     .background(Capsule().fill(Color.accentColor.opacity(0.2)))
                     .accessibilityLabel("Clear label filter \(labelFilter)")
                 }
-                Spacer()
             }
             .font(.caption)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
         }
     }
 
@@ -132,13 +164,14 @@ struct TaskListView: View {
     }
 
     @ViewBuilder private var suggestions: some View {
-        if !tasks.suggestions.isEmpty {
+        if !suggestionRows.isEmpty {
             SectionHeader("Suggestions", action: "Add all", help: "Add every suggested new task. Updates to existing tasks are accepted one by one") { tasks.acceptAll() }
-            ForEach(tasks.suggestions) { suggestion in
+            ForEach(suggestionRows) { suggestion in
                 SuggestionRow(suggestion: suggestion,
                               onAdd: { _ = try? tasks.accept(AcceptSuggestionRequest(id: suggestion.id)) },
                               onSkip: { tasks.skip(suggestion.id) },
-                              onOpen: open(_:))
+                              onOpen: open(_:),
+                              onShow: { suggestionNav.open(suggestion.id) })
             }
         }
     }
@@ -245,43 +278,30 @@ private struct TaskRow: View {
     let onDelete: () -> Void
     let onOpen: (TaskLink) -> Void
     let onShow: () -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var hovering = false
 
     private static let maxLinkButtons = 3
     private static let maxChips = 3
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            CheckButton(done: task.status == .done, title: task.title, action: onDone)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(task.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(task.status == .done ? .secondary : .primary)
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                details
-            }
-            Spacer(minLength: 4)
-            if !task.links.isEmpty {
-                HStack(spacing: 2) {
-                    ForEach(Array(task.links.prefix(Self.maxLinkButtons).enumerated()), id: \.offset) { _, link in
-                        IconButton(symbol: link.symbol, help: link.help) { onOpen(link) }
+        ListRow(title: task.title, description: Self.firstLine(task.notes), dimmed: task.status == .done, onOpen: onShow,
+                leading: { CheckButton(done: task.status == .done, title: task.title, action: onDone) },
+                extra: { details },
+                trailing: { _ in
+                    HStack(spacing: 2) {
+                        ForEach(Array(task.links.prefix(Self.maxLinkButtons).enumerated()), id: \.offset) { _, link in
+                            IconButton(symbol: link.symbol, help: link.help) { onOpen(link) }
+                        }
                     }
-                }
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(hovering ? 0.07 : 0)))
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture(perform: onShow)
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hovering)
+                })
         .contextMenu { menu }
-        .accessibilityElement(children: .contain)
-        .accessibilityAction(named: "Show details", onShow)
         .accessibilityAction(named: "Delete", onDelete)
+    }
+
+    /// The first non-empty line of the notes, without markdown list or heading marks.
+    static func firstLine(_ notes: String) -> String? {
+        notes.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "#-*> ").union(.whitespaces)) }
+            .first { !$0.isEmpty }
     }
 
     private var details: some View {
@@ -335,81 +355,46 @@ private struct SuggestionRow: View {
     let onAdd: () -> Void
     let onSkip: () -> Void
     let onOpen: (TaskLink) -> Void
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var hovering = false
-    @State private var expanded = false
-    @FocusState private var focused: Bool
-
-    private func toggle() {
-        withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) { expanded.toggle() }
-        focused = expanded
-    }
+    let onShow: () -> Void
 
     private var link: TaskLink? {
         suggestion.url.map { TaskLink(kind: .url, ref: $0.absoluteString, label: nil) }
     }
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: "lightbulb")
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-                .frame(width: 18, height: 18)
-                .padding(.top, 1)
-                .accessibilityHidden(true)
-            VStack(alignment: .leading, spacing: 3) {
-                Text(suggestion.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-                HStack(spacing: 5) {
-                    Image(systemName: suggestion.source.symbol).font(.system(size: 10)).accessibilityHidden(true)
-                    Text("\(suggestion.originLabel), \(TaskTime.relative(suggestion.created))")
-                    if let waiting = suggestion.waitingLabel {
-                        Text("·").accessibilityHidden(true)
-                        Label(waiting, systemImage: "person.badge.clock").labelStyle(DueLabelStyle())
+        ListRow(title: suggestion.title, description: nil, onOpen: onShow,
+                leading: { ListRowIcon(symbol: "lightbulb") },
+                extra: {
+                    VStack(alignment: .leading, spacing: 3) {
+                        HStack(spacing: 5) {
+                            Image(systemName: suggestion.source.symbol).font(.system(size: 10)).accessibilityHidden(true)
+                            Text("\(suggestion.originLabel), \(TaskTime.relative(suggestion.created))")
+                            if let waiting = suggestion.waitingLabel {
+                                Text("·").accessibilityHidden(true)
+                                Label(waiting, systemImage: "person.badge.clock").labelStyle(DueLabelStyle())
+                            }
+                            if let due = suggestion.due {
+                                Text("·").accessibilityHidden(true)
+                                Label("Due \(due)", systemImage: "calendar").labelStyle(DueLabelStyle())
+                            }
+                        }
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        HStack(spacing: 6) {
+                            Button("Add", action: onAdd)
+                                .help(suggestion.waitingOn == nil ? "Add to the backlog" : "Add to Waiting on others")
+                            Button("Skip", action: onSkip)
+                                .help("Dismiss this suggestion")
+                        }
+                        .controlSize(.small)
+                        .buttonStyle(.bordered)
+                        .padding(.top, 2)
                     }
-                    if let due = suggestion.due {
-                        Text("·").accessibilityHidden(true)
-                        Label("Due \(due)", systemImage: "calendar").labelStyle(DueLabelStyle())
-                    }
-                }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                HStack(spacing: 6) {
-                    Button("Add", action: onAdd)
-                        .help(suggestion.waitingOn == nil ? "Add to the backlog" : "Add to Waiting on others")
-                    Button("Skip", action: onSkip)
-                        .help("Dismiss this suggestion")
-                }
-                .controlSize(.small)
-                .buttonStyle(.bordered)
-                .padding(.top, 3)
-                if expanded {
-                    TaskDetailView(detail: TaskDetail(suggestion: suggestion), onOpen: onOpen)
-                        .padding(.top, 4)
-                        .onTapGesture {}
-                }
-            }
-            Spacer(minLength: 4)
-            if let link {
-                IconButton(symbol: link.symbol, help: link.help) { onOpen(link) }
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(hovering ? 0.07 : 0)))
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture { toggle() }
-        .focusable(expanded)
-        .focused($focused)
-        .focusEffectDisabled()
-        .onExitCommand { if expanded { toggle() } }
-        .animation(reduceMotion ? nil : .easeOut(duration: 0.12), value: hovering)
-        .accessibilityElement(children: .contain)
-        .accessibilityAction(named: expanded ? "Hide details" : "Show details", toggle)
+                },
+                trailing: { _ in
+                    if let link { IconButton(symbol: link.symbol, help: link.help) { onOpen(link) } }
+                })
     }
 }
 

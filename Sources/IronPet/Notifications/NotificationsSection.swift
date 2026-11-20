@@ -77,6 +77,14 @@ final class NotificationsModel: ObservableObject {
         reload()
     }
 
+    /// Back from the detail page.
+    func close() { expanded = nil }
+
+    /// The notifications whose title or summary contains `query`, on top of the type and source filters.
+    static func filter(_ items: [NotificationItem], query: String) -> [NotificationItem] {
+        ListSearch.filter(items, query: query, title: \.title, description: \.summary)
+    }
+
     func markAllRead() {
         api.markAllRead()
         reload()
@@ -88,27 +96,36 @@ final class NotificationsModel: ObservableObject {
     }
 }
 
-/// The Notifications section: everything ironpet showed in a bubble, newest first.
+/// The Notifications section: everything ironpet showed in a bubble, newest first. Clicking one shows its full text and links.
 struct NotificationsSection: View {
     @ObservedObject var model: NotificationsModel
     /// A notification a bubble asked to open. Opened, then cleared.
     @Binding var focus: String?
+    @State private var search = ""
 
     var body: some View {
-        content
-            .pageHeader(IronPetSection.notifications.title) {
-                HStack(spacing: 10) {
-                    typeMenu
-                    sourceMenu
-                    Button("Mark all read") { model.markAllRead() }
-                        .buttonStyle(.borderless)
-                        .font(.caption)
-                        .disabled(model.unread == 0)
-                }
+        ListScreen(title: IronPetSection.notifications.title, search: $search, detailOpen: openItem != nil, trailing: {
+            HStack(spacing: 10) {
+                typeMenu
+                sourceMenu
+                Button("Mark all read") { model.markAllRead() }
+                    .buttonStyle(.borderless)
+                    .font(.caption)
+                    .disabled(model.unread == 0)
             }
-            .onAppear { model.reload(); openFocus() }
-            .onChange(of: focus) { _ in openFocus() }
+        }) {
+            if let item = openItem {
+                detail(item)
+            } else {
+                content
+            }
+        }
+        .onAppear { model.reload(); openFocus() }
+        .onChange(of: focus) { _ in openFocus() }
     }
+
+    /// The open notification, if it is still in the list. One pruned while open leaves the list, with its header back.
+    private var openItem: NotificationItem? { model.items.first { $0.id == model.expanded } }
 
     private func openFocus() {
         guard let id = focus else { return }
@@ -119,21 +136,56 @@ struct NotificationsSection: View {
     }
 
     @ViewBuilder private var content: some View {
+        let shown = NotificationsModel.filter(model.items, query: search)
         if model.items.isEmpty {
             EmptyState(symbol: "tray", title: model.type == nil && model.source == nil ? "No notifications" : "Nothing matches",
                        detail: "Every bubble Ghost shows is kept here with its full text and links.")
+        } else if shown.isEmpty {
+            NoMatches()
         } else {
-            ScrollView {
-                LazyVStack(spacing: 2) {
-                    ForEach(model.items) { item in
-                        NotificationRow(item: item, expanded: model.expanded == item.id, onToggle: { model.toggle(item.id) },
-                                        onOpen: { model.opener.open($0) })
+            ListScroll {
+                ForEach(shown) { item in
+                    NotificationRow(item: item, onOpen: { model.select(item.id) })
+                }
+            }
+        }
+    }
+
+    private func detail(_ item: NotificationItem) -> some View {
+        ListDetailPage(section: "Notifications", onBack: { model.close() }) {
+            HStack(spacing: 8) {
+                Image(systemName: item.type.symbol).foregroundStyle(.secondary)
+                Text(NotificationsModel.sourceTitle(item.source) + " · " + item.type.title + " · "
+                     + item.created.formatted(date: .abbreviated, time: .shortened))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Text(item.title).font(.system(size: 24, weight: .bold)).textSelection(.enabled)
+            if !item.summary.isEmpty, item.summary != item.title {
+                Text(item.summary).font(.system(size: 13)).textSelection(.enabled)
+            }
+            if !item.description.isEmpty, item.description != item.summary {
+                Text(NotificationText.markdown(item.description))
+                    .font(.system(size: 13))
+                    .textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if !item.links.isEmpty {
+                VStack(alignment: .leading, spacing: 4) {
+                    ForEach(Array(item.links.enumerated()), id: \.offset) { _, link in
+                        Button { model.opener.open(link) } label: {
+                            Label(link.title, systemImage: NotificationText.symbol(link.kind))
+                                .font(.system(size: 12))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                        }
+                        .buttonStyle(.link)
+                        .help(link.ref)
                     }
                 }
-                .padding(6)
             }
-            .frame(maxHeight: .infinity)
         }
+        .onExitCommand { model.close() }
     }
 
     private var typeMenu: some View {
@@ -171,85 +223,31 @@ struct NotificationsSection: View {
 
 private struct NotificationRow: View {
     let item: NotificationItem
-    let expanded: Bool
-    let onToggle: () -> Void
-    let onOpen: (NotificationLink) -> Void
-    @State private var hovering = false
+    let onOpen: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button(action: onToggle) { header }
-                .buttonStyle(.plain)
-                .accessibilityLabel(item.isUnread ? "Unread: \(item.title)" : item.title)
-            if expanded { details }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(expanded || hovering ? 0.08 : 0.03)))
-        .onHover { hovering = $0 }
-    }
-
-    private var header: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Circle()
-                .fill(item.isUnread ? Color.accentColor : Color.clear)
-                .frame(width: 7, height: 7)
-                .padding(.top, 6)
-            Image(systemName: item.type.symbol)
-                .font(.system(size: 13))
-                .foregroundStyle(.secondary)
-                .frame(width: 18)
-                .padding(.top, 2)
-            VStack(alignment: .leading, spacing: 3) {
-                HStack(spacing: 6) {
-                    Text(item.title)
-                        .font(.system(size: 13, weight: item.isUnread ? .semibold : .regular))
-                        .lineLimit(expanded ? nil : 1)
-                    Spacer(minLength: 4)
+        ListRow(title: item.title, description: item.summary, emphasized: item.isUnread, onOpen: onOpen,
+                leading: {
+                    HStack(spacing: 6) {
+                        Circle().fill(item.isUnread ? Color.accentColor : Color.clear).frame(width: 7, height: 7).padding(.top, 1)
+                        ListRowIcon(symbol: item.type.symbol)
+                    }
+                },
+                extra: {
+                    Text(NotificationsModel.sourceTitle(item.source) + " · " + item.type.title)
+                        .font(.caption2)
+                        .foregroundStyle(.tertiary)
+                },
+                trailing: { _ in
                     Text(item.created, format: .relative(presentation: .named, unitsStyle: .abbreviated))
                         .font(.caption)
                         .foregroundStyle(.secondary)
-                }
-                if !item.summary.isEmpty, item.summary != item.title {
-                    Text(item.summary)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.primary.opacity(0.85))
-                        .lineLimit(expanded ? nil : 2)
-                        .multilineTextAlignment(.leading)
-                }
-                Text(NotificationsModel.sourceTitle(item.source) + " · " + item.type.title)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
-            }
-        }
-        .contentShape(Rectangle())
+                })
+        .accessibilityLabel(item.isUnread ? "Unread: \(item.title)" : item.title)
     }
+}
 
-    @ViewBuilder private var details: some View {
-        if !item.description.isEmpty, item.description != item.summary {
-            Text(Self.markdown(item.description))
-                .font(.system(size: 12))
-                .textSelection(.enabled)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .padding(.leading, 35)
-        }
-        if !item.links.isEmpty {
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(Array(item.links.enumerated()), id: \.offset) { _, link in
-                    Button { onOpen(link) } label: {
-                        Label(link.title, systemImage: Self.symbol(link.kind))
-                            .font(.system(size: 12))
-                            .lineLimit(1)
-                            .truncationMode(.middle)
-                    }
-                    .buttonStyle(.link)
-                    .help(link.ref)
-                }
-            }
-            .padding(.leading, 35)
-        }
-    }
-
+enum NotificationText {
     /// Markdown with the line breaks kept. Text that does not parse shows as written.
     static func markdown(_ text: String) -> AttributedString {
         (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)

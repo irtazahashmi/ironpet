@@ -1,12 +1,13 @@
 import AppKit
 import SwiftUI
 
-/// The Actions section: tricks Ghost does on request.
+/// The Actions section: tricks Ghost does on request. It is a grid of buttons, not a list, so it has no search or detail
+/// page; it shares the title row and the column width of the lists.
 struct ActionsSection: View {
     let onTrick: (PetController.Trick) -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
+        ListScreen(title: IronPetSection.actions.title) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("Make \(SettingsAPI.live.config.pet.name) do something")
@@ -19,34 +20,51 @@ struct ActionsSection: View {
                         }
                     }
                 }
-                .padding(12)
+                .padding(ListScreenMetrics.gutter)
+                .listColumn()
             }
             .frame(maxHeight: .infinity)
         }
-        .pageHeader(IronPetSection.actions.title)
     }
 }
 
-/// The Agents section: watched sessions, grouped by what they need.
+/// What the Agents search looks at: the project, the prompt and what the agent is doing or did.
+enum AgentsSearch {
+    static func filter(_ sessions: [AgentSession], query: String) -> [AgentSession] {
+        ListSearch.filter(sessions, query: query, title: \.workspaceName, description: description(of:))
+    }
+
+    /// The row's one-line description: the prompt, or the summary of a finished turn.
+    static func description(of session: AgentSession) -> String? {
+        session.prompt ?? session.summary ?? session.detail
+    }
+}
+
+/// The Agents section: watched sessions, grouped by what they need. Clicking one shows it in full.
 struct AgentsSection: View {
     @ObservedObject var agents: AgentsAPI
+    @State private var search = ""
+    @State private var nav = ListNavigation<String>()
 
     var body: some View {
-        VStack(spacing: 0) {
-            list
-        }
-        .pageHeader(IronPetSection.agents.title) {
+        ListScreen(title: IronPetSection.agents.title, search: $search, detailOpen: nav.opened != nil, trailing: {
             HStack(spacing: 4) {
                 ForEach([AgentStatus.needsInput, .running, .failed, .done], id: \.self) { status in
                     let count = agents.sessions.filter { $0.status == status }.count
                     if count > 0 { CountChip(count: count, color: status.tint) }
                 }
             }
+        }) {
+            if let id = nav.opened {
+                detail(id)
+            } else {
+                list
+            }
         }
     }
 
     private var sections: [(title: String, sessions: [AgentSession])] {
-        let all = agents.sessions
+        let all = AgentsSearch.filter(agents.sessions, query: search)
         return [
             ("Needs you", all.filter { $0.status == .needsInput }),
             ("Working", all.filter { $0.status == .running }),
@@ -54,74 +72,145 @@ struct AgentsSection: View {
         ].filter { !$0.sessions.isEmpty }
     }
 
-    private var list: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            if agents.sessions.isEmpty {
-                EmptyState(symbol: "moon.zzz", title: "No agents running",
-                           detail: "Cursor and Claude Code sessions show up here.")
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
-                        ForEach(sections, id: \.title) { section in
-                            if section.title == "Finished" {
-                                SectionHeader(section.title, action: "Clear finished") { agents.acknowledgeAll() }
-                            } else {
-                                SectionTitle(section.title)
-                            }
-                            ForEach(section.sessions) { session in
-                                SessionRow(session: session,
-                                           onJump: { try? agents.focus(session.id) },
-                                           onDismiss: { try? agents.acknowledge(session.id) })
-                            }
-                        }
+    @ViewBuilder private var list: some View {
+        if agents.sessions.isEmpty {
+            EmptyState(symbol: "moon.zzz", title: "No agents running",
+                       detail: "Cursor and Claude Code sessions show up here.")
+        } else if sections.isEmpty {
+            NoMatches()
+        } else {
+            ListScroll {
+                ForEach(sections, id: \.title) { section in
+                    if section.title == "Finished" {
+                        SectionHeader(section.title, action: "Clear finished") { agents.acknowledgeAll() }
+                    } else {
+                        ListGroupTitle(section.title)
                     }
-                    .padding(6)
+                    ForEach(section.sessions) { session in
+                        SessionRow(session: session,
+                                   onOpen: { nav.open(session.id) },
+                                   onJump: { try? agents.focus(session.id) },
+                                   onDismiss: { try? agents.acknowledge(session.id) })
+                    }
                 }
-                .frame(maxHeight: .infinity)
             }
         }
-        .frame(maxHeight: .infinity)
+    }
+
+    @ViewBuilder private func detail(_ id: String) -> some View {
+        if let session = agents.sessions.first(where: { $0.id == id }) {
+            ListDetailPage(section: "Agents", onBack: { nav.close() }) {
+                HStack(spacing: 8) {
+                    StatusIcon(status: session.status).frame(width: 20, height: 20)
+                    Text(session.workspaceName).font(.system(size: 24, weight: .bold)).textSelection(.enabled)
+                    SourceTag(source: session.source)
+                }
+                HStack(spacing: 8) {
+                    Button { try? agents.focus(session.id) } label: { Label(Editors.label(for: session), systemImage: "arrow.up.forward.app") }
+                    if session.status == .done || session.status == .failed {
+                        Button("Dismiss") { try? agents.acknowledge(session.id); nav.close() }
+                    }
+                }
+                .buttonStyle(.bordered)
+                DetailField(label: "Status", value: session.status.title)
+                if let prompt = session.prompt { DetailField(label: "Prompt", value: prompt) }
+                if let activity = session.detail { DetailField(label: "Doing now", value: activity) }
+                if let reply = session.lastResponse { DetailField(label: "Last reply", value: reply) }
+                if !session.editedFiles.isEmpty { DetailField(label: "Files edited this turn", value: session.editedFiles.joined(separator: "\n")) }
+                if let workspace = session.origin.workspace { DetailField(label: "Workspace", value: workspace) }
+                DetailField(label: "Turn started", value: session.turnStartedAt.formatted(date: .abbreviated, time: .shortened))
+                DetailField(label: "Last update", value: session.updatedAt.formatted(date: .abbreviated, time: .shortened))
+            }
+            .onExitCommand { nav.close() }
+        } else {
+            // The session was dismissed while it was open.
+            Color.clear.onAppear { nav.close() }
+        }
     }
 }
 
-/// The Alerts section: what automations reported, newest first.
+/// What the Alerts search looks at: the title and the line under it.
+enum AlertsSearch {
+    static func filter(_ signals: [Signal], query: String) -> [Signal] {
+        ListSearch.filter(signals, query: query, title: \.title, description: \.subtitle)
+    }
+}
+
+/// The Alerts section: what automations reported, newest first. Clicking one shows its full text and links.
 struct AlertsSection: View {
     @ObservedObject var alerts: AlertsAPI
     let onAsk: (String) -> Void
+    @State private var search = ""
+    @State private var nav = ListNavigation<String>()
 
     var body: some View {
-        VStack(spacing: 0) {
-            list
-        }
-        .pageHeader(IronPetSection.alerts.title) {
+        ListScreen(title: IronPetSection.alerts.title, search: $search, detailOpen: nav.opened != nil, trailing: {
             if !alerts.alerts.isEmpty {
                 Button("Clear all") { alerts.dismissAll() }
                     .buttonStyle(.borderless)
                     .font(.caption)
             }
+        }) {
+            if let id = nav.opened {
+                detail(id)
+            } else {
+                list
+            }
         }
     }
 
+    private func open(_ signal: Signal) {
+        if let url = signal.url { NSWorkspace.shared.open(url) }
+        try? alerts.dismiss(signal.id)
+    }
+
     @ViewBuilder private var list: some View {
+        let shown = AlertsSearch.filter(alerts.alerts, query: search)
         if alerts.alerts.isEmpty {
             EmptyState(symbol: "bell.slash", title: "No alerts",
                        detail: "Alerts from your automations show up here, such as CI, reviews and errors.")
+        } else if shown.isEmpty {
+            NoMatches()
         } else {
-            ScrollView {
-                VStack(spacing: 2) {
-                    ForEach(alerts.alerts) { signal in
-                        SignalRow(signal: signal,
-                                  onOpen: {
-                                      if let url = signal.url { NSWorkspace.shared.open(url) }
-                                      try? alerts.dismiss(signal.id)
-                                  },
-                                  onAsk: signal.ask.map { prompt in { onAsk(prompt) } },
-                                  onDismiss: { try? alerts.dismiss(signal.id) })
-                    }
+            ListScroll {
+                ForEach(shown) { signal in
+                    SignalRow(signal: signal,
+                              onShow: { nav.open(signal.id) },
+                              onOpen: { open(signal) },
+                              onAsk: signal.ask.map { prompt in { onAsk(prompt) } },
+                              onDismiss: { try? alerts.dismiss(signal.id) })
                 }
-                .padding(6)
             }
-            .frame(maxHeight: .infinity)
+        }
+    }
+
+    @ViewBuilder private func detail(_ id: String) -> some View {
+        if let signal = alerts.alerts.first(where: { $0.id == id }) {
+            ListDetailPage(section: "Alerts", onBack: { nav.close() }) {
+                Label(signal.label, systemImage: signal.symbol)
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(SignalRow.color(signal))
+                Text(signal.title).font(.system(size: 24, weight: .bold)).textSelection(.enabled)
+                HStack(spacing: 8) {
+                    if signal.url != nil { Button("Open") { open(signal); nav.close() } }
+                    if let prompt = signal.ask {
+                        Button { onAsk(prompt) } label: { Label("Ask \(SettingsAPI.live.config.pet.name)", systemImage: "sparkles") }
+                    }
+                    Button("Dismiss") { try? alerts.dismiss(signal.id); nav.close() }
+                }
+                .buttonStyle(.bordered)
+                if !signal.subtitle.isEmpty { DetailField(label: "Summary", value: signal.subtitle) }
+                if let text = signal.detail, !text.isEmpty { DetailField(label: "Details", value: text) }
+                if let url = signal.url { DetailField(label: "Link", value: url.absoluteString) }
+                ForEach(Array(signal.links.enumerated()), id: \.offset) { _, link in
+                    DetailField(label: link.title, value: link.ref)
+                }
+                DetailField(label: "Received", value: signal.date.formatted(date: .abbreviated, time: .shortened))
+            }
+            .onExitCommand { nav.close() }
+        } else {
+            // The alert was dismissed while it was open.
+            Color.clear.onAppear { nav.close() }
         }
     }
 }
@@ -158,53 +247,29 @@ private struct TrickTile: View {
 
 private struct SessionRow: View {
     let session: AgentSession
+    let onOpen: () -> Void
     let onJump: () -> Void
     let onDismiss: () -> Void
-    @State private var hovering = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            StatusIcon(status: session.status)
-                .frame(width: 18, height: 18)
-                .padding(.top, 1)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(session.workspaceName)
-                        .font(.system(size: 13, weight: .semibold))
-                        .lineLimit(1)
-                    SourceTag(source: session.source)
-                    Spacer(minLength: 4)
-                    if hovering {
-                        actions
-                    } else {
-                        Elapsed(session: session)
+        ListRow(title: session.workspaceName, description: AgentsSearch.description(of: session), emphasized: true, onOpen: onOpen,
+                leading: { StatusIcon(status: session.status).frame(width: 18, height: 18).padding(.top, 1) },
+                extra: {
+                    if let detail = session.detail, session.status == .needsInput || session.status == .running {
+                        ActivityLabel(detail: detail, status: session.status)
                     }
-                }
-                if let prompt = session.prompt {
-                    Text(prompt)
-                        .font(.system(size: 12))
-                        .foregroundStyle(.primary.opacity(0.85))
-                        .lineLimit(2)
-                }
-                if let summary = session.summary, session.status == .done || session.status == .failed {
-                    Text(summary)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(3)
-                }
-                if let detail = session.detail, session.status == .needsInput || session.status == .running {
-                    ActivityLabel(detail: detail, status: session.status)
-                }
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(hovering ? 0.07 : 0)))
-        .contentShape(Rectangle())
-        .onHover { hovering = $0 }
-        .onTapGesture(perform: onJump)
+                },
+                trailing: { hovering in
+                    HStack(spacing: 6) {
+                        SourceTag(source: session.source)
+                        if hovering {
+                            actions
+                        } else {
+                            Elapsed(session: session)
+                        }
+                    }
+                })
         .help(Editors.label(for: session))
-        .animation(.easeOut(duration: 0.12), value: hovering)
     }
 
     private var actions: some View {
@@ -220,51 +285,42 @@ private struct SessionRow: View {
 
 private struct SignalRow: View {
     let signal: Signal
+    let onShow: () -> Void
     let onOpen: () -> Void
     let onAsk: (() -> Void)?
     let onDismiss: () -> Void
-    @State private var hovering = false
 
     var body: some View {
-        HStack(alignment: .top, spacing: 10) {
-            Image(systemName: signal.symbol)
-                .font(.system(size: 13))
-                .foregroundStyle(color)
-                .frame(width: 18, height: 18)
-                .padding(.top, 1)
-            VStack(alignment: .leading, spacing: 4) {
-                HStack(spacing: 6) {
-                    Text(signal.label).font(.caption.weight(.semibold)).foregroundStyle(color)
-                    Spacer(minLength: 4)
-                    if hovering {
-                        IconButton(symbol: "xmark", help: "Dismiss", action: onDismiss)
-                    } else {
-                        Text(signal.date, style: .relative)
-                            .font(.caption2.monospacedDigit())
-                            .foregroundStyle(.tertiary)
+        ListRow(title: signal.title, description: signal.subtitle, onOpen: onShow,
+                leading: { ListRowIcon(symbol: signal.symbol, color: Self.color(signal)) },
+                extra: {
+                    if signal.url != nil || onAsk != nil {
+                        HStack(spacing: 6) {
+                            if signal.url != nil { Button("Open", action: onOpen) }
+                            if let onAsk {
+                                Button(action: onAsk) { Label("Ask \(SettingsAPI.live.config.pet.name)", systemImage: "sparkles") }
+                            }
+                        }
+                        .controlSize(.small)
+                        .buttonStyle(.bordered)
+                        .padding(.top, 2)
                     }
-                }
-                Text(signal.title).font(.system(size: 12.5, weight: .medium)).lineLimit(2)
-                Text(signal.subtitle).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                HStack(spacing: 6) {
-                    if signal.url != nil { Button("Open", action: onOpen) }
-                    if let onAsk {
-                        Button(action: onAsk) { Label("Ask \(SettingsAPI.live.config.pet.name)", systemImage: "sparkles") }
+                },
+                trailing: { hovering in
+                    HStack(spacing: 6) {
+                        Text(signal.label).font(.caption.weight(.semibold)).foregroundStyle(Self.color(signal))
+                        if hovering {
+                            IconButton(symbol: "xmark", help: "Dismiss", action: onDismiss)
+                        } else {
+                            Text(signal.date, style: .relative)
+                                .font(.caption2.monospacedDigit())
+                                .foregroundStyle(.tertiary)
+                        }
                     }
-                }
-                .controlSize(.small)
-                .buttonStyle(.bordered)
-                .padding(.top, 2)
-            }
-        }
-        .padding(.horizontal, 10)
-        .padding(.vertical, 8)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(hovering ? 0.07 : 0)))
-        .onHover { hovering = $0 }
-        .animation(.easeOut(duration: 0.12), value: hovering)
+                })
     }
 
-    private var color: Color {
+    static func color(_ signal: Signal) -> Color {
         switch signal.mood {
         case .failed: return .red
         case .needsInput: return .orange
@@ -453,6 +509,16 @@ struct EmptyState: View {
 }
 
 extension AgentStatus {
+    var title: String {
+        switch self {
+        case .needsInput: return "Needs you"
+        case .failed: return "Failed"
+        case .done: return "Done"
+        case .running: return "Working"
+        case .idle: return "Idle"
+        }
+    }
+
     var symbol: String {
         switch self {
         case .needsInput: return "hand.raised.fill"

@@ -10,7 +10,9 @@ struct AutomationsSettings: View {
         if let service = model.automations {
             AutomationList(api: service, config: config, showLogs: model.showLogs, createWithAgent: model.createWithAgent)
         } else {
-            Text("Automations are not ready yet.").foregroundStyle(.secondary)
+            ListScreen(title: IronPetSection.automations.title) {
+                Text("Automations are not ready yet.").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
         }
     }
 }
@@ -24,8 +26,65 @@ private struct AutomationList: View {
     @State private var editing: Automation?
     @State private var reviewing: Automation?
     @State private var tick = 0
+    @State private var search = ""
+    @State private var nav = ListNavigation<String>()
 
     var body: some View {
+        ListScreen(title: IronPetSection.automations.title, search: $search, detailOpen: nav.opened != nil) {
+            if let id = nav.opened {
+                detail(id)
+            } else {
+                form.listColumn()
+            }
+        }
+        .sheet(isPresented: $asking) { NewAutomationSheet { text in asking = false; if let text { createWithAgent(text) } } }
+        .sheet(item: $reviewing) { automation in ReviewSheet(api: api, opened: automation) { reviewing = nil } }
+        .sheet(item: $editing) { automation in EditSheet(api: api, automation: automation) { editing = nil } }
+        .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in tick += 1 }
+    }
+
+    /// The automations whose name or schedule line contains the search text.
+    private var shown: [Automation] {
+        ListSearch.filter(api.automations, query: search, title: \.name, description: { subtitle($0) })
+    }
+
+    @ViewBuilder private func detail(_ id: String) -> some View {
+        let _ = tick
+        if let a = api.automations.first(where: { $0.id == id }) {
+            let status = try? api.status(a.id)
+            ListDetailPage(section: "Automations", onBack: { nav.close() }) {
+                Text(a.name).font(.system(size: 24, weight: .bold)).textSelection(.enabled)
+                Toggle("Enabled", isOn: Binding(get: { a.enabled }, set: { on in try? api.setEnabled(a.id, on) }))
+                HStack(spacing: 8) {
+                    Button("Show logs…") { showLogs(a.id) }
+                    Button("Run now") { Task { _ = try? await api.runNow(a.id) } }
+                    Button("Edit…") { editing = a }
+                    Button("Delete", role: .destructive) { try? api.delete(a.id); nav.close() }
+                }
+                .buttonStyle(.bordered)
+                DetailField(label: "Schedule", value: subtitle(a))
+                if let last = status?.lastRun {
+                    DetailField(label: "Last run", value: "\(last.outcome)\(last.output.isEmpty ? "" : ", \(last.output)")")
+                }
+                if let approval = status?.approval {
+                    DetailField(label: "Approval", value: approval == .rejected ? "Rejected" : "Waiting for your approval")
+                    HStack(spacing: 6) {
+                        Button("Review…") { reviewing = a }
+                        Button("Approve") { try? api.approve(a.id); tick += 1 }.buttonStyle(.borderedProminent)
+                        if approval != .rejected { Button("Reject") { try? api.reject(a.id); tick += 1 } }
+                    }
+                }
+                if let hint = setupHint(a) { Label(hint, systemImage: "info.circle").font(.caption).foregroundStyle(.orange) }
+                DetailField(label: "Runs", value: a.action.type == "prompt" ? "A prompt for the agent" : a.action.type)
+                DetailField(label: "Created by", value: a.createdBy)
+            }
+            .onExitCommand { nav.close() }
+        } else {
+            Color.clear.onAppear { nav.close() }
+        }
+    }
+
+    private var form: some View {
         Form {
             Section {
                 Toggle("Pause all reminders", isOn: binding(\.paused))
@@ -35,7 +94,8 @@ private struct AutomationList: View {
             }
             Section("Automations") {
                 if api.automations.isEmpty { Text("None yet. Ask an agent, or add one.").foregroundStyle(.secondary) }
-                ForEach(api.automations) { automation in row(automation) }
+                else if shown.isEmpty { Text("No automation has that text in its name or schedule.").foregroundStyle(.secondary) }
+                ForEach(shown) { automation in row(automation) }
                 HStack {
                     Button("New automation…") { asking = true }
                     Button("Show logs") { showLogs(nil) }
@@ -77,10 +137,6 @@ private struct AutomationList: View {
         }
         .formStyle(.grouped)
         .scrollContentBackground(.hidden)
-        .sheet(isPresented: $asking) { NewAutomationSheet { text in asking = false; if let text { createWithAgent(text) } } }
-        .sheet(item: $reviewing) { automation in ReviewSheet(api: api, opened: automation) { reviewing = nil } }
-        .sheet(item: $editing) { automation in EditSheet(api: api, automation: automation) { editing = nil } }
-        .onReceive(Timer.publish(every: 5, on: .main, in: .common).autoconnect()) { _ in tick += 1 }
     }
 
     private func row(_ a: Automation) -> some View {
@@ -91,8 +147,13 @@ private struct AutomationList: View {
             Toggle(a.name, isOn: Binding(get: { a.enabled }, set: { on in try? api.setEnabled(a.id, on) }))
                 .labelsHidden().toggleStyle(.switch)
             VStack(alignment: .leading, spacing: 2) {
-                Text(a.name)
-                Text(subtitle(a)).font(.caption).foregroundStyle(.secondary)
+                Group {
+                    Text(a.name)
+                    Text(subtitle(a)).font(.caption).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { nav.open(a.id) }
                 if DailySchedule.time(of: a.trigger) != nil { schedule(a) }
                 if let last = (try? api.status(a.id))?.lastRun {
                     Text("Last: \(last.outcome)\(last.output.isEmpty ? "" : ", \(last.output)")")

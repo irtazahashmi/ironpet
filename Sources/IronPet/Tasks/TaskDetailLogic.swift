@@ -1,12 +1,7 @@
 import Foundation
 
 /// Which task the Tasks section shows in full. Nil shows the list.
-struct TaskNavigation: Equatable {
-    private(set) var openTask: String?
-
-    mutating func open(_ id: String) { openTask = id }
-    mutating func close() { openTask = nil }
-}
+typealias TaskNavigation = ListNavigation<String>
 
 /// Suggestions and validation for the "+ Label" popover.
 enum TaskLabelEditing {

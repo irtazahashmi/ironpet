@@ -34,78 +34,86 @@ struct ScreenSection: View {
     @State private var recent: [StoredCapture] = []
     @State private var hits: [CaptureHit] = []
     @State private var search = ""
-    @State private var open: Set<Int64> = []
+    @State private var nav = ListNavigation<Int64>()
     @State private var openText: [Int64: String] = [:]
     private let timer = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
 
     private var query: String { search.trimmingCharacters(in: .whitespaces) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(ScreenSectionText.summary(captures: model.captureCount, lastCapture: model.lastCapture))
-                if !config.config.screenCapture.enabled {
-                    HStack {
-                        Text("Screen capture is off").foregroundStyle(.secondary)
-                        Button("Open Settings", action: onOpenSettings)
-                    }
-                }
-                TextField("Search captures", text: $search).textFieldStyle(.roundedBorder).frame(maxWidth: 360)
-            }
-            .padding(16)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            Divider()
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 12) {
-                    if query.isEmpty {
-                        if recent.isEmpty { Text("Captures appear here once screen capture has read a window.").font(.caption).foregroundStyle(.secondary) }
-                        ForEach(recent) { capture in
-                            row(id: capture.id, at: capture.at, app: capture.appName, window: ScreenSectionText.windowLabel(capture),
-                                text: ScreenSectionText.preview(capture.text))
-                        }
-                    } else {
-                        if hits.isEmpty { Text("No capture has all of those words.").font(.caption).foregroundStyle(.secondary) }
-                        ForEach(hits) { hit in
-                            row(id: hit.id, at: hit.at, app: hit.appName, window: hit.window.isEmpty ? (hit.url ?? "Untitled window") : hit.window, text: hit.snippet)
-                        }
-                    }
-                    Text("Text is stored on this Mac with secrets redacted, and is deleted after \(config.config.screenCapture.retentionDays) days.")
-                        .font(.caption).foregroundStyle(.secondary)
-                }
-                .padding(16)
-                .frame(maxWidth: .infinity, alignment: .leading)
+        // The search field in the title row asks the capture database, which matches rows that have all of the words.
+        ListScreen(title: IronPetSection.screen.title, search: $search, detailOpen: nav.opened != nil) {
+            if let id = nav.opened {
+                detail(id)
+            } else {
+                list
             }
         }
-        .frame(maxHeight: .infinity)
-        .pageHeader(IronPetSection.screen.title)
         .onAppear { onAppear(); refresh() }
         .onReceive(timer) { _ in if query.isEmpty { refresh() } }
         .onChange(of: model.captureCount) { _ in refresh() }
         .onChange(of: search) { _ in refresh() }
     }
 
-    private func row(id: Int64, at: Date, app: String, window: String, text: String) -> some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Button {
-                if open.contains(id) { open.remove(id) } else { open.insert(id); loadText(id) }
-            } label: {
-                VStack(alignment: .leading, spacing: 2) {
+    private var list: some View {
+        ListScroll {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(ScreenSectionText.summary(captures: model.captureCount, lastCapture: model.lastCapture))
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                if !config.config.screenCapture.enabled {
                     HStack {
-                        Text("\(app): \(window)").font(.headline).lineLimit(1)
-                        Spacer()
-                        Text(at.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                        Text("Screen capture is off").font(.caption).foregroundStyle(.secondary)
+                        Button("Open Settings", action: onOpenSettings).controlSize(.small)
                     }
-                    if !open.contains(id) { Text(text).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
                 }
-                .contentShape(Rectangle())
             }
-            .buttonStyle(.plain)
-            if open.contains(id) {
-                Text(openText[id] ?? text).font(.caption).textSelection(.enabled)
-                    .padding(6).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+            .padding(.horizontal, 2)
+            if query.isEmpty {
+                if recent.isEmpty { Text("Captures appear here once screen capture has read a window.").font(.caption).foregroundStyle(.secondary) }
+                ForEach(recent) { capture in
+                    row(id: capture.id, at: capture.at, app: capture.appName, window: ScreenSectionText.windowLabel(capture),
+                        text: ScreenSectionText.preview(capture.text, lines: 1))
+                }
+            } else {
+                if hits.isEmpty { NoMatches() }
+                ForEach(hits) { hit in
+                    row(id: hit.id, at: hit.at, app: hit.appName, window: hit.window.isEmpty ? (hit.url ?? "Untitled window") : hit.window, text: hit.snippet)
+                }
             }
+            Text("Text is stored on this Mac with secrets redacted, and is deleted after \(config.config.screenCapture.retentionDays) days.")
+                .font(.caption).foregroundStyle(.secondary)
+                .padding(.horizontal, 2)
         }
+    }
+
+    private func row(id: Int64, at: Date, app: String, window: String, text: String) -> some View {
+        ListRow(title: "\(app): \(window)", description: text.replacingOccurrences(of: "\n", with: " "), emphasized: true,
+                onOpen: { nav.open(id); loadText(id) },
+                leading: { ListRowIcon(symbol: "macwindow") },
+                extra: { EmptyView() },
+                trailing: { _ in
+                    Text(at.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                })
+    }
+
+    @ViewBuilder private func detail(_ id: Int64) -> some View {
+        let capture = recent.first { $0.id == id }
+        let hit = hits.first { $0.id == id }
+        let title = capture.map { "\($0.appName): \(ScreenSectionText.windowLabel($0))" }
+            ?? hit.map { "\($0.appName): \($0.window.isEmpty ? ($0.url ?? "Untitled window") : $0.window)" } ?? "Capture"
+        let at = capture?.at ?? hit?.at
+        ListDetailPage(section: "Screen", onBack: { nav.close() }) {
+            Text(title).font(.system(size: 20, weight: .bold)).textSelection(.enabled)
+            if let at { Text(at.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary) }
+            Text(openText[id] ?? capture?.text ?? hit?.snippet ?? "")
+                .font(.system(size: 12))
+                .textSelection(.enabled)
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
+        }
+        .onExitCommand { nav.close() }
     }
 
     /// Reads the database off the main thread. An answer for a search the user has since changed is dropped.
