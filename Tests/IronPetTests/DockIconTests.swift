@@ -58,6 +58,7 @@ final class DockIconTests: XCTestCase {
         XCTAssertLessThanOrEqual(maxX, 922 + 2)
         XCTAssertGreaterThanOrEqual(minY, 102 - 2)
         XCTAssertLessThanOrEqual(maxY, 922 + 2)
+        XCTAssertGreaterThanOrEqual(max(maxX - minX, maxY - minY), 800, "the pet fills the canvas, not its sheet cell")
     }
 
     func testOnlyTheIdleFrameContributesPixels() throws {
