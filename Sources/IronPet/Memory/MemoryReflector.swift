@@ -113,9 +113,9 @@ final class MemoryReflector {
     }
 
     /// An automation's final answer, from the agent that ran it. Its quiet reply, and an answer the same as its last one, are skipped.
-    func automationFinished(id: String, name: String, answer: String, agent: String, quiet: String? = nil) {
+    func automationFinished(id: String, name: String, answer: String, agent: String, quiet: [String] = []) {
         let text = answer.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard automatic, config().reflect, !text.isEmpty, text != quiet?.trimmingCharacters(in: .whitespacesAndNewlines),
+        guard automatic, config().reflect, !text.isEmpty, !quiet.contains(text),
               lastAnswers[id] != text else { return }
         lastAnswers[id] = text
         enqueue(.automation(id: id, name: name, answer: text, agent: agent))

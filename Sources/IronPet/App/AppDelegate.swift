@@ -348,9 +348,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let workspace = store.paths.workspace
         // Not read by memory: this restricted run is for prompts with item text from outside, and its answer is built from that text.
         service.runPrompt = { automation, prompt in await AutomationPrompt.run(automation, prompt: prompt, workspace: workspace) }
-        service.runSession = { [weak self] automation, prompt in
+        service.forkSource = { [weak self] automation in
+            guard let chat = self?.chat, chat.agent.id == AutomationPrompt.agentID(automation) else { return nil }
+            return chat.sessionID
+        }
+        service.postNotice = { [weak self] kind, title, text, triggers in
+            self?.chat.postSystemNotice(kind: kind, text: text, title: title, triggersTurn: triggers)
+        }
+        service.runSession = { [weak self, weak service] automation, prompt, fork in
             let agent = AutomationPrompt.agentID(automation)
-            let result = await AutomationSession.run(automation, prompt: prompt, workspace: workspace)
+            let result = await AutomationSession.run(automation, prompt: prompt, workspace: workspace, fork: fork,
+                                                     onNote: { service?.record(automation.id, "warning", $0) })
             self?.chat.refreshHistory()
             if case .success(let answer) = result { self?.memorySawAutomation(automation.id, answer: answer, agent: agent) }
             return result
@@ -359,7 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             self.memorySawAutomation(id, answer: answer, agent: self.chat.agent.id)
         }
-        chat.quietReply = { [weak store] id in store?.automations.first { $0.id == id }?.action.quiet }
+        chat.quietReply = { [weak store] id in store?.automations.first { $0.id == id }?.action.quietReplies }
         setUpBrief(service, tasks: tasks)
         service.sendToChat = { [weak self] id, message in self?.chat.submitFromAutomation(message, automation: id) ?? false }
         service.chatRunPending = { [weak self] id in self?.chat.hasAutomationRun(id) ?? false }
@@ -576,7 +584,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func memorySawAutomation(_ id: String, answer: String, agent: String) {
         let automation = automations?.store.automations.first { $0.id == id }
-        memory?.automationFinished(id: id, name: automation?.name ?? id, answer: answer, agent: agent, quiet: automation?.action.quiet)
+        memory?.automationFinished(id: id, name: automation?.name ?? id, answer: answer, agent: agent, quiet: automation?.action.quietReplies ?? [])
     }
 
     /// Builds screen capture on the shared database and applies the switch. With the switch off nothing starts.

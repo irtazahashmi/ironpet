@@ -239,7 +239,7 @@ final class MemoryReflectorTests: XCTestCase {
     }
 
     func testAutomationQuietRepliesAndRepeatsAreNotRead() async {
-        reflector.automationFinished(id: "w", name: "W", answer: "No changes.", agent: "claude", quiet: "No changes.")
+        reflector.automationFinished(id: "w", name: "W", answer: "No changes.", agent: "claude", quiet: ["No changes."])
         reflector.automationFinished(id: "w", name: "W", answer: "PR 12 merged", agent: "claude")
         await waitIdle()
         reflector.automationFinished(id: "w", name: "W", answer: "PR 12 merged ", agent: "claude")

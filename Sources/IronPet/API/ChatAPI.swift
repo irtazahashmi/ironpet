@@ -296,7 +296,7 @@ final class ChatAPI {
     private var currentForms: [ChatFormInfo] { session.forms.map { ChatFormInfo(id: $0.id, form: $0.form, answers: $0.answers) } }
 
     private var currentQueue: [ChatQueuedInfo] {
-        session.queue.filter { $0.automation == nil }.map {
+        session.queue.filter { $0.automation == nil && !$0.notice }.map {
             ChatQueuedInfo(id: $0.id, text: $0.text, files: $0.attachments, reply: $0.reply, fromMac: $0.origin == nil)
         }
     }
