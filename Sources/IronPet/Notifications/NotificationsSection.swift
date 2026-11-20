@@ -108,10 +108,15 @@ struct NotificationsSection: View {
             HStack(spacing: 10) {
                 typeMenu
                 sourceMenu
-                Button("Mark all read") { model.markAllRead() }
-                    .buttonStyle(.borderless)
-                    .font(.caption)
-                    .disabled(model.unread == 0)
+                Button { model.markAllRead() } label: {
+                    Label("Mark all as read", systemImage: "envelope.open")
+                        .labelStyle(.iconOnly)
+                }
+                .buttonStyle(.borderless)
+                .font(.caption)
+                .help("Mark all as read")
+                .accessibilityLabel("Mark all as read")
+                .disabled(model.unread == 0)
             }
         }) {
             if let item = openItem {
