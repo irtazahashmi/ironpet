@@ -52,7 +52,7 @@ final class RemoteChatTests: XCTestCase {
         return task
     }
 
-    typealias Frame = (kind: String, id: String?, at: ContinuousClock.Instant)
+    typealias Frame = (kind: String, id: String?, seq: Int, at: ContinuousClock.Instant)
 
     /// Starts reading frames. Cancel the socket, then await the task, to get them.
     private func reading(_ socket: URLSessionWebSocketTask) -> Task<[Frame], Never> {
@@ -60,7 +60,7 @@ final class RemoteChatTests: XCTestCase {
             var result: [Frame] = []
             while let message = try? await socket.receive() {
                 guard case .string(let text) = message, let object = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] else { continue }
-                result.append((object["kind"] as? String ?? "", object["id"] as? String, ContinuousClock.now))
+                result.append((object["kind"] as? String ?? "", object["id"] as? String, object["seq"] as? Int ?? 0, ContinuousClock.now))
             }
             return result
         }
@@ -106,6 +106,10 @@ final class RemoteChatTests: XCTestCase {
         defer { socket.cancel(with: .goingAway, reason: nil) }
         _ = try await socket.receive()   // hello
         let reader = reading(socket)
+        // The newest chat.item the Mac published for any message, to compare with the last frame the socket got.
+        var newestItemSeq = 0
+        let watch = h.events.subscribe { if $0.kind == .chatItem, $0.id != nil { newestItemSeq = $0.seq } }
+        defer { watch.cancel() }
         var text = ""
         let started = ContinuousClock.now
         for index in 1...50 {
@@ -127,7 +131,7 @@ final class RemoteChatTests: XCTestCase {
         for (a, b) in zip(ours, ours.dropFirst()) {
             XCTAssertGreaterThanOrEqual(b.at - a.at, .milliseconds(80), "frames are at least about 100 ms apart")
         }
-        XCTAssertGreaterThanOrEqual(try XCTUnwrap(ours.last).at, ended - .milliseconds(120), "the last frame comes after the last chunk")
+        XCTAssertEqual(try XCTUnwrap(received.last { $0.kind == "chat.item" }).seq, newestItemSeq, "the last event the Mac published reached the socket")
         let full = try await get("/v1/chat/messages/\(assistantID)")
         XCTAssertEqual(full.json["text"] as? String, text)
     }
