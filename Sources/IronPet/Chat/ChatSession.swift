@@ -521,6 +521,15 @@ final class ChatSession: ObservableObject {
     }()
 
     /// The prompt the agent receives for a reply: the original quoted in full, then the user's text.
+    /// Tells the agent that replies are read aloud while voice mode is on. It goes at the end of the prompt the agent gets, so
+    /// the stored message and the cached prefix stay the same.
+    static func withVoiceMode(_ prompt: String, on: Bool) -> String {
+        guard on else { return prompt }
+        return prompt + "\n\n" + voiceModeNote
+    }
+
+    static let voiceModeNote = "[Voice mode is on: your replies are read aloud. Keep the answer to a few plain spoken sentences, with no markdown, code blocks, tables or long lists.]"
+
     static func replyPrompt(_ reply: Reply, text: String) -> String {
         var original = reply.text
         var note = ""
@@ -620,6 +629,9 @@ final class ChatSession: ObservableObject {
     /// Takes a message typed in a thread whose background job is still running (thread id, text). Returns false when no
     /// job runs there, so the chat sends it itself.
     var jobFollowUp: ((String, String) -> Bool)?
+    /// Whether voice mode is on, so every turn tells the agent its replies are read aloud. The app wires it to the config;
+    /// tests leave it off, so they do not depend on the user's config.json.
+    var voiceModeOn: () -> Bool = { false }
 
     /// What happened to a message typed on this Mac.
     enum LocalSend: String, Codable { case ignored, sent, queued, toJob, needsFolder }
@@ -673,7 +685,8 @@ final class ChatSession: ObservableObject {
         if let client { onTurn?(client, .started) }
         automationRun = automation
         if let automation { onAutomation?(automation, .started) }
-        run(ACPTurn(prompt: reply.map { Self.replyPrompt($0, text: prompt) } ?? prompt, preamble: preamble, workspace: workspace, resume: threadID, model: model,
+        let sent = reply.map { Self.replyPrompt($0, text: prompt) } ?? prompt
+        run(ACPTurn(prompt: Self.withVoiceMode(sent, on: voiceModeOn()), preamble: preamble, workspace: workspace, resume: threadID, model: model,
                     images: shots.filter(ImageIntake.isImageFile), files: shots.filter { !ImageIntake.isImageFile($0) }))
         return true
     }

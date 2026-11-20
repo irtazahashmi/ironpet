@@ -139,6 +139,50 @@ final class FrontDeskTests: XCTestCase {
         XCTAssertFalse(FrontDesk.decision(for: ACPToolCall(title: "mcp__other__jobs_start", kind: "other")).allow)
     }
 
+    func testTheFirstTurnCarriesTheLastTypedChat() async throws {
+        let typed = ChatThread(id: "typed-1", title: "Lint", workspace: "/work/ironpet", updatedAt: Date(), items: [
+            ChatSession.Item(kind: .user("Fix the lint warnings in Chat")),
+            ChatSession.Item(kind: .assistant("Done, two files changed.")),
+        ], agent: "claude")
+        let desk = desk()
+        desk.recentThreads = { [typed] }
+        _ = try await desk.reply(to: "what did you change")
+        let preamble = try XCTUnwrap(agents[0].turns[0].preamble)
+        XCTAssertTrue(preamble.contains("User: Fix the lint warnings in Chat"), "the chat the user was just in is recalled")
+        XCTAssertTrue(preamble.contains("Ghost: Done, two files changed."))
+    }
+
+    func testRecentChatSkipsVoiceThreadsAndStaysInBudget() {
+        let voice = ChatThread(id: "voice-9", title: "Voice", workspace: "/tmp", updatedAt: Date(),
+                               items: [ChatSession.Item(kind: .user("said out loud"))], agent: "claude", voice: true)
+        let typed = ChatThread(id: "typed-2", title: "Typed", workspace: "/tmp", updatedAt: Date(), items: [
+            ChatSession.Item(kind: .user("first")), ChatSession.Item(kind: .user(String(repeating: "x", count: 900))),
+            ChatSession.Item(kind: .user("newest")),
+        ], agent: "claude")
+        let lines = FrontDesk.recentChat(from: [voice, typed]).components(separatedBy: "\n")
+        XCTAssertEqual(lines.count, 3)
+        XCTAssertEqual(lines.first, "User: first")
+        XCTAssertEqual(lines[1].count, 500, "a long message is clipped")
+        XCTAssertEqual(lines.last, "User: newest", "oldest first, newest last")
+        XCTAssertFalse(FrontDesk.recentChat(from: [voice, typed]).contains("said out loud"), "voice threads are not the chat")
+        XCTAssertEqual(FrontDesk.recentChat(from: [voice]), "", "nothing typed, nothing to recall")
+        XCTAssertEqual(FrontDesk.recentChat(from: [typed], bytes: 60), "User: newest", "the budget keeps the newest messages that fit")
+    }
+
+    func testTheDenialSaysWhatToDoNext() {
+        let decision = FrontDesk.decision(for: ACPToolCall(title: "Edit", kind: "edit", rawInput: ["file_path": "/work/a.swift"]))
+        XCTAssertFalse(decision.allow)
+        XCTAssertTrue(decision.message.contains("cannot run this itself"), "the model should not say it has no tools")
+        XCTAssertTrue(decision.message.contains("jobs_start"))
+    }
+
+    func testVoiceModeNoteIsAddedOnlyWhileVoiceModeIsOn() {
+        XCTAssertEqual(ChatSession.withVoiceMode("hi", on: false), "hi", "chat is unchanged when voice mode is off")
+        let on = ChatSession.withVoiceMode("hi", on: true)
+        XCTAssertTrue(on.hasPrefix("hi\n\n"), "the note goes at the end, so the cached prefix stays the same")
+        XCTAssertTrue(on.contains("read aloud"))
+    }
+
     func testFastestModel() {
         let models = [ChatModel(id: "opus", name: "Claude Opus 4.8"), ChatModel(id: "gemini-pro", name: "Gemini 3 Pro"),
                       ChatModel(id: "haiku", name: "Claude Haiku 4.5")]

@@ -57,11 +57,6 @@ final class PetController: NSObject {
     var onSettings: (() -> Void)?
     /// Opens Settings on the Screen tab.
     var onScreenSettings: (() -> Void)?
-    /// Voice mode's conversation for the Voice section, its button, and Settings on the Voice tab. Set before the window
-    /// first opens.
-    var voiceConversation: VoiceConversation?
-    var onVoiceToggle: (() -> Void)?
-    var onVoiceSettings: (() -> Void)?
     /// The Chat section's session and the Transcripts section's meetings. Set before the window first opens.
     var chat: ChatSession?
     /// The chat API the window draws. Set with `chat`.
@@ -355,17 +350,10 @@ final class PetController: NSObject {
                 if !isChatVisible { builtWindow?.close() }
                 onScreenSettings?()
             },
-            onBriefOpen: { [weak self] target in self?.openBrief(target) },
-            onVoiceToggle: { [weak self] in self?.onVoiceToggle?() },
-            onVoiceSettings: { [weak self] in
-                guard let self else { return }
-                if !isChatVisible { builtWindow?.close() }
-                onVoiceSettings?()
-            })
+            onBriefOpen: { [weak self] target in self?.openBrief(target) })
         let window = IronPetPanel(model: windowModel, session: chatModel, content: IronPetWindowView(
             model: windowModel, agents: agentList, alerts: alertList, tasks: taskList, notifications: notifications ?? .empty, chat: chatModel,
-            meetings: meetingsAPI, settings: settings, brief: brief, voice: voiceConversation, actions: actions))
-        window.hasVoice = voiceConversation != nil
+            meetings: meetingsAPI, settings: settings, brief: brief, actions: actions))
         window.onVisibilityChange = { [weak self] visible in
             guard let self else { return }
             syncChat()
