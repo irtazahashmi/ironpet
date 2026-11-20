@@ -13,10 +13,13 @@ enum SourceJumper {
     struct Effects {
         /// Opens the URL with its registered handler. False when no app handles it.
         var openURL: (URL) -> Bool
-        var run: (_ executable: String, _ arguments: [String]) -> Void
+        /// Runs the program and reports whether it exited with status 0. Waits at most 2 seconds.
+        var run: (_ executable: String, _ arguments: [String]) -> Bool
         var activate: (_ bundleID: String, _ folder: String?) -> Void
         /// A full path for a bare command name, or nil when it is not installed.
         var findExecutable: (_ name: String, _ bundleID: String) -> String?
+        /// The git worktree root that contains a folder, or the folder itself when none does. Orca matches `path:` exactly.
+        var worktreeRoot: (_ folder: String) -> String = { $0 }
 
         static let live = Effects(
             openURL: { url in
@@ -31,10 +34,22 @@ enum SourceJumper {
                 process.standardInput = FileHandle.nullDevice
                 process.standardOutput = FileHandle.nullDevice
                 process.standardError = FileHandle.nullDevice
-                do { try process.run() } catch { NSLog("ironpet: could not run \(executable): \(error)") }
+                let done = DispatchSemaphore(value: 0)
+                process.terminationHandler = { _ in done.signal() }
+                do { try process.run() } catch {
+                    NSLog("ironpet: could not run \(executable): \(error)")
+                    return false
+                }
+                if done.wait(timeout: .now() + 2) == .timedOut {
+                    process.terminate()
+                    NSLog("ironpet: \(executable) timed out")
+                    return false
+                }
+                return process.terminationStatus == 0
             },
             activate: SourceJumper.activate,
-            findExecutable: SourceJumper.findExecutable
+            findExecutable: SourceJumper.findExecutable,
+            worktreeRoot: SourceJumper.worktreeRoot
         )
     }
 
@@ -54,10 +69,14 @@ enum SourceJumper {
             else { effects.activate(target.bundleID, nil) }
             return
         }
-        if let command = target.command, let arguments = Editors.arguments(command, target: target, session: session),
-           let executable = effects.findExecutable(command.executable, target.bundleID) {
-            effects.run(executable, arguments)
+        let commandFolder = target.bundleID == Editors.orcaID ? folder.map(effects.worktreeRoot) : folder
+        if let command = target.command, let arguments = Editors.arguments(command, target: target, session: session, folder: commandFolder) {
+            runCommand(command, arguments, bundleID: target.bundleID, effects: effects)
             effects.activate(target.bundleID, nil)
+            if let followUp = target.followUp,
+               let more = Editors.arguments(followUp, target: target, session: session, folder: commandFolder) {
+                runCommand(followUp, more, bundleID: target.bundleID, effects: effects)
+            }
             return
         }
         if target.command == nil, let template = target.urlTemplate,
@@ -66,6 +85,27 @@ enum SourceJumper {
             return
         }
         effects.activate(target.bundleID, target.folderFallback ? folder : nil)
+    }
+
+    /// Runs one command and logs a failure once. The caller activates the app either way.
+    private static func runCommand(_ command: OpenCommand, _ arguments: [String], bundleID: String, effects: Effects) {
+        guard let executable = effects.findExecutable(command.executable, bundleID) else {
+            NSLog("ironpet: \(command.executable) not found, only activating \(bundleID)")
+            return
+        }
+        if !effects.run(executable, arguments) {
+            NSLog("ironpet: \(command.executable) \(arguments.prefix(2).joined(separator: " ")) failed")
+        }
+    }
+
+    /// Walks up from `folder` to the first folder holding `.git` (a directory, or a file in a linked worktree).
+    private static func worktreeRoot(_ folder: String) -> String {
+        var url = URL(fileURLWithPath: folder).standardizedFileURL
+        while url.path != "/" {
+            if FileManager.default.fileExists(atPath: url.appendingPathComponent(".git").path) { return url.path }
+            url.deleteLastPathComponent()
+        }
+        return folder
     }
 
     private static func activate(bundleID: String, opening folder: String?) {

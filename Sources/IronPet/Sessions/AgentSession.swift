@@ -60,6 +60,7 @@ struct SessionOrigin: Codable {
     var cmuxSurfaceID: String?
     var t3ThreadID: String?
     var herdrTerminalID: String?
+    var orcaTerminalHandle: String?
 }
 
 /// The only environment variables the hook forwards besides the terminal ones. Everything else stays out.
@@ -70,6 +71,7 @@ enum AppIDs {
         ("CMUX_SURFACE_ID", "x-ironpet-cmux-surface"),
         ("T3CODE_THREAD_ID", "x-ironpet-t3-thread"),
         ("HC_TERMINAL_ID", "x-ironpet-herdr-terminal"),
+        ("ORCA_TERMINAL_HANDLE", "x-ironpet-orca-terminal"),
     ]
 
     /// An id is kept when it is non-empty, short and has no control characters. Other characters are fine: the
@@ -80,13 +82,14 @@ enum AppIDs {
         return raw
     }
 
-    /// Reads the four ids from an environment, ignoring every other variable.
+    /// Reads the five ids from an environment, ignoring every other variable.
     static func capture(env: [String: String]) -> SessionOrigin {
         var origin = SessionOrigin()
         origin.cmuxWorkspaceID = clean(env["CMUX_WORKSPACE_ID"])
         origin.cmuxSurfaceID = clean(env["CMUX_SURFACE_ID"])
         origin.t3ThreadID = clean(env["T3CODE_THREAD_ID"])
         origin.herdrTerminalID = clean(env["HC_TERMINAL_ID"])
+        origin.orcaTerminalHandle = clean(env["ORCA_TERMINAL_HANDLE"])
         return origin
     }
 }
