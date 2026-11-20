@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 
 enum RegenerationMode: Equatable {
     /// Transcribe every saved chunk again, then summarise the new transcript.
@@ -100,14 +103,16 @@ enum MeetingFolderScan {
 /// voices in the store and the summary agent. Nothing in the folder changes until everything succeeded, and the files
 /// it replaces stay as `transcript.prev.md` and `summary.prev.md`.
 @MainActor
-final class MeetingRegenerator: ObservableObject {
+final class MeetingRegenerator {
+    /// Fires before any of the properties below change.
+    let changes = ChangeSignal()
     /// The meeting being rebuilt. One at a time.
-    @Published private(set) var activeID: String?
-    @Published private(set) var progress: RegenerationProgress?
+    private(set) var activeID: String? { willSet { changes.send() } }
+    private(set) var progress: RegenerationProgress? { willSet { changes.send() } }
     /// The last failure for each meeting, until it is tried again.
-    @Published private(set) var errors: [String: String] = [:]
+    private(set) var errors: [String: String] = [:] { willSet { changes.send() } }
     /// Counts finished runs, so a view knows when the files on disk changed.
-    @Published private(set) var completed = 0
+    private(set) var completed = 0 { willSet { changes.send() } }
 
     var makeTranscriber: () -> Transcriber = {
         let voice = ConfigStore.shared.config.voice
@@ -343,3 +348,10 @@ enum MeetingSummaryRun {
         }
     }
 }
+
+#if canImport(Combine)
+
+extension MeetingRegenerator: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif

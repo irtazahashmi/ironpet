@@ -65,6 +65,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var testControl: TestControl?
     private var timers: [Timer] = []
     private var cancellables: Set<AnyCancellable> = []
+    private var changeTokens: [ChangeToken] = []
+    private var shownAppearance: String?
+    private var appliedConfig = Config()
     private let config = ConfigStore.shared
     /// Stores publish their changes here. It exists before the API, which needs the database.
     private let events = APIEventBus()
@@ -95,14 +98,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.mainMenu = makeMainMenu()
         config.events = events
         // Light or dark from Settings → General, applied app-wide. "System" clears the override and follows macOS.
-        config.$config
-            .map(\.window.appearance)
-            .removeDuplicates()
-            .sink { name in
-                NSApp.appearance = name == "light" ? NSAppearance(named: .aqua)
-                    : name == "dark" ? NSAppearance(named: .darkAqua) : nil
-            }
-            .store(in: &cancellables)
+        // The signal fires before `config` changes, so the new value is read one main-actor turn later.
+        let applyAppearance = { [weak self] in
+            guard let self, config.config.window.appearance != shownAppearance else { return }
+            let name = config.config.window.appearance
+            shownAppearance = name
+            NSApp.appearance = name == "light" ? NSAppearance(named: .aqua)
+                : name == "dark" ? NSAppearance(named: .darkAqua) : nil
+        }
+        applyAppearance()
+        changeTokens.append(config.changes.observe { DispatchQueue.main.async { applyAppearance() } })
         store.events = events
         signals.events = events
         announcer.bubbles.events = events
@@ -202,12 +207,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             .receive(on: RunLoop.main)
             .sink { [weak self] _ in self?.pet.refreshMood() }
             .store(in: &cancellables)
-        config.$config
-            .removeDuplicates()
-            .scan((Config(), config.config)) { ($0.1, $1) }
-            .dropFirst()
-            .sink { [weak self] old, new in self?.apply(config: new, previous: old) }
-            .store(in: &cancellables)
+        appliedConfig = config.config
+        changeTokens.append(config.changes.observe { [weak self] in
+            DispatchQueue.main.async {
+                guard let self, self.config.config != self.appliedConfig else { return }
+                let previous = self.appliedConfig
+                self.appliedConfig = self.config.config
+                self.apply(config: self.config.config, previous: previous)
+            }
+        })
 
         setUpAutomations()
         // After the API exists: the hotkeys read the settings model, which builds the Telegram bridge over `api.chat`.
@@ -314,9 +322,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pet.settings = settingsModel
         pet.onSettings = { [weak self] in self?.showSettings(tab: nil) }
         pet.onScreenSettings = { [weak self] in self?.showSettings(tab: "screen") }
-        pet.voiceConversation = voiceMode.conversation
-        pet.onVoiceToggle = { [weak self] in self?.voiceMode.toggle() }
-        pet.onVoiceSettings = { [weak self] in self?.showSettings(tab: "voice") }
         settingsModel.showScreenSection = { [weak self] in self?.pet.showWindow(.screen) }
         setUpScreenCapture(database)
         setUpDesktopControl()
@@ -348,9 +353,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let workspace = store.paths.workspace
         // Not read by memory: this restricted run is for prompts with item text from outside, and its answer is built from that text.
         service.runPrompt = { automation, prompt in await AutomationPrompt.run(automation, prompt: prompt, workspace: workspace) }
-        service.runSession = { [weak self] automation, prompt in
+        service.forkSource = { [weak self] automation in
+            guard let chat = self?.chat, chat.agent.id == AutomationPrompt.agentID(automation) else { return nil }
+            return chat.sessionID
+        }
+        service.postNotice = { [weak self] kind, title, text, triggers in
+            self?.chat.postSystemNotice(kind: kind, text: text, title: title, triggersTurn: triggers)
+        }
+        service.runSession = { [weak self, weak service] automation, prompt, fork in
             let agent = AutomationPrompt.agentID(automation)
-            let result = await AutomationSession.run(automation, prompt: prompt, workspace: workspace)
+            let result = await AutomationSession.run(automation, prompt: prompt, workspace: workspace, fork: fork,
+                                                     onNote: { service?.record(automation.id, "warning", $0) })
             self?.chat.refreshHistory()
             if case .success(let answer) = result { self?.memorySawAutomation(automation.id, answer: answer, agent: agent) }
             return result
@@ -359,7 +372,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             self.memorySawAutomation(id, answer: answer, agent: self.chat.agent.id)
         }
-        chat.quietReply = { [weak store] id in store?.automations.first { $0.id == id }?.action.quiet }
+        chat.quietReply = { [weak store] id in store?.automations.first { $0.id == id }?.action.quietReplies }
         setUpBrief(service, tasks: tasks)
         service.sendToChat = { [weak self] id, message in self?.chat.submitFromAutomation(message, automation: id) ?? false }
         service.chatRunPending = { [weak self] id in self?.chat.hasAutomationRun(id) ?? false }
@@ -424,6 +437,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // After the turn's own state change has been handled.
             DispatchQueue.main.async { self.openJob(id) }
         }.store(in: &cancellables)
+        chat.voiceModeOn = { ConfigStore.shared.config.voiceMode.enabled }
         chat.jobFollowUp = { [weak service] thread, text in
             guard let service, let job = service.job(thread: thread), job.state.isActive else { return false }
             return (try? service.followUp(job.id, message: text)) != nil
@@ -576,7 +590,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func memorySawAutomation(_ id: String, answer: String, agent: String) {
         let automation = automations?.store.automations.first { $0.id == id }
-        memory?.automationFinished(id: id, name: automation?.name ?? id, answer: answer, agent: agent, quiet: automation?.action.quiet)
+        memory?.automationFinished(id: id, name: automation?.name ?? id, answer: answer, agent: agent, quiet: automation?.action.quietReplies ?? [])
     }
 
     /// Builds screen capture on the shared database and applies the switch. With the switch off nothing starts.

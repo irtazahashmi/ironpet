@@ -1,5 +1,7 @@
-import Combine
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 
 /// Which notifications `NotificationsAPI.list` returns. Every field narrows the list; the default is the newest 200.
 struct ListNotificationsRequest: Codable, Equatable {
@@ -20,13 +22,17 @@ struct NotificationList: Codable, Equatable {
 /// The notification history: every bubble ironpet showed, with its full text and links. Clients read it and set read state here.
 /// Notifications are created by the owners that show a bubble (`Announcer`, `AutomationService`), not by a client.
 @MainActor
-final class NotificationsAPI: ObservableObject {
+final class NotificationsAPI {
+    /// Fires before anything this API reads changes.
+    let changes = ChangeSignal()
     private let store: NotificationStore
-    private var forwarding: AnyCancellable?
+    private var forwarding: [ChangeToken] = []
 
     init(store: NotificationStore) {
         self.store = store
-        forwarding = store.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        forwarding = [
+            store.changes.observe { [weak self] in self?.changes.send() },
+        ]
     }
 
     /// A history that holds nothing, for a view that is not shown yet.
@@ -58,3 +64,10 @@ final class NotificationsAPI: ObservableObject {
 
     func markAllRead() { store.markAllRead() }
 }
+
+#if canImport(Combine)
+
+extension NotificationsAPI: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif

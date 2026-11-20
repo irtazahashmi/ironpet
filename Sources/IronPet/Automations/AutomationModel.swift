@@ -78,18 +78,59 @@ struct Automation: Codable, Equatable, Identifiable {
         var digest: String?
         /// `prompt`: a reply that means nothing happened. A run whose final reply is exactly this text is hidden from the
         /// chat and recorded as "no changes".
-        var quiet: String?
-        /// `prompt`: where it runs. `chat` (default) posts into the open chat. `new` starts a fresh agent session every run.
-        /// `own` keeps one thread for this automation and resumes it each run, starting a fresh one after
-        /// `AutomationSession.ownRunLimit` runs. `new` and `own` have the agent's full tools minus `disallowedTools`.
+        /// A list of replies is allowed too. With `report` chat and no `quiet`, `NOTHING` and `NOTHING_NEW` mean nothing happened.
+        var quiet: QuietReplies?
+        /// `prompt`: where it runs. `main` (alias `chat`, and the default) posts into the open chat. `new` starts a fresh agent
+        /// session every run. `own` keeps one thread for this automation and resumes it each run, starting a fresh one after
+        /// `AutomationSession.ownRunLimit` runs. `fork` starts from a copy of the main chat's agent session. `new`, `own` and
+        /// `fork` have the agent's full tools minus `disallowedTools`.
         var session: String?
+        /// `prompt` with a background session: `bubble` shows the answer as a bubble, `chat` posts it to the main chat as a
+        /// system notice that the chat's agent reads. Default `bubble`, and `chat` for `fork`. Ignored for `main`.
+        var report: String?
         /// `prompt` with `session` new or own: tools the agent may use without asking, for example `Bash(gh pr list:*)`.
         var allowedTools: [String]?
         /// `prompt` with `session` new or own: tools the agent may not use.
         var disallowedTools: [String]?
 
+        /// The session after defaults: `main`, `new`, `own` or `fork`. `report: chat` without a session means `new`.
+        var effectiveSession: String {
+            switch session {
+            case nil: return report == "chat" ? "new" : "main"
+            case "chat": return "main"
+            default: return session ?? "main"
+            }
+        }
+
+        /// Where a background run's answer goes, `bubble` or `chat`. Nil for a run in the main chat.
+        var effectiveReport: String? {
+            guard effectiveSession != "main" else { return nil }
+            return report ?? (effectiveSession == "fork" ? "chat" : "bubble")
+        }
+
+        /// The replies that mean nothing happened. Defaults apply only when the answer goes to the chat.
+        var quietReplies: [String] {
+            if let quiet { return quiet.values.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty } }
+            return effectiveReport == "chat" ? ["NOTHING", "NOTHING_NEW"] : []
+        }
+
         /// True when the prompt runs in its own agent session instead of the open chat.
-        var runsInOwnSession: Bool { type == "prompt" && (session == "new" || session == "own") }
+        var runsInOwnSession: Bool { type == "prompt" && effectiveSession != "main" }
+    }
+
+    /// `quiet` as written: one reply or a list of them.
+    struct QuietReplies: Codable, Equatable, ExpressibleByStringLiteral {
+        var values: [String]
+        init(_ values: [String]) { self.values = values }
+        init(stringLiteral value: String) { values = [value] }
+        init(from decoder: Decoder) throws {
+            let c = try decoder.singleValueContainer()
+            if let one = try? c.decode(String.self) { values = [one] } else { values = try c.decode([String].self) }
+        }
+        func encode(to encoder: Encoder) throws {
+            var c = encoder.singleValueContainer()
+            if values.count == 1 { try c.encode(values[0]) } else { try c.encode(values) }
+        }
     }
 
     struct Presentation: Codable, Equatable {
@@ -162,8 +203,11 @@ struct Automation: Codable, Equatable, Identifiable {
     /// The session settings of a prompt, which decide what it may do. Empty for the default, so an automation written before
     /// `session` existed keeps its approval.
     private var sessionRisk: String {
-        guard let session = action.session, session != "chat" else { return "" }
-        return "|session:\(session)|allow:\((action.allowedTools ?? []).joined(separator: ","))|deny:\((action.disallowedTools ?? []).joined(separator: ","))"
+        let session = action.effectiveSession
+        guard session != "main" else { return "" }
+        // Written the old way for `new` and `own` without a report, so an approval given earlier stays valid.
+        let report = action.report.map { "|report:\($0)" } ?? ""
+        return "|session:\(session)\(report)|allow:\((action.allowedTools ?? []).joined(separator: ","))|deny:\((action.disallowedTools ?? []).joined(separator: ","))"
     }
 
     /// Text whose change needs a new approval: the commands and prompts that can run on this Mac.
@@ -190,7 +234,8 @@ enum AutomationValidator {
     static let weekdays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
     static let triggerTypes = ["interval", "daily", "once", "poll", "script", "stream"]
     static let actionTypes = ["bubble", "prompt", "shell", "digest"]
-    static let sessions = ["chat", "new", "own"]
+    static let sessions = ["main", "chat", "new", "own", "fork"]
+    static let reports = ["bubble", "chat"]
     static let digestKinds = ["brief", "recap"]
     static let pollModes = ["json", "lines", "text", "exit_code"]
     static let streamModes = ["lines", "json"]
@@ -200,7 +245,7 @@ enum AutomationValidator {
         "automation": ["id", "name", "enabled", "trigger", "action", "presentation", "createdBy", "note"],
         "trigger": ["type", "minutes", "clock", "times", "weekdays", "at", "source", "mode", "items", "id", "version", "script", "cooldownMinutes", "catchUpMinutes", "command", "when", "debounceSeconds", "throttleSeconds"],
         "source": ["type", "command", "timeoutSeconds", "url", "headers"],
-        "action": ["type", "title", "body", "prompt", "agent", "model", "command", "timeoutSeconds", "digest", "quiet", "session", "allowedTools", "disallowedTools"],
+        "action": ["type", "title", "body", "prompt", "agent", "model", "command", "timeoutSeconds", "digest", "quiet", "session", "report", "allowedTools", "disallowedTools"],
         "presentation": ["mood", "symbol", "buttons", "notification", "expiresSeconds"],
     ]
 
@@ -400,11 +445,12 @@ enum AutomationValidator {
         case "prompt":
             if (a.prompt ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { errors.append("action.prompt is empty") }
             if let agent = a.agent, AgentCatalog.agent(id: agent) == nil { errors.append("action.agent \"\(agent)\" is not a known agent") }
-            if let quiet = a.quiet, quiet.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { errors.append("action.quiet is empty") }
+            if let quiet = a.quiet, quiet.values.isEmpty || quiet.values.contains(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) { errors.append("action.quiet is empty") }
+            if let report = a.report, !reports.contains(report) { errors.append("action.report must be one of \(reports.joined(separator: ", "))") }
             if let session = a.session, !sessions.contains(session) { errors.append("action.session must be one of \(sessions.joined(separator: ", "))") }
             for (field, list) in [("allowedTools", a.allowedTools), ("disallowedTools", a.disallowedTools)] {
                 guard let list else { continue }
-                if !a.runsInOwnSession, a.session == nil || a.session == "chat" { errors.append("action.\(field) only applies when action.session is new or own") }
+                if !a.runsInOwnSession { errors.append("action.\(field) only applies when action.session is new, own or fork") }
                 if list.contains(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) { errors.append("action.\(field) has an empty entry") }
             }
         case "digest":

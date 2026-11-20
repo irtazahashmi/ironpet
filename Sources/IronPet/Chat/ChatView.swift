@@ -796,6 +796,8 @@ struct ChatView: View {
                 EmptyView()
             case .form(let record):
                 ElicitationRecordCard(record: record)
+            case .notice(let text):
+                SystemNoticeRow(text: text)
             case .error(let text):
                 VStack(alignment: .leading, spacing: 8) {
                     Label { ChatFind.text(AttributedString(text), segment: 0, find: highlights[item.id]) } icon: { Image(systemName: "exclamationmark.triangle.fill") }
@@ -1684,7 +1686,7 @@ enum TranscriptGroup {
     static func make(_ items: ArraySlice<ChatItem>) -> [TranscriptGroup] {
         var groups: [TranscriptGroup] = []
         var run: [ChatItem] = []
-        for item in items {
+        for item in items where !item.isMetaOnly {
             if case .tool = item.kind {
                 run.append(item)
             } else {

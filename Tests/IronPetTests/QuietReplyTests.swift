@@ -27,7 +27,7 @@ final class QuietReplyTests: AutomationTestCase {
         let rig = makeRig(automations ?? [quietAutomation("watch-x", quiet: "ALL_CLEAR")])
         rig.service.sendToChat = { [unowned self] id, message in chat.submitFromAutomation(message, automation: id) }
         rig.service.chatRunPending = { [unowned self] id in chat.hasAutomationRun(id) }
-        chat.quietReply = { [weak store = rig.store] id in store?.automations.first { $0.id == id }?.action.quiet }
+        chat.quietReply = { [weak store = rig.store] id in store?.automations.first { $0.id == id }?.action.quietReplies }
         chat.onAutomation = { [weak service = rig.service] id, event in service?.chatOutcome(id, event) }
         return rig
     }
@@ -48,7 +48,7 @@ final class QuietReplyTests: AutomationTestCase {
 
     private func quietAutomation(_ id: String, quiet: String?) -> Automation {
         Automation(id: id, name: id, trigger: .init(type: "interval", minutes: 10, clock: "wall"),
-                   action: .init(type: "prompt", prompt: "Check the thing", quiet: quiet), createdBy: "user")
+                   action: .init(type: "prompt", prompt: "Check the thing", quiet: quiet.map { .init(stringLiteral: $0) }), createdBy: "user")
     }
 
     func testAQuietReplyHidesTheTurnForAnyAutomation() async {

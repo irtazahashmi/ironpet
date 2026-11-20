@@ -75,6 +75,9 @@ struct ACPTurn {
     /// Tool rules for the session, from an automation's `allowedTools` and `disallowedTools`. Only the Claude Code adapter reads them.
     var allowedTools: [String]? = nil
     var disallowedTools: [String]? = nil
+    /// Session to start from a copy of (`session/fork`), when this backend has none yet. Falls back to a new session when the
+    /// agent cannot fork; `ACPBackend.forkOutcome` says which happened.
+    var fork: String? = nil
 }
 
 /// Why an agent could not be started.
@@ -450,6 +453,10 @@ final class ACPBackend {
         return options.isEmpty ? nil : ["claudeCode": ["options": options]]
     }
 
+    /// What a turn's `fork` request came to: `forked`, or `unsupported` with the reason the session started fresh.
+    enum ForkOutcome: Equatable { case forked, unsupported(String) }
+    private(set) var forkOutcome: ForkOutcome?
+
     private func ensureSession(_ turn: ACPTurn) async throws {
         guard let client else { throw ACPError(code: -1, message: "The agent stopped") }
         if sessionReady, sessionID != nil { return }
@@ -464,6 +471,32 @@ final class ACPBackend {
             let folders = (sharesMemoryFolder ? [FileMemoryStore.directory] : []) + [ScreenCapture.directory]
             for dir in folders { try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true) }
             params["additionalDirectories"] = folders.map(\.path)
+        }
+        if let source = turn.fork, sessionID == nil {
+            if sessionCapabilities["fork"] == nil {
+                forkOutcome = .unsupported("\(agent.name) does not advertise session/fork")
+            } else {
+                do {
+                    let result = try await guarded(client, seconds: 60) {
+                        try await client.request("session/fork", params.merging(["sessionId": source]) { $1 })
+                    }
+                    if let id = result["sessionId"] as? String {
+                        sessionID = id
+                        sessionReady = true
+                        freshSession = false
+                        forkOutcome = .forked
+                        emit(.session(id))
+                        await useAskingMode(result)
+                        readModels(result)
+                        return
+                    }
+                    forkOutcome = .unsupported("\(agent.name) returned no session for session/fork")
+                } catch let error as ACPError where error.isAuthRequired || client.isClosed {
+                    throw error
+                } catch {
+                    forkOutcome = .unsupported("session/fork failed: \(error.localizedDescription)")
+                }
+            }
         }
         if let existing = sessionID ?? turn.resume, capabilities["loadSession"] as? Bool == true {
             sessionID = existing

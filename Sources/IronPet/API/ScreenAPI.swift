@@ -1,5 +1,7 @@
-import Combine
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 
 struct ScreenSearchRequest: Codable, Equatable {
     var query: String
@@ -13,15 +15,19 @@ struct ScreenSearchRequest: Codable, Equatable {
 /// What screen capture stored: the local text of windows the user worked in, with secrets already redacted. Nothing here reads
 /// the screen. Turning capture on or off is a setting (`api.settings`); pausing it is here.
 ///
-/// This is an `ObservableObject` so the Screen section and its settings page redraw as captures arrive.
+/// This is an `ObservableObject` on Apple platforms, so the Screen section and its settings page redraw as captures arrive.
 @MainActor
-final class ScreenAPI: ObservableObject {
+final class ScreenAPI {
+    /// Fires before anything this API reads changes.
+    let changes = ChangeSignal()
     private let service: CaptureService
-    private var forwarding: AnyCancellable?
+    private var forwarding: [ChangeToken] = []
 
     init(service: CaptureService) {
         self.service = service
-        forwarding = service.model.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        forwarding = [
+            service.model.changes.observe { [weak self] in self?.changes.send() },
+        ]
     }
 
     /// Whether capture runs, what macOS allows it, whether it is paused, how many captures are stored.
@@ -80,3 +86,10 @@ final class ScreenAPI: ObservableObject {
         ScreenMCP.call(name, args, store: service.store)
     }
 }
+
+#if canImport(Combine)
+
+extension ScreenAPI: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif

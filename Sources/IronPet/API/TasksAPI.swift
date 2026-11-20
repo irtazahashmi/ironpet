@@ -1,5 +1,7 @@
-import Combine
 import Foundation
+#if canImport(Combine)
+import Combine
+#endif
 
 struct TaskListRequest: Codable, Equatable {
     /// Only tasks in these statuses. Nil lists every open task.
@@ -87,16 +89,20 @@ struct RejectSuggestionRequest: Codable, Equatable {
 
 /// Tasks and the suggestions waiting for review. The one way a client reads or changes them.
 ///
-/// This is an `ObservableObject` so a SwiftUI view can redraw when the list changes. The list itself is read through the
+/// This is an `ObservableObject` on Apple platforms, so a SwiftUI view can redraw when the list changes. The list itself is read through the
 /// properties and calls below, never from the store.
 @MainActor
-final class TasksAPI: ObservableObject {
+final class TasksAPI {
+    /// Fires before anything this API reads changes.
+    let changes = ChangeSignal()
     private let store: TaskStore
-    private var forwarding: AnyCancellable?
+    private var forwarding: [ChangeToken] = []
 
     init(store: TaskStore) {
         self.store = store
-        forwarding = store.objectWillChange.sink { [weak self] _ in self?.objectWillChange.send() }
+        forwarding = [
+            store.changes.observe { [weak self] in self?.changes.send() },
+        ]
     }
 
     // MARK: Reading
@@ -196,3 +202,10 @@ final class TasksAPI: ObservableObject {
         }
     }
 }
+
+#if canImport(Combine)
+
+extension TasksAPI: ObservableObject {
+    nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif

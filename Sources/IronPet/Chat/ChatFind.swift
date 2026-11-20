@@ -48,6 +48,8 @@ enum ChatFind {
             return [displayed(summary)]
         case .form(let record):
             return [record.message] + record.lines.flatMap { [$0.question, $0.answer] }
+        case .notice(let text):
+            return text.isEmpty ? [] : [text]
         case .screenshot:
             return []
         }

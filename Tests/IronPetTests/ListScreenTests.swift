@@ -152,7 +152,7 @@ final class ListScreenTests: XCTestCase {
 
     /// The file that defines each section's view. A new list section goes here, and fails until it builds on `ListScreen`.
     private static let sectionFiles: [IronPetSection: String] = [
-        .voice: "Voice/VoiceSection.swift", .agents: "Pet/WindowSections.swift", .alerts: "Pet/WindowSections.swift",
+        .agents: "Pet/WindowSections.swift", .alerts: "Pet/WindowSections.swift",
         .notifications: "Notifications/NotificationsSection.swift", .tasks: "Pet/TaskListView.swift",
         .transcripts: "Meeting/TranscriptsView.swift", .screen: "Capture/ScreenSection.swift", .actions: "Pet/WindowSections.swift",
         .automations: "App/AutomationsSettings.swift", .today: "Pet/TodayView.swift",

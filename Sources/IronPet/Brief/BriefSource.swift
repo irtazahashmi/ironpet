@@ -23,12 +23,16 @@ final class BriefSource {
         self.signals = signals
         self.meetingsRoot = meetingsRoot
         self.activity = activity
+        forwarding = [
+            tasks.changes.observe { [weak self] in self?.changes.send() },
+            sessions.changes.observe { [weak self] in self?.changes.send() },
+            signals.changes.observe { [weak self] in self?.changes.send() },
+        ]
     }
 
-    /// Fires when anything the brief reads may have changed.
-    var changes: AnyPublisher<Void, Never> {
-        Publishers.Merge3(tasks.objectWillChange, sessions.objectWillChange, signals.objectWillChange).eraseToAnyPublisher()
-    }
+    /// Fires when anything the brief reads may have changed, before it changes.
+    let changes = ChangeSignal()
+    private var forwarding: [ChangeToken] = []
 
     /// `weekdays` are the brief trigger's, so Monday's brief reaches back to Friday's meetings. `day` is the recap's day,
     /// today when nil.
@@ -108,10 +112,14 @@ final class BriefModel: ObservableObject {
     var weekdays: () -> [String]? = { nil }
     private var visible = false
     private var cancellable: AnyCancellable?
+    private var changeToken: ChangeToken?
 
     init(source: TodayAPI) {
         self.source = source
-        cancellable = source.changes
+        // The signal fires before the stores change. The debounce delays the read until they have.
+        let pending = PassthroughSubject<Void, Never>()
+        changeToken = source.changes.observe { pending.send() }
+        cancellable = pending
             .debounce(for: .milliseconds(400), scheduler: RunLoop.main)
             .sink { [weak self] in
                 guard let self, visible else { return }

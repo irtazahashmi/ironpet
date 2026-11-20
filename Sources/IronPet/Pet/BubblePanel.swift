@@ -9,7 +9,7 @@ final class BubblePanel {
     private let store: BubbleStore
     private let host: NSHostingView<BubbleStackView>
     private var anchor: CGRect = .zero
-    private var cancellables: Set<AnyCancellable> = []
+    private var changeToken: ChangeToken?
     private var timer: Timer?
 
     /// Hidden while the chat or a main section of the ironpet window is open; bubbles wait until it closes.
@@ -28,14 +28,14 @@ final class BubblePanel {
         panel.hidesOnDeactivate = false
         host = FirstMouseHostingView(rootView: BubbleStackView(api: BubblesAPI(store: store)))
         panel.contentView = host
-        store.$bubbles
-            .receive(on: RunLoop.main)
-            .sink { [weak self] _ in
+        // The signal fires before `bubbles` changes, so the panel reads the store one main-actor turn later.
+        changeToken = store.changes.observe { [weak self] in
+            DispatchQueue.main.async {
                 self?.update()
                 // SwiftUI lays out the new bubbles a moment later; size the panel again once it has.
                 DispatchQueue.main.async { self?.update() }
             }
-            .store(in: &cancellables)
+        }
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self, weak store] _ in
             MainActor.assumeIsolated {
                 store?.sweep()
