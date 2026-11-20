@@ -55,27 +55,36 @@ final class Announcer {
     func approval(id: UUID, title: String, detail: String) {
         let heading = "\(ConfigStore.shared.config.pet.name) wants to: \(title)"
         let open = store(NotificationDraft(type: .approval, title: heading, summary: NotificationDraft.summary(of: detail), description: detail))
-        bubbles.show(Bubble(id: Self.approvalID(id), symbol: "hand.raised.fill", tint: .orange,
-                            title: heading, body: String(detail.prefix(240)),
-                            actions: [
-                                .init(title: "Allow", style: .primary) { [weak self] in self?.decide(id, true) },
-                                .init(title: "Deny", style: .destructive) { [weak self] in self?.decide(id, false) },
-                                .init(title: "Open chat") { [weak self] in self?.openChat() },
-                            ], onTap: open))
+        bubbles.show(Self.approvalBubble(id: id, heading: heading, detail: detail, decide: { [weak self] allow in self?.decide(id, allow) },
+                                         openChat: { [weak self] in self?.openChat() }, open: open))
         chime()
         if alsoSystemNotifications { notifier.announceApproval(id: id, title: title, detail: detail) }
     }
 
+    /// The Allow and Deny bubble of a chat tool request. Only the Mac answers it.
+    static func approvalBubble(id: UUID, heading: String, detail: String, decide: @escaping (Bool) -> Void, openChat: @escaping () -> Void,
+                               open: (() -> Void)?) -> Bubble {
+        Bubble(id: approvalID(id), symbol: "hand.raised.fill", tint: .orange, title: heading, body: String(detail.prefix(240)),
+               actions: [
+                   .init(title: "Allow", style: .primary) { decide(true) },
+                   .init(title: "Deny", style: .destructive) { decide(false) },
+                   .init(title: "Open chat", run: openChat),
+               ], onTap: open, macOnly: true)
+    }
+
     /// An unknown Telegram user sent /start. Allow adds them; nothing else about them reaches the chat.
     func telegramPairing(_ request: TelegramBridge.Pending, allow: @escaping () -> Void, deny: @escaping () -> Void) {
+        bubbles.show(Self.telegramPairingBubble(request, allow: allow, deny: deny))
+        chime()
+    }
+
+    static func telegramPairingBubble(_ request: TelegramBridge.Pending, allow: @escaping () -> Void, deny: @escaping () -> Void) -> Bubble {
         let user = request.user
         let handle = user.username.map { "@\($0), " } ?? ""
-        bubbles.show(Bubble(id: Self.telegramID(user.id), symbol: "paperplane.fill", tint: .blue,
-                            title: "Telegram user \(user.displayName) (\(handle)id \(user.id)) wants to connect",
-                            body: "Allow them to chat with \(ConfigStore.shared.config.pet.name) from Telegram?",
-                            actions: [.init(title: "Allow", style: .primary, run: allow),
-                                      .init(title: "Deny", style: .destructive, run: deny)]))
-        chime()
+        return Bubble(id: telegramID(user.id), symbol: "paperplane.fill", tint: .blue,
+                      title: "Telegram user \(user.displayName) (\(handle)id \(user.id)) wants to connect",
+                      body: "Allow them to chat with \(ConfigStore.shared.config.pet.name) from Telegram?",
+                      actions: [.init(title: "Allow", style: .primary, run: allow), .init(title: "Deny", style: .destructive, run: deny)], macOnly: true)
     }
 
     /// The bubble for a phone that sent a valid pairing code. Allow gives it a token that reads and changes tasks on this Mac, so the
@@ -85,7 +94,7 @@ final class Announcer {
                title: "Allow \(request.deviceName) to connect to \(machine)?",
                body: "This device asked to pair with the remote API. Only allow it if you just scanned the pairing code yourself.",
                actions: [.init(title: "Allow", style: .primary, run: allow), .init(title: "Deny", style: .destructive, run: deny)],
-               expires: request.created.addingTimeInterval(RemoteService.codeLifetime))
+               expires: request.created.addingTimeInterval(RemoteService.codeLifetime), macOnly: true)
     }
 
     /// Too many requests without a valid token. One bubble per lockout, replaced if it comes again.
@@ -127,6 +136,13 @@ final class Announcer {
 
     /// A bubble from an automation: a reminder, a poll result, a shell or prompt answer, or an approval question.
     func automation(_ notice: AutomationNotice) {
+        let open: (() -> Void)? = notice.notificationID.map { id in { [weak self] in self?.openNotification(id) } }
+        bubbles.show(Self.automationBubble(notice, dismiss: { [weak self] in self?.bubbles.dismiss(notice.id) }, open: open))
+        chime()
+        if alsoSystemNotifications || notice.systemNotification { notifier.announceAutomation(notice) }
+    }
+
+    static func automationBubble(_ notice: AutomationNotice, dismiss: @escaping () -> Void, open: (() -> Void)?) -> Bubble {
         let tint: Color
         switch notice.tint {
         case .info: tint = .cyan
@@ -135,16 +151,13 @@ final class Announcer {
         case .warn: tint = .orange
         }
         let actions = notice.buttons.map { button in
-            Bubble.Action(title: button.title, style: button.primary ? .primary : button.destructive ? .destructive : .normal) { [weak self] in
-                self?.bubbles.dismiss(notice.id)
+            Bubble.Action(title: button.title, style: button.primary ? .primary : button.destructive ? .destructive : .normal) {
+                dismiss()
                 button.run()
             }
         }
-        let open: (() -> Void)? = notice.notificationID.map { id in { [weak self] in self?.openNotification(id) } }
-        bubbles.show(Bubble(id: notice.id, symbol: notice.symbol, tint: tint, title: notice.title, subtitle: notice.subtitle, body: notice.body,
-                            actions: actions, onTap: open, expires: notice.expires.map { Date().addingTimeInterval($0) }))
-        chime()
-        if alsoSystemNotifications || notice.systemNotification { notifier.announceAutomation(notice) }
+        return Bubble(id: notice.id, symbol: notice.symbol, tint: tint, title: notice.title, subtitle: notice.subtitle, body: notice.body,
+                      actions: actions, onTap: open, expires: notice.expires.map { Date().addingTimeInterval($0) }, macOnly: notice.macOnly)
     }
 
     func chat(_ title: String, detail: String = "Click to open the chat.") {

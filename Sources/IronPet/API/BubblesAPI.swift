@@ -26,6 +26,8 @@ struct BubbleInfo: Codable, Equatable, Identifiable {
     var expires: Date?
     /// Whether clicking the bubble itself does something.
     var tappable: Bool
+    /// The buttons are for the Mac alone. A remote client leaves them out and refuses a press.
+    var macOnly: Bool = false
 }
 
 /// Presses one control of a bubble. With neither `action` nor `line`, it presses the bubble itself.
@@ -60,7 +62,7 @@ final class BubblesAPI: ObservableObject {
             BubbleInfo(id: bubble.id, symbol: bubble.symbol, title: bubble.title, subtitle: bubble.subtitle, body: bubble.body,
                        lines: bubble.lines.map { BubbleLineInfo(id: $0.id.uuidString, symbol: $0.symbol, text: $0.text) },
                        actions: bubble.actions.map { BubbleActionInfo(id: $0.id.uuidString, title: $0.title, style: Self.name($0.style)) },
-                       expires: bubble.expires, tappable: bubble.onTap != nil)
+                       expires: bubble.expires, tappable: bubble.onTap != nil, macOnly: bubble.macOnly)
         }
     }
 

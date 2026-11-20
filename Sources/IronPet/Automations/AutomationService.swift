@@ -23,6 +23,9 @@ struct AutomationNotice {
     /// nil stays until answered.
     var expires: TimeInterval?
     var systemNotification = false
+    /// The buttons decide something only the Mac may decide (approving an automation or a desktop action). The remote API shows the
+    /// bubble without them.
+    var macOnly = false
     /// The automation this belongs to, so a notification's Done and Snooze can find it.
     var automationIDs: [String] = []
     /// What the bubble's Open button opens, kept so the activity log can offer it later.
@@ -256,7 +259,7 @@ final class AutomationService {
             body: detail.count > 1500 ? String(detail.prefix(1500)) + "\n(\(detail.count - 1500) more characters not shown)" : detail,
             buttons: [.init(title: "Approve", primary: true) { [weak self] in self?.approve(a.id) },
                       .init(title: "Reject", destructive: true) { [weak self] in self?.reject(a.id) }],
-            automationIDs: [a.id], notificationType: .approval, detail: detail))
+            macOnly: true, automationIDs: [a.id], notificationType: .approval, detail: detail))
     }
 
     /// The bubble of one poll or script item. An item with an `id` keeps one bubble, so a script can dismiss it later.

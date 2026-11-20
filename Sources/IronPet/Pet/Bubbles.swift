@@ -36,6 +36,9 @@ struct Bubble: Identifiable {
     var expires: Date?
     /// Replaces the icon, title and text, for a bubble that shows live state (the meeting status).
     var content: AnyView?
+    /// The buttons decide something only the Mac may decide (a tool approval, a pairing request). The remote API sends the bubble
+    /// without them and refuses a press, so a paired phone cannot approve what it is asked to approve itself.
+    var macOnly = false
 }
 
 struct BubbleStackView: View {

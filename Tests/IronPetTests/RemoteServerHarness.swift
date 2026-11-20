@@ -48,10 +48,11 @@ final class RemoteServerHarness {
     let session: URLSession
 
     /// `interfaces` is what the controller sees as the Mac's addresses. Empty by default, so a controller test binds loopback only.
-    init(eventCapacity: Int = 500, interfaces: [InterfaceAddress] = []) {
+    init(eventCapacity: Int = 500, interfaces: [InterfaceAddress] = [], sessions: SessionStore? = nil, signals: SignalStore? = nil,
+         chat: ChatSession? = nil, petFolders: IronPetAPI.PetFolders? = nil) {
         events = APIEventBus(capacity: eventCapacity)
         database = APITestSupport.memoryDatabase()
-        api = APITestSupport.makeAPI(events: events, bubbles: bubbles)
+        api = APITestSupport.makeAPI(events: events, signals: signals, bubbles: bubbles, sessions: sessions, chat: chat, petFolders: petFolders)
         let clock = clock
         controller = RemoteController(api: api, settings: api.settings, database: database, bubbles: bubbles, activity: nil,
                                       storage: MemoryKeyStorage(), now: { clock.now },

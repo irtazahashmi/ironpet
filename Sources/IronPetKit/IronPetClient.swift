@@ -146,4 +146,42 @@ public final class IronPetClient: @unchecked Sendable {
     public func setStatus(id: String, status: TaskStatus, note: String) async throws -> RemoteTask {
         try await send(RemoteTask.self, "PATCH", APIPath.task(id), body: ["status": status.rawValue, "note": note])
     }
+
+    // MARK: Pet, bubbles, agents, alerts, today
+
+    public func pet() async throws -> RemotePet { try await get(RemotePet.self, APIPath.pet) }
+
+    public func perform(trick: String) async throws { _ = try await perform(request("POST", APIPath.trick(trick), body: Data("{}".utf8))) }
+
+    public func bubbles() async throws -> [RemoteBubble] { try await get(BubbleListResponse.self, APIPath.bubbles).bubbles }
+
+    public func press(bubble: String, action: String) async throws {
+        _ = try await perform(request("POST", APIPath.bubbleAction(bubble, action), body: Data("{}".utf8)))
+    }
+
+    public func agents() async throws -> [RemoteAgent] { try await get(AgentListResponse.self, APIPath.agents).agents }
+
+    public func agent(id: String) async throws -> RemoteAgent { try await get(RemoteAgent.self, APIPath.agent(id)) }
+
+    public func acknowledgeAgent(id: String) async throws { _ = try await perform(request("POST", APIPath.acknowledgeAgent(id), body: Data("{}".utf8))) }
+
+    public func askAboutAgent(id: String) async throws { _ = try await perform(request("POST", APIPath.askAboutAgent(id), body: Data("{}".utf8))) }
+
+    public func alerts() async throws -> [RemoteAlert] { try await get(AlertListResponse.self, APIPath.alerts).alerts }
+
+    public func dismissAlert(id: String) async throws { _ = try await perform(request("POST", APIPath.dismissAlert(id), body: Data("{}".utf8))) }
+
+    public func dismissAllAlerts() async throws { _ = try await perform(request("POST", APIPath.dismissAllAlerts, body: Data("{}".utf8))) }
+
+    public func askAboutAlert(id: String) async throws { _ = try await perform(request("POST", APIPath.askAboutAlert(id), body: Data("{}".utf8))) }
+
+    public func today(kind: String) async throws -> RemoteToday {
+        try await get(RemoteToday.self, APIPath.today, query: [URLQueryItem(name: "kind", value: kind)])
+    }
+
+    // MARK: Assets
+
+    public func assetManifest() async throws -> [RemoteAsset] { try await get(AssetManifestResponse.self, APIPath.assetManifest).assets }
+
+    public func downloadAsset(sha256: String) async throws -> Data { try await perform(request("GET", APIPath.asset(sha256))) }
 }

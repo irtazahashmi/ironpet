@@ -1,3 +1,4 @@
+import IronPetKit
 import XCTest
 
 /// The mock server runs in the test runner. The app reaches it over the simulator's loopback.
@@ -23,10 +24,17 @@ final class IronPetRemoteUITests: XCTestCase {
         app.buttons["pair-button"].tap()
     }
 
+    private func openTab(_ name: String) {
+        let tab = app.tabBars.buttons[name]
+        XCTAssertTrue(tab.waitForExistence(timeout: 20), "the \(name) tab exists after pairing")
+        tab.tap()
+    }
+
     /// S1
     func testPairingByLinkShowsTheTasksInTheirSections() {
         app.launch()
         paste(server.pairingLink)
+        openTab("Tasks")
 
         let needs = app.staticTexts["section-needs-you"]
         XCTAssertTrue(needs.waitForExistence(timeout: 20), "the Tasks tab opens after Allow")
@@ -57,6 +65,55 @@ final class IronPetRemoteUITests: XCTestCase {
         reveal(row("t-done"))
     }
 
+    /// Phase 2: the Pet tab with Today, Agents and Alerts, against the mock. The screenshots go to the test results.
+    func testPetAgentsAlertsAndTodayWorkAgainstTheMock() throws {
+        server.setSprite(TestSheets.png(height: 2704))
+        server.pet = RemotePet(name: "Ghost", mood: "idle", badge: 2, tricks: ["Wave", "Jump"])
+        app.launch()
+        paste(server.pairingLink)
+
+        // Pet: the sprite, the bubble with buttons, the Mac-only bubble, a trick and Today.
+        XCTAssertTrue(any("pet-sprite").waitForExistence(timeout: 20))
+        XCTAssertTrue(any("pet-badge").waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["bubble-action-act-open"].waitForExistence(timeout: 10))
+        XCTAssertTrue(any("mac-only-approval:1").exists, "an approval bubble says Answer on the Mac")
+        XCTAssertFalse(app.buttons["Allow"].exists)
+        attach("pet")
+        app.buttons["trick-Wave"].tap()
+        let waved = NSPredicate { _, _ in self.server.count("POST /v1/pet/tricks/Wave") == 1 }
+        wait(for: [XCTNSPredicateExpectation(predicate: waved, object: nil)], timeout: 10)
+        app.buttons["bubble-action-act-open"].tap()
+        XCTAssertTrue(app.buttons["bubble-action-act-open"].waitForNonExistence(timeout: 10), "pressing a button closes its bubble")
+        let alertRow = app.buttons["today-item-i-alert"]
+        for _ in 0..<5 where !alertRow.exists { app.swipeUp() }
+        XCTAssertTrue(alertRow.exists, "Today lists the brief")
+        attach("today")
+        alertRow.tap()
+        XCTAssertTrue(app.buttons["dismiss-al-ci"].waitForExistence(timeout: 10), "an alert item opens the Alerts tab")
+        attach("alerts")
+        app.buttons["dismiss-al-ci"].tap()
+        let gone = NSPredicate { _, _ in self.server.alerts.map(\.id) == ["al-pr"] }
+        wait(for: [XCTNSPredicateExpectation(predicate: gone, object: nil)], timeout: 10)
+
+        openTab("Agents")
+        XCTAssertTrue(app.staticTexts["agents-section-needs-input"].waitForExistence(timeout: 10))
+        attach("agents")
+        app.buttons["agent-s-needs"].tap()
+        XCTAssertTrue(app.buttons["ask-agent-button"].waitForExistence(timeout: 10))
+        app.buttons["ask-agent-button"].tap()
+        XCTAssertTrue(app.staticTexts["agent-notice"].waitForExistence(timeout: 10))
+        XCTAssertEqual(server.count("POST /v1/agents/s-needs/ask"), 1)
+    }
+
+    private func any(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id] }
+
+    private func attach(_ name: String) {
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = name
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
     /// S2
     func testDenialIsShownOnThePairingScreen() {
         server.outcome = .deny
@@ -83,6 +140,7 @@ final class IronPetRemoteUITests: XCTestCase {
         let link = ProcessInfo.processInfo.environment["IRONPET_REAL_LINK"] ?? ""
         app.launch()
         paste(link)
+        openTab("Tasks")
         let addButton = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'add-'")).firstMatch
         XCTAssertTrue(addButton.waitForExistence(timeout: 60), "the Mac's suggestion is listed after Allow")
         let shot = XCTAttachment(screenshot: app.screenshot())
@@ -95,5 +153,36 @@ final class IronPetRemoteUITests: XCTestCase {
         after.lifetime = .keepAlways
         add(shot)
         add(after)
+    }
+
+    /// Phase 2 against a real `--test-mode` Mac, run by hand with `TEST_RUNNER_IRONPET_REAL_LINK` set. A script on the Mac side presses Allow,
+    /// makes an alert and an agent session needing input, and watches that the Wave trick and the dismissal reach the Mac. Skipped without the link.
+    func testPhaseTwoTabsAgainstARealMac() throws {
+        try XCTSkipIf(ProcessInfo.processInfo.environment["IRONPET_REAL_LINK"] == nil, "set TEST_RUNNER_IRONPET_REAL_LINK to run this against a Mac")
+        let link = ProcessInfo.processInfo.environment["IRONPET_REAL_LINK"] ?? ""
+        app.launch()
+        paste(link)
+        XCTAssertTrue(any("pet-sprite").waitForExistence(timeout: 60), "the Pet tab opens after Allow")
+        XCTAssertTrue(app.buttons["trick-Wave"].waitForExistence(timeout: 30))
+        sleep(3)
+        attach("real-pet")
+        app.buttons["trick-Wave"].tap()
+        sleep(3)
+        openTab("Alerts")
+        let dismiss = app.buttons["dismiss-s10-alert"]
+        XCTAssertTrue(dismiss.waitForExistence(timeout: 30), "the alert made on the Mac is listed")
+        attach("real-alerts")
+        dismiss.tap()
+        XCTAssertTrue(dismiss.waitForNonExistence(timeout: 20), "the list follows the Mac after the dismissal")
+        openTab("Agents")
+        XCTAssertTrue(app.staticTexts["agents-section-needs-input"].waitForExistence(timeout: 30))
+        attach("real-agents")
+        openTab("Pet")
+        for _ in 0..<5 where !app.staticTexts["today-section-agents"].exists { app.swipeUp() }
+        sleep(1)
+        attach("real-today")
+        openTab("Tasks")
+        sleep(2)
+        attach("real-tasks")
     }
 }

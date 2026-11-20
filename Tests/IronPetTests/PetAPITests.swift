@@ -99,8 +99,8 @@ final class PetAPITests: XCTestCase {
         try sheet("ghost.png", in: "bundled", shade: 10)
         let fox = try sheet("fox.png", in: "pets", shade: 20)
         var manifest = await api.pet.manifest()
-        XCTAssertEqual(manifest.assets.map(\.id), ["sprite:fox.png", "sprite:ghost.png"])
-        let first = try XCTUnwrap(manifest.assets.first)
+        XCTAssertEqual(manifest.assets.map(\.id), ["pet.sprite", "sprite:fox.png", "sprite:ghost.png"], "pet.sprite is the sheet the pet shows now: the bundled Ghost")
+        let first = try XCTUnwrap(manifest.assets.first { $0.id == "sprite:fox.png" })
         XCTAssertEqual(first.sha256.count, 64)
         XCTAssertEqual(first.bytes, try Data(contentsOf: fox).count)
         // The same bytes always hash the same; rewriting the sheet changes the hash.
@@ -108,7 +108,7 @@ final class PetAPITests: XCTestCase {
         XCTAssertEqual(again, manifest)
         try png(width: 1536, height: 2704, shade: 99).write(to: fox)
         manifest = await api.pet.manifest()
-        XCTAssertNotEqual(manifest.assets.first?.sha256, first.sha256)
+        XCTAssertNotEqual(manifest.assets.first { $0.id == "sprite:fox.png" }?.sha256, first.sha256)
     }
 
     func testAnAssetDownloadsByIdAndRefusesPathTricks() async throws {

@@ -202,6 +202,12 @@ public struct RemoteEvent: Codable, Equatable, Sendable {
     public static let resync = "resync"
     public static let tasksChanged = "tasks.changed"
     public static let suggestionsChanged = "suggestions.changed"
+    public static let petMood = "pet.mood"
+    public static let bubbleShown = "bubble.shown"
+    public static let bubbleDismissed = "bubble.dismissed"
+    public static let assetsChanged = "assets.changed"
+    public static let agentsChanged = "agents.changed"
+    public static let alertsChanged = "alerts.changed"
 
     public var seq: Int
     public var at: Date?

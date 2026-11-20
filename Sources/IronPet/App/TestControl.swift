@@ -287,6 +287,15 @@ final class TestControl {
             return telegramSnapshot()
         case ("GET", "/test/signals"):
             return signalsSnapshot()
+        case ("POST", "/test/alerts"):
+            // An alert as an automation's `alert` action makes it, for checking the Alerts screens and the remote API.
+            let id = body["id"] as? String ?? UUID().uuidString
+            let mood: PetMood = body["mood"] as? String == "failed" ? .failed : .needsInput
+            actions.signals.add(Signal(id: id, title: body["title"] as? String ?? "Test alert", subtitle: body["subtitle"] as? String ?? "",
+                                       url: (body["url"] as? String).flatMap(URL.init(string:)), label: body["label"] as? String ?? "Test",
+                                       symbol: "exclamationmark.triangle.fill", mood: mood, ask: body["ask"] as? String ?? "What is this alert about?"),
+                                 notify: false)
+            return signalsSnapshot()
         case ("GET", "/test/automations"):
             return automationsSnapshot()
         case ("GET", "/test/automations/logs"):
