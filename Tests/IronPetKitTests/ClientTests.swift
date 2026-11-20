@@ -80,4 +80,12 @@ final class ClientTests: XCTestCase {
             XCTAssertEqual(error as? ClientError, .api(status: 400, code: "invalid", message: "note is required"))
         }
     }
+
+    func testTaskIdIsPercentEncodedExactlyOnce() async throws {
+        let client = paired()
+        let request = client.request("GET", APIPath.task("ask-süd-nord"))
+        XCTAssertTrue(request.url!.absoluteString.hasSuffix("/v1/tasks/ask-s%C3%BCd-nord"), request.url!.absoluteString)
+        let percent = client.request("GET", APIPath.task("50%-done"))
+        XCTAssertTrue(percent.url!.absoluteString.hasSuffix("/v1/tasks/50%25-done"), percent.url!.absoluteString)
+    }
 }

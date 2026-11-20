@@ -267,7 +267,7 @@ final class RemoteServer {
             }
         }
         router.get("/v1/pair/:id") { request, context -> Response in
-            let id = context.parameters.get("id") ?? ""
+            let id = Self.parameter(context, "id")
             switch service.poll(id: id, secret: request.headers[.pairingSecret] ?? "") {
             case .pending: return Self.json(200, ["status": "pending"])
             case .denied: return Self.json(200, ["status": "denied"])
@@ -303,33 +303,33 @@ final class RemoteServer {
             return try await self.call(context, status: 201) { try $0.create(body) }
         }
         router.get("/v1/tasks/:id") { [self] _, context in
-            let id = context.parameters.get("id") ?? ""
+            let id = Self.parameter(context, "id")
             return try await self.call(context) { try $0.get(id) }
         }
         router.patch("/v1/tasks/:id") { [self] request, context in
-            let id = context.parameters.get("id") ?? ""
+            let id = Self.parameter(context, "id")
             let body = try await Self.object(request, context)
             return try await self.call(context) { try $0.update(id, body) }
         }
         router.post("/v1/tasks/:id/close") { [self] request, context in
-            let id = context.parameters.get("id") ?? ""
+            let id = Self.parameter(context, "id")
             let body = try await Self.object(request, context)
             return try await self.call(context) { try $0.close(id, body) }
         }
         router.delete("/v1/tasks/:id") { [self] _, context in
-            let id = context.parameters.get("id") ?? ""
+            let id = Self.parameter(context, "id")
             return try await self.call(context) { try $0.delete(id) }
         }
         router.get("/v1/suggestions") { [self] _, context in
             try await self.call(context) { try $0.suggestions() }
         }
         router.post("/v1/suggestions/:id/accept") { [self] request, context in
-            let id = context.parameters.get("id") ?? ""
+            let id = Self.parameter(context, "id")
             let body = try await Self.object(request, context)
             return try await self.call(context) { try $0.accept(id, body) }
         }
         router.post("/v1/suggestions/:id/reject") { [self] request, context in
-            let id = context.parameters.get("id") ?? ""
+            let id = Self.parameter(context, "id")
             let body = try await Self.object(request, context)
             return try await self.call(context) { try $0.reject(id, body) }
         }
