@@ -1303,11 +1303,16 @@ private struct UserBubble: View {
                     Image(systemName: "mic.fill").font(.system(size: 9))
                     Text("Voice").font(.system(size: 10))
                 }
+                if source == ChatOrigin.iosClient {
+                    Image(systemName: "iphone").font(.system(size: 9))
+                    Text(ChatOrigin.badge(for: source)?.label ?? "").font(.system(size: 10))
+                }
                 if let date { Text(timeFormatter.string(from: date)).font(.system(size: 10)) }
             }
             .foregroundStyle(.tertiary)
             .help(source == ChatOrigin.telegramClient ? "Sent from Telegram" : source == ChatOrigin.automationClient ? "Sent by an automation"
-                  : source == ChatOrigin.jobClient ? "Sent to a background job" : source == ChatOrigin.voiceClient ? "Said in voice mode" : "")
+                  : source == ChatOrigin.jobClient ? "Sent to a background job" : source == ChatOrigin.voiceClient ? "Said in voice mode"
+                  : ChatOrigin.badge(for: source)?.help ?? "")
         }
         .frame(maxWidth: .infinity, alignment: .trailing)
         .padding(.leading, 50)

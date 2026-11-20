@@ -15,6 +15,13 @@ struct ChatOrigin: Codable, Equatable, Hashable {
     static let jobClient = "job"
     /// Something the user said in voice mode on the Mac.
     static let voiceClient = "voice"
+    /// Something the user sent from the iPhone app.
+    static let iosClient = "ios"
+
+    /// The badge under a message that came from the iPhone. Nil for any other client.
+    static func badge(for client: String?) -> (label: String, help: String)? {
+        client == iosClient ? ("iPhone", "Sent from iPhone") : nil
+    }
 
     static func telegram(chat: Int64) -> ChatOrigin { ChatOrigin(client: telegramClient, ref: String(chat)) }
 }
@@ -302,8 +309,12 @@ final class ChatAPI {
     }
 
     private var currentThreads: [ChatThreadInfo] {
-        session.history.map { ChatThreadInfo(id: $0.id, title: $0.title, workspace: $0.workspace, updatedAt: $0.updatedAt, agent: $0.agent,
-                                             automation: $0.automation, automationName: $0.automationName, voice: $0.voice) }
+        session.history.map(Self.info)
+    }
+
+    private static func info(_ thread: ChatThread) -> ChatThreadInfo {
+        ChatThreadInfo(id: thread.id, title: thread.title, workspace: thread.workspace, updatedAt: thread.updatedAt, agent: thread.agent,
+                       automation: thread.automation, automationName: thread.automationName, voice: thread.voice)
     }
 
     private var currentOptions: ChatOptions {
@@ -332,9 +343,10 @@ final class ChatAPI {
     }
 
     /// Stops the running turn and answers what it cancelled. Queued messages that were typed on the Mac come back as a draft.
-    func stop() async -> ChatStopResult {
+    /// With `keepDraft`, the draft stays for the Mac's own input to take, so a client that is not the Mac cannot swallow it.
+    func stop(keepDraft: Bool = false) async -> ChatStopResult {
         session.stop()
-        return ChatStopResult(restored: await takeRestoredDraft())
+        return ChatStopResult(restored: keepDraft ? nil : await takeRestoredDraft())
     }
 
     /// Mac messages that a stop or a failed start cancelled, once. A client hears `chat.state` with the id `draft` when there are some.
@@ -377,6 +389,12 @@ final class ChatAPI {
     }
 
     func newChat() async { session.newChat() }
+
+    /// A saved thread to read, without opening it.
+    func thread(_ id: String) async throws -> (info: ChatThreadInfo, items: [ChatItem]) {
+        guard let thread = ThreadStore.load(id) else { throw APIError.notFound("no thread with id \"\(id)\"") }
+        return (Self.info(thread), thread.items)
+    }
 
     // MARK: Agent, model and folder
 

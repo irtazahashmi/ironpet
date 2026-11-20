@@ -38,6 +38,7 @@ struct MainTabs: View {
     @State private var tab: AppTab = .pet
     @State private var tasks: TasksModel
     @State private var pet: PetModel
+    @State private var chat: ChatModel
     @State private var today: TodayModel
     @State private var agents: AgentsModel
     @State private var alerts: AlertsModel
@@ -52,6 +53,7 @@ struct MainTabs: View {
         let unauthorized: () -> Void = { [weak model] in model?.handleUnauthorized() }
         _tasks = State(initialValue: TasksModel(client: client, events: events, onUnauthorized: unauthorized))
         _pet = State(initialValue: PetModel(client: client, events: events, cache: AssetCache(directory: Self.assetsDirectory), onUnauthorized: unauthorized))
+        _chat = State(initialValue: ChatModel(client: client, events: events, onUnauthorized: unauthorized))
         _today = State(initialValue: TodayModel(client: client, events: events, onUnauthorized: unauthorized))
         _agents = State(initialValue: AgentsModel(client: client, events: events, onUnauthorized: unauthorized))
         _alerts = State(initialValue: AlertsModel(client: client, events: events, onUnauthorized: unauthorized))
@@ -66,21 +68,21 @@ struct MainTabs: View {
 
     var body: some View {
         TabView(selection: $tab) {
-            PetView(model: pet, today: today, open: open)
+            PetView(model: pet, today: today, app: model, client: client, open: open)
                 .tabItem { Label("Pet", systemImage: "pawprint.fill") }.tag(AppTab.pet)
+            ChatView(model: chat)
+                .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }.badge(chat.approvals.count + chat.forms.count).tag(AppTab.chat)
             TasksView(model: tasks)
                 .tabItem { Label("Tasks", systemImage: "checklist") }.tag(AppTab.tasks)
             AgentsView(model: agents)
                 .tabItem { Label("Agents", systemImage: "terminal") }.tag(AppTab.agents)
             AlertsView(model: alerts)
                 .tabItem { Label("Alerts", systemImage: "bell") }.badge(alerts.alerts.count).tag(AppTab.alerts)
-            SettingsView(app: model, client: client)
-                .tabItem { Label("Device", systemImage: "iphone") }.tag(AppTab.device)
         }
-        // The alert count is on the tab before the user opens it.
-        .task { alerts.start() }
+        // The alert count and the waiting approvals are on their tabs before the user opens it.
+        .task { alerts.start(); chat.start() }
         // Leaving the tabs (unpair or a 401) must close the socket, which otherwise keeps reconnecting with the old token.
-        .onDisappear { [tasks, pet, today, agents, alerts] in tasks.stop(); pet.stop(); today.stop(); agents.stop(); alerts.stop() }
+        .onDisappear { [tasks, pet, chat, today, agents, alerts] in tasks.stop(); pet.stop(); chat.stop(); today.stop(); agents.stop(); alerts.stop() }
     }
 
     /// A Today item opens the tab that holds its target. A session opens its detail.

@@ -182,6 +182,25 @@ try:
     except socket.timeout:
         seen = []
     check("socket carries tasks.changed", any(f.get("kind") == "tasks.changed" for f in seen), str(seen))
+    # Phase 3: the phone writes into the Mac's chat, and the stubbed agent answers without starting a real one.
+    control("POST", "/test/chat/stub", {"answer": "Hello from the stub agent."})
+    req = urllib.request.Request(f"http://127.0.0.1:{PORT}/v1/uploads", data=b"\x89PNG fake", method="POST",
+                                 headers={"Authorization": f"Bearer {token}", "Content-Type": "image/png", "X-File-Name": "..%2F..%2Fshot.png"})
+    with urllib.request.urlopen(req, timeout=10) as r:
+        upload = json.loads(r.read())
+    check("upload answers an id and the bare file name", upload.get("file_name") == "shot.png" and bool(upload.get("id")), str(upload))
+    status, sent = remote("POST", "/v1/chat/current/messages", {"text": "hello", "upload_ids": [upload.get("id")]}, token=token)
+    check("a phone message starts a turn", status == 200 and sent.get("outcome") == "sent", str(sent))
+    answered = wait(lambda: any(i["kind"] == "assistant" for i in remote("GET", "/v1/chat/current", token=token)[1].get("items", [])))
+    status, current = remote("GET", "/v1/chat/current", token=token)
+    kinds = [(i["kind"], i.get("origin")) for i in current.get("items", [])]
+    check("the Mac chat shows the phone message with origin ios", ("user", "ios") in kinds, str(kinds))
+    check("the attached file is an item the Mac holds", any(k == "screenshot" for k, _ in kinds), str(kinds))
+    check("the reply is readable from the phone", bool(answered) and any(i.get("text") == "Hello from the stub agent." for i in current["items"]), str(current)[:300])
+    check("the Mac's path is not on the wire", ROOT not in json.dumps(current), "a path leaked")
+    check("the busy chat refuses a new chat only while running", remote("POST", "/v1/chat/new", {}, token=token)[0] in (200, 409))
+    stored = os.listdir(os.path.join(ROOT, "remote", "files"))
+    check("the upload sits under remote/files/<device>", len(stored) == 1 and any(f.endswith("-shot.png") for f in os.listdir(os.path.join(ROOT, "remote", "files", stored[0]))), str(stored))
     # The window snapshot needs Screen Recording, which a headless run may lack, so a missing file is reported but does not fail the run.
     control("POST", "/test/remote/code")
     control("POST", "/test/show-settings", {"tab": "devices", "snapshot": f"{SHOTS}/devices.png"})
