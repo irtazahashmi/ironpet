@@ -14,10 +14,13 @@ struct OpenTarget: Equatable {
     var source: AgentSource?
     /// Runs before the app is activated, to focus the session inside it. Wins over `urlTemplate`.
     var command: OpenCommand?
+    /// Runs after `command` and the app activation, when its own arguments have values. A failure only gets logged.
+    var followUp: OpenCommand?
 }
 
-/// A program and its argument list, run without a shell. `{herdr_terminal}` in an argument is replaced as a whole,
-/// so an id with spaces or `;` stays one argument. The executable is a bare name found on `PATH`, in the usual
+/// A program and its argument list, run without a shell. `{herdr_terminal}` and `{orca_terminal}` in an argument
+/// are replaced as a whole, and `{cwd}` inside an argument is replaced by the raw session folder, so a value with
+/// spaces or `;` stays one argument. The executable is a bare name found on `PATH`, in the usual
 /// install folders or inside the app bundle, never a value taken from a session.
 struct OpenCommand: Equatable {
     var executable: String
@@ -32,6 +35,7 @@ enum Editors {
 
     static let cmuxID = "com.cmuxterm.app"
     static let t3CodeID = "com.t3tools.t3code"
+    static let orcaID = "com.stablyai.orca"
     static let herdrID = "dev.herdr.app"
     /// The headless daemon a herdr agent's process tree reaches first. The desktop app is `herdrID`.
     static let herdrCoreID = "dev.herdr.core"
@@ -47,8 +51,11 @@ enum Editors {
         OpenTarget(name: "Windsurf", bundleID: "com.exafunction.windsurf", urlTemplate: "windsurf://file/{cwd}"),
         OpenTarget(name: "Xcode", bundleID: "com.apple.dt.Xcode"),
         OpenTarget(name: "Finder", bundleID: finderID),
-        // Orca registers `orca://`, but no URL format for a session is known. Only activate the app.
-        OpenTarget(name: "Orca", bundleID: "com.stablyai.orca", folderFallback: false),
+        // Orca registers `orca://`, but no URL format for a session is known. Its CLI opens a worktree by path and
+        // switches to a terminal tab by handle. A folder that is no worktree only activates the app.
+        OpenTarget(name: "Orca", bundleID: orcaID, folderFallback: false,
+                   command: OpenCommand(executable: "orca", arguments: ["worktree", "activate", "--worktree", "path:{cwd}"]),
+                   followUp: OpenCommand(executable: "orca", arguments: ["terminal", "switch", "--terminal", "{orca_terminal}"])),
         // Deep links for these come from each app's source or bundle, not from documentation.
         OpenTarget(name: "cmux", bundleID: cmuxID,
                    urlTemplate: "cmux://workspace/{cmux_workspace}/surface/{cmux_surface}", folderFallback: false),
@@ -116,15 +123,20 @@ enum Editors {
         return placeholder.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) == nil ? text : nil
     }
 
-    /// The command's arguments with placeholders filled, or nil when one has no value.
-    static func arguments(_ command: OpenCommand, target: OpenTarget, session: AgentSession?) -> [String]? {
+    /// The command's arguments with placeholders filled, or nil when one has no value. `{cwd}` comes from `folder`.
+    static func arguments(
+        _ command: OpenCommand, target: OpenTarget, session: AgentSession?, folder: String? = nil
+    ) -> [String]? {
         let known = values(for: target, session: session, t3EnvironmentID: { nil }, only: command.arguments.joined())
         var result: [String] = []
         for argument in command.arguments {
             let whole = NSRange(argument.startIndex..., in: argument)
-            if argument.hasPrefix("{"), argument.hasSuffix("}"), placeholder.firstMatch(in: argument, range: whole)?.range == whole {
+            if !argument.contains("{cwd}"), argument.hasPrefix("{"), argument.hasSuffix("}"), placeholder.firstMatch(in: argument, range: whole)?.range == whole {
                 guard let value = known[String(argument.dropFirst().dropLast())] else { return nil }
                 result.append(value)
+            } else if argument.contains("{cwd}") {
+                guard let folder, !folder.isEmpty else { return nil }
+                result.append(argument.replacingOccurrences(of: "{cwd}", with: folder))
             } else {
                 result.append(argument)
             }
@@ -143,7 +155,8 @@ enum Editors {
         if target.source == nil || target.source == session.source, let id = session.agentSessionID { result["session"] = id }
         let origin = session.origin
         for (name, value) in [("cmux_workspace", origin.cmuxWorkspaceID), ("cmux_surface", origin.cmuxSurfaceID),
-                              ("t3_thread", origin.t3ThreadID), ("herdr_terminal", origin.herdrTerminalID)] {
+                              ("t3_thread", origin.t3ThreadID), ("herdr_terminal", origin.herdrTerminalID),
+                              ("orca_terminal", origin.orcaTerminalHandle)] {
             if let value { result[name] = value }
         }
         if text.contains("{t3_env}"), let env = AppIDs.clean(t3EnvironmentID()) { result["t3_env"] = env }

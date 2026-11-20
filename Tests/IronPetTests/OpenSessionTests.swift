@@ -9,10 +9,11 @@ final class OpenSessionTests: XCTestCase {
         var activated: [String] = []
         var handled = true
         var executable: String? = "/opt/bin/herdr-app"
+        var succeeds = true
 
         var effects: SourceJumper.Effects {
             .init(openURL: { [self] in urls.append($0.absoluteString); return handled },
-                  run: { [self] exe, args in commands.append([exe] + args) },
+                  run: { [self] exe, args in commands.append([exe] + args); return succeeds },
                   activate: { [self] id, _ in activated.append(id) },
                   findExecutable: { [self] _, _ in executable })
         }
@@ -107,6 +108,62 @@ final class OpenSessionTests: XCTestCase {
         XCTAssertTrue(Editors.builtIn.compactMap(\.command).allSatisfy { !$0.executable.contains("/") })
     }
 
+    // Orca
+    func testOrcaActivatesTheWorktreeByPathAsOneArgument() {
+        let r = Recorder()
+        r.executable = "/usr/local/bin/orca"
+        SourceJumper.open(target(Editors.orcaID), folder: "/tmp/x y;z", session: session(), effects: r.effects)
+        XCTAssertEqual(r.commands, [["/usr/local/bin/orca", "worktree", "activate", "--worktree", "path:/tmp/x y;z"]])
+        XCTAssertEqual(r.activated, [Editors.orcaID])
+    }
+
+    func testOrcaSwitchesTheTerminalWhenAHandleIsKnown() {
+        let r = Recorder()
+        r.executable = "/usr/local/bin/orca"
+        SourceJumper.open(target(Editors.orcaID), folder: "/tmp/x", session: session { $0.orcaTerminalHandle = "h1" }, effects: r.effects)
+        XCTAssertEqual(r.commands.map { Array($0.dropFirst()) },
+                       [["worktree", "activate", "--worktree", "path:/tmp/x"], ["terminal", "switch", "--terminal", "h1"]])
+        XCTAssertEqual(r.activated, [Editors.orcaID])
+    }
+
+    func testOrcaFailureStillActivatesTheApp() {
+        let r = Recorder()
+        r.executable = "/usr/local/bin/orca"
+        r.succeeds = false
+        SourceJumper.open(target(Editors.orcaID), folder: "/tmp/x", session: session(), effects: r.effects)
+        XCTAssertEqual(r.activated, [Editors.orcaID])
+        r.executable = nil
+        r.commands = []
+        SourceJumper.open(target(Editors.orcaID), folder: "/tmp/x", session: session { $0.orcaTerminalHandle = "h1" }, effects: r.effects)
+        XCTAssertTrue(r.commands.isEmpty)
+        XCTAssertEqual(r.activated, [Editors.orcaID, Editors.orcaID])
+    }
+
+    func testOrcaUsesTheWorktreeRootForASubfolder() {
+        let r = Recorder()
+        r.executable = "/usr/local/bin/orca"
+        var effects = r.effects
+        effects.worktreeRoot = { _ in "/tmp/root" }
+        SourceJumper.open(target(Editors.orcaID), folder: "/tmp/root/sub", session: session(), effects: effects)
+        XCTAssertEqual(r.commands, [["/usr/local/bin/orca", "worktree", "activate", "--worktree", "path:/tmp/root"]])
+    }
+
+    func testOrcaWithoutFolderOnlyActivates() {
+        let r = Recorder()
+        r.executable = "/usr/local/bin/orca"
+        SourceJumper.open(target(Editors.orcaID), folder: nil, session: session { $0.workspace = nil }, effects: r.effects)
+        XCTAssertTrue(r.commands.isEmpty)
+        XCTAssertEqual(r.activated, [Editors.orcaID])
+    }
+
+    func testCwdPlaceholderInCommandArguments() {
+        let command = OpenCommand(executable: "x", arguments: ["--dir", "{cwd}", "p:{cwd}"])
+        let t = OpenTarget(name: "X", bundleID: "com.x", command: command)
+        XCTAssertEqual(Editors.arguments(command, target: t, session: nil, folder: "/a b;c"), ["--dir", "/a b;c", "p:/a b;c"])
+        XCTAssertNil(Editors.arguments(command, target: t, session: nil, folder: nil))
+        XCTAssertNil(Editors.arguments(command, target: t, session: nil, folder: ""))
+    }
+
     // S4
     func testClaudeDesktopOpensTheSession() {
         let r = Recorder()
@@ -167,9 +224,9 @@ final class OpenSessionTests: XCTestCase {
     // S5
     func testCaptureKeepsOnlyTheNamedVariables() {
         let origin = AppIDs.capture(env: ["CMUX_WORKSPACE_ID": "w1", "CMUX_SURFACE_ID": "s1", "T3CODE_THREAD_ID": "t1",
-                                          "HC_TERMINAL_ID": "h1", "HOME": "/Users/me", "OPENAI_API_KEY": "secret"])
-        XCTAssertEqual([origin.cmuxWorkspaceID, origin.cmuxSurfaceID, origin.t3ThreadID, origin.herdrTerminalID],
-                       ["w1", "s1", "t1", "h1"])
+                                          "HC_TERMINAL_ID": "h1", "ORCA_TERMINAL_HANDLE": "o1", "HOME": "/Users/me", "OPENAI_API_KEY": "secret"])
+        XCTAssertEqual([origin.cmuxWorkspaceID, origin.cmuxSurfaceID, origin.t3ThreadID, origin.herdrTerminalID, origin.orcaTerminalHandle],
+                       ["w1", "s1", "t1", "h1", "o1"])
         let json = String(data: try! JSONEncoder().encode(origin), encoding: .utf8)!
         XCTAssertFalse(json.contains("secret"))
         XCTAssertFalse(json.contains("/Users/me"))
@@ -182,7 +239,7 @@ final class OpenSessionTests: XCTestCase {
         XCTAssertEqual(AppIDs.clean("a b;c"), "a b;c")
     }
 
-    func testHookScriptForwardsTheFourVariablesAndNotTheEnvironment() {
+    func testHookScriptForwardsTheNamedVariablesAndNotTheEnvironment() {
         let script = HookScript.contents
         for (env, header) in AppIDs.headers {
             XCTAssertTrue(script.contains("${\(env):-}"), env)

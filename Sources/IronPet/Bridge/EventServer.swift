@@ -95,6 +95,7 @@ final class EventServer {
         origin.cmuxSurfaceID = AppIDs.clean(request.header("x-ironpet-cmux-surface"))
         origin.t3ThreadID = AppIDs.clean(request.header("x-ironpet-t3-thread"))
         origin.herdrTerminalID = AppIDs.clean(request.header("x-ironpet-herdr-terminal"))
+        origin.orcaTerminalHandle = AppIDs.clean(request.header("x-ironpet-orca-terminal"))
         onEvent(HookEvent(source: source, name: name, payload: payload, origin: origin))
         respond(connection, status: "204 No Content")
     }

@@ -43,6 +43,7 @@ final class SessionStore: ObservableObject {
         if let id = event.origin.cmuxSurfaceID { session.origin.cmuxSurfaceID = id }
         if let id = event.origin.t3ThreadID { session.origin.t3ThreadID = id }
         if let id = event.origin.herdrTerminalID { session.origin.herdrTerminalID = id }
+        if let id = event.origin.orcaTerminalHandle { session.origin.orcaTerminalHandle = id }
         if session.origin.ownerBundleID == nil, let pid = event.origin.pid {
             // Resolve now: the agent's process can exit before the user clicks the button.
             session.origin.pid = pid
