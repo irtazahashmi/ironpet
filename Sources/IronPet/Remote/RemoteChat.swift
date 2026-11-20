@@ -72,7 +72,7 @@ struct RemoteChat {
         var object: [String: Any] = [
             "title": status.title, "state": status.state, "running": status.running, "folder_label": options.folderLabel,
             "agent": ["id": options.agent.id, "name": options.agent.name],
-            "items": snapshot.messages.map(Self.json), "approvals": snapshot.approvals.map(Self.json),
+            "items": snapshot.messages.filter(Self.isVisible).map(Self.json), "approvals": snapshot.approvals.map(Self.json),
             "forms": snapshot.forms.map(Self.json), "queue": snapshot.queue.map(Self.json)
         ]
         if let id = status.threadID { object["thread_id"] = id }
@@ -103,7 +103,7 @@ struct RemoteChat {
     func thread(_ id: String) async throws -> [String: Any] {
         let found = try await api.chat.thread(id)
         var object = Self.json(found.info)
-        object["items"] = found.items.map(Self.json)
+        object["items"] = found.items.filter(Self.isVisible).map(Self.json)
         return object
     }
 
@@ -248,6 +248,12 @@ struct RemoteChat {
         }
     }
 
+    /// A notice with no text only carries metadata and draws nothing on the Mac.
+    static func isVisible(_ item: ChatItem) -> Bool {
+        if case .notice(let text) = item.kind { return !text.isEmpty }
+        return true
+    }
+
     static func json(_ item: ChatItem) -> [String: Any] {
         var object: [String: Any] = ["id": item.id.uuidString]
         if let date = item.date { object["date"] = iso(date) }
@@ -266,6 +272,10 @@ struct RemoteChat {
             object["kind"] = "screenshot"
             object["file_name"] = (path as NSString).lastPathComponent
             object["is_image"] = ImageIntake.isImageFile(URL(fileURLWithPath: path))
+        case .notice(let text):
+            // A system notice. The phone does not know this kind and shows its text as a plain row.
+            object["kind"] = "notice"
+            object["text"] = text
         case .form(let record):
             object["kind"] = "form"
             object["text"] = record.message

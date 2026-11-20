@@ -405,4 +405,12 @@ final class RemoteChatTests: XCTestCase {
         XCTAssertEqual(json["kind"] as? String, "tool")
         XCTAssertEqual(json["ok"] as? Bool, true)
     }
+
+    func testASystemNoticeIsANoticeKindWithItsTextAndAnEmptyOneIsHidden() async throws {
+        XCTAssertEqual(RemoteChat.json(ChatItem(kind: .notice("Automation ran")))["kind"] as? String, "notice")
+        XCTAssertEqual(RemoteChat.json(ChatItem(kind: .notice("Automation ran")))["text"] as? String, "Automation ran")
+        chat.items = [ChatItem(kind: .notice("")), ChatItem(kind: .notice("Visible"))]
+        let current = try await get("/v1/chat/current")
+        XCTAssertEqual(items(current).map { $0["text"] as? String }, ["Visible"])
+    }
 }
