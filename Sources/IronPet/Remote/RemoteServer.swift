@@ -386,13 +386,11 @@ final class RemoteServer {
             let data = Data(buffer.readableBytesView)
             let raw = request.headers[.init("X-File-Name")!] ?? ""
             let name = raw.removingPercentEncoding ?? raw
-            return await MainActor.run {
-                do {
-                    let saved = try self.uploads.save(data, fileName: name, device: device.id)
-                    return Self.json(201, ["id": saved.id, "file_name": saved.name, "stored_name": saved.stored, "bytes": data.count])
-                } catch {
-                    return Self.errorResponse(RemoteFailure(error))
-                }
+            do {
+                let saved = try await self.uploads.save(data, fileName: name, device: device.id)
+                return Self.json(201, ["id": saved.id, "file_name": saved.name, "stored_name": saved.stored, "bytes": data.count])
+            } catch {
+                return Self.errorResponse(RemoteFailure(error))
             }
         }
     }

@@ -21,14 +21,17 @@ final class RemoteUploads {
         return String(name.prefix(100))
     }
 
-    func save(_ data: Data, fileName: String, device: String) throws -> (id: String, name: String, stored: String) {
+    /// Writes the file off the main actor, so a 20 MiB photo does not stall the Mac's UI, then records the id.
+    func save(_ data: Data, fileName: String, device: String) async throws -> (id: String, name: String, stored: String) {
         let folder = directory.appendingPathComponent(device)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let name = Self.safeName(fileName)
         let id = UUID().uuidString
         let stored = "\(id.prefix(8))-\(name)"
         let url = folder.appendingPathComponent(stored)
-        try data.write(to: url)
+        try await Task.detached {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try data.write(to: url)
+        }.value
         entries[id] = (device, url)
         return (id, name, stored)
     }
