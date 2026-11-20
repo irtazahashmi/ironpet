@@ -28,4 +28,18 @@ public enum APIPath {
     public static let today = "/v1/today"
     public static let assetManifest = "/v1/assets/manifest"
     public static func asset(_ sha256: String) -> String { "/v1/assets/\(sha256)" }
+
+    public static let chat = "/v1/chat/current"
+    public static func chatMessage(_ id: String) -> String { "/v1/chat/messages/\(id)" }
+    public static let chatThreads = "/v1/chat/threads"
+    public static func chatThread(_ id: String) -> String { "/v1/chat/threads/\(id)" }
+    public static let chatSend = "/v1/chat/current/messages"
+    public static let chatStop = "/v1/chat/current/stop"
+    public static func chatOpen(_ id: String) -> String { "/v1/chat/open/\(id)" }
+    public static let chatNew = "/v1/chat/new"
+    public static func chatApproval(_ id: String) -> String { "/v1/chat/approvals/\(id)" }
+    public static func chatForm(_ id: String) -> String { "/v1/chat/forms/\(id)" }
+    public static func chatFormSubmit(_ id: String) -> String { "/v1/chat/forms/\(id)/submit" }
+    public static func chatFormSkip(_ id: String) -> String { "/v1/chat/forms/\(id)/skip" }
+    public static let uploads = "/v1/uploads"
 }

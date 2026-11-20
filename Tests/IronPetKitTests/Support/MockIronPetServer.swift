@@ -45,6 +45,12 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _today: [String: RemoteToday] = ["brief": MockIronPetServer.sampleBrief, "recap": MockIronPetServer.sampleRecap]
     private var _assetData: [String: Data] = [:]
     private var _assets: [RemoteAsset] = []
+    private var _chat = MockIronPetServer.sampleChat
+    private var _chatThreads = MockIronPetServer.sampleThreads
+    private var _threadItems: [String: [RemoteChatItem]] = ["th-1": [RemoteChatItem(id: "th-1-u", kind: "user", text: "Old question"), RemoteChatItem(id: "th-1-a", kind: "assistant", text: "Old answer")]]
+    private var _openConflict: String?
+    private var _uploadFails = false
+    private var _uploads: [String: Data] = [:]
     private let encoder = WireJSON.makeEncoder()
     private(set) var port: UInt16 = 0
     private let tlsIdentity: SecIdentity?
@@ -139,6 +145,32 @@ final class MockIronPetServer: @unchecked Sendable {
         lock.unlock()
     }
 
+    /// The chat the Mac has open, as `GET /v1/chat/current` answers it. Change it, then `publish` the event a real Mac would.
+    var chat: RemoteChatSnapshot { get { lock.lock(); defer { lock.unlock() }; return _chat } set { lock.lock(); _chat = newValue; lock.unlock() } }
+    var chatThreads: [RemoteChatThread] { get { lock.lock(); defer { lock.unlock() }; return _chatThreads } set { lock.lock(); _chatThreads = newValue; lock.unlock() } }
+    /// When set, opening a thread or starting a new chat answers 409 with this text, as a Mac with a running turn does.
+    var openConflict: String? { get { lock.lock(); defer { lock.unlock() }; return _openConflict } set { lock.lock(); _openConflict = newValue; lock.unlock() } }
+    /// True answers every upload with 500.
+    var uploadFails: Bool { get { lock.lock(); defer { lock.unlock() }; return _uploadFails } set { lock.lock(); _uploadFails = newValue; lock.unlock() } }
+    /// The bytes of an upload by id.
+    func uploaded(_ id: String) -> Data? { lock.lock(); defer { lock.unlock() }; return _uploads[id] }
+
+    /// Appends `text` to an assistant item and sends `chat.item` for it, as one streamed chunk does on the Mac. Makes the item when it is new.
+    func streamChunk(item id: String, _ text: String) {
+        lock.lock()
+        if let index = _chat.items.firstIndex(where: { $0.id == id }) { _chat.items[index].text = (_chat.items[index].text ?? "") + text }
+        else { _chat.items.append(RemoteChatItem(id: id, kind: "assistant", date: Date(), text: text)) }
+        _chat.running = true
+        lock.unlock()
+        publish(RemoteEvent.chatItem, id: id)
+    }
+
+    /// Ends the running turn.
+    func finishTurn() {
+        lock.lock(); _chat.running = false; _chat.state = "done"; lock.unlock()
+        publish(RemoteEvent.chatState)
+    }
+
     func count(_ line: String) -> Int { requests.filter { $0.line == line }.count }
 
     // MARK: Lifecycle
@@ -229,7 +261,8 @@ final class MockIronPetServer: @unchecked Sendable {
     }
 
     private func respond(_ connection: NWConnection, _ status: Int, _ body: Data) {
-        let reason = [200: "OK", 201: "Created", 202: "Accepted", 400: "Bad Request", 401: "Unauthorized", 404: "Not Found"][status] ?? "OK"
+        let reason = [200: "OK", 201: "Created", 202: "Accepted", 400: "Bad Request", 401: "Unauthorized", 404: "Not Found", 409: "Conflict",
+                      413: "Content Too Large", 500: "Internal Server Error"][status] ?? "OK"
         var out = Data("HTTP/1.1 \(status) \(reason)\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n".utf8)
         out.append(body)
         connection.send(content: out, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { _ in connection.cancel() })
@@ -254,7 +287,7 @@ final class MockIronPetServer: @unchecked Sendable {
             return fail(connection, 401, "unauthorized", "unauthorized")
         }
         let parts = request.path.split(separator: "/").map(String.init)
-        if routeResources(request, parts, connection) { return }
+        if routeResources(request, parts, connection) || routeChat(request, parts, connection) { return }
         switch (request.method, parts.count) {
         case ("POST", 2) where request.path == APIPath.pair: pair(request, connection)
         case ("GET", 3) where parts[1] == "pair": poll(parts[2], request, connection)
@@ -470,5 +503,88 @@ final class MockIronPetServer: @unchecked Sendable {
         }
         frame.append(payload)
         connection.send(content: frame, completion: .contentProcessed { _ in })
+    }
+}
+
+// MARK: Phase 3 chat routes
+
+extension MockIronPetServer {
+    static let sampleChat = RemoteChatSnapshot(
+        threadID: "th-now", title: "Fix the login test", state: "idle", folderLabel: "demo-app",
+        items: [RemoteChatItem(id: "m-1", kind: "user", date: Date(timeIntervalSince1970: 1_700_000_000), text: "Why does the login test fail?"),
+                RemoteChatItem(id: "m-2", kind: "assistant", date: Date(timeIntervalSince1970: 1_700_000_010), text: "The **fixture** is stale.")])
+
+    static let sampleThreads = [RemoteChatThread(id: "th-1", title: "Old chat", folderLabel: "demo-app"),
+                                RemoteChatThread(id: "th-2", title: "Another chat", folderLabel: "api", updated: Date(timeIntervalSince1970: 1_700_000_500))]
+
+    /// Answers the chat and upload routes. Returns false for any other request.
+    fileprivate func routeChat(_ request: Recorded, _ parts: [String], _ connection: NWConnection) -> Bool {
+        guard parts.count >= 2, parts[0] == "v1" else { return false }
+        let get = request.method == "GET", post = request.method == "POST"
+        if parts[1] == "uploads", post, parts.count == 2 {
+            if uploadFails { fail(connection, 500, "failed", "the upload failed"); return true }
+            let id = "up-\(UUID().uuidString.prefix(6))"
+            lock.lock(); _uploads[id] = request.body; lock.unlock()
+            let name = (request.headers["x-file-name"] ?? "file").removingPercentEncoding ?? "file"
+            respond(connection, 201, RemoteUpload(id: id, fileName: name, storedName: "\(id.suffix(6))-\(name)", bytes: request.body.count))
+            return true
+        }
+        guard parts[1] == "chat" else { return false }
+        switch (parts.count, parts.dropFirst(2).first ?? "") {
+        case (3, "current") where get: respond(connection, 200, chat)
+        case (4, "messages") where get:
+            guard let item = chat.items.first(where: { $0.id == parts[3] }) else { fail(connection, 404, "not_found", "no message"); return true }
+            respond(connection, 200, item)
+        case (3, "threads") where get: respond(connection, 200, ChatThreadListResponse(threads: chatThreads))
+        case (4, "threads") where get:
+            lock.lock(); let items = _threadItems[parts[3]]; lock.unlock()
+            guard let thread = chatThreads.first(where: { $0.id == parts[3] }), let items else { fail(connection, 404, "not_found", "no thread"); return true }
+            respond(connection, 200, RemoteChatThreadDetail(thread: thread, items: items))
+        case (4, "current") where post && parts[3] == "messages":
+            guard let text = request.json["text"] as? String, !text.isEmpty || request.json["upload_ids"] != nil else { fail(connection, 400, "invalid", "the message is empty"); return true }
+            lock.lock()
+            let queued = _chat.running
+            let id = "m-\(_chat.items.count + 1)"
+            if queued { _chat.queue.append(RemoteQueued(id: "q-\(id)", text: text)) }
+            else { _chat.items.append(RemoteChatItem(id: id, kind: "user", date: Date(), origin: "ios", text: text)); _chat.running = true; _chat.state = "running" }
+            lock.unlock()
+            respond(connection, 200, RemoteSendResult(outcome: queued ? "queued" : "sent"))
+            publish(queued ? RemoteEvent.chatState : RemoteEvent.chatItem, id: queued ? "queue" : id)
+        case (4, "current") where post && parts[3] == "stop":
+            lock.lock(); _chat.running = false; _chat.state = "idle"; lock.unlock()
+            respond(connection, 200, Data(#"{"stopped":true}"#.utf8))
+            publish(RemoteEvent.chatState)
+        case (4, "open") where post, (3, "new") where post:
+            if let conflict = openConflict { fail(connection, 409, "conflict", conflict); return true }
+            if parts[2] == "open" {
+                lock.lock()
+                let items = _threadItems[parts[3]] ?? []
+                _chat.threadID = parts[3]; _chat.items = items
+                lock.unlock()
+            } else {
+                lock.lock(); _chat.threadID = nil; _chat.items = []; _chat.title = "New chat"; lock.unlock()
+            }
+            respond(connection, 200, Data("{}".utf8))
+            publish(RemoteEvent.chatItem)
+        case (4, "approvals") where post:
+            lock.lock()
+            let known = _chat.approvals.contains { $0.id == parts[3] }
+            _chat.approvals.removeAll { $0.id == parts[3] }
+            lock.unlock()
+            guard known else { fail(connection, 404, "not_found", "that approval is no longer waiting"); return true }
+            respond(connection, 200, Data(#"{"allowed":true}"#.utf8))
+            publish(RemoteEvent.chatState, id: "approvals")
+        case (4, "forms") where post, (5, "forms") where post:
+            lock.lock()
+            let known = _chat.forms.contains { $0.id == parts[3] }
+            let closes = parts.count == 5
+            if known, closes { _chat.forms.removeAll { $0.id == parts[3] } }
+            lock.unlock()
+            guard known else { fail(connection, 404, "not_found", "that question is no longer waiting"); return true }
+            respond(connection, 200, Data("{}".utf8))
+            publish(RemoteEvent.chatState, id: "forms")
+        default: return false
+        }
+        return true
     }
 }

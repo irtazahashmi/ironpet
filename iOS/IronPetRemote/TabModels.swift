@@ -74,7 +74,7 @@ class SocketModel {
 
 /// The tabs of the app, and where a Today item opens.
 enum AppTab: Hashable {
-    case pet, tasks, agents, alerts, device
+    case pet, chat, tasks, agents, alerts
 
     /// A task opens Tasks, a session Agents, an alert Alerts. A meeting opens the Mac's transcripts, which the phone has no screen for yet.
     static func tab(for target: TodayTarget) -> AppTab? {

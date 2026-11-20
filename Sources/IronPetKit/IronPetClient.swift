@@ -184,4 +184,73 @@ public final class IronPetClient: @unchecked Sendable {
     public func assetManifest() async throws -> [RemoteAsset] { try await get(AssetManifestResponse.self, APIPath.assetManifest).assets }
 
     public func downloadAsset(sha256: String) async throws -> Data { try await perform(request("GET", APIPath.asset(sha256))) }
+
+    // MARK: Chat
+
+    private func post<T: Decodable>(_ type: T.Type, _ path: String, json: [String: Any] = [:]) async throws -> T {
+        let data = try JSONSerialization.data(withJSONObject: json)
+        return try decode(type, from: try await perform(request("POST", path, body: data)))
+    }
+
+    private func post(_ path: String, json: [String: Any] = [:]) async throws {
+        _ = try await perform(request("POST", path, body: try JSONSerialization.data(withJSONObject: json)))
+    }
+
+    public func chat() async throws -> RemoteChatSnapshot { try await get(RemoteChatSnapshot.self, APIPath.chat) }
+
+    public func chatMessage(id: String) async throws -> RemoteChatItem { try await get(RemoteChatItem.self, APIPath.chatMessage(id)) }
+
+    public func chatThreads() async throws -> [RemoteChatThread] { try await get(ChatThreadListResponse.self, APIPath.chatThreads).threads }
+
+    public func chatThread(id: String) async throws -> RemoteChatThreadDetail { try await get(RemoteChatThreadDetail.self, APIPath.chatThread(id)) }
+
+    /// Sends a message into the chat the Mac has open. `uploadIDs` come from `upload`.
+    @discardableResult
+    public func sendMessage(text: String, uploadIDs: [String] = [], reply: RemoteReplyRef? = nil) async throws -> RemoteSendResult {
+        var body: [String: Any] = ["text": text]
+        if !uploadIDs.isEmpty { body["upload_ids"] = uploadIDs }
+        if let reply {
+            var quote: [String: Any] = ["item_id": reply.itemID]
+            if let selection = reply.selectionText { quote["selection_text"] = selection }
+            body["reply"] = quote
+        }
+        return try await post(RemoteSendResult.self, APIPath.chatSend, json: body)
+    }
+
+    public func stopChat() async throws { try await post(APIPath.chatStop) }
+
+    /// Makes a saved thread the Mac's open chat. The Mac answers 409 while a turn runs or a question waits.
+    public func openThread(id: String) async throws { try await post(APIPath.chatOpen(id)) }
+
+    public func newChat() async throws { try await post(APIPath.chatNew) }
+
+    public func decide(approval id: String, allow: Bool) async throws { try await post(APIPath.chatApproval(id), json: ["allow": allow]) }
+
+    public func answer(form id: String, answers: [String: RemoteFormAnswer]) async throws {
+        try await post(APIPath.chatForm(id), json: ["answers": Self.json(answers)])
+    }
+
+    public func submit(form id: String, answers: [String: RemoteFormAnswer] = [:]) async throws {
+        try await post(APIPath.chatFormSubmit(id), json: ["answers": Self.json(answers)])
+    }
+
+    public func skip(form id: String) async throws { try await post(APIPath.chatFormSkip(id)) }
+
+    private static func json(_ answers: [String: RemoteFormAnswer]) -> [String: Any] {
+        answers.mapValues { answer -> Any in
+            switch answer {
+            case .text(let text): return text
+            case .list(let list): return list
+            case .flag(let flag): return flag
+            }
+        }
+    }
+
+    /// Uploads one photo or file, up to 20 MiB, as the raw body. The answer's id goes into `sendMessage`.
+    public func upload(_ data: Data, fileName: String, contentType: String) async throws -> RemoteUpload {
+        var request = request("POST", APIPath.uploads, body: data, headers: ["Content-Type": contentType,
+                                                                              "X-File-Name": fileName.addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "file"])
+        request.timeoutInterval = 120
+        return try decode(RemoteUpload.self, from: try await perform(request))
+    }
 }

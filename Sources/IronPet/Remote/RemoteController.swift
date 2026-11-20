@@ -51,14 +51,15 @@ final class RemoteController: ObservableObject {
 
     init(api: IronPetAPI, settings: SettingsAPI, database: Database, bubbles: BubbleStore, chime: @escaping () -> Void = {}, activity: ActivityLog?,
          storage: RemoteKeyStorage = FileKeyStorage(), now: @escaping () -> Date = Date.init,
-         interfaces: @escaping () -> [InterfaceAddress] = RemoteNetwork.interfaces, magicDNS: @escaping () async -> String? = RemoteNetwork.readMagicDNS) {
+         interfaces: @escaping () -> [InterfaceAddress] = RemoteNetwork.interfaces, magicDNS: @escaping () async -> String? = RemoteNetwork.readMagicDNS,
+         uploads: RemoteUploads? = nil) {
         self.settings = settings
         self.interfaces = interfaces
         self.magicDNS = magicDNS
         self.bubbles = bubbles
         self.chime = chime
         service = RemoteService(store: RemoteStore(database: database), identity: RemoteIdentity(storage: storage), now: now)
-        server = RemoteServer(api: api, service: service)
+        server = RemoteServer(api: api, service: service, uploads: uploads)
         devices = service.devices
         addresses = RemoteNetwork.addresses(from: interfaces())
         service.activity = { event in activity?.record(event) }

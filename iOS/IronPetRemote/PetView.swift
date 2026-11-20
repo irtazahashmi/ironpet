@@ -7,7 +7,10 @@ import SwiftUI
 struct PetView: View {
     let model: PetModel
     let today: TodayModel
+    let app: AppModel
+    let client: IronPetClient
     let open: (TodayTarget) -> Void
+    @State private var showDevice = false
 
     var body: some View {
         NavigationStack {
@@ -25,6 +28,13 @@ struct PetView: View {
             }
             .navigationTitle(model.pet?.name ?? "Pet")
             .refreshable { await model.refresh(); await today.refresh() }
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button { showDevice = true } label: { Image(systemName: "gearshape") }
+                        .accessibilityLabel("Device").accessibilityIdentifier("device-button")
+                }
+            }
+            .sheet(isPresented: $showDevice) { SettingsView(app: app, client: client) }
         }
         .task { model.start(); today.start() }
     }

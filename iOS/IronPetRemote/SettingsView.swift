@@ -6,6 +6,7 @@ struct SettingsView: View {
     let client: IronPetClient
     @State private var device: RemoteDevice?
     @State private var confirming = false
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
         NavigationStack {
@@ -25,6 +26,7 @@ struct SettingsView: View {
                 }
             }
             .navigationTitle("Device")
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() }.accessibilityIdentifier("device-done") } }
             .confirmationDialog("Unpair from this Mac?", isPresented: $confirming, titleVisibility: .visible) {
                 Button("Unpair", role: .destructive) { Task { await app.unpair() } }
             }

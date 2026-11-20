@@ -112,6 +112,15 @@ final class TestControl {
             if let auto = body["auto"] as? Bool { chat.autoMode = auto }
             chatModel.input = body["prompt"] as? String ?? ""
             chatModel.send()
+        case ("POST", "/test/chat/stub"):
+            // Answers every chat turn with `answer` and starts no agent, so a check can drive the chat without spending quota.
+            let answer = body["answer"] as? String ?? "stub answer"
+            chat.turnRunner = { _, emit in
+                emit(.assistant(answer))
+                emit(.finished(error: nil))
+            }
+            if chat.workspace == nil { chat.useNoProject() }
+            return Self.encode(["ok": true])
         case ("POST", "/test/build-pet"):
             let description = (body["description"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
             guard !description.isEmpty else { return Self.encode(["ok": false, "error": "description is required"]) }

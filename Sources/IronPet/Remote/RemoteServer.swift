@@ -63,8 +63,10 @@ struct RemoteGate: RouterMiddleware {
         if headerBytes > RemoteServer.maxHeaders {
             return RemoteServer.error(431, "headers_too_large", "request headers are too large")
         }
-        if let length = request.headers[.contentLength].flatMap(Int.init), length > RemoteServer.maxBody {
-            return RemoteServer.error(413, "too_large", "request body is larger than \(RemoteServer.maxBody) bytes")
+        // Only the upload route takes a body past 1 MiB.
+        let limit = Self.template(context.endpointPath) == RemoteServer.uploadRoute ? RemoteUploads.maxBytes : RemoteServer.maxBody
+        if let length = request.headers[.contentLength].flatMap(Int.init), length > limit {
+            return RemoteServer.error(413, "too_large", "request body is larger than \(limit) bytes")
         }
         if let path = Self.template(context.endpointPath), Self.open.contains(path) {
             return try await next(request, context)
@@ -96,9 +98,13 @@ extension HTTPField.Name {
 final class RemoteServer {
     nonisolated static let maxBody = 1 << 20
     nonisolated static let maxHeaders = 64 << 10
+    nonisolated static let uploadRoute = "/v1/uploads"
 
     let service: RemoteService
     private let api: IronPetAPI
+    private let uploads: RemoteUploads
+    /// How often one message's `chat.item` event may reach a socket.
+    var itemInterval: Duration = .milliseconds(100)
     private var tasks: [Task<Void, Never>] = []
     /// The port the listeners are bound to, while they run.
     private(set) var port: Int?
@@ -109,9 +115,10 @@ final class RemoteServer {
     /// The keychain that holds the HTTPS listener's identity, deleted when the listener stops.
     private var keychain: RemoteTLSKeychain?
 
-    init(api: IronPetAPI, service: RemoteService) {
+    init(api: IronPetAPI, service: RemoteService, uploads: RemoteUploads? = nil) {
         self.api = api
         self.service = service
+        self.uploads = uploads ?? RemoteUploads()
     }
 
     var isRunning: Bool { !tasks.isEmpty }
@@ -327,6 +334,72 @@ final class RemoteServer {
             return try await self.call(context) { try $0.reject(id, body) }
         }
         addResourceRoutes(to: router)
+        addChatRoutes(to: router)
+    }
+
+    /// The shared chat and uploads (phase 3).
+    private func addChatRoutes(to router: Router<RemoteContext>) {
+        router.get("/v1/chat/current") { [self] _, context in await self.chat(context) { await $0.current() } }
+        router.get("/v1/chat/messages/:id") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.chat(context) { try await $0.message(id) }
+        }
+        router.get("/v1/chat/threads") { [self] _, context in await self.chat(context) { await $0.threads() } }
+        router.get("/v1/chat/threads/:id") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.chat(context) { try await $0.thread(id) }
+        }
+        router.post("/v1/chat/current/messages") { [self] request, context in
+            let body = try await Self.object(request, context)
+            return await self.chat(context) { try await $0.send(body) }
+        }
+        router.post("/v1/chat/current/stop") { [self] _, context in await self.chat(context) { await $0.stop() } }
+        router.post("/v1/chat/open/:id") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.chat(context) { try await $0.open(id) }
+        }
+        router.post("/v1/chat/new") { [self] _, context in await self.chat(context) { try await $0.newChat() } }
+        router.post("/v1/chat/approvals/:id") { [self] request, context in
+            let id = Self.parameter(context, "id")
+            let body = try await Self.object(request, context)
+            return await self.chat(context) { try await $0.decide(id, body) }
+        }
+        router.post("/v1/chat/forms/:id") { [self] request, context in
+            let id = Self.parameter(context, "id")
+            let body = try await Self.object(request, context)
+            return await self.chat(context) { try await $0.answer(id, body) }
+        }
+        router.post("/v1/chat/forms/:id/submit") { [self] request, context in
+            let id = Self.parameter(context, "id")
+            let body = try await Self.object(request, context)
+            return await self.chat(context) { try await $0.submit(id, body) }
+        }
+        router.post("/v1/chat/forms/:id/skip") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.chat(context) { try await $0.skip(id) }
+        }
+        // One photo or file as the raw body. `X-File-Name` is its name, percent encoded. Only this route may carry 20 MiB.
+        router.post("/v1/uploads") { [self] request, context in
+            guard let device = context.device else { return Self.error(401, "unauthorized", "unauthorized") }
+            let buffer = try await request.body.collect(upTo: RemoteUploads.maxBytes)
+            guard buffer.readableBytes > 0 else { return Self.error(400, "invalid", "the upload is empty") }
+            let data = Data(buffer.readableBytesView)
+            let raw = request.headers[.init("X-File-Name")!] ?? ""
+            let name = raw.removingPercentEncoding ?? raw
+            do {
+                let saved = try await self.uploads.save(data, fileName: name, device: device.id)
+                return Self.json(201, ["id": saved.id, "file_name": saved.name, "stored_name": saved.stored, "bytes": data.count])
+            } catch {
+                return Self.errorResponse(RemoteFailure(error))
+            }
+        }
+    }
+
+    private func chat(_ context: RemoteContext, status: Int = 200, _ body: @MainActor (RemoteChat) async throws -> [String: Any]) async -> Response {
+        guard let device = context.device else { return Self.error(401, "unauthorized", "unauthorized") }
+        do { return Self.json(status, try await body(RemoteChat(api: api, device: device.id, uploads: uploads))) } catch {
+            return Self.errorResponse(RemoteFailure(error))
+        }
     }
 
     /// Pet, bubbles, agents, alerts, today and assets (phase 2).
@@ -415,6 +488,7 @@ final class RemoteServer {
     private func addEventSocket(to router: Router<RemoteContext>) {
         let service = service
         let api = api
+        let interval = itemInterval
         router.ws("/v1/events", shouldUpgrade: { request, _ in
             // The same checks as REST, without counting a failure: a refused upgrade falls through to the REST router, which counts it once.
             let header = request.headers[.authorization]
@@ -430,14 +504,17 @@ final class RemoteServer {
             let (frames, send) = AsyncStream<String>.makeStream(bufferingPolicy: .bufferingNewest(2000))
             guard let socket = service.openSocket(device: device.id, close: { send.finish() }) else { return }
             defer { service.socketClosed(socket) }
-            let subscription = await MainActor.run { () -> APIEventBus.Subscription in
+            let (subscription, throttle) = await MainActor.run { () -> (APIEventBus.Subscription, RemoteEventThrottle) in
                 let bus = api.events
                 send.yield(Self.text(["kind": "hello", "seq": bus.lastSeq]))
                 let gap = since.map { bus.replay(after: $0).gap } ?? false
                 if gap { send.yield(Self.text(["kind": "resync", "seq": bus.lastSeq])) }
-                return bus.subscribe(after: gap ? nil : since) { send.yield(Self.text(Self.describe($0))) }
+                // A streamed reply changes one message many times a second. The phone reads it again on each event, so it gets at most
+                // one `chat.item` per message per interval, and the last one after the stream pauses.
+                let throttle = RemoteEventThrottle(interval: interval) { send.yield(Self.text(Self.describe($0))) }
+                return (bus.subscribe(after: gap ? nil : since) { throttle.push($0) }, throttle)
             }
-            defer { Task { @MainActor in subscription.cancel() } }
+            defer { Task { @MainActor in subscription.cancel(); throttle.cancel() } }
             // Reading keeps the library answering pings. A close from the device or a revoke ends the stream and with it the socket.
             await withTaskGroup(of: Void.self) { group in
                 group.addTask {
