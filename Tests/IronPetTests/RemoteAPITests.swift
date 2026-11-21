@@ -197,6 +197,21 @@ final class RemoteAPITests: XCTestCase {
         XCTAssertEqual(h.api.tasks.task(task.id)?.status, .done)
     }
 
+    /// The phone's board sets and clears who holds a task with `waiting_on` on the same PATCH route the status uses.
+    func testPatchSetsAndClearsWaitingOnAlongsideTheStatus() async throws {
+        let paired = try await h.pairDevice()
+        let task = try h.api.tasks.create(CreateTaskRequest(title: "Wait for Ana", status: .inProgress, source: .user))
+        let path = "/v1/tasks/\(encoded(task.id))"
+        let set = try await h.request("PATCH", path, token: paired.token, body: ["waiting_on": "Ana"])
+        XCTAssertEqual(set.status, 200)
+        XCTAssertEqual(h.api.tasks.task(task.id)?.waitingOn, "Ana")
+        XCTAssertEqual(h.api.tasks.task(task.id)?.status, .inProgress)
+        let cleared = try await h.request("PATCH", path, token: paired.token, body: ["waiting_on": "", "status": "needs_you"])
+        XCTAssertEqual(cleared.status, 200)
+        XCTAssertNil(h.api.tasks.task(task.id)?.waitingOn)
+        XCTAssertEqual(h.api.tasks.task(task.id)?.status, .needsYou)
+    }
+
     func testEveryKindOfIdIsDecodedExactlyOnce() async throws {
         let paired = try await h.pairDevice()
         for title in ["Größe prüfen", "Café öffnen", "Straße"] {
