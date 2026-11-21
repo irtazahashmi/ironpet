@@ -735,7 +735,7 @@ final class TestControl {
             "frame": { let f = actions.chatFrame(); return [f.minX, f.minY, f.width, f.height] }(),
             "voice": chatModel.voice.phase.rawValue,
             "voiceRetry": chatModel.voiceRetryItem != nil,
-            "speech": chat.speech.phase.rawValue,
+            "speech": (chat.speech as? SpeechPlayer)?.phase.rawValue ?? "idle",
         ])
     }
 

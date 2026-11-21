@@ -22,6 +22,10 @@ extension FileIntake {
 /// Copies files into a folder with Foundation alone.
 struct FolderFileIntake: FileIntake {
     static let keepFolders = 40
+    static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "heif", "gif", "webp", "tiff", "tif", "bmp"]
+
+    /// Whether the agent gets `url` as an image rather than as a file.
+    static func isImageFile(_ url: URL) -> Bool { imageExtensions.contains(url.pathExtension.lowercased()) }
 
     var directory: URL
 

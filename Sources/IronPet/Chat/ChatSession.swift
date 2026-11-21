@@ -1,9 +1,11 @@
-import Combine
 import Foundation
 
 /// One quick-chat thread with the pet, driven over ACP by whichever coding agent the user picked.
 @MainActor
-final class ChatSession: ObservableObject {
+final class ChatSession {
+    /// Fires before any observed property changes, as `@Published` did. The Mac `ObservableObject` conformance forwards it to SwiftUI.
+    let changes = ChangeSignal()
+
     enum State { case idle, running, done, failed }
 
     struct Item: Identifiable, Codable, Equatable {
@@ -116,7 +118,8 @@ final class ChatSession: ObservableObject {
         let respond: (ElicitationReply) -> Void
     }
 
-    @Published var items: [Item] = [] {
+    var items: [Item] = [] {
+        willSet { changes.send() }
         didSet { publishItemChanges(from: oldValue) }
     }
     /// Where `chat.item` and `chat.state` are published for API clients.
@@ -143,65 +146,81 @@ final class ChatSession: ObservableObject {
         }
         return changed + new[old.count...].map(\.id)
     }
-    @Published var workspace: URL? {
+    var workspace: URL? {
+        willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "options") }
     }
     /// Set when the chat opened outside a coding app; the user picks a folder before sending.
-    @Published private(set) var needsWorkspace = false {
+    private(set) var needsWorkspace = false {
+        willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "options") }
     }
-    @Published private(set) var recents: [URL] = [] {
+    private(set) var recents: [URL] = [] {
+        willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "options") }
     }
-    @Published var autoMode = false {
+    var autoMode = false {
+        willSet { changes.send() }
         didSet {
             if persists { UserDefaults.standard.set(autoMode, forKey: Self.autoKey) }
             events?.publish(.chatState, id: "options")
         }
     }
-    @Published private(set) var state: State = .idle {
+    private(set) var state: State = .idle {
+        willSet { changes.send() }
         didSet { if state != oldValue { events?.publish(.chatState) } }
     }
     /// Approvals, forms and the queue change without `state` changing, so each publishes `chat.state` with what changed as the id.
-    @Published private(set) var approvals: [Approval] = [] {
+    private(set) var approvals: [Approval] = [] {
+        willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "approvals") }
     }
-    @Published private(set) var forms: [PendingForm] = [] {
+    private(set) var forms: [PendingForm] = [] {
+        willSet { changes.send() }
         didSet {
             events?.publish(.chatState, id: "forms")
             onFormsChanged?()
         }
     }
-    @Published private(set) var history: [ChatThread] = ThreadStore.recent() {
+    private(set) var history: [ChatThread] = ThreadStore.recent() {
+        willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "threads") }
     }
     /// Messages typed while a turn runs. Each keeps the attachments present when it was queued.
-    @Published private(set) var queue: [QueuedMessage] = [] {
+    private(set) var queue: [QueuedMessage] = [] {
+        willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "queue") }
     }
     /// What the agent is doing right now, e.g. "Running `npm test`".
-    @Published private(set) var activity: String? {
+    private(set) var activity: String? {
+        willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "status") }
     }
-    @Published private(set) var runStartedAt: Date? {
+    private(set) var runStartedAt: Date? {
+        willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "status") }
     }
-    @Published private(set) var lastRunDuration: TimeInterval? {
+    private(set) var lastRunDuration: TimeInterval? {
+        willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "status") }
     }
     /// Models the agent offered in its last session. Empty hides the picker.
-    @Published private(set) var models: [ChatModel] = [] {
+    private(set) var models: [ChatModel] = [] {
+        willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "options") }
     }
-    @Published private(set) var agent: ACPAgent =
+    private(set) var agent: ACPAgent =
         AgentCatalog.agent(id: UserDefaults.standard.string(forKey: "chatAgent")) ?? AgentCatalog.agent(id: "cursor")! {
+        willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "options") }
     }
     /// Installed agents that answer `initialize`. Starts as just the current one until the check finishes.
-    @Published private(set) var agents: [ACPAgent] = [] {
+    private(set) var agents: [ACPAgent] = [] {
+        willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "options") }
     }
-    @Published private(set) var commands: [SlashCommand] = [] {
+    private(set) var commands: [SlashCommand] = [] {
+        willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "commands") }
     }
     func receiveCommands(_ list: [SlashCommand]) {
@@ -209,21 +228,25 @@ final class ChatSession: ObservableObject {
         if persists { SlashCommand.store(list, for: agent.id) }
     }
     /// nil uses the agent's default model. Stored per agent.
-    @Published var model: String? {
+    var model: String? {
+        willSet { changes.send() }
         didSet {
             UserDefaults.standard.set(model, forKey: "chatModel.\(agent.id)")
             events?.publish(.chatState, id: "options")
         }
     }
     /// Set when an adapter has no runtime: the chat offers a one-time Bun download.
-    @Published private(set) var runtimeOffer: String? {
+    private(set) var runtimeOffer: String? {
+        willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "options") }
     }
-    @Published private(set) var installingRuntime = false {
+    private(set) var installingRuntime = false {
+        willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "options") }
     }
     /// Set when the agent asks the user to sign in.
-    @Published private(set) var signInOptions: [AuthMethod] = [] {
+    private(set) var signInOptions: [AuthMethod] = [] {
+        willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "options") }
     }
 
@@ -279,8 +302,9 @@ final class ChatSession: ObservableObject {
     private var backgroundReply: UUID?
     /// Decisions made during the current run, so a repeated identical check isn't asked twice.
     private var decided: [String: Bool] = [:]
-    let speech = SpeechPlayer()
-    private var speechChanges: [AnyCancellable] = []
+    /// Reads replies aloud. The Mac passes its speech player; without one nothing is spoken.
+    let speech: SpeechOutput
+    private var speechChanges: [ChangeToken] = []
     /// The running turn was sent from the chat, not by another client or an automation; its reply is read aloud when it ends.
     private var turnSpoken = false
     /// True once an approval card was shown during the running turn. The user took part, so a quiet reply stays visible.
@@ -296,7 +320,8 @@ final class ChatSession: ObservableObject {
     /// Starts the agent's process and the probes. `AppDelegate` sets the Mac one right after creating the session.
     var spawner: ProcessSpawner = UnsupportedProcessSpawner()
 
-    init(restore: Bool = true) {
+    init(restore: Bool = true, speech: SpeechOutput? = nil) {
+        self.speech = speech ?? UnsupportedSpeechOutput()
         persists = restore
         recents = (UserDefaults.standard.stringArray(forKey: "recentWorkspaces") ?? [])
             .map(URL.init(fileURLWithPath:))
@@ -308,14 +333,14 @@ final class ChatSession: ObservableObject {
         agents = [agent]
         if restore { Task { await refreshAgents() } }
         if restore { restoreLastChat() }
-        speechChanges = [speech.objectWillChange.sink { [weak self] in self?.objectWillChange.send() }]
-        speech.onFailure = { [weak self] message in self?.items.append(Item(kind: .error(message))) }
+        speechChanges = [self.speech.changes.observe { [weak self] in self?.changes.send() }]
+        self.speech.onFailure = { [weak self] message in self?.items.append(Item(kind: .error(message))) }
     }
 
     /// Reads a reply aloud, or stops it when it is the one being read.
     func toggleSpeech(_ item: Item) {
         guard case .assistant(let text) = item.kind else { return }
-        if speech.speakingID == item.id { speech.stop() } else { speech.speak(text, id: item.id) }
+        if speech.speakingID == item.id { speech.stop() } else { try? speech.speak(text, id: item.id) }
     }
 
     /// Adds an error line to the transcript, such as a voice note that could not be transcribed. Returns its id.
@@ -712,7 +737,7 @@ final class ChatSession: ObservableObject {
         var text = silent ? MetaTag.triggerLead : Self.withVoiceMode(sent, on: voiceModeOn())
         if !pendingMeta.isEmpty { text += "\n\n" + MetaTag.block(pendingMeta) }
         run(ACPTurn(prompt: text, preamble: preamble, workspace: workspace, resume: threadID, model: model,
-                    images: shots.filter(ImageIntake.isImageFile), files: shots.filter { !ImageIntake.isImageFile($0) }))
+                    images: shots.filter(FolderFileIntake.isImageFile), files: shots.filter { !FolderFileIntake.isImageFile($0) }))
         return true
     }
 
@@ -1144,7 +1169,7 @@ final class ChatSession: ObservableObject {
             // The switch comes first: the quiet check starts polling the microphone list, which must not happen while off.
             if error == nil, turnSpoken, !hidden, speech.isEnabled(), !isQuiet(), let answer = lastAnswerItem(),
                case .assistant(let text) = answer.kind {
-                speech.speak(text, id: answer.id)
+                try? speech.speak(text, id: answer.id)
             }
             turnSpoken = false
             if error == nil { sendNextQueued() } else { restoreQueue(reason: "The turn before it failed, so this message did not run.") }

@@ -22,7 +22,7 @@ final class RemoteChatTests: XCTestCase {
         threads = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-remote-chat-threads-\(UUID().uuidString)")
         ThreadStore.directory = threads
         uploads = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-remote-files-\(UUID().uuidString)")
-        chat = ChatSession(restore: false)
+        chat = ChatSession(restore: false, speech: SpeechPlayer())
         chat.workspace = FileManager.default.temporaryDirectory
         turns = []
         deliver = []
@@ -422,7 +422,7 @@ final class RemoteChatTests: XCTestCase {
     func testAPhoneTurnIsNotReadAloud() async throws {
         var spoken: [String] = []
         chat.speech.isEnabled = { true }
-        chat.speech.synthesize = { text in spoken.append(text); throw CancellationError() }
+        chat.player.synthesize = { text in spoken.append(text); throw CancellationError() }
         _ = try await post("/v1/chat/current/messages", ["text": "status?"])
         await settle()
         deliver[0](.assistant("All green."))

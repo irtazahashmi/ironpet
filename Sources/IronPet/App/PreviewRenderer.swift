@@ -270,10 +270,11 @@ enum PreviewRenderer {
                        to: dir, "voice-pill-\(name)" + suffix, scheme: scheme)
             }
         }
-        let speaking = ChatSession(restore: false)
+        let speakingPlayer = SpeechPlayer()
+        let speaking = ChatSession(restore: false, speech: speakingPlayer)
         speaking.loadPreview(.done)
         if let reply = speaking.items.last(where: { if case .assistant = $0.kind { true } else { false } }) {
-            speaking.speech.loadPreview(speaking: reply.id)
+            speakingPlayer.loadPreview(speaking: reply.id)
         }
         for (suffix, scheme) in [("dark", ColorScheme.dark), ("light", .light)] {
             let model = IronPetWindowModel(defaults: UserDefaults(suiteName: "ironpet-previews") ?? .standard)

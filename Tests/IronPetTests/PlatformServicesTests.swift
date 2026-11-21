@@ -75,6 +75,7 @@ final class FakeSpeechOutput: SpeechOutput {
     var speakingID: UUID?
     var isSpeaking: Bool { speakingID != nil }
     var isEnabled: () -> Bool = { false }
+    var onFailure: ((String) -> Void)?
     var voiceKey = VoiceKey.unsupported
 
     func speak(_ markdown: String, id: UUID) throws { spoken.append((markdown, id)); speakingID = id }
