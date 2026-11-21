@@ -12,6 +12,8 @@
 # IRONPET_DEVELOPER_ID picks one identity by name when the keychain has several.
 # IRONPET_REQUIRE_NOTARIZED=1 turns every downgrade into an error: no identity, or no notary credentials, stops the build
 # instead of producing an unsigned or un-notarized file. The release workflow sets it whenever it imported a certificate.
+# IRONPET_ALLOW_NEW_TOOLCHAIN=1 lets a build through whose executable needs a Swift library that macOS 14 and 15 lack
+# (a toolchain newer than Xcode 16.4 does that); the notes then say it needs macOS 26 or later. Without it the script stops.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -75,6 +77,25 @@ if [ -n "$IDENTITY" ]; then
   fi
 fi
 
+# A newer Swift toolchain can link the executable to a back-deployment library through @rpath and leave the library out of
+# the bundle (libswiftCompatibilitySpan from Swift 6.2 on). It runs on the Mac that built it and on macOS 26 and later,
+# and fails to launch on the macOS 14 and 15 that Info.plist promises, so a download must not carry it.
+LOOSE=$(otool -L "$APP/Contents/MacOS/IronPet" | awk 'NR > 1 {print $1}' | grep '^@rpath/' || true)
+NEEDS_NEW_MACOS=no
+if [ -n "$LOOSE" ]; then
+  echo "The executable needs libraries that are not in the app:" >&2
+  printf '%s\n' "$LOOSE" | sed 's/^/  /' >&2
+  if [ "${IRONPET_ALLOW_NEW_TOOLCHAIN:-}" = "1" ]; then
+    echo "warning: continuing because IRONPET_ALLOW_NEW_TOOLCHAIN=1; the notes will say it needs macOS 26 or later" >&2
+    NEEDS_NEW_MACOS=yes
+  else
+    echo "error: this Swift toolchain is too new for the oldest macOS the app supports. Build with Xcode 16.4" >&2
+    echo "(sudo xcode-select -s /Applications/Xcode_16.4.app), let the Release workflow build it, or set" >&2
+    echo "IRONPET_ALLOW_NEW_TOOLCHAIN=1 for a file you will only run on macOS 26 or later." >&2
+    exit 1
+  fi
+fi
+
 # What the binary really runs on, for the notes. GitHub's macOS runners are Apple Silicon, so this is usually arm64 only.
 ARCHS=$(lipo -archs "$APP/Contents/MacOS/IronPet")
 
@@ -127,6 +148,10 @@ hdiutil verify "$DMG" >/dev/null
     echo "**Unsigned build.** Open the DMG and drag IronPet to Applications. macOS blocks the first launch of an app that is not signed by a developer. On macOS 15 or later, open System Settings → Privacy & Security and click **Open Anyway** after the first attempt; on macOS 14, right-click IronPet and choose Open. Or run \`xattr -dr com.apple.quarantine /Applications/IronPet.app\`."
   fi
   echo
+  if [ "$NEEDS_NEW_MACOS" = yes ]; then
+    echo "**Needs macOS 26 or later.** It was built with a newer Swift toolchain than the release workflow uses."
+    echo
+  fi
   if [ "$ARCHS" = "arm64" ]; then
     echo "This build runs on **Apple Silicon Macs only**. On an Intel Mac, build from source with \`./scripts/install.sh\`."
   else

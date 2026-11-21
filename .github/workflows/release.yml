@@ -39,8 +39,14 @@ concurrency:
 
 jobs:
   mac:
+    # Deleting a tag also triggers a push event; there is nothing to build then.
+    if: ${{ !github.event.deleted }}
     runs-on: macos-15
     timeout-minutes: 60
+    # The signing secrets belong to this environment, not to the repository, and the environment only admits main and v*
+    # tags (CONTRIBUTING.md > Releasing the Mac app). A repository secret would reach any workflow a writer pushes on
+    # any branch, whatever this file checks.
+    environment: release
     permissions:
       contents: read
     outputs:
@@ -109,6 +115,14 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
+
+      # The same toolchain as CI. A newer one links the app to Swift libraries that macOS 14 and 15 do not have.
+      - name: Select Xcode 16.4
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
+          swift --version
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         if: steps.version.outputs.skip != 'true'
@@ -212,20 +226,25 @@ jobs:
           VERSION: ${{ needs.mac.outputs.version }}
         run: |
           set -euo pipefail
-          if gh release view "$TAG" >/dev/null 2>&1; then
+          # Only "release not found" means there is no release yet. Any other failure (a 5xx, a rate limit) must stop the
+          # run, or a second draft would be made for a tag that already has one.
+          if state=$(gh release view "$TAG" --json isDraft -q .isDraft 2>&1); then
             # The build took a while: someone may have published this release since the version step looked.
-            if [ "$(gh release view "$TAG" --json isDraft -q .isDraft)" != "true" ]; then
+            if [ "$state" != "true" ]; then
               echo "error: release $TAG was published while this run was building; bump the version" >&2
               exit 1
             fi
-            # A rerun replaces a draft's files.
+            # A rerun replaces a draft's files and notes, so the draft reads the same however often it was built.
             for asset in $(gh release view "$TAG" --json assets -q '.assets[].name'); do
               gh release delete-asset "$TAG" "$asset" --yes
             done
             gh release upload "$TAG" dist/IronPet-*.dmg dist/IronPet-*.dmg.sha256
             gh release edit "$TAG" --title "IronPet $VERSION" --notes-file dist/notes.md --target "$GITHUB_SHA"
-          else
+          elif [[ $state == *"release not found"* ]]; then
             gh release create "$TAG" dist/IronPet-*.dmg dist/IronPet-*.dmg.sha256 \
-              --draft --target "$GITHUB_SHA" --title "IronPet $VERSION" --notes-file dist/notes.md --generate-notes
+              --draft --target "$GITHUB_SHA" --title "IronPet $VERSION" --notes-file dist/notes.md
+          else
+            echo "error: could not look up release $TAG: $state" >&2
+            exit 1
           fi
           echo "Draft release: $(gh release view "$TAG" --json url -q .url)" | tee -a "$GITHUB_STEP_SUMMARY"
