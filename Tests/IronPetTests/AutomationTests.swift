@@ -864,6 +864,52 @@ final class AutomationServerTests: AutomationTestCase {
         XCTAssertEqual(((initialize["result"] as? [String: Any])?["serverInfo"] as? [String: Any])?["name"] as? String, "ironpet")
     }
 
+    func testNoAutomationToolOrCLIHelpMentionsApproval() {
+        let texts = AutomationMCP.tools.compactMap { $0["description"] as? String } + [AutomationCLI.usage]
+        XCTAssertGreaterThan(texts.count, 9)
+        for text in texts {
+            XCTAssertNil(text.range(of: "approv", options: .caseInsensitive), String(text.prefix(80)))
+        }
+        let create = AutomationMCP.tools.first { $0["name"] as? String == "automations_create" }
+        XCTAssertTrue((create?["description"] as? String)?.contains("Never put secrets") == true)
+        XCTAssertTrue((create?["description"] as? String)?.contains("leave action out") == true)
+        XCTAssertTrue(AutomationCLI.usage.contains("a script trigger takes no action"))
+    }
+
+    func testCreateOverMCPAcceptsAScriptTriggerWithoutAnActionAndRunsIt() async throws {
+        rig.service.autoApproveEnabled = { true }
+        var calls = 0
+        rig.engine.runScript = { _, _ in calls += 1; return AutomationScript.Output(state: "null", actions: [], logs: []) }
+        let script = "function poll(s) { return {}; }"
+        let required = (AutomationMCP.tools.first { $0["name"] as? String == "automations_create" }?["inputSchema"] as? [String: Any])?["required"] as? [String]
+        XCTAssertEqual(required, ["name", "trigger"])
+        let created = try await tool("automations_create", ["name": "Watcher", "trigger": ["type": "script", "minutes": 5, "script": script]])
+        XCTAssertFalse(created.isError, created.text)
+        XCTAssertFalse(created.text.contains("\"note\""), "auto-approve is on, so no note")
+        // Agents that see action as required send an empty object.
+        let empty = try await tool("automations_create", ["name": "Watcher two", "trigger": ["type": "script", "minutes": 5, "script": script], "action": [:]])
+        XCTAssertFalse(empty.isError, empty.text)
+        await rig.engine.pollNow("watcher")
+        XCTAssertEqual(calls, 1)
+    }
+
+    func testCreateOverMCPRejectsAScriptTriggerWithAnAction() async throws {
+        let bad = try await tool("automations_create", ["name": "Both", "trigger": ["type": "script", "minutes": 5, "script": "function poll(s) { return {}; }"],
+                                                         "action": ["type": "bubble", "title": "x"]])
+        XCTAssertTrue(bad.isError)
+        XCTAssertTrue(bad.text.contains("leave action out"), bad.text)
+    }
+
+    func testPendingApprovalNoteExplainsItselfAndAutoApproveHasNone() async throws {
+        let shell: [String: Any] = ["name": "Job", "trigger": ["type": "interval", "minutes": 5], "action": ["type": "shell", "command": "echo hi"]]
+        let pending = try await tool("automations_create", shell)
+        XCTAssertFalse(pending.isError, pending.text)
+        XCTAssertTrue(pending.text.contains("waits for the user's Approve in IronPet before it runs"), pending.text)
+        rig.service.autoApproveEnabled = { true }
+        let auto = try await tool("automations_create", shell.merging(["name": "Job two"]) { _, new in new })
+        XCTAssertFalse(auto.text.contains("\"note\""), auto.text)
+    }
+
     func testAgentCreatesAOnceBubbleThatFiresAtTimeAndTurnsOff() async throws {
         let at = AutomationClock.format(clock.now.addingTimeInterval(120))
         let created = try await tool("automations_create", ["name": "Call mum", "trigger": ["type": "once", "at": at],

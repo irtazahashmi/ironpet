@@ -289,6 +289,9 @@ enum AutomationValidator {
     /// Parses one automation given as a JSON object, for `automations_create`.
     static func parseOne(_ dict: [String: Any], label: String = "automation") -> (Automation?, [String]) {
         var errors = unknownKeys(dict, label: label)
+        var dict = dict
+        // Agents fill a required-looking `action` with null or {} when the trigger needs none.
+        if dict["action"] is NSNull || (dict["action"] as? [String: Any])?.isEmpty == true { dict["action"] = nil }
         do {
             let value = try JSONDecoder().decode(Automation.self, from: JSONSerialization.data(withJSONObject: dict))
             return (value, errors)
