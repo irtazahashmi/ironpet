@@ -1,7 +1,7 @@
 name: Release
 
 # Builds the downloadable Mac app and attaches it to a DRAFT GitHub Release for you to review and publish.
-# Run it by pushing a tag (git tag v0.1.0 && git push origin v0.1.0) or from the Actions tab.
+# Run it by pushing a tag (git tag v0.1.0 && git push origin v0.1.0) or from the Actions tab on main.
 #
 # Signing is optional. With these repository secrets the DMG is signed with a Developer ID and notarized by Apple:
 #   MACOS_CERT_P12      base64 of the "Developer ID Application" certificate exported as .p12
@@ -9,8 +9,11 @@ name: Release
 #   NOTARY_KEY_P8       base64 of an App Store Connect API key (.p8)
 #   NOTARY_KEY_ID       that key's ID
 #   NOTARY_ISSUER_ID    the issuer ID shown above the keys in App Store Connect
-# Without them the workflow still runs and produces IronPet-<version>-unsigned.dmg. See CONTRIBUTING.md > Releasing.
-# It never runs for pull requests, so a fork cannot reach the secrets.
+# Without them the workflow still runs and produces IronPet-<version>-unsigned.dmg. With the certificate but without the
+# notary secrets (or with a certificate that does not validate) it fails, rather than ship a weaker file.
+# See CONTRIBUTING.md > Releasing the Mac app.
+# It never runs for pull requests, so a fork cannot reach the secrets. The actions below are pinned to commits, because this
+# is the one job that holds them; ci.yml, which holds none, uses tags.
 
 on:
   push:
@@ -18,48 +21,86 @@ on:
   workflow_dispatch:
     inputs:
       version:
-        description: Version to build, without the v (for example 0.1.0)
+        description: Version to build, without the v (for example 0.1.0). Run from main.
         required: true
 
 permissions:
   contents: read
 
+# One run per version, whether it came from a tag or from the Actions tab.
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   mac:
     runs-on: macos-15
-    timeout-minutes: 45
+    timeout-minutes: 60
     permissions:
       contents: write # create the draft release; nothing else in this workflow can write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false # later steps run adapter code and must not find a write token in .git/config
 
       - name: Work out the version
         id: version
         env:
+          GH_TOKEN: ${{ github.token }}
           INPUT_VERSION: ${{ inputs.version }}
           REF_NAME: ${{ github.ref_name }}
         run: |
           set -euo pipefail
-          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then version="$INPUT_VERSION"; else version="${REF_NAME#v}"; fi
-          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.]+)?$'; then
-            echo "error: '$version' is not a version like 0.1.0 or 0.1.0-beta.1" >&2
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            version="$INPUT_VERSION"
+            # A run from another branch would put that branch's code into the release.
+            if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+              echo "error: run this workflow from main (it was started on $GITHUB_REF)" >&2
+              exit 1
+            fi
+          else
+            version="${REF_NAME#v}"
+          fi
+          # [[ =~ ]] sees the whole string; grep would accept a second line smuggled into the input.
+          if ! [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.]+)?$ ]]; then
+            echo "error: the version is not like 0.1.0 or 0.1.0-beta.1" >&2
             exit 1
           fi
-          echo "version=$version" >> "$GITHUB_OUTPUT"
+          tag="v$version"
 
-      - uses: actions/setup-node@v4
+          # A tag that already points somewhere else would make the release's source differ from its binary.
+          tagged=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha 2>/dev/null || true)
+          if [ -n "$tagged" ] && [ "$tagged" != "$GITHUB_SHA" ]; then
+            echo "error: $tag already points at $tagged, not at $GITHUB_SHA; bump the version" >&2
+            exit 1
+          fi
+
+          skip=false
+          if gh release view "$tag" >/dev/null 2>&1 && [ "$(gh release view "$tag" --json isDraft -q .isDraft)" != "true" ]; then
+            if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+              # Publishing a draft that a manual run made creates its tag, which lands here.
+              echo "::notice::$tag is already published; nothing to build"
+              skip=true
+            else
+              echo "error: release $tag is already published; bump the version instead of rebuilding it" >&2
+              exit 1
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: steps.version.outputs.skip != 'true'
         with:
           node-version: 22
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        if: steps.version.outputs.skip != 'true'
         with:
           bun-version: 1.4.4
 
       - name: Import the Developer ID certificate
+        if: steps.version.outputs.skip != 'true'
         env:
           CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
           CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
@@ -76,7 +117,8 @@ jobs:
           security create-keychain -p "$keychain_password" "$keychain"
           security set-keychain-settings -lut 3600 "$keychain"
           security unlock-keychain -p "$keychain_password" "$keychain"
-          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          # Only codesign may use the key without a prompt.
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$CERT_PASSWORD" -T /usr/bin/codesign
           rm -f "$RUNNER_TEMP/cert.p12"
           security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
           # Put the new keychain first on the search list, keeping the runner's own.
@@ -87,6 +129,7 @@ jobs:
           security find-identity -p codesigning -v "$keychain" | sed 's/^ *[0-9]*) [0-9A-F]* //'
 
       - name: Build, sign, notarize and package
+        if: steps.version.outputs.skip != 'true'
         env:
           VERSION: ${{ steps.version.outputs.version }}
           NOTARY_KEY_B64: ${{ secrets.NOTARY_KEY_P8 }}
@@ -98,22 +141,27 @@ jobs:
             export NOTARY_KEY_FILE="$RUNNER_TEMP/notary.p8"
             ( umask 077; printf '%s' "$NOTARY_KEY_B64" | base64 --decode > "$NOTARY_KEY_FILE" )
           fi
+          # A certificate was imported, so a signed and notarized build is the only acceptable result.
+          if [ -n "${KEYCHAIN_PATH:-}" ]; then export IRONPET_REQUIRE_NOTARIZED=1; fi
           ./scripts/release_mac.sh "$VERSION" "$GITHUB_RUN_NUMBER"
 
-      # The same checks CI runs on the bundle.
-      - name: Check the bundle
-        run: |
-          test -f build/IronPet.app/Contents/Resources/spritesheet.png
-          codesign --verify --strict --verbose=2 build/IronPet.app
-          ./scripts/check_adapters.sh build/IronPet.app
-
+      # Straight after packaging, so the bundled adapters (third-party code) start with no key and no token around.
       - name: Remove the temporary keychain and key
         if: always()
         run: |
           rm -f "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/cert.p12"
           if [ -n "${KEYCHAIN_PATH:-}" ]; then security delete-keychain "$KEYCHAIN_PATH" || true; fi
 
+      # The same checks CI runs on the bundle.
+      - name: Check the bundle
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          test -f build/IronPet.app/Contents/Resources/spritesheet.png
+          codesign --verify --strict --verbose=2 build/IronPet.app
+          ./scripts/check_adapters.sh build/IronPet.app
+
       - name: Create the draft release
+        if: steps.version.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: v${{ steps.version.outputs.version }}
@@ -121,16 +169,12 @@ jobs:
         run: |
           set -euo pipefail
           if gh release view "$TAG" >/dev/null 2>&1; then
-            # A rerun may replace a draft's files. A published release is never touched.
-            if [ "$(gh release view "$TAG" --json isDraft -q .isDraft)" != "true" ]; then
-              echo "error: release $TAG is already published; bump the version instead of rebuilding it" >&2
-              exit 1
-            fi
+            # A rerun may replace a draft's files. The version step already refused a published release.
             for asset in $(gh release view "$TAG" --json assets -q '.assets[].name'); do
               gh release delete-asset "$TAG" "$asset" --yes
             done
             gh release upload "$TAG" dist/IronPet-*.dmg dist/IronPet-*.dmg.sha256
-            gh release edit "$TAG" --title "IronPet $VERSION" --notes-file dist/notes.md
+            gh release edit "$TAG" --title "IronPet $VERSION" --notes-file dist/notes.md --target "$GITHUB_SHA"
           else
             gh release create "$TAG" dist/IronPet-*.dmg dist/IronPet-*.dmg.sha256 \
               --draft --target "$GITHUB_SHA" --title "IronPet $VERSION" --notes-file dist/notes.md --generate-notes

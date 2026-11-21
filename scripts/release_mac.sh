@@ -10,6 +10,8 @@
 # Without an identity the app is signed ad hoc and the file is named IronPet-<version>-unsigned.dmg; it still works,
 # but macOS blocks it until the user allows it (the notes say how).
 # IRONPET_DEVELOPER_ID picks one identity by name when the keychain has several.
+# IRONPET_REQUIRE_NOTARIZED=1 turns every downgrade into an error: no identity, or no notary credentials, stops the build
+# instead of producing an unsigned or un-notarized file. The release workflow sets it whenever it imported a certificate.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -25,8 +27,28 @@ fi
 NOTARY=()
 if [ -n "${NOTARY_PROFILE:-}" ]; then
   NOTARY=(--keychain-profile "$NOTARY_PROFILE")
-elif [ -n "${NOTARY_KEY_FILE:-}" ] && [ -n "${NOTARY_KEY_ID:-}" ] && [ -n "${NOTARY_ISSUER_ID:-}" ]; then
-  NOTARY=(--key "$NOTARY_KEY_FILE" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID")
+else
+  given=0
+  for value in "${NOTARY_KEY_FILE:-}" "${NOTARY_KEY_ID:-}" "${NOTARY_ISSUER_ID:-}"; do
+    if [ -n "$value" ]; then given=$((given + 1)); fi
+  done
+  if [ "$given" -eq 3 ]; then
+    NOTARY=(--key "$NOTARY_KEY_FILE" --key-id "$NOTARY_KEY_ID" --issuer "$NOTARY_ISSUER_ID")
+  elif [ "$given" -ne 0 ]; then
+    echo "error: NOTARY_KEY_FILE, NOTARY_KEY_ID and NOTARY_ISSUER_ID go together; only $given of 3 are set" >&2
+    exit 1
+  fi
+fi
+
+if [ "${IRONPET_REQUIRE_NOTARIZED:-}" = "1" ]; then
+  if [ -z "$IDENTITY" ]; then
+    echo "error: no 'Developer ID Application' identity is usable (an expired or untrusted certificate is skipped)" >&2
+    exit 1
+  fi
+  if [ ${#NOTARY[@]} -eq 0 ]; then
+    echo "error: notary credentials are missing, so the build could not be notarized" >&2
+    exit 1
+  fi
 fi
 
 export IRONPET_VERSION="$VERSION" IRONPET_BUILD="$BUILD"
@@ -43,9 +65,14 @@ fi
 
 ./scripts/bundle.sh
 codesign --verify --strict --verbose=2 "$APP"
-if [ -n "$IDENTITY" ] && ! codesign -dv "$APP" 2>&1 | grep -q 'flags=.*runtime'; then
-  echo "error: the app is signed without the hardened runtime, so it cannot be notarized" >&2
-  exit 1
+# Match in the shell, not with `codesign | grep -q`: grep exits at the first match, codesign then gets SIGPIPE, and
+# pipefail reports the whole check as failed even though the flag is there.
+if [ -n "$IDENTITY" ]; then
+  details=$(codesign -dv "$APP" 2>&1)
+  if [[ "$details" != *flags=*runtime* ]]; then
+    echo "error: the app is signed without the hardened runtime, so it cannot be notarized" >&2
+    exit 1
+  fi
 fi
 
 rm -rf dist build/dmg-staging
@@ -53,7 +80,12 @@ mkdir -p dist build/dmg-staging
 ditto "$APP" build/dmg-staging/IronPet.app
 ln -s /Applications build/dmg-staging/Applications
 DMG="dist/$NAME.dmg"
-hdiutil create -volname "IronPet" -srcfolder build/dmg-staging -ov -format UDZO "$DMG" >/dev/null
+# hdiutil sometimes fails with "Resource busy" on a fresh runner, so try a few times.
+for attempt in 1 2 3; do
+  if hdiutil create -volname "IronPet" -srcfolder build/dmg-staging -ov -format UDZO "$DMG" >/dev/null; then break; fi
+  if [ "$attempt" -eq 3 ]; then echo "error: hdiutil could not create the DMG" >&2; exit 1; fi
+  sleep 5
+done
 rm -rf build/dmg-staging
 
 NOTARIZED=no
@@ -61,12 +93,15 @@ if [ -n "$IDENTITY" ]; then
   codesign --force --sign "$IDENTITY" --timestamp "$DMG"
   if [ ${#NOTARY[@]} -gt 0 ]; then
     echo "Notarizing $DMG (this usually takes a few minutes)"
-    RESULT=$(xcrun notarytool submit "$DMG" "${NOTARY[@]}" --wait --output-format json)
-    STATUS=$(printf '%s' "$RESULT" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("status",""))')
+    # notarytool may exit non-zero for a rejected build, so read the verdict from its JSON instead of its exit code.
+    RESULT=$(xcrun notarytool submit "$DMG" "${NOTARY[@]}" --wait --timeout 30m --output-format json) || true
+    field() { printf '%s' "$RESULT" | python3 -c 'import json,sys; print(json.load(sys.stdin).get(sys.argv[1], ""))' "$1" 2>/dev/null || true; }
+    STATUS=$(field status)
     if [ "$STATUS" != "Accepted" ]; then
-      ID=$(printf '%s' "$RESULT" | python3 -c 'import json,sys; print(json.load(sys.stdin).get("id",""))')
-      echo "error: notarization finished with status '$STATUS'" >&2
-      [ -n "$ID" ] && xcrun notarytool log "$ID" "${NOTARY[@]}" >&2 || true
+      ID=$(field id)
+      echo "error: notarization finished with status '${STATUS:-unknown}'" >&2
+      printf '%s\n' "$RESULT" >&2
+      if [ -n "$ID" ]; then xcrun notarytool log "$ID" "${NOTARY[@]}" >&2 || true; fi
       exit 1
     fi
     xcrun stapler staple "$DMG"
@@ -86,7 +121,7 @@ hdiutil verify "$DMG" >/dev/null
   elif [ -n "$IDENTITY" ]; then
     echo "Open the DMG and drag IronPet to Applications. It is signed with a Developer ID but **not notarized**, so macOS asks you to confirm the first launch."
   else
-    echo "**Unsigned build.** Open the DMG and drag IronPet to Applications. macOS blocks the first launch of an app that is not signed by a developer: right-click IronPet and choose Open, or run \`xattr -dr com.apple.quarantine /Applications/IronPet.app\`."
+    echo "**Unsigned build.** Open the DMG and drag IronPet to Applications. macOS blocks the first launch of an app that is not signed by a developer. On macOS 15 or later, open System Settings → Privacy & Security and click **Open Anyway** after the first attempt; on macOS 14, right-click IronPet and choose Open. Or run \`xattr -dr com.apple.quarantine /Applications/IronPet.app\`."
   fi
   echo
   echo "Check the download against \`$NAME.dmg.sha256\`: \`shasum -a 256 -c $NAME.dmg.sha256\`."
