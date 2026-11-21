@@ -1077,6 +1077,11 @@ struct ChatView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Spacer(minLength: 0)
+                        if message.waitsForAnswer == true {
+                            Text("Sent after you answer")
+                                .font(.system(size: 10))
+                                .foregroundStyle(.secondary)
+                        }
                         Button { session.removeQueued(message.id) } label: {
                             Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
                         }

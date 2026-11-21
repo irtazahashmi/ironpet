@@ -111,6 +111,8 @@ struct ChatQueuedInfo: Codable, Equatable, Identifiable {
     var reply: ChatReply?
     /// Typed on this Mac, so a stop gives it back to the draft. Others are told their turn failed.
     var fromMac: Bool
+    /// True while an open approval or form holds the message. The agent takes it into the running turn once that is answered.
+    var waitsForAnswer: Bool? = nil
 }
 
 struct ChatThreadInfo: Codable, Equatable, Identifiable {
@@ -305,7 +307,8 @@ final class ChatAPI {
 
     private var currentQueue: [ChatQueuedInfo] {
         session.queue.filter { $0.automation == nil && !$0.notice }.map {
-            ChatQueuedInfo(id: $0.id, text: $0.text, files: $0.attachments, reply: $0.reply, fromMac: $0.origin == nil)
+            ChatQueuedInfo(id: $0.id, text: $0.text, files: $0.attachments, reply: $0.reply, fromMac: $0.origin == nil,
+                            waitsForAnswer: $0.steerable && session.queueWaitsForAnswer ? true : nil)
         }
     }
 
