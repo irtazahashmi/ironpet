@@ -194,6 +194,7 @@ jobs:
             export NOTARY_KEY_FILE="$RUNNER_TEMP/notary.p8"
             ( umask 077; printf '%s' "$NOTARY_KEY_B64" | base64 --decode > "$NOTARY_KEY_FILE" )
           fi
+          unset NOTARY_KEY_B64 # the build below (SwiftPM, npm, bun) needs the key file at most, not a second copy
           # A certificate was imported, so a signed and notarized build is the only acceptable result.
           if [ -n "${KEYCHAIN_PATH:-}" ]; then export IRONPET_REQUIRE_NOTARIZED=1; fi
           ./scripts/release_mac.sh "$VERSION" "$GITHUB_RUN_NUMBER"
