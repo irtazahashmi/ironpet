@@ -541,8 +541,8 @@ final class BriefModelTests: XCTestCase {
 final class BriefBubbleTests: XCTestCase {
     private typealias F = BriefFixture
 
-    private func bubble(_ id: String, expires: Bool = true) -> Bubble {
-        Bubble(id: id, symbol: "bell", tint: .accentColor, title: id, expires: expires ? Date().addingTimeInterval(600) : nil)
+    private func bubble(_ id: String, expires: Bool = true) -> BubbleDraft {
+        BubbleDraft(id: id, symbol: "bell", tint: .accent, title: id, expires: expires ? Date().addingTimeInterval(600) : nil)
     }
 
     func testAFullStackPassesOverTheBriefWhenMakingRoom() {
@@ -571,7 +571,7 @@ final class BriefBubbleTests: XCTestCase {
         XCTAssertEqual(bubble.expires, F.calendar.date(byAdding: .day, value: 1, to: F.startOfTuesday))
         XCTAssertEqual(bubble.actions.map(\.title), ["Open"])
         bubble.onTap?()
-        bubble.actions.first?.run()
+        bubble.handlers.actions["open"]?()
         XCTAssertEqual(opened, 2)
     }
 

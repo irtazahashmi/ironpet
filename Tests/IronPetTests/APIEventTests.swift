@@ -161,7 +161,7 @@ final class APIStoreEventTests: XCTestCase {
     func testBubbleStorePublishesTheShownBubble() {
         let store = BubbleStore()
         store.events = bus
-        store.show(Bubble(id: "hello", symbol: "star", tint: .blue, title: "Hello"))
+        store.show(BubbleDraft(id: "hello", symbol: "star", tint: .blue, title: "Hello"))
         XCTAssertEqual(seen.map(\.kind), [.bubbleShown])
         XCTAssertEqual(seen.first?.id, "hello")
     }

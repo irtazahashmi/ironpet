@@ -285,17 +285,17 @@ enum PreviewRenderer {
         }
         ConfigStore.shared.usePreview(config)
 
-        let done = Bubble(id: "done", symbol: AgentStatus.done.symbol, tint: AgentStatus.done.tint, title: "demo-app: Done",
+        let done = BubbleDraft(id: "done", symbol: AgentStatus.done.symbol, tint: AgentStatus.done.bubbleTint, title: "demo-app: Done",
                           subtitle: "Claude Code", body: "Edited 3 files · Fixed the flaky login test.",
-                          actions: [.init(title: "Open in iTerm", style: .primary) {}])
-        let approval = Bubble(id: "approval", symbol: "hand.raised.fill", tint: .orange, title: "\(name) wants to: Run this command?",
+                          actions: [.init("open", "Open in iTerm", style: .primary) {}])
+        let approval = BubbleDraft(id: "approval", symbol: "hand.raised.fill", tint: .orange, title: "\(name) wants to: Run this command?",
                               body: "npm test -- login --runInBand",
-                              actions: [.init(title: "Allow", style: .primary) {}, .init(title: "Deny", style: .destructive) {},
-                                        .init(title: "Open chat") {}])
+                              actions: [.init("allow", "Allow", style: .primary) {}, .init("deny", "Deny", style: .destructive) {},
+                                        .init("open-chat", "Open chat") {}])
         let water = AutomationMigration.reminders[0]
-        let reminder = Bubble(id: "reminder", symbol: water.symbol, tint: .cyan, title: water.title,
+        let reminder = BubbleDraft(id: "reminder", symbol: water.symbol, tint: .cyan, title: water.title,
                               subtitle: "Your agent is still working, good moment for it.", body: water.body,
-                              actions: [.init(title: "Done", style: .primary) {}, .init(title: "Snooze 10 min") {}])
+                              actions: [.init("done", "Done", style: .primary) {}, .init("snooze", "Snooze 10 min") {}])
         render(PetScene(atlas: atlas, row: .drinking, frame: 3, bubbles: [reminder]), to: dir, "reminder")
         let today = Calendar.current.startOfDay(for: Date())
         let due = [("Fix the flaky login test", today.addingTimeInterval(-86_400)), ("Send the deck to Maya", today),
@@ -331,7 +331,7 @@ enum PreviewRenderer {
             event(.taskDue, "renew", "Renew the domain before it lapses on Friday", minutes: 1),
             event(.meetingSummary, "/m/summary.md", "2026-11-17 10-00 Standup", minutes: 50),
         ]
-        func welcome(_ events: [ActivityEvent]) -> Bubble {
+        func welcome(_ events: [ActivityEvent]) -> BubbleDraft {
             Announcer.digestBubble(ActivityDigest.build(events: events, window: window), id: WelcomeBack.bubbleID,
                                    title: "Welcome back", subtitle: Announcer.awayText(window.duration), petName: "Ghost",
                                    open: { _ in }, showAll: {})
@@ -344,8 +344,8 @@ enum PreviewRenderer {
         }
 
         // Ghost works, finishes, asks before running a command, then takes a water break; then it loops.
-        var shots: [(row: AtlasRow, frame: Int, bubbles: [Bubble], delay: Double)] = []
-        func play(_ row: AtlasRow, loops: Int = 1, _ bubbles: [Bubble], holdLast: Double = 0) {
+        var shots: [(row: AtlasRow, frame: Int, bubbles: [BubbleDraft], delay: Double)] = []
+        func play(_ row: AtlasRow, loops: Int = 1, _ bubbles: [BubbleDraft], holdLast: Double = 0) {
             for _ in 0..<loops {
                 for (i, d) in row.durations.enumerated() { shots.append((row, i, bubbles, d)) }
             }
@@ -700,7 +700,7 @@ private struct PetScene: View {
     var solid = false
     private let store = BubbleStore()
 
-    init(atlas: Atlas?, row: AtlasRow, frame: Int, bubbles: [Bubble], canvas: CGSize? = nil, solid: Bool = false) {
+    init(atlas: Atlas?, row: AtlasRow, frame: Int, bubbles: [BubbleDraft], canvas: CGSize? = nil, solid: Bool = false) {
         self.atlas = atlas
         self.row = row
         self.frame = frame

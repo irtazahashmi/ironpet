@@ -529,13 +529,15 @@ extension AgentStatus {
         }
     }
 
-    var tint: Color {
+    var bubbleTint: BubbleTint {
         switch self {
         case .needsInput: return .orange
         case .failed: return .red
         case .done: return .green
-        case .running: return .accentColor
+        case .running: return .accent
         case .idle: return .secondary
         }
     }
+
+    var tint: Color { bubbleTint.color }
 }

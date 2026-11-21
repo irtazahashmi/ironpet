@@ -106,7 +106,7 @@ final class WelcomeBackTests: XCTestCase {
         let box = Box()
         welcome.show = { digest, away in
             box.value.append((digest, away))
-            bubbles.show(Bubble(id: WelcomeBack.bubbleID, symbol: "sun.max.fill", tint: .accentColor, title: "Welcome back",
+            bubbles.show(BubbleDraft(id: WelcomeBack.bubbleID, symbol: "sun.max.fill", tint: .accent, title: "Welcome back",
                                 expires: clock.now.addingTimeInterval(180)))
         }
         welcome.tick()
@@ -127,17 +127,17 @@ final class WelcomeBackTests: XCTestCase {
 
     private func done(_ f: Fixture, _ id: String) {
         f.log.record(ActivityEvent(at: f.clock.now, kind: .sessionDone, ref: id, title: "demo-app"))
-        f.bubbles.show(Bubble(id: "session:\(id)", symbol: "checkmark", tint: .green, title: "demo-app: Done",
+        f.bubbles.show(BubbleDraft(id: "session:\(id)", symbol: "checkmark", tint: .green, title: "demo-app: Done",
                               expires: f.clock.now.addingTimeInterval(15)))
     }
 
     func testReturnShowsOneSummaryAndFoldsTheBubblesItCovers() throws {
         let f = try fixture(live: .init(sessions: ["claude:1": .sessionDone, "claude:2": .sessionDone]))
-        f.bubbles.show(Bubble(id: "say", symbol: "pawprint", tint: .accentColor, title: "Before", expires: start.addingTimeInterval(9999)))
+        f.bubbles.show(BubbleDraft(id: "say", symbol: "pawprint", tint: .accent, title: "Before", expires: start.addingTimeInterval(9999)))
         awayAndBack(f) {
             done(f, "claude:1")
             done(f, "claude:2")
-            f.bubbles.show(Bubble(id: "approval:x", symbol: "hand.raised.fill", tint: .orange, title: "Allow?"))
+            f.bubbles.show(BubbleDraft(id: "approval:x", symbol: "hand.raised.fill", tint: .orange, title: "Allow?"))
         }
         XCTAssertEqual(f.shown.count, 1)
         XCTAssertEqual(f.shown.first?.0.items.first?.count, 2)
@@ -245,7 +245,7 @@ final class WelcomeBackTests: XCTestCase {
         let f = try fixture(live: .init(sessions: ["claude:1": .sessionDone, "claude:2": .sessionDone]))
         awayAndBack(f) {
             done(f, "claude:1"); done(f, "claude:2")
-            f.bubbles.show(Bubble(id: "digest:brief", symbol: "sun.horizon", tint: .accentColor, title: "Morning brief"))
+            f.bubbles.show(BubbleDraft(id: "digest:brief", symbol: "sun.horizon", tint: .accent, title: "Morning brief"))
         }
         XCTAssertTrue(f.shown.isEmpty, "just shown")
 
@@ -261,7 +261,7 @@ final class WelcomeBackTests: XCTestCase {
 
     func testABriefStillOnScreenHoursLaterDoesNotSkipTheSummary() throws {
         let f = try fixture(live: .init(sessions: ["claude:1": .sessionDone, "claude:2": .sessionDone]))
-        f.bubbles.show(Bubble(id: "digest:brief", symbol: "sun.horizon", tint: .accentColor, title: "Morning brief",
+        f.bubbles.show(BubbleDraft(id: "digest:brief", symbol: "sun.horizon", tint: .accent, title: "Morning brief",
                               expires: f.clock.now.addingTimeInterval(12 * 3600)))
         f.clock.now = f.clock.now.addingTimeInterval(2 * 3600)
         awayAndBack(f) { done(f, "claude:1"); done(f, "claude:2") }
@@ -274,7 +274,7 @@ final class WelcomeBackTests: XCTestCase {
         awayAndBack(f) {
             done(f, "claude:1"); done(f, "claude:2")
             f.log.record(ActivityEvent(at: f.clock.now, kind: .taskDue, ref: "renew", title: "Renew"))
-            f.bubbles.show(Bubble(id: Announcer.tasksDueID, symbol: "calendar", tint: .accentColor, title: "Due today: Renew"))
+            f.bubbles.show(BubbleDraft(id: Announcer.tasksDueID, symbol: "calendar", tint: .accent, title: "Due today: Renew"))
         }
         XCTAssertEqual(f.shown.first?.0.items.map(\.kind), [.sessionDone])
         XCTAssertTrue(f.bubbles.bubbles.contains { $0.id == Announcer.tasksDueID })
@@ -398,21 +398,21 @@ final class WelcomeBackTests: XCTestCase {
         let store = BubbleStore()
         var now = start
         store.now = { now }
-        store.show(Bubble(id: "digest:brief", symbol: "a", tint: .accentColor, title: "a"))
+        store.show(BubbleDraft(id: "digest:brief", symbol: "a", tint: .accent, title: "a"))
         now = start.addingTimeInterval(60)
-        store.show(Bubble(id: "digest:recap", symbol: "a", tint: .accentColor, title: "a"))
+        store.show(BubbleDraft(id: "digest:recap", symbol: "a", tint: .accent, title: "a"))
         XCTAssertEqual(store.shownAt["digest:brief"], start)
         XCTAssertEqual(store.lastShown(prefix: "digest:"), start.addingTimeInterval(60))
         now = start.addingTimeInterval(120)
-        store.show(Bubble(id: "digest:brief", symbol: "a", tint: .accentColor, title: "a"))
+        store.show(BubbleDraft(id: "digest:brief", symbol: "a", tint: .accent, title: "a"))
         XCTAssertEqual(store.shownAt["digest:brief"], now, "showing again restamps")
         now = start.addingTimeInterval(2 * 3600)
-        store.show(Bubble(id: "other", symbol: "a", tint: .accentColor, title: "a"))
+        store.show(BubbleDraft(id: "other", symbol: "a", tint: .accent, title: "a"))
         XCTAssertEqual(store.shownAt["digest:brief"], start.addingTimeInterval(120), "still on screen, so kept past the hour")
         store.dismiss("digest:brief")
         store.dismiss("digest:recap")
         now = start.addingTimeInterval(3 * 3600)
-        store.show(Bubble(id: "other", symbol: "a", tint: .accentColor, title: "a"))
+        store.show(BubbleDraft(id: "other", symbol: "a", tint: .accent, title: "a"))
         XCTAssertNil(store.lastShown(prefix: "digest:"), "gone from the screen and over an hour old: forgotten")
     }
 }

@@ -168,7 +168,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         pet.onOpenSession = { [weak self] id in self?.openSession(id) }
         pet.onOpenJob = { [weak self] id in self?.openJob(id) }
-        bubblePanel = BubblePanel(store: announcer.bubbles)
+        bubblePanel = BubblePanel(store: announcer.bubbles, meetings: { [weak self] in self?.api.meetings })
         pet.extraMenuItems = { [weak self] in self?.hookMenuItems() ?? [] }
         pet.chatMood = { [weak self] in self?.chat.mood }
         pet.voiceMood = { [weak self] in self?.voiceMode.conversation.mood }
@@ -1044,9 +1044,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     }
                 },
                 pressBubbleButton: { [weak self] id, title in
-                    guard let action = self?.announcer.bubbles.bubbles.first(where: { $0.id == id })?.actions.first(where: { $0.title == title }) else { return false }
-                    action.run()
-                    return true
+                    guard let store = self?.announcer.bubbles,
+                          let action = store.bubbles.first(where: { $0.id == id })?.actions.first(where: { $0.title == title }) else { return false }
+                    return (try? store.actions.runAction(bubble: id, action: action.id)) != nil
                 }
             ))
             control.onMeetingSummaryText = { [weak self] text, meeting in self?.suggestTasks(fromSummary: text, meeting: meeting) }
@@ -1349,8 +1349,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         default:
             meetingPanel.dismiss()
             if !meetingBubbleHidden, !bubbles.bubbles.contains(where: { $0.id == Self.meetingBubbleID }) {
-                bubbles.show(Bubble(id: Self.meetingBubbleID, symbol: "record.circle", tint: .red, title: "Meeting",
-                                    content: AnyView(MeetingView(controller: api.meetings, embedded: true))))
+                bubbles.show(BubbleDraft(id: Self.meetingBubbleID, symbol: "record.circle", tint: .red, title: "Meeting",
+                                         contentKind: .meeting))
             }
         }
         pet.setRecording(meeting.phase == .recording || meeting.phase == .finishing || meeting.phase == .summarizing
@@ -1404,18 +1404,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func showCallBubble(_ bundleID: String, stop: Bool) {
         let name = appName(bundleID)
         let close: () -> Void = { [weak self] in self?.announcer.bubbles.dismiss(Self.callBubbleID) }
-        let actions: [Bubble.Action] = stop
-            ? [.init(title: "Stop recording", style: .primary) { [weak self] in
+        let actions: [BubbleDraft.Button] = stop
+            ? [.init("stop", "Stop recording", style: .primary) { [weak self] in
                     self?.meeting.stop()
                     close()
                 },
-               .init(title: "Keep recording") { close() }]
+               .init("keep", "Keep recording") { close() }]
             : CallOffer.recordActions(
                 bundleID: bundleID, name: name, ignore: micIgnore,
                 record: { [weak self] in self?.recordCall(bundleID, name: name) },
                 notNow: { [weak self] in self?.callPrompt.notNow(bundleID) },
                 close: close)
-        announcer.bubbles.show(Bubble(id: Self.callBubbleID, symbol: "phone.fill", tint: .red,
+        announcer.bubbles.show(BubbleDraft(id: Self.callBubbleID, symbol: "phone.fill", tint: .red,
                                       title: stop ? "Call ended. Stop recording?" : "Looks like a call in \(name). Record it?",
                                       actions: actions))
     }

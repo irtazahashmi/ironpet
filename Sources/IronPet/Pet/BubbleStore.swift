@@ -12,9 +12,14 @@ final class BubbleStore {
         didSet {
             // Dismissal, expiry and the limit all remove bubbles; a client that saw `bubble.shown` needs to hear about each.
             let kept = Set(bubbles.map(\.id))
-            for gone in oldValue.map(\.id) where !kept.contains(gone) { events?.publish(.bubbleDismissed, id: gone) }
+            for gone in oldValue.map(\.id) where !kept.contains(gone) {
+                actions.unregister(gone)
+                events?.publish(.bubbleDismissed, id: gone)
+            }
         }
     }
+    /// The closures behind the bubbles' buttons, lines and taps.
+    let actions = BubbleActionTable()
     /// Which side of the bubbles the pet is on, so the tail points at him.
     var petOnLeft = false { willSet { changes.send() } }
     private var hovering = false
@@ -27,7 +32,12 @@ final class BubbleStore {
     /// Where `bubble.shown` and `bubble.dismissed` are published for API clients, with the bubble's id.
     weak var events: APIEventBus?
 
-    func show(_ bubble: Bubble) {
+    func show(_ draft: BubbleDraft) { show(draft.bubble, handlers: draft.handlers) }
+
+    /// A bubble whose controls are all in `handlers`. A control without a closure would do nothing when pressed, so that stops a debug build.
+    func show(_ bubble: Bubble, handlers: BubbleActionTable.Handlers = .init()) {
+        assert(handlers.covers(bubble), "bubble \(bubble.id) lists a button, line or tap that has no closure")
+        actions.register(handlers, for: bubble.id)
         defer { events?.publish(.bubbleShown, id: bubble.id) }
         let now = now()
         let onScreen = Set(bubbles.map(\.id))
@@ -38,7 +48,7 @@ final class BubbleStore {
         while next.count > Self.limit {
             // The brief and recap stay until midnight, so they are usually the oldest with an expiry; pass over them first.
             let shortLived = next.indices.dropLast().first { next[$0].expires != nil && !next[$0].id.hasPrefix(WelcomeBack.digestPrefix) }
-            next.remove(at: shortLived ?? next.firstIndex { $0.expires != nil } ?? next.firstIndex { $0.content == nil } ?? 0)
+            next.remove(at: shortLived ?? next.firstIndex { $0.expires != nil } ?? next.firstIndex { $0.contentKind == .standard } ?? 0)
         }
         bubbles = next
     }
