@@ -69,11 +69,11 @@ final class PhaseFourUITests: XCTestCase {
 
     func testPausingAndTheNewAutomationRequestReachTheMac() {
         pairAndOpenMore("more-automations")
-        // The request goes first, from the list as it opens. On the CI runner the toolbar button of the list was never
-        // hittable again after a push and pop of the detail screen, so the test does not depend on that return trip.
         let menu = app.buttons["new-automation-menu"]
         XCTAssertTrue(menu.waitForExistence(timeout: 10))
-        menu.tap()
+        // On the CI runner a plain tap() on this toolbar menu failed with "failed to scroll to visible" (kAXErrorCannotComplete),
+        // and isHittable stayed false, although the button sat inside the screen. A tap at its centre does not scroll first.
+        menu.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         app.buttons["new-automation-request"].tap()
         let field = app.textFields["automation-request-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 10))

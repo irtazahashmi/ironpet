@@ -13,14 +13,14 @@ enum DraftPolicy {
     }
 
     /// Writes `text` to a new file under `directory` and returns its URL, or nil if the write fails.
-    static func saveAsAttachment(_ text: String, into directory: URL = MacFileIntake.directory) -> URL? {
+    static func saveAsAttachment(_ text: String, into directory: URL = Paths.attachments) -> URL? {
         let stamp = ISO8601DateFormatter().string(from: Date()).replacingOccurrences(of: ":", with: "-")
         let folder = directory.appendingPathComponent("\(stamp)-\(UUID().uuidString.prefix(6))")
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             let file = folder.appendingPathComponent("pasted-text.txt")
             try text.write(to: file, atomically: true, encoding: .utf8)
-            MacFileIntake.prune(directory)
+            FolderFileIntake.prune(directory)
             return file
         } catch {
             NSLog("ironpet: could not save long text as attachment: \(error)")
@@ -30,7 +30,7 @@ enum DraftPolicy {
 
     /// The text to keep in the input, plus the attachment that now holds the original when it was too long.
     /// If the file cannot be written, the text is truncated to the limit so the input stays bounded.
-    static func apply(_ text: String, into directory: URL = MacFileIntake.directory) -> (input: String, attachment: URL?) {
+    static func apply(_ text: String, into directory: URL = Paths.attachments) -> (input: String, attachment: URL?) {
         guard exceedsLimit(text) else { return (text, nil) }
         if let file = saveAsAttachment(text, into: directory) { return ("", file) }
         return (String(decoding: Array(text.utf8.prefix(limit)), as: UTF8.self), nil)

@@ -19,7 +19,7 @@ final class ChatSpeechTests: XCTestCase {
         session.turnRunner = { [unowned self] _, onEvent in deliver.append(onEvent) }
         session.speech.isEnabled = { true }
         // Recorded, then cut short, so no audio device is needed.
-        session.speech.synthesize = { [unowned self] text in
+        session.player.synthesize = { [unowned self] text in
             spoken.append(text)
             throw CancellationError()
         }
@@ -137,7 +137,7 @@ final class ChatSpeechTests: XCTestCase {
     func testFailedRequestShowsTheSpeechError() async {
         struct Down: LocalizedError { var errorDescription: String? { "voice server unreachable" } }
         session.speech.isEnabled = { false }
-        session.speech.synthesize = { _ in throw Down() }
+        session.player.synthesize = { _ in throw Down() }
         session.toggleSpeech(.init(kind: .assistant("Hello there.")))
         await settle()
         XCTAssertTrue(session.items.contains { if case .error("voice server unreachable") = $0.kind { true } else { false } })
@@ -145,7 +145,7 @@ final class ChatSpeechTests: XCTestCase {
     }
 
     func testSendingStopsSpeech() async {
-        session.speech.synthesize = { _ in try await Task.sleep(nanoseconds: 10_000_000_000); return Data() }
+        session.player.synthesize = { _ in try await Task.sleep(nanoseconds: 10_000_000_000); return Data() }
         let item = ChatSession.Item(kind: .assistant("Long reply."))
         session.toggleSpeech(item)
         XCTAssertEqual(session.speech.speakingID, item.id)

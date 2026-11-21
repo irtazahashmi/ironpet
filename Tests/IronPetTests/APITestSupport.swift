@@ -21,7 +21,7 @@ enum APITestSupport {
         let service = AutomationService(store: store, engine: AutomationEngine(env: clock.environment))
         service.runShell = { _, _ in CommandResult(code: 0, stdout: "ok") }
         configureAutomations?(service)
-        let chat = chat ?? ChatSession(restore: false)
+        let chat = chat ?? ChatSession(restore: false, speech: SpeechPlayer())
         return IronPetAPI(stores: .init(tasks: tasks, automations: service, signals: signals ?? SignalStore(), bubbles: bubbles ?? BubbleStore(), notifications: notifications ?? NotificationStore(database: memoryDatabase()), sessions: sessions ?? SessionStore(), chat: chat,
                                  meeting: meeting ?? MeetingController(), meetingLibrary: meetingLibrary ?? MeetingLibrary(root: dir.appendingPathComponent("meetings")),
                                  config: config ?? ConfigStore(memory: Config()),

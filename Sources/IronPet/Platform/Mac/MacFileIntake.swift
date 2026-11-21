@@ -4,7 +4,7 @@ import Foundation
 /// any other file is copied under `screenshots/attachments/`, which the agent can already read (that folder is passed with
 /// `--add-dir`), so attaching never widens what the agent can see.
 struct MacFileIntake: FileIntake {
-    static let directory = ScreenCapture.directory.appendingPathComponent("attachments")
+    static let directory = Paths.attachments
     static let keepFolders = FolderFileIntake.keepFolders
 
     var directory: URL { Self.directory }

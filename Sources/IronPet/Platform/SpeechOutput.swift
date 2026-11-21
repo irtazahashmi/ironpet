@@ -14,6 +14,8 @@ protocol SpeechOutput: AnyObject {
     var isSpeaking: Bool { get }
     /// Whether every reply is read aloud. `VoiceAPI` points it at the settings.
     var isEnabled: () -> Bool { get set }
+    /// A failed request, shown in the chat. Not called for a stop.
+    var onFailure: ((String) -> Void)? { get set }
     /// The voice server's key.
     var voiceKey: VoiceKey { get set }
 
@@ -37,6 +39,7 @@ final class UnsupportedSpeechOutput: SpeechOutput {
     var speakingID: UUID? { nil }
     var isSpeaking: Bool { false }
     var isEnabled: () -> Bool = { false }
+    var onFailure: ((String) -> Void)?
     var voiceKey = VoiceKey.unsupported
 
     init() {}

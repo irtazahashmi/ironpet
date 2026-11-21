@@ -9,11 +9,11 @@ final class VoiceAPITests: XCTestCase {
     private var synthesized: [String] = []
 
     override func setUp() async throws {
-        session = ChatSession(restore: false)
+        session = ChatSession(restore: false, speech: SpeechPlayer())
         api = APITestSupport.makeAPI(chat: session)
         synthesized = []
         api.voice.synthesize = { [unowned self] text in synthesized.append(text); return Data([UInt8](repeating: 1, count: 64)) }
-        session.speech.synthesize = api.voice.synthesize
+        session.player.synthesize = api.voice.synthesize
     }
 
     private let reply = "First sentence here. Second sentence follows right after it. " + String(repeating: "More words fill the third part of the reply. ", count: 12)

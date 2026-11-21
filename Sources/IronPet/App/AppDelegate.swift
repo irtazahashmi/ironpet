@@ -12,7 +12,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var telegramTokens: TelegramTokenStore = TelegramAPI.testMode ? MemoryTokenStore() : TelegramToken(secrets: platform.secrets)
     private let store = SessionStore()
     private let signals = SignalStore()
-    private let chat = ChatSession()
+    private let chat = ChatSession(speech: SpeechPlayer())
     private lazy var recordingKeys = RecordingKeys(voice: chatModel.voice, heldModifiers: {
         Shortcut(ConfigStore.shared.config.hotkeys.voice)?.modifiers ?? 0
     })
@@ -70,6 +70,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var testControl: TestControl?
     private var timers: [Timer] = []
     private var cancellables: Set<AnyCancellable> = []
+    private var chatStateToken: ChangeToken?
+    private var lastChatState: ChatSession.State = .idle
     private var changeTokens: [ChangeToken] = []
     private var shownAppearance: String?
     private var appliedConfig = Config()
@@ -461,12 +463,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         service.clearApproval = { [weak self] id in self?.announcer.bubbles.dismiss(id) }
         service.sessionBusy = { [weak self] thread in self.map { $0.chat.isRunning && $0.chat.threadID == thread } ?? false }
-        chat.$state.dropFirst().sink { [weak self] state in
-            guard let self, state != .running, let id = jobToOpen else { return }
-            jobToOpen = nil
-            // After the turn's own state change has been handled.
-            DispatchQueue.main.async { self.openJob(id) }
-        }.store(in: &cancellables)
+        // The signal fires before `state` changes, so the handler reads it on the next main-actor turn.
+        lastChatState = chat.state
+        chatStateToken = chat.changes.observe { [weak self] in
+            DispatchQueue.main.async {
+                // Only a state change counts, as with the `$state` publisher; every other chat change also fires the signal.
+                guard let self, self.chat.state != self.lastChatState else { return }
+                self.lastChatState = self.chat.state
+                guard self.chat.state != .running, let id = self.jobToOpen else { return }
+                self.jobToOpen = nil
+                self.openJob(id)
+            }
+        }
         chat.voiceModeOn = { ConfigStore.shared.config.voiceMode.enabled }
         chat.jobFollowUp = { [weak service] thread, text in
             guard let service, let job = service.job(thread: thread), job.state.isActive else { return false }
