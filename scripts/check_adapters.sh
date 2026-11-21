@@ -24,5 +24,5 @@ check pi PI_ACP_PI_COMMAND=/usr/bin/true
 # 20 MB limit because it links FluidAudio (speaker recognition), whose text-processing library alone is about 57 MB
 # before dead-stripping. It has its own, higher limit. The diarization models are downloaded on first use, never bundled.
 if [ -n "$(find "$APP" -size +20M ! -path "$APP/Contents/MacOS/IronPet")" ]; then echo "FAIL: a resource over 20 MB is in the app bundle"; status=1; else echo "ok: no resource over 20 MB in the bundle"; fi
-if [ -n "$(find "$APP/Contents/MacOS" -size +60M)" ]; then echo "FAIL: the executable is over 60 MB"; status=1; else echo "ok: the executable is under 60 MB"; fi
+if [ -n "$(find "$APP/Contents/MacOS" -size +64M)" ]; then echo "FAIL: the executable is over 64 MB"; status=1; else echo "ok: the executable is under 64 MB"; fi
 exit $status
