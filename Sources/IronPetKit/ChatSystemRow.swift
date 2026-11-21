@@ -1,3 +1,4 @@
+#if canImport(SwiftUI)
 import SwiftUI
 #if canImport(AppKit)
 import AppKit
@@ -128,3 +129,4 @@ public struct ChatStepList<Row: View>: View {
         .transition(.opacity.combined(with: .move(edge: .top)))
     }
 }
+#endif

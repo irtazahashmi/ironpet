@@ -1,4 +1,8 @@
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
 import XCTest
 @testable import IronPetCore
 
@@ -40,7 +44,7 @@ final class SpeakerRenameTests: XCTestCase {
     }
 
     // S1
-    func testRenameKeepsTheVoiceprintAndSurvivesAReopen() throws {
+    func testRenameKeepsTheVoiceprintAndSurvivesAReopen() async throws {
         let voice = enroll("Jonas Ruskanen", axis: 1)
         let old = try store.rename(id: voice.id, to: "  Joonas Ruuskanen ")
         XCTAssertEqual(old, "Jonas Ruskanen")
@@ -58,7 +62,7 @@ final class SpeakerRenameTests: XCTestCase {
     }
 
     // S4
-    func testRefusedNamesChangeNothing() throws {
+    func testRefusedNamesChangeNothing() async throws {
         let jonas = enroll("Jonas Ruskanen", axis: 1)
         _ = enroll("Ana", axis: 2)
         let before = try Data(contentsOf: dir.appendingPathComponent("voices.enc"))
@@ -69,14 +73,14 @@ final class SpeakerRenameTests: XCTestCase {
         XCTAssertEqual(try Data(contentsOf: dir.appendingPathComponent("voices.enc")), before)
     }
 
-    func testRenamingToACaseVariantOfItsOwnNameIsAllowed() throws {
+    func testRenamingToACaseVariantOfItsOwnNameIsAllowed() async throws {
         let voice = enroll("jonas", axis: 1)
         try store.rename(id: voice.id, to: "Jonas")
         XCTAssertEqual(store.voices().map(\.name), ["Jonas"])
     }
 
     // S2
-    func testPastMeetingsOfThatVoiceAreRewrittenAndNothingElse() throws {
+    func testPastMeetingsOfThatVoiceAreRewrittenAndNothingElse() async throws {
         let mine = try meeting("2026-11-01-1000",
             transcript: "# Meeting 2026-11-01 10:00 (Zoom)\n[10:00:01] Jonas Ruskanen: I am Jonas Ruskanen.\n[10:00:09] Ana: Hi Jonas Ruskanen\n[10:00:12] Jonas Ruskanenko: not him\n",
             summary: "## Summary\nJonas Ruskanen met Ana. Jonas Ruskanenko joined.\n")
@@ -98,12 +102,12 @@ final class SpeakerRenameTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: other.appendingPathComponent("summary.md"), encoding: .utf8), "Mentions Jonas Ruskanen.\n")
     }
 
-    func testRegexCharactersInANameAreLiteral() {
+    func testRegexCharactersInANameAreLiteral() async {
         XCTAssertEqual(SpeakerRename.renameNames(in: "A.B and AxB", from: "A.B", to: "C$1"), "C$1 and AxB")
     }
 
     // S3
-    func testTheNextMeetingLabelsTheVoiceWithTheNewName() throws {
+    func testTheNextMeetingLabelsTheVoiceWithTheNewName() async throws {
         let voice = enroll("Jonas Ruskanen", axis: 1)
         try store.rename(id: voice.id, to: "Joonas Ruuskanen")
         var table = MeetingSpeakerTable()
