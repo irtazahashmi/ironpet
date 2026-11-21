@@ -75,7 +75,11 @@ final class PhaseFourUITests: XCTestCase {
         pause.tap()
         let paused = NSPredicate { _, _ in self.server.count("POST /v1/automations/water/pause") == 1 }
         wait(for: [XCTNSPredicateExpectation(predicate: paused, object: nil)], timeout: 10)
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        // The back button is named after the screen it returns to. The first button of the bar is not always that one on every runtime.
+        let back = app.navigationBars.buttons["Automations"]
+        XCTAssertTrue(back.waitForExistence(timeout: 10))
+        back.tap()
+        XCTAssertTrue(pause.waitForNonExistence(timeout: 10), "the detail screen is still showing")
         // The back transition is still running on a slow runner; tap the menu once the list is back and the button can be hit.
         let menu = app.buttons["new-automation-menu"]
         XCTAssertTrue(menu.waitForExistence(timeout: 10))
