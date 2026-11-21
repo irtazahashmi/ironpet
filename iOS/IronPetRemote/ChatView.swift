@@ -581,7 +581,7 @@ private struct ThreadsSheet: View {
             .navigationDestination(for: RemoteChatThread.self) { ThreadReader(model: model, thread: $0, avatar: avatar, dismissSheet: { dismiss() }) }
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .task { await model.loadThreads() }
-            .alert("Cannot do that now", isPresented: Binding(get: { model.conflictMessage != nil }, set: { if !$0 { model.conflictMessage = nil } })) {
+            .alert("Cannot do that now", isPresented: Binding(get: { model.conflictMessage != nil && !model.readerOpen }, set: { if !$0 { model.conflictMessage = nil } })) {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(model.conflictMessage ?? "")
@@ -616,6 +616,8 @@ private struct ThreadReader: View {
             }
         }
         .task { items = await model.thread(thread.id)?.items ?? [] }
+        .onAppear { model.readerOpen = true }
+        .onDisappear { model.readerOpen = false }
         // The sheet's own alert sits under this pushed screen, so a refusal from "Open on Mac" shows here.
         .alert("Cannot do that now", isPresented: Binding(get: { model.conflictMessage != nil }, set: { if !$0 { model.conflictMessage = nil } })) {
             Button("OK", role: .cancel) {}

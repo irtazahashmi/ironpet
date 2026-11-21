@@ -304,6 +304,11 @@ public enum ChatToolSteps {
     public enum State: Equatable, Sendable { case running, failed, done }
 
     public static func state(_ steps: [RemoteChatItem]) -> State {
+        state(steps.map { ($0.text ?? "", $0.ok) })
+    }
+
+    /// A step with `ok == nil` is still running, `false` failed.
+    public static func state(_ steps: [(text: String, ok: Bool?)]) -> State {
         if steps.contains(where: { $0.ok == nil }) { return .running }
         if steps.contains(where: { $0.ok == false }) { return .failed }
         return .done
@@ -311,10 +316,14 @@ public enum ChatToolSteps {
 
     /// While collapsed and a step is still in flight, the header shows that step. Otherwise it counts the steps by kind.
     public static func header(_ steps: [RemoteChatItem], expanded: Bool) -> String {
-        if !expanded, let running = steps.last(where: { $0.ok == nil }) { return running.text ?? "" }
+        header(steps.map { ($0.text ?? "", $0.ok) }, expanded: expanded)
+    }
+
+    public static func header(_ steps: [(text: String, ok: Bool?)], expanded: Bool) -> String {
+        if !expanded, let running = steps.last(where: { $0.ok == nil }) { return running.text }
         var counts: [(verb: String, noun: String, count: Int)] = []
         for step in steps {
-            let (verb, noun) = kind(of: step.text ?? "")
+            let (verb, noun) = kind(of: step.text)
             if let i = counts.firstIndex(where: { $0.verb == verb }) { counts[i].count += 1 } else { counts.append((verb, noun, 1)) }
         }
         let parts = counts.map { "\($0.verb) \($0.count) \($0.noun)\($0.count == 1 ? "" : "s")" }

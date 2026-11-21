@@ -304,98 +304,51 @@ struct PetAvatar: View {
 
 // MARK: Tools, notices, errors
 
-/// A run of tool steps folded into one line ("Ran 3 commands, read 2 files"), which expands to one line per step.
 struct ToolStepsRow: View {
     let steps: [RemoteChatItem]
     @State private var expanded = false
     @ScaledMetric(relativeTo: .caption) private var scale = ChatMetrics.scale
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button { withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() } } label: {
+        ChatSystemRow(expanded: expanded, scale: scale, identifier: "tool-steps-\(steps[0].id)",
+                      label: Text(ChatMarkdown.inline(ChatToolSteps.header(steps, expanded: expanded))),
+                      toggle: { withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() } },
+                      icon: { ChatToolRunIcon(ChatToolSteps.state(steps)) },
+                      detail: {
+            ChatStepList(count: steps.count) { index in
+                let step = steps[index]
                 HStack(spacing: 6) {
-                    headerIcon
-                    Text(ChatMarkdown.inline(ChatToolSteps.header(steps, expanded: expanded))).lineLimit(1).truncationMode(.middle)
-                    Image(systemName: "chevron.right").font(.system(size: 9 * scale, weight: .semibold)).rotationEffect(.degrees(expanded ? 90 : 0)).opacity(expanded ? 1 : 0.6)
+                    ChatStepIcon(step.ok)
+                    Text(ChatMarkdown.inline(step.text ?? "")).lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
                 }
-                .font(.system(size: 11.5 * scale))
-                .foregroundStyle(.secondary)
-                .padding(.vertical, 4)
-                .contentShape(Rectangle())
+                .font(.system(size: 11.5 * scale)).foregroundStyle(.secondary)
+                .padding(.horizontal, 10).padding(.vertical, 6)
+                .accessibilityIdentifier("tool-step-\(step.id)")
             }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("tool-steps-\(steps[0].id)")
-            if expanded {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
-                        if index > 0 { Rectangle().fill(Color.primary.opacity(0.07)).frame(height: 1) }
-                        HStack(spacing: 6) {
-                            icon(step.ok)
-                            Text(ChatMarkdown.inline(step.text ?? "")).lineLimit(1).truncationMode(.middle)
-                            Spacer(minLength: 0)
-                        }
-                        .font(.system(size: 11.5 * scale)).foregroundStyle(.secondary)
-                        .padding(.horizontal, 10).padding(.vertical, 6)
-                        .accessibilityIdentifier("tool-step-\(step.id)")
-                    }
-                }
-                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.08)))
-                .padding(.top, 2)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, 32)
-    }
-
-    @ViewBuilder
-    private var headerIcon: some View {
-        switch ChatToolSteps.state(steps) {
-        case .running: icon(nil)
-        case .failed: Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange)
-        case .done: Image(systemName: "checkmark.circle").foregroundStyle(.secondary)
-        }
-    }
-
-    @ViewBuilder
-    private func icon(_ ok: Bool?) -> some View {
-        switch ok {
-        case nil: ProgressView().controlSize(.mini).frame(width: 12, height: 12)
-        case true?: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-        case false?: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
-        }
+        })
     }
 }
 
-/// A system notice: one muted line naming its source. A tap shows the rest of the text.
+/// A system notice: one muted line naming its source. A tap shows the rest of the text. It draws through the same
+/// `ChatSystemRow` as the tool steps, as the Mac does.
 struct NoticeRow: View {
     let notice: ChatNotice
     @State private var expanded = false
     @ScaledMetric(relativeTo: .caption) private var scale = ChatMetrics.scale
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Button { if !notice.detail.isEmpty { expanded.toggle() } } label: {
-                HStack(spacing: 5) {
-                    Image(systemName: "gearshape").font(.system(size: 10 * scale))
-                    Text(notice.label).font(.system(size: 11.5 * scale))
-                    if !notice.detail.isEmpty { Image(systemName: expanded ? "chevron.down" : "chevron.right").font(.system(size: 8 * scale, weight: .bold)) }
-                }
-                .foregroundStyle(.secondary)
-                .contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("notice-label")
-            if expanded {
-                Text(ChatMarkdown.inline(notice.detail)).font(.system(size: 12 * scale)).foregroundStyle(.secondary).textSelection(.enabled)
-                    .padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                    .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
-                    .accessibilityIdentifier("notice-detail")
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        ChatSystemRow(expanded: expanded, canExpand: !notice.detail.isEmpty, scale: scale, identifier: "notice-label",
+                      label: Text(notice.label),
+                      toggle: { withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() } },
+                      icon: { Image(systemName: "gearshape") },
+                      detail: {
+            Text(ChatMarkdown.inline(notice.detail)).font(.system(size: 12 * scale)).foregroundStyle(.secondary).textSelection(.enabled)
+                .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                .padding(.top, 2)
+                .accessibilityIdentifier("notice-detail")
+        })
     }
 }
 

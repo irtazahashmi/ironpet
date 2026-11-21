@@ -185,6 +185,33 @@ final class ChatParityUITests: XCTestCase {
         XCTAssertTrue(any("running-row").waitForNonExistence(timeout: 10))
     }
 
+    // An automation row above a "Ran N commands" row sit on one leading edge, with the same height and chevron column.
+    func testAnAutomationRowAndAToolRowLineUp() {
+        server.chat.items = [
+            RemoteChatItem(id: "r-notice", kind: "notice", date: Date(), text: "Automation: Task review\nReview the open tasks and report which are blocked."),
+            tool("r-t1", "Ran `git status`", ok: true), tool("r-t2", "Ran `npm test`", ok: true),
+            RemoteChatItem(id: "r-assistant", kind: "assistant", date: Date(), text: "Two tasks are blocked on review."),
+        ]
+        server.chat.state = "done"
+        pair()
+        openChat()
+        let notice = any("notice-label")
+        let tools = any("tool-steps-r-t1")
+        XCTAssertTrue(notice.waitForExistence(timeout: 20))
+        XCTAssertTrue(tools.exists)
+        XCTAssertEqual(notice.frame.minX, tools.frame.minX, accuracy: 0.5, "same leading edge")
+        XCTAssertEqual(notice.frame.height, tools.frame.height, accuracy: 0.5, "same row height")
+        attach("rows-closed-\(dark ? "dark" : "light")")
+        notice.tap()
+        tools.tap()
+        XCTAssertTrue(any("notice-detail").waitForExistence(timeout: 5))
+        XCTAssertTrue(any("tool-step-r-t1").waitForExistence(timeout: 5))
+        attach("rows-open-\(dark ? "dark" : "light")")
+        // Closing again restores the same height.
+        notice.tap()
+        XCTAssertFalse(any("notice-detail").waitForExistence(timeout: 2))
+    }
+
     // S5
     func testAnErrorReplyShowsAsTheRedCardAndALostConnectionAsTheBanner() {
         server.chat.items = [RemoteChatItem(id: "e-user", kind: "user", date: Date(), text: "run it"),
