@@ -76,7 +76,7 @@ struct Automation: Codable, Equatable, Identifiable {
         var timeoutSeconds: Double?
         /// `digest`: `brief` (what needs you today) or `recap` (what happened today), built from data on this Mac.
         var digest: String?
-        /// `prompt`: a reply that means nothing happened. A run whose final reply is exactly this text is hidden from the
+        /// `prompt`, and `shell` with `report` chat: a reply that means nothing happened. A run whose final reply is exactly this text is hidden from the
         /// chat and recorded as "no changes".
         /// A list of replies is allowed too. With `report` chat and no `quiet`, `NOTHING` and `NOTHING_NEW` mean nothing happened.
         var quiet: QuietReplies?
@@ -87,6 +87,7 @@ struct Automation: Codable, Equatable, Identifiable {
         var session: String?
         /// `prompt` with a background session: `bubble` shows the answer as a bubble, `chat` posts it to the main chat as a
         /// system notice that the chat's agent reads. Default `bubble`, and `chat` for `fork`. Ignored for `main`.
+        /// `shell`: the same two values, default `bubble`. `chat` posts the command, exit code and the tail of the output.
         var report: String?
         /// `prompt` with `session` new or own: tools the agent may use without asking, for example `Bash(gh pr list:*)`.
         var allowedTools: [String]?
@@ -111,8 +112,11 @@ struct Automation: Codable, Equatable, Identifiable {
         /// The replies that mean nothing happened. Defaults apply only when the answer goes to the chat.
         var quietReplies: [String] {
             if let quiet { return quiet.values.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty } }
-            return effectiveReport == "chat" ? ["NOTHING", "NOTHING_NEW"] : []
+            return type == "prompt" && effectiveReport == "chat" ? ["NOTHING", "NOTHING_NEW"] : []
         }
+
+        /// True when a shell action posts its result to the main chat.
+        var shellReportsToChat: Bool { type == "shell" && report == "chat" }
 
         /// True when the prompt runs in its own agent session instead of the open chat.
         var runsInOwnSession: Bool { type == "prompt" && effectiveSession != "main" }
@@ -154,6 +158,9 @@ struct Automation: Codable, Equatable, Identifiable {
     /// `user` or the name of whatever created it, such as `agent:ghost`.
     var createdBy = "user"
     var note: String?
+    /// Deletes the automation after a run: `success` after the first run whose action succeeded, `once` after the first
+    /// completed run whatever the outcome. Missing means it stays. Not for script triggers, which return `done: true`.
+    var until: String?
 
     var isByUser: Bool { createdBy == "user" }
 
@@ -161,7 +168,7 @@ struct Automation: Codable, Equatable, Identifiable {
     var isBreakReminder: Bool { trigger.countsKeyboardTime && action.type == "bubble" }
 
     init(id: String, name: String, enabled: Bool = true, trigger: Trigger, action: Action, presentation: Presentation = Presentation(),
-         createdBy: String = "user", note: String? = nil) {
+         createdBy: String = "user", note: String? = nil, until: String? = nil) {
         self.id = id
         self.name = name
         self.enabled = enabled
@@ -170,9 +177,10 @@ struct Automation: Codable, Equatable, Identifiable {
         self.presentation = presentation
         self.createdBy = createdBy
         self.note = note
+        self.until = until
     }
 
-    private enum CodingKeys: String, CodingKey { case id, name, enabled, trigger, action, presentation, createdBy, note }
+    private enum CodingKeys: String, CodingKey { case id, name, enabled, trigger, action, presentation, createdBy, note, until }
 
     /// A script automation has no `action`: the script returns its own actions.
     func encode(to encoder: Encoder) throws {
@@ -185,6 +193,7 @@ struct Automation: Codable, Equatable, Identifiable {
         try c.encode(presentation, forKey: .presentation)
         try c.encode(createdBy, forKey: .createdBy)
         try c.encodeIfPresent(note, forKey: .note)
+        try c.encodeIfPresent(until, forKey: .until)
     }
 
     /// `enabled`, `presentation` and `createdBy` may be left out of the file.
@@ -198,6 +207,7 @@ struct Automation: Codable, Equatable, Identifiable {
         presentation = try c.decodeIfPresent(Presentation.self, forKey: .presentation) ?? Presentation()
         createdBy = try c.decodeIfPresent(String.self, forKey: .createdBy) ?? "user"
         note = try c.decodeIfPresent(String.self, forKey: .note)
+        until = try c.decodeIfPresent(String.self, forKey: .until)
     }
 
     /// The session settings of a prompt, which decide what it may do. Empty for the default, so an automation written before
@@ -213,7 +223,7 @@ struct Automation: Codable, Equatable, Identifiable {
     /// Text whose change needs a new approval: the commands and prompts that can run on this Mac.
     var riskText: String? {
         var parts: [String] = []
-        if action.type == "shell" { parts.append("shell:" + (action.command ?? "")) }
+        if action.type == "shell" { parts.append("shell:" + (action.command ?? "") + (action.shellReportsToChat ? "\nreport:chat" : "")) }
         if action.type == "prompt" { parts.append("prompt:" + (action.prompt ?? "") + "|" + (action.agent ?? "") + "|" + (action.model ?? "") + sessionRisk) }
         if trigger.type == "script" { parts.append("script:" + (trigger.script ?? "")) }
         if trigger.type == "stream" { parts.append("stream:" + (trigger.command ?? "")) }
@@ -236,13 +246,14 @@ enum AutomationValidator {
     static let actionTypes = ["bubble", "prompt", "shell", "digest"]
     static let sessions = ["main", "chat", "new", "own", "fork"]
     static let reports = ["bubble", "chat"]
+    static let untilValues = ["success", "once"]
     static let digestKinds = ["brief", "recap"]
     static let pollModes = ["json", "lines", "text", "exit_code"]
     static let streamModes = ["lines", "json"]
     static let buttons = ["done", "snooze"]
 
     private static let keys: [String: Set<String>] = [
-        "automation": ["id", "name", "enabled", "trigger", "action", "presentation", "createdBy", "note"],
+        "automation": ["id", "name", "enabled", "trigger", "action", "presentation", "createdBy", "note", "until"],
         "trigger": ["type", "minutes", "clock", "times", "weekdays", "at", "source", "mode", "items", "id", "version", "script", "cooldownMinutes", "catchUpMinutes", "command", "when", "debounceSeconds", "throttleSeconds"],
         "source": ["type", "command", "timeoutSeconds", "url", "headers"],
         "action": ["type", "title", "body", "prompt", "agent", "model", "command", "timeoutSeconds", "digest", "quiet", "session", "report", "allowedTools", "disallowedTools"],
@@ -326,6 +337,10 @@ enum AutomationValidator {
         errors += validate(trigger: a.trigger, now: now, isNew: isNew)
         errors += validate(action: a.action, trigger: a.trigger)
         errors += validate(presentation: a.presentation)
+        if let until = a.until {
+            if !untilValues.contains(until) { errors.append("until must be one of \(untilValues.joined(separator: ", "))") }
+            else if a.trigger.type == "script" { errors.append("until does not apply to a script trigger. Return done: true from the script to delete the automation") }
+        }
         let text = [a.name, a.action.title, a.action.body, a.riskText].compactMap { $0 }.joined(separator: "\n")
         if let leak = secretLike(in: text) {
             errors.append("looks like it holds a secret (\(leak)). Use an environment variable reference such as $NAME instead")
@@ -439,6 +454,9 @@ enum AutomationValidator {
             return [a.type == "none" ? "action is required" : "action.type must be one of \(actionTypes.joined(separator: ", "))"]
         }
         var errors: [String] = []
+        if a.report != nil, !["prompt", "shell"].contains(a.type) {
+            errors.append("action.report only applies to prompt and shell actions, not \(a.type)")
+        }
         switch a.type {
         case "bubble":
             if (a.title ?? "").isEmpty, (a.body ?? "").isEmpty { errors.append("action needs a title or a body") }
@@ -458,6 +476,11 @@ enum AutomationValidator {
             if trigger.type == "poll" || trigger.type == "stream" { errors.append("a digest action runs on an interval, daily or once trigger, not a \(trigger.type)") }
         default:
             if (a.command ?? "").trimmingCharacters(in: .whitespaces).isEmpty { errors.append("action.command is empty") }
+            if let report = a.report, !reports.contains(report) { errors.append("action.report must be one of \(reports.joined(separator: ", "))") }
+            if let quiet = a.quiet {
+                if a.report != "chat" { errors.append("action.quiet on a shell action needs \"report\": \"chat\"") }
+                if quiet.values.isEmpty || quiet.values.contains(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) { errors.append("action.quiet is empty") }
+            }
             if placeholderInQuotes(a.command ?? "") {
                 errors.append("action.command has a {{...}} placeholder inside quotes. Write it outside quotes: values are quoted for the shell automatically")
             }

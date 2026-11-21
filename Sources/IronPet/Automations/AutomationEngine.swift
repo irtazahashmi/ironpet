@@ -56,6 +56,10 @@ final class AutomationEngine {
     var mayRun: (Automation) -> Bool = { _ in true }
     /// What a script asked for. `firstRun` is true when the script had no saved state, so an alert can be recorded quietly.
     var onActions: (_ automation: Automation, _ actions: [[String: Any]], _ firstRun: Bool) -> Void = { _, _, _ in }
+    /// A script returned `done: true`. Called after its actions ran and the run was logged.
+    var onDone: (_ automation: Automation) -> Void = { _ in }
+    /// Ids whose run history and log stay when they leave the list, because the automation deleted itself.
+    var keepHistoryOnRemoval: Set<String> = []
     /// Runs a script automation. Replaced in tests to avoid shell and network.
     lazy var runScript: (_ script: String, _ state: String?) async throws -> AutomationScript.Output = { [weak self] script, state in
         try await AutomationScript.run(script: script, state: state, host: .system(spawner: self?.env.spawner ?? UnsupportedProcessSpawner()))
@@ -144,7 +148,7 @@ final class AutomationEngine {
             activeElapsed[gone.id] = nil
             wallLast[gone.id] = nil
             nextPollAt[gone.id] = nil
-            state.forget(gone.id)
+            state.forget(gone.id, keepHistory: keepHistoryOnRemoval.remove(gone.id) != nil)
             polling[gone.id]?.cancel()
             polling[gone.id] = nil
         }
@@ -358,6 +362,7 @@ final class AutomationEngine {
             detail.append("state: \(output.state.utf8.count) bytes")
             onLog(a.id, "ok", output.actions.isEmpty ? "no actions" : "\(output.actions.count) action\(output.actions.count == 1 ? "" : "s")",
                   detail.joined(separator: "\n"), Date().timeIntervalSince(started))
+            if output.done { onDone(a) }
         } catch {
             onRecord(a.id, "failed", error.localizedDescription)
             onLog(a.id, "failed", error.localizedDescription, error.localizedDescription, Date().timeIntervalSince(started))
