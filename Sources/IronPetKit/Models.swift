@@ -208,6 +208,10 @@ public struct RemoteEvent: Codable, Equatable, Sendable {
     public static let assetsChanged = "assets.changed"
     public static let agentsChanged = "agents.changed"
     public static let alertsChanged = "alerts.changed"
+    public static let automationsChanged = "automations.changed"
+    public static let automationNeedsApproval = "automation.needsApproval"
+    public static let meetingsChanged = "meetings.changed"
+    public static let settingsChanged = "settings.changed"
     /// A chat message was added or changed. `id` is the message's id; no id means read the chat again.
     public static let chatItem = "chat.item"
     /// What else moved in the chat: `approvals`, `forms`, `queue`, `draft`, or no id for the turn state.

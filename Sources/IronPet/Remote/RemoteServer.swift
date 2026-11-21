@@ -335,6 +335,106 @@ final class RemoteServer {
         }
         addResourceRoutes(to: router)
         addChatRoutes(to: router)
+        addAutomationRoutes(to: router)
+        addMeetingRoutes(to: router)
+        addSettingsRoutes(to: router)
+    }
+
+    /// Automations (phase 4). The device is the author of what it creates or changes, so risky automations wait for Approve on the Mac.
+    private func addAutomationRoutes(to router: Router<RemoteContext>) {
+        router.get("/v1/automations") { [self] _, context in await self.phoneFour(context) { RemoteAutomations(api: $0, device: $1).list() } }
+        router.post("/v1/automations") { [self] request, context in
+            let body = try await Self.object(request, context)
+            return await self.phoneFour(context, status: 201) { try RemoteAutomations(api: $0, device: $1).create(body) }
+        }
+        router.post("/v1/automations/request") { [self] request, context in
+            let body = try await Self.object(request, context)
+            return await self.phoneFour(context) { try await RemoteAutomations(api: $0, device: $1).request(body) }
+        }
+        router.get("/v1/automations/:id") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.phoneFour(context) { try RemoteAutomations(api: $0, device: $1).get(id) }
+        }
+        router.patch("/v1/automations/:id") { [self] request, context in
+            let id = Self.parameter(context, "id")
+            let body = try await Self.object(request, context)
+            return await self.phoneFour(context) { try RemoteAutomations(api: $0, device: $1).update(id, body) }
+        }
+        router.delete("/v1/automations/:id") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.phoneFour(context) { try RemoteAutomations(api: $0, device: $1).delete(id) }
+        }
+        router.get("/v1/automations/:id/history") { [self] request, context in
+            let id = Self.parameter(context, "id"), query = Self.query(request)
+            return await self.phoneFour(context) { try RemoteAutomations(api: $0, device: $1).history(id, query: query) }
+        }
+        router.get("/v1/automations/:id/log") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.phoneFour(context) { try RemoteAutomations(api: $0, device: $1).log(id) }
+        }
+        router.post("/v1/automations/:id/pause") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.phoneFour(context) { try RemoteAutomations(api: $0, device: $1).pause(id) }
+        }
+        router.post("/v1/automations/:id/resume") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.phoneFour(context) { try RemoteAutomations(api: $0, device: $1).resume(id) }
+        }
+        router.post("/v1/automations/:id/run-now") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.phoneFour(context) { try await RemoteAutomations(api: $0, device: $1).runNow(id) }
+        }
+    }
+
+    /// Meetings (phase 4). There is no route that starts a recording or serves audio.
+    private func addMeetingRoutes(to router: Router<RemoteContext>) {
+        router.get("/v1/meetings") { [self] _, context in await self.phoneFour(context) { api, _ in RemoteMeetings(api: api).list() } }
+        router.get("/v1/meetings/state") { [self] _, context in await self.phoneFour(context) { api, _ in RemoteMeetings(api: api).state() } }
+        router.post("/v1/meetings/stop") { [self] _, context in await self.phoneFour(context) { api, _ in try RemoteMeetings(api: api).stop() } }
+        router.get("/v1/meetings/:id/summary") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.phoneFour(context) { api, _ in try await RemoteMeetings(api: api).text(id, .summary) }
+        }
+        router.get("/v1/meetings/:id/transcript") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.phoneFour(context) { api, _ in try await RemoteMeetings(api: api).text(id, .transcript) }
+        }
+        router.post("/v1/meetings/:id/regenerate") { [self] request, context in
+            let id = Self.parameter(context, "id"), mode = Self.query(request)["mode"]?.first
+            return await self.phoneFour(context, status: 202) { api, _ in try RemoteMeetings(api: api).regenerate(id, mode: mode) }
+        }
+        router.post("/v1/meetings/:id/ask") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.phoneFour(context) { api, _ in try RemoteMeetings(api: api).ask(id) }
+        }
+        router.delete("/v1/meetings/:id") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.phoneFour(context) { api, _ in try RemoteMeetings(api: api).delete(id) }
+        }
+    }
+
+    /// Settings, the pet gallery and usage (phase 4).
+    private func addSettingsRoutes(to router: Router<RemoteContext>) {
+        router.get("/v1/settings") { [self] _, context in await self.phoneFour(context) { api, _ in RemotePhoneSettings(api: api).get() } }
+        router.patch("/v1/settings") { [self] request, context in
+            let body = try await Self.object(request, context)
+            return await self.phoneFour(context) { api, _ in try await RemotePhoneSettings(api: api).patch(body) }
+        }
+        router.get("/v1/settings/pets") { [self] _, context in await self.phoneFour(context) { api, _ in await RemotePhoneSettings(api: api).pets() } }
+        router.post("/v1/settings/pet") { [self] request, context in
+            let body = try await Self.object(request, context)
+            return await self.phoneFour(context) { api, _ in try await RemotePhoneSettings(api: api).selectPet(body) }
+        }
+        router.get("/v1/usage") { [self] request, context in
+            let range = Self.query(request)["range"]?.first
+            return await self.phoneFour(context) { api, _ in try RemotePhoneSettings(api: api).usage(range: range) }
+        }
+    }
+
+    /// Runs a phase 4 call on the main actor with the API and the calling device's id.
+    private func phoneFour(_ context: RemoteContext, status: Int = 200, _ body: @MainActor (IronPetAPI, String) async throws -> [String: Any]) async -> Response {
+        guard let device = context.device else { return Self.error(401, "unauthorized", "unauthorized") }
+        do { return Self.json(status, try await body(api, device.id)) } catch { return Self.errorResponse(RemoteFailure(error)) }
     }
 
     /// The shared chat and uploads (phase 3).

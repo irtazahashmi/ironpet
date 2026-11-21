@@ -53,6 +53,7 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _uploads: [String: Data] = [:]
     private var _uploadNames: [String: String] = [:]
     private var _uploadDelay: TimeInterval = 0
+    fileprivate var _p4 = MockPhaseFour()
     private let encoder = WireJSON.makeEncoder()
     private(set) var port: UInt16 = 0
     private let tlsIdentity: SecIdentity?
@@ -264,19 +265,19 @@ final class MockIronPetServer: @unchecked Sendable {
         return Recorded(method: String(start[0]), path: parts[0], query: parts.count > 1 ? parts[1] : "", headers: headers, body: Data(body.prefix(length)))
     }
 
-    private func respond(_ connection: NWConnection, _ status: Int, _ body: Data) {
-        let reason = [200: "OK", 201: "Created", 202: "Accepted", 400: "Bad Request", 401: "Unauthorized", 404: "Not Found", 409: "Conflict",
+    fileprivate func respond(_ connection: NWConnection, _ status: Int, _ body: Data) {
+        let reason = [200: "OK", 201: "Created", 202: "Accepted", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden", 404: "Not Found", 409: "Conflict",
                       413: "Content Too Large", 500: "Internal Server Error"][status] ?? "OK"
         var out = Data("HTTP/1.1 \(status) \(reason)\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n".utf8)
         out.append(body)
         connection.send(content: out, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { _ in connection.cancel() })
     }
 
-    private func respond<T: Encodable>(_ connection: NWConnection, _ status: Int, _ value: T) {
+    fileprivate func respond<T: Encodable>(_ connection: NWConnection, _ status: Int, _ value: T) {
         respond(connection, status, (try? encoder.encode(value)) ?? Data("{}".utf8))
     }
 
-    private func fail(_ connection: NWConnection, _ status: Int, _ code: String, _ message: String) {
+    fileprivate func fail(_ connection: NWConnection, _ status: Int, _ code: String, _ message: String) {
         respond(connection, status, APIErrorBody(error: .init(code: code, message: message)))
     }
 
@@ -291,7 +292,7 @@ final class MockIronPetServer: @unchecked Sendable {
             return fail(connection, 401, "unauthorized", "unauthorized")
         }
         let parts = request.path.split(separator: "/").map(String.init)
-        if routeResources(request, parts, connection) || routeChat(request, parts, connection) { return }
+        if routeResources(request, parts, connection) || routeChat(request, parts, connection) || routePhaseFour(request, parts, connection) { return }
         switch (request.method, parts.count) {
         case ("POST", 2) where request.path == APIPath.pair: pair(request, connection)
         case ("GET", 3) where parts[1] == "pair": poll(parts[2], request, connection)
@@ -599,5 +600,177 @@ extension MockIronPetServer {
         default: return false
         }
         return true
+    }
+}
+
+
+// MARK: Phase 4 routes
+
+/// What the phase 4 mock serves. Change it through the properties on the server, then `publish` the event a real Mac would send.
+struct MockPhaseFour {
+    var automations: [RemoteAutomation] = MockIronPetServer.sampleAutomations
+    var meetings: [RemoteMeeting] = MockIronPetServer.sampleMeetings
+    var summaries: [String: String] = ["2026-11-14-1400": "## Summary\nPlanned the launch.\n"]
+    var transcripts: [String: String] = ["2026-11-14-1400": "# Meeting\n[14:00:00] Me: hello secret-word\n", "2026-11-15-1000": "# Meeting\n[10:00:00] Me: second\n"]
+    var meetingState = RemoteMeetingState()
+    var config = RemoteConfig(pet: .init(name: "Ghost"), speech: .init(enabled: false, voice: "am_puck"), meetings: .init(enabled: true))
+    var pets = [RemotePetChoice(id: "p-ghost", name: "Ghost", builtIn: true, selected: true), RemotePetChoice(id: "p-fox", name: "Fox", builtIn: false)]
+    var usage = RemoteUsage(days: 7, rows: [.init(feature: "chat", model: "claude", requests: 12, totalTokens: 3400, cost: 0.42)], todayCost: 0.1, rangeCost: 0.42, hasCost: true)
+}
+
+extension MockIronPetServer {
+    static let sampleAutomations: [RemoteAutomation] = [
+        RemoteAutomation(id: "water", name: "Drink water", trigger: "every 45 minutes", triggerType: "interval", action: "bubble",
+                         nextRun: Date(timeIntervalSince1970: 1_800_000_000), lastRun: RemoteAutomationRun(date: Date(timeIntervalSince1970: 1_700_000_000), outcome: "ok", output: "shown")),
+        RemoteAutomation(id: "ci-watch", name: "CI watcher", enabled: true, trigger: "polls every 5 minutes", triggerType: "poll", action: "shell",
+                         createdBy: "agent:ghost", approval: "pending", approvalDetail: "gh run list --limit 3"),
+    ]
+
+    static let sampleMeetings: [RemoteMeeting] = [
+        RemoteMeeting(id: "2026-11-15-1000", date: Date(timeIntervalSince1970: 1_700_100_000), preview: "second", hasTranscript: true),
+        RemoteMeeting(id: "2026-11-14-1400", date: Date(timeIntervalSince1970: 1_700_000_000), preview: "Planned the launch.", hasSummary: true, hasTranscript: true, hasAudio: true),
+    ]
+
+    var automations: [RemoteAutomation] { get { lock.lock(); defer { lock.unlock() }; return _p4.automations } set { lock.lock(); _p4.automations = newValue; lock.unlock() } }
+    var meetings: [RemoteMeeting] { get { lock.lock(); defer { lock.unlock() }; return _p4.meetings } set { lock.lock(); _p4.meetings = newValue; lock.unlock() } }
+    var meetingState: RemoteMeetingState { get { lock.lock(); defer { lock.unlock() }; return _p4.meetingState } set { lock.lock(); _p4.meetingState = newValue; lock.unlock() } }
+    var config: RemoteConfig { get { lock.lock(); defer { lock.unlock() }; return _p4.config } set { lock.lock(); _p4.config = newValue; lock.unlock() } }
+
+    fileprivate func routePhaseFour(_ request: Recorded, _ parts: [String], _ connection: NWConnection) -> Bool {
+        guard parts.count >= 2, parts[0] == "v1" else { return false }
+        switch parts[1] {
+        case "automations": routeAutomations(request, parts, connection)
+        case "meetings": routeMeetings(request, parts, connection)
+        case "settings": routeSettings(request, parts, connection)
+        case "usage": lock.lock(); let usage = _p4.usage; lock.unlock(); respond(connection, 200, usage)
+        default: return false
+        }
+        return true
+    }
+
+    private func routeAutomations(_ request: Recorded, _ parts: [String], _ connection: NWConnection) {
+        let method = request.method
+        if parts.count == 2 {
+            if method == "GET" { lock.lock(); let list = _p4.automations; lock.unlock(); return respond(connection, 200, AutomationListResponse(automations: list)) }
+            if method == "POST" {
+                let json = request.json
+                let name = json["name"] as? String ?? ""
+                guard !name.isEmpty else { return fail(connection, 400, "invalid", "name is required") }
+                let action = (json["action"] as? [String: Any])?["type"] as? String ?? "bubble"
+                var item = RemoteAutomation(id: name.lowercased().replacingOccurrences(of: " ", with: "-"), name: name, action: action, createdBy: "remote:\(deviceID)")
+                if action != "bubble" { item.approval = "pending" }
+                lock.lock(); _p4.automations.append(item); lock.unlock()
+                respond(connection, 201, item)
+                publish(RemoteEvent.automationsChanged, id: item.id)
+                if item.approval != nil { publish(RemoteEvent.automationNeedsApproval, id: item.id) }
+                return
+            }
+        }
+        if parts.count == 3, parts[2] == "request", method == "POST" { return respond(connection, 200, Data(#"{"outcome":"sent"}"#.utf8)) }
+        guard parts.count >= 3 else { return fail(connection, 404, "not_found", "not found") }
+        let id = parts[2]
+        lock.lock()
+        let index = _p4.automations.firstIndex { $0.id == id }
+        lock.unlock()
+        guard let index else { return fail(connection, 404, "not_found", "no automation with id \"\(id)\"") }
+        if parts.count == 3 {
+            switch method {
+            case "GET": lock.lock(); var item = _p4.automations[index]; lock.unlock(); item.definition = "{\n  \"name\" : \"\(item.name)\"\n}"; respond(connection, 200, item)
+            case "DELETE":
+                lock.lock(); _p4.automations.remove(at: index); lock.unlock()
+                respond(connection, 200, Data(#"{"deleted":"\#(id)"}"#.utf8))
+                publish(RemoteEvent.automationsChanged, id: id)
+            case "PATCH":
+                lock.lock()
+                if let name = request.json["name"] as? String { _p4.automations[index].name = name }
+                let item = _p4.automations[index]
+                lock.unlock()
+                respond(connection, 200, item)
+                publish(RemoteEvent.automationsChanged, id: id)
+            default: fail(connection, 404, "not_found", "not found")
+            }
+            return
+        }
+        switch (method, parts[3]) {
+        case ("GET", "history"): respond(connection, 200, AutomationHistoryResponse(history: [RemoteAutomationRun(date: Date(timeIntervalSince1970: 1_700_000_000), outcome: "ok", output: "shown")]))
+        case ("GET", "log"):
+            respond(connection, 200, AutomationLogResponse(log: [RemoteAutomationLogEntry(id: 1, automation: id, date: Date(timeIntervalSince1970: 1_700_000_000), outcome: "ok", summary: "shown")]))
+        case ("POST", "pause"), ("POST", "resume"):
+            lock.lock(); _p4.automations[index].enabled = parts[3] == "resume"; let item = _p4.automations[index]; lock.unlock()
+            respond(connection, 200, item)
+            publish(RemoteEvent.automationsChanged, id: id)
+        case ("POST", "run-now"):
+            lock.lock(); let waiting = _p4.automations[index].approval != nil; lock.unlock()
+            respond(connection, 200, RemoteAutomationRunResult(id: id, status: waiting ? "waiting for approval" : "started"))
+        default: fail(connection, 404, "not_found", "not found")
+        }
+    }
+
+    private func routeMeetings(_ request: Recorded, _ parts: [String], _ connection: NWConnection) {
+        let method = request.method
+        if parts.count == 2, method == "GET" { lock.lock(); let list = _p4.meetings; lock.unlock(); return respond(connection, 200, MeetingListResponse(meetings: list)) }
+        if parts.count == 3, method == "GET", parts[2] == "state" { lock.lock(); let state = _p4.meetingState; lock.unlock(); return respond(connection, 200, state) }
+        if parts.count == 3, method == "POST", parts[2] == "stop" {
+            lock.lock()
+            let recording = _p4.meetingState.isRecording
+            if recording { _p4.meetingState.phase = "summarizing" }
+            lock.unlock()
+            guard recording else { return fail(connection, 409, "conflict", "no meeting is being recorded") }
+            respond(connection, 200, Data(#"{"stopped":true}"#.utf8))
+            publish(RemoteEvent.meetingsChanged)
+            return
+        }
+        guard parts.count >= 3 else { return fail(connection, 404, "not_found", "not found") }
+        let id = parts[2]
+        lock.lock(); let known = _p4.meetings.contains { $0.id == id }; lock.unlock()
+        guard known else { return fail(connection, 404, "not_found", "no meeting with id \"\(id)\"") }
+        if parts.count == 3, method == "DELETE" {
+            lock.lock(); _p4.meetings.removeAll { $0.id == id }; lock.unlock()
+            respond(connection, 200, Data(#"{"deleted":"\#(id)"}"#.utf8))
+            publish(RemoteEvent.meetingsChanged)
+            return
+        }
+        switch (method, parts.count == 4 ? parts[3] : "") {
+        case ("GET", "summary"), ("GET", "transcript"):
+            lock.lock(); let text = parts[3] == "summary" ? _p4.summaries[id] : _p4.transcripts[id]; lock.unlock()
+            guard let text else { return fail(connection, 404, "not_found", "this meeting has no \(parts[3]) yet") }
+            respond(connection, 200, RemoteMeetingText(id: id, text: text))
+        case ("POST", "regenerate"): respond(connection, 202, Data(#"{"started":"\#(id)"}"#.utf8))
+        case ("POST", "ask"): respond(connection, 200, Data(#"{"asked":"\#(id)"}"#.utf8))
+        default: fail(connection, 404, "not_found", "not found")
+        }
+    }
+
+    private func routeSettings(_ request: Recorded, _ parts: [String], _ connection: NWConnection) {
+        let method = request.method
+        if parts.count == 2 {
+            if method == "GET" { lock.lock(); let config = _p4.config; lock.unlock(); return respond(connection, 200, config) }
+            if method == "PATCH" {
+                let json = request.json
+                lock.lock()
+                var denied: String?
+                if let reminders = json["reminders"] as? [String: Any], let paused = reminders["paused"] as? Bool { _p4.config.reminders.paused = paused }
+                if let speech = json["speech"] as? [String: Any], let on = speech["enabled"] as? Bool { _p4.config.speech.enabled = on }
+                if let meetings = json["meetings"] as? [String: Any] { if meetings["enabled"] as? Bool == false { _p4.config.meetings.enabled = false } else { denied = "meetings.enabled" } }
+                if json["voice"] != nil { denied = "voice.baseUrl" }
+                let config = _p4.config
+                lock.unlock()
+                if let denied { return fail(connection, 403, "forbidden", "\"\(denied)\" cannot be changed from the phone") }
+                respond(connection, 200, config)
+                publish(RemoteEvent.settingsChanged)
+                return
+            }
+        }
+        if parts.count == 3, parts[2] == "pets", method == "GET" { lock.lock(); let pets = _p4.pets; lock.unlock(); return respond(connection, 200, PetChoiceListResponse(pets: pets)) }
+        if parts.count == 3, parts[2] == "pet", method == "POST" {
+            let id = request.json["id"] as? String
+            lock.lock()
+            let known = _p4.pets.contains { $0.id == id }
+            if known { for index in _p4.pets.indices { _p4.pets[index].selected = _p4.pets[index].id == id } }
+            lock.unlock()
+            guard known else { return fail(connection, 404, "not_found", "no pet") }
+            return respond(connection, 200, Data(#"{"selected":true}"#.utf8))
+        }
+        fail(connection, 404, "not_found", "not found")
     }
 }
