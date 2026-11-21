@@ -2,6 +2,7 @@ import Foundation
 import IronPetKit
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// `Bubble` is plain data. Its closures live in a `BubbleActionTable`, found by bubble id and control id.
 @MainActor
@@ -32,7 +33,7 @@ final class BubbleDataTests: XCTestCase {
     func testTheDataTypeFilesImportNoUIFramework() throws {
         let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         for name in ["Bubble.swift", "BubbleActionTable.swift"] {
-            let source = try String(contentsOf: root.appendingPathComponent("Sources/IronPet/Pet/\(name)"), encoding: .utf8)
+            let source = try String(contentsOf: root.appendingPathComponent("Sources/IronPetCore/Pet/\(name)"), encoding: .utf8)
             for banned in ["import SwiftUI", "import AppKit", "import Combine", "AnyView", "Color"] {
                 XCTAssertFalse(source.contains(banned), "\(name) must not contain \(banned)")
             }

@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class SynthesizerTests: XCTestCase {
     private let audio = WAV.encode([Int16](repeating: 100, count: 64))

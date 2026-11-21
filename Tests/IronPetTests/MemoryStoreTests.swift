@@ -1,6 +1,7 @@
 import CryptoKit
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class MemoryNoteTests: XCTestCase {
     func testNoteLineRoundTripsWithItsDateAndSource() {

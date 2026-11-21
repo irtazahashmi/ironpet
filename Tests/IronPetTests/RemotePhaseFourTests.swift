@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// The automation, meeting and settings routes of the remote API over a real listener and in-memory stores.
 @MainActor

@@ -1,6 +1,7 @@
 import Carbon
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class SupportPortabilityTests: XCTestCase {
     func testShortcutParsesToCarbonCodes() {
@@ -17,10 +18,12 @@ final class SupportPortabilityTests: XCTestCase {
 
     /// Support/ must stay free of UI, Carbon and os imports so it can move into a Foundation-only target.
     func testSupportFilesImportNoPlatformUI() throws {
-        let dir = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-            .deletingLastPathComponent().appendingPathComponent("Sources/IronPet/Support")
-        let files = try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
-            .filter { $0.pathExtension == "swift" }
+        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let files = try ["Sources/IronPet/Support", "Sources/IronPetCore/Support"].flatMap { folder -> [URL] in
+            let dir = repo.appendingPathComponent(folder)
+            guard FileManager.default.fileExists(atPath: dir.path) else { return [] }
+            return try FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil).filter { $0.pathExtension == "swift" }
+        }
         XCTAssertFalse(files.isEmpty)
         let banned = try NSRegularExpression(pattern: #"^import (AppKit|SwiftUI|Carbon|os)\b"#)
         for file in files {

@@ -1,6 +1,7 @@
 import CryptoKit
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// A unit vector in 256 dimensions whose cosine with `unit(0)` is `cosine`, and 0 with the other axes.
 private func vector(cosine: Float, axis: Int = 1) -> [Float] {

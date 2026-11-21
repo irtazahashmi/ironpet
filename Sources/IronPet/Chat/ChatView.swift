@@ -1,5 +1,6 @@
 import AppKit
 import ImageIO
+import IronPetCore
 import SwiftUI
 
 extension View {

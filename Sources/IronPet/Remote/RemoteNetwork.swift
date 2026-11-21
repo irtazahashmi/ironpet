@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import IronPetCore
 
 /// One IPv4 address of one network interface, as `getifaddrs` reports it.
 struct InterfaceAddress: Equatable {

@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// Drives agent sessions only through `IronPetAPI`. The hook events that create sessions go into the store the helper was given,
 /// as the hook server does.

@@ -1,5 +1,6 @@
 import SwiftUI
 @testable import IronPet
+@testable import IronPetCore
 
 @MainActor
 extension IronPetPanel {

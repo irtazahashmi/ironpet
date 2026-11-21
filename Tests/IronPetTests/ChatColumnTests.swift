@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// The message column and the composer stop growing at a maximum width and stay centered.
 @MainActor

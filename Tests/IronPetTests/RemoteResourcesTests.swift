@@ -1,6 +1,7 @@
 import AppKit
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// The pet, bubble, agent, alert, today and asset routes of the remote API, over a real listener and in-memory stores.
 @MainActor

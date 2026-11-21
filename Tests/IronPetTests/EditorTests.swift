@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class EditorTests: XCTestCase {
     private func session(owner: String? = nil, iterm: String? = nil) -> AgentSession {

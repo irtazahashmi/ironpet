@@ -1,6 +1,7 @@
 import SwiftUI
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class SettingsLayoutTests: XCTestCase {
     func testEveryPageHasATitleAndSymbol() {

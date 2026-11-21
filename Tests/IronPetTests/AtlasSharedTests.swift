@@ -1,6 +1,7 @@
 import AppKit
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// The Mac cuts sprite sheets with the `Atlas` of IronPetKit, which the iPhone app uses too. Before the move the Mac decoded a sheet with
 /// `NSImage`; these tests check that both paths yield the same frames for the Ghost layout (1536x2704) and a Codex sheet (1536x2288).

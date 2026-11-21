@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// Drives settings only through `IronPetAPI`, over a config store that lives in memory and never touches `config.json`.
 @MainActor

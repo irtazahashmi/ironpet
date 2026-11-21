@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// Drives automations only through `IronPetAPI`, over a temporary file and the test clock.
 @MainActor

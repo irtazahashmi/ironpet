@@ -1,9 +1,6 @@
 import AppKit
+import IronPetCore
 import IronPetKit
-
-// The atlas types live in IronPetKit so the iPhone app cuts frames the same way. These aliases keep the Mac code unchanged.
-typealias Atlas = IronPetKit.Atlas
-typealias AtlasRow = IronPetKit.AtlasRow
 
 extension Atlas {
     /// `pet.sprite` from config.json, else `~/.ironpet/pet/spritesheet.{webp,png}`, else the Ghost sheet bundled in

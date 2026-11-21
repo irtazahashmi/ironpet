@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 
 /// What voice mode shows by the pet: the state, the last thing heard, and a button to end. The pet itself shows that it

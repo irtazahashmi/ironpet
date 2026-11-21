@@ -3,6 +3,7 @@ import XCTest
 import Combine
 #endif
 @testable import IronPet
+@testable import IronPetCore
 
 /// `AutomationStore` fires `changes` before `automations` or `error` change, `AutomationsAPI` forwards it, and the digest
 /// subscriber behind the pet's Today item applies a value only when it differs from the last one it applied.

@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 
 /// The Transcripts section: past meetings newest first, and the summary or transcript of the one selected.

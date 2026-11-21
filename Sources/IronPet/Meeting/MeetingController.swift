@@ -2,6 +2,7 @@ import AppKit
 import AVFoundation
 import Combine
 import Foundation
+import IronPetCore
 
 /// One chunk on its way through transcription.
 struct MeetingJob: Equatable {

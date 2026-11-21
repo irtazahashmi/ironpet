@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 
 /// The one ironpet window: chat, agents, alerts, tasks, transcripts, actions and automations in a floating

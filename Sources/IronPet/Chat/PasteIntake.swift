@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 
 /// Decides what a paste into the chat does before the text field sees it. A multi-megabyte string
 /// freezes SwiftUI layout as soon as the field receives it, so large text has to be diverted first.

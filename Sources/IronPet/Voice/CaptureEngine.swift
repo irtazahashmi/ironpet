@@ -1,4 +1,5 @@
 import AVFoundation
+import IronPetCore
 
 /// The slice of AVAudioEngine that `MicrophoneSource` needs, so tests can fake the engine and its notifications.
 protocol CaptureEngine: AnyObject {

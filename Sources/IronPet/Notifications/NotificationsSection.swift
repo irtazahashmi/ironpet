@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import IronPetCore
 import SwiftUI
 
 /// What clicking a link in a notification does. Each kind has its own closure so the window, the tests and the previews can supply

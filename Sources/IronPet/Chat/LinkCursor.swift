@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 
 /// Finds where the links of a message sit, so the chat can show the pointing hand over them. SwiftUI's `Text` does

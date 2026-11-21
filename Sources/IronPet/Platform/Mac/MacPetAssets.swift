@@ -1,4 +1,5 @@
 import Foundation
+import IronPetCore
 
 /// Pet sheets and chat backgrounds in the app's data folder, `~/.ironpet/pets` and `~/.ironpet/backgrounds`, unless a test
 /// points the folders elsewhere.

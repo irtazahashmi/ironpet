@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// A chat with hundreds of items must settle: once laid out, an idle transcript uses almost no CPU.
 @MainActor

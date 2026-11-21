@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// A `prompt` action goes into the user's chat. A prompt that uses poll item data stays in the restricted background run.
 @MainActor

@@ -1,11 +1,12 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// ChatSession, ACPBackend and DraftPolicy move into the core target, so they must not name Mac-only code.
 @MainActor
 final class ChatSessionCoreTests: XCTestCase {
     private static let sources = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-        .deletingLastPathComponent().appendingPathComponent("Sources/IronPet")
+        .deletingLastPathComponent().appendingPathComponent("Sources/IronPetCore")
 
     func testCoreChatFilesNameNoMacCode() throws {
         let files = ["Chat/ChatSession.swift", "Chat/ACP/ACPBackend.swift", "Chat/DraftPolicy.swift", "Chat/ChatLog.swift"]

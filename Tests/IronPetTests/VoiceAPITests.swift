@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// Drives speaking, stopping and transcribing only through `IronPetAPI`, with the voice server stubbed.
 @MainActor

@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import IronPetCore
 
 /// The macOS source. Signals come from the workspace (app switches), Accessibility notifications (window focus and title changes) and
 /// global event monitors (key, scroll and click, as timing only: no key is read). A read is one budgeted walk of the focused window.

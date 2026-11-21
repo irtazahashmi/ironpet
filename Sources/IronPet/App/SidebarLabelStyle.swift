@@ -1,3 +1,4 @@
+import IronPetCore
 import SwiftUI
 
 /// Finder-like sidebar row: the icon sits centred in a fixed-width column, so

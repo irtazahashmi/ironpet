@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// Drives alerts and bubbles only through `IronPetAPI`. The stores are passed to the test helper only to put sample data in them,
 /// the way an automation or the announcer would.

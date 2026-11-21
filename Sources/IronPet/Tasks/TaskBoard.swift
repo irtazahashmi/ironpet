@@ -1,4 +1,5 @@
 import Foundation
+import IronPetCore
 
 /// How the Tasks page shows its tasks. Saved in UserDefaults, so the choice survives a relaunch.
 enum TaskViewMode: String, CaseIterable {

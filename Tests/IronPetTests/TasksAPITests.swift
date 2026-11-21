@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// Drives tasks and suggestions only through `IronPetAPI`, over an in-memory database.
 @MainActor

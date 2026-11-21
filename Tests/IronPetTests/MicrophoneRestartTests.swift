@@ -1,6 +1,7 @@
 import AVFoundation
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 private func format(rate: Double, channels: AVAudioChannelCount) -> AVAudioFormat {
     AVAudioFormat(commonFormat: .pcmFormatFloat32, sampleRate: rate, channels: channels, interleaved: false)!

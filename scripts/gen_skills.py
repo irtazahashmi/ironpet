@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Compiles skills/<name>/SKILL.md into Sources/IronPet/Skills/BundledSkillsData.swift.
+"""Compiles skills/<name>/SKILL.md into Sources/IronPetCore/Skills/BundledSkillsData.swift.
 
 Run it after adding or editing a skill. A test fails when the generated file is out of date.
 A skill is a folder under skills/ with a SKILL.md whose frontmatter has `name` and `description`.
@@ -9,7 +9,7 @@ import re
 import sys
 
 root = pathlib.Path(__file__).resolve().parent.parent
-out = root / "Sources/IronPet/Skills/BundledSkillsData.swift"
+out = root / "Sources/IronPetCore/Skills/BundledSkillsData.swift"
 
 entries = []
 for skill in sorted((root / "skills").glob("*/SKILL.md")):

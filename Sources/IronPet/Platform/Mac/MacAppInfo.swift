@@ -1,5 +1,6 @@
 import Darwin
 import Foundation
+import IronPetCore
 
 /// Finds the app that started an agent by walking its parent processes with `sysctl` and `proc_pidpath`.
 struct MacAppInfo: AppInfo {

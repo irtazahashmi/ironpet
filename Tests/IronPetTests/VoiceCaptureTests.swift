@@ -1,6 +1,7 @@
 import AVFoundation
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class VoiceCaptureTests: XCTestCase {
     private func buffer(rate: Double, channels: AVAudioChannelCount, frames: AVAudioFrameCount) -> AVAudioPCMBuffer {

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerates Sources/IronPet/Chat/ACP/AgentCatalogData.swift from the ACP registry's agent.json files.
+"""Regenerates Sources/IronPetCore/Chat/ACP/AgentCatalogData.swift from the ACP registry's agent.json files.
 
 Usage: scripts/gen_agent_catalog.py [path to a registry checkout]
 Without an argument it clones https://github.com/agentclientprotocol/registry into a temporary folder.
@@ -82,7 +82,7 @@ def main():
         arg_text = "[" + ", ".join(swift(a) for a in args) + "]"
         out.append(f"        ACPAgent(id: {swift(aid)}, name: {swift(name)}, command: {swift(command)}, args: {arg_text}, helper: {helper_text}),")
     out += ["    ]", "}", ""]
-    target = os.path.join(os.path.dirname(__file__), "..", "Sources", "IronPet", "Chat", "ACP", "AgentCatalogData.swift")
+    target = os.path.join(os.path.dirname(__file__), "..", "Sources", "IronPetCore", "Chat", "ACP", "AgentCatalogData.swift")
     os.makedirs(os.path.dirname(target), exist_ok=True)
     open(target, "w").write("\n".join(out))
     print(f"wrote {len(rows)} agents to {os.path.normpath(target)}")

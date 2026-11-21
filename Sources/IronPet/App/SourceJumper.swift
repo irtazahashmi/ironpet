@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 
 /// Brings the app that owns a session to the front, opening its folder there when the app can.
 enum SourceJumper {

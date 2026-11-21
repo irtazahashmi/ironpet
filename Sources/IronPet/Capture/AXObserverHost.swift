@@ -1,5 +1,6 @@
 import ApplicationServices
 import Foundation
+import IronPetCore
 
 /// Owns the thread that every `AXObserver` lives on. Creating, adding, removing and invalidating an observer, and releasing the
 /// context HIServices holds a pointer to, all happen on this thread, which is also the thread the observer's callbacks run on. A

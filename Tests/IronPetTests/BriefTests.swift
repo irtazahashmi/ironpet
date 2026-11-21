@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// Shared fixtures: Tuesday 2026-11-17 in UTC, after the Monday the automation tests use.
 private enum BriefFixture {

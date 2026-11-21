@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 
 /// The layout every section of the ironpet window shares, so the lists look and behave the same:

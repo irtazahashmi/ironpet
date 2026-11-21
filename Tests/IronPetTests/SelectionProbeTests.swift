@@ -1,6 +1,7 @@
 import AppKit
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 @MainActor
 final class SelectionProbeTests: XCTestCase {

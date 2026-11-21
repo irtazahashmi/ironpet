@@ -3,6 +3,7 @@ import XCTest
 import Combine
 #endif
 @testable import IronPet
+@testable import IronPetCore
 
 /// Each store fires its `changes` signal from `willSet`, and its facade forwards the signal. A handler runs before the value
 /// changes, so each test also records what the store held when the signal fired.

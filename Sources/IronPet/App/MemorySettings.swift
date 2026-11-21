@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 
 /// What Settings → Memory shows and does: the recent changes with Undo, the files with an editor, and search. The rules (writing,

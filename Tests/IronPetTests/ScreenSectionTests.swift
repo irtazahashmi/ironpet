@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class ScreenSectionTests: XCTestCase {
     func testTheSummarySaysHowManyCapturesAreStored() {

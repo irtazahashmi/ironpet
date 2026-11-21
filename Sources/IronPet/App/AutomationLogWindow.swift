@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 
 /// The execution log of the automations: every poll and script run (quiet ones too), and every reminder, shell command and

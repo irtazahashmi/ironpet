@@ -1,3 +1,4 @@
+import IronPetCore
 import SwiftUI
 
 /// What the detail panel of a task or suggestion shows. Only fields that have a value appear, so the view never draws an empty label.

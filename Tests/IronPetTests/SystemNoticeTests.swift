@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// System notices: metadata that goes to the agent and never renders (S5, S6, S7, S13 to S16).
 @MainActor

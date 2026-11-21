@@ -1,0 +1,349 @@
+import Foundation
+#if canImport(Combine)
+import Combine
+#endif
+
+package struct HookEvent {
+    package init(source: AgentSource, name: String, payload: [String: Any], origin: SessionOrigin) {
+        self.source = source
+        self.name = name
+        self.payload = payload
+        self.origin = origin
+    }
+
+    package let source: AgentSource
+    package let name: String
+    package let payload: [String: Any]
+    package let origin: SessionOrigin
+}
+
+/// Folds hook events into per-session status and a single pet-level summary.
+@MainActor
+package final class SessionStore {
+    package init() {}
+
+    /// Fires before `sessions` changes.
+    package let changes = ChangeSignal()
+    package private(set) var sessions: [String: AgentSession] = [:] {
+        willSet { changes.send() }
+        didSet { events?.publish(.agentsChanged) }
+    }
+    /// Where changes are published for API clients.
+    package weak var events: APIEventBus?
+    /// Finds which app owns an agent's process. `AppDelegate` sets the Mac one.
+    package var appInfo: AppInfo = UnsupportedAppInfo()
+
+    /// Called when a session enters a status worth announcing.
+    package var onAttention: ((AgentSession) -> Void)?
+
+    package var ordered: [AgentSession] {
+        sessions.values
+            .filter { $0.status != .idle }
+            .sorted { ($0.status, $0.updatedAt) > ($1.status, $1.updatedAt) }
+    }
+
+    /// Most urgent status and how many sessions share it.
+    package var summary: (status: AgentStatus, count: Int) {
+        let top = sessions.values.map(\.status).max() ?? .idle
+        return (top, sessions.values.filter { $0.status == top }.count)
+    }
+
+    package func apply(_ event: HookEvent) {
+        guard let sessionID = Self.sessionID(event) else { return }
+        let key = "\(event.source.rawValue):\(sessionID)"
+        var session = sessions[key] ?? AgentSession(id: key, source: event.source)
+        let previous = session.status
+        if session.origin.workspace == nil { session.origin.workspace = event.origin.workspace }
+        if let term = event.origin.termProgram, !term.isEmpty { session.origin.termProgram = term }
+        if let iterm = event.origin.itermSessionID, !iterm.isEmpty { session.origin.itermSessionID = iterm }
+        if let id = event.origin.cmuxWorkspaceID { session.origin.cmuxWorkspaceID = id }
+        if let id = event.origin.cmuxSurfaceID { session.origin.cmuxSurfaceID = id }
+        if let id = event.origin.t3ThreadID { session.origin.t3ThreadID = id }
+        if let id = event.origin.herdrTerminalID { session.origin.herdrTerminalID = id }
+        if let id = event.origin.orcaTerminalHandle { session.origin.orcaTerminalHandle = id }
+        if session.origin.ownerBundleID == nil, let pid = event.origin.pid {
+            // Resolve now: the agent's process can exit before the user clicks the button.
+            session.origin.pid = pid
+            session.origin.ownerBundleID = (try? appInfo.owningBundleID(pid: pid)) ?? nil
+        }
+        session.updatedAt = Date()
+
+        switch event.source {
+        case .cursor: applyCursor(event, to: &session)
+        // Codex sends Claude Code's event names and fields.
+        case .claude, .codex: applyClaude(event, to: &session)
+        case .gemini: applyGemini(event, to: &session)
+        case .copilot: applyCopilot(event, to: &session)
+        case .pi: applyPi(event, to: &session)
+        case .job: return
+        }
+
+        if session.ended, session.status == .idle {
+            sessions[key] = nil
+        } else {
+            sessions[key] = session
+        }
+        if session.status != previous, [.needsInput, .failed, .done].contains(session.status) {
+            onAttention?(session)
+        }
+    }
+
+    /// Shows a background job's row (`Job.agentSession`), or removes it when `session` is nil. A row the user already
+    /// acknowledged stays hidden until the job changes again.
+    package func setJob(_ key: String, _ session: AgentSession?) {
+        guard let session else {
+            sessions[key] = nil
+            return
+        }
+        let previous = sessions[key]
+        if let previous, previous.status == .idle, previous.updatedAt == session.updatedAt { return }
+        sessions[key] = session
+        if session.status != previous?.status, [.needsInput, .failed, .done].contains(session.status) {
+            onAttention?(session)
+        }
+    }
+
+    /// Sample sessions for `--render-previews`.
+    package func loadPreview(_ preview: [AgentSession]) {
+        sessions = Dictionary(uniqueKeysWithValues: preview.map { ($0.id, $0) })
+    }
+
+    package func acknowledge(_ id: String) {
+        guard var session = sessions[id] else { return }
+        guard session.status == .done || session.status == .failed else { return }
+        session.status = .idle
+        sessions[id] = session.ended ? nil : session
+    }
+
+    package func acknowledgeAll() {
+        for id in sessions.keys { acknowledge(id) }
+    }
+
+    /// Drops sessions whose agent went quiet without a closing event.
+    package func sweep(now: Date = Date()) {
+        for (id, session) in sessions where session.source != .job {
+            let age = now.timeIntervalSince(session.updatedAt)
+            if (session.status == .running || session.status == .needsInput), age > 30 * 60 {
+                sessions[id]?.status = .idle
+            } else if session.status == .idle, age > 2 * 60 * 60 {
+                sessions[id] = nil
+            }
+        }
+    }
+
+    private static func sessionID(_ event: HookEvent) -> String? {
+        (event.payload["conversation_id"] as? String) ?? (event.payload["session_id"] as? String)
+            ?? (event.payload["sessionId"] as? String)
+    }
+
+    private func applyCursor(_ event: HookEvent, to session: inout AgentSession) {
+        let p = event.payload
+        if let root = (p["workspace_roots"] as? [String])?.first { session.origin.workspace = root }
+        switch event.name {
+        case "sessionStart":
+            // Headless cursor-agent never fires beforeSubmitPrompt.
+            if session.status == .idle { session.status = .running }
+        case "beforeSubmitPrompt":
+            session.status = .running
+            session.prompt = (p["prompt"] as? String).map(Self.snippet) ?? session.prompt
+            session.detail = nil
+            session.startTurn()
+        case "postToolUse":
+            if session.status != .needsInput { session.status = .running }
+            if let tool = p["tool_name"] as? String {
+                session.detail = tool
+                if Self.cursorEditTools.contains(tool) { session.noteEdit(Self.path(in: p["tool_input"])) }
+            }
+        case "afterAgentResponse":
+            if session.status != .needsInput { session.status = .running }
+            if let text = (p["text"] ?? p["response"]) as? String, !text.isEmpty { session.lastResponse = text }
+        case "stop":
+            switch p["status"] as? String {
+            case "error": session.status = .failed
+            case "aborted": session.status = .idle
+            default: session.status = .done
+            }
+        case "sessionEnd":
+            session.ended = true
+            if session.status == .running {
+                session.status = (p["reason"] as? String) == "error" ? .failed : .done
+            }
+        default:
+            break
+        }
+    }
+
+    private func applyClaude(_ event: HookEvent, to session: inout AgentSession) {
+        let p = event.payload
+        if let cwd = p["cwd"] as? String { session.origin.workspace = cwd }
+        switch event.name {
+        case "UserPromptSubmit":
+            session.status = .running
+            session.prompt = (p["prompt"] as? String).map(Self.snippet) ?? session.prompt
+            session.detail = nil
+            session.startTurn()
+        case "PreToolUse", "PostToolUse":
+            session.status = .running
+            if let tool = p["tool_name"] as? String {
+                session.detail = tool
+                if event.name == "PostToolUse", Self.claudeEditTools.contains(tool) {
+                    session.noteEdit(Self.path(in: p["tool_input"]))
+                }
+            }
+        case "PermissionRequest":
+            session.status = .needsInput
+            if let tool = p["tool_name"] as? String { session.detail = "Wants to use \(tool)" }
+        case "StopFailure":
+            session.status = .failed
+            session.detail = p["error"] as? String ?? session.detail
+        case "Notification":
+            let type = p["notification_type"] as? String
+            let message = p["message"] as? String ?? ""
+            let isIdleReminder = type == "idle_prompt" || message.localizedCaseInsensitiveContains("waiting for your input")
+            if !isIdleReminder {
+                session.status = .needsInput
+                session.detail = message
+            }
+        case "Stop":
+            session.status = .done
+            session.lastResponse = (p["last_assistant_message"] as? String)
+                ?? (p["transcript_path"] as? String).flatMap { Self.lastAssistantText(transcript: $0) }
+                ?? session.lastResponse
+        case "SessionEnd":
+            session.ended = true
+            if session.status == .running || session.status == .needsInput { session.status = .idle }
+        default:
+            break
+        }
+    }
+
+    /// Gemini CLI: BeforeAgent and AfterAgent bracket a turn; tools report as BeforeTool and AfterTool.
+    private func applyGemini(_ event: HookEvent, to session: inout AgentSession) {
+        let p = event.payload
+        if let cwd = p["cwd"] as? String { session.origin.workspace = cwd }
+        switch event.name {
+        case "BeforeAgent":
+            session.status = .running
+            session.prompt = (p["prompt"] as? String).map(Self.snippet) ?? session.prompt
+            session.detail = nil
+            session.startTurn()
+        case "BeforeTool", "AfterTool":
+            if session.status != .needsInput { session.status = .running }
+            if let tool = p["tool_name"] as? String {
+                session.detail = tool
+                if event.name == "AfterTool", Self.geminiEditTools.contains(tool) { session.noteEdit(Self.path(in: p["tool_input"])) }
+            }
+        case "Notification":
+            session.status = .needsInput
+            session.detail = p["message"] as? String ?? session.detail
+        case "AfterAgent":
+            session.status = .done
+            session.lastResponse = (p["prompt_response"] as? String).flatMap { $0.isEmpty ? nil : $0 } ?? session.lastResponse
+        case "SessionEnd":
+            session.ended = true
+            if session.status == .running || session.status == .needsInput { session.status = .idle }
+        default:
+            break
+        }
+    }
+
+    /// GitHub Copilot CLI (camelCase payloads: `sessionId`, `toolName`, `prompt`).
+    private func applyCopilot(_ event: HookEvent, to session: inout AgentSession) {
+        let p = event.payload
+        if let cwd = p["cwd"] as? String { session.origin.workspace = cwd }
+        switch event.name {
+        case "userPromptSubmitted":
+            session.status = .running
+            session.prompt = (p["prompt"] as? String).map(Self.snippet) ?? session.prompt
+            session.detail = nil
+            session.startTurn()
+        case "preToolUse", "postToolUse":
+            if session.status != .needsInput { session.status = .running }
+            if let tool = p["toolName"] as? String {
+                session.detail = tool
+                if event.name == "postToolUse", Self.copilotEditTools.contains(tool) {
+                    session.noteEdit(Self.path(in: p["toolArgs"] ?? (p["toolArgs"] as? String).flatMap(Self.parseJSON)))
+                }
+            }
+        case "permissionRequest":
+            session.status = .needsInput
+            if let tool = p["toolName"] as? String { session.detail = "Wants to use \(tool)" }
+        case "errorOccurred":
+            session.status = .failed
+            session.detail = ((p["error"] as? [String: Any])?["message"] as? String) ?? session.detail
+        case "agentStop":
+            if session.status != .failed { session.status = .done }
+        case "sessionEnd":
+            session.ended = true
+            if session.status == .running || session.status == .needsInput { session.status = .idle }
+        default:
+            break
+        }
+    }
+
+    /// Pi: events come from ironpet's own extension (see `HookInstaller.piExtension`), which names them itself.
+    private func applyPi(_ event: HookEvent, to session: inout AgentSession) {
+        let p = event.payload
+        if let cwd = p["cwd"] as? String { session.origin.workspace = cwd }
+        switch event.name {
+        case "agent_start":
+            session.status = .running
+            session.prompt = (p["prompt"] as? String).map(Self.snippet) ?? session.prompt
+            session.detail = nil
+            session.startTurn()
+        case "tool":
+            if session.status != .needsInput { session.status = .running }
+            session.detail = p["tool_name"] as? String ?? session.detail
+        case "agent_settled":
+            session.status = .done
+        case "session_shutdown":
+            session.ended = true
+            if session.status == .running || session.status == .needsInput { session.status = .idle }
+        default:
+            break
+        }
+    }
+
+    private static func parseJSON(_ text: String) -> Any? {
+        try? JSONSerialization.jsonObject(with: Data(text.utf8))
+    }
+
+    package static let geminiEditTools: Set<String> = ["write_file", "replace"]
+    package static let copilotEditTools: Set<String> = ["edit", "create", "write", "str_replace_editor"]
+    package static let cursorEditTools: Set<String> = ["Write", "Edit", "StrReplace", "MultiEdit", "Delete", "EditNotebook"]
+    package static let claudeEditTools: Set<String> = ["Edit", "MultiEdit", "Write", "NotebookEdit", "apply_patch"]
+
+    private static func path(in input: Any?) -> String? {
+        guard let input = input as? [String: Any] else { return nil }
+        return (input["file_path"] ?? input["path"] ?? input["target_file"] ?? input["notebook_path"]) as? String
+    }
+
+    /// Last assistant text in a Claude Code transcript (JSONL). Reads only the tail of the file.
+    package static func lastAssistantText(transcript path: String) -> String? {
+        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
+        defer { try? handle.close() }
+        let size = (try? handle.seekToEnd()) ?? 0
+        try? handle.seek(toOffset: size > 256_000 ? size - 256_000 : 0)
+        let tail = String(decoding: handle.readDataToEndOfFile(), as: UTF8.self)
+        for line in tail.split(separator: "\n").reversed() {
+            guard let object = try? JSONSerialization.jsonObject(with: Data(line.utf8)) as? [String: Any],
+                  object["type"] as? String == "assistant",
+                  let content = (object["message"] as? [String: Any])?["content"] as? [[String: Any]] else { continue }
+            let text = content.compactMap { $0["type"] as? String == "text" ? $0["text"] as? String : nil }.joined()
+            if !text.isEmpty { return text }
+        }
+        return nil
+    }
+
+    private static func snippet(_ text: String) -> String {
+        let line = text.split(whereSeparator: \.isNewline).first.map(String.init) ?? text
+        return line.count > 80 ? String(line.prefix(77)) + "…" : line
+    }
+}
+
+#if canImport(Combine)
+
+extension SessionStore: ObservableObject {
+    package nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
+}
+#endif

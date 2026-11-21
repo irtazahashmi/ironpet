@@ -18,6 +18,10 @@ Instructions for AI agents working in this repository: ironpet, a macOS desktop 
 - Never type the user's Keychain or login password; the user answers those prompts.
 - Never commit `~/.ironpet` content, tokens, `build/` or `.build/`.
 
+## Where code goes
+
+A feature with no UI lands in `IronPetCore` (`Sources/IronPetCore`), the Foundation-only target. UI code, listeners and Mac adapters stay in `Sources/IronPet`, and the UI calls only `IronPetAPI`, never a store. `Tests/IronPetCoreTests/ImportAllowListTests.swift` fails when a core file imports AppKit, SwiftUI or another Mac framework. `SPEC.md` ("Two targets") has the details.
+
 ## Screenshots in pull requests
 
 `gh` cannot upload images, so don't ask the user to drag them in. Render previews from sample data (`--render-previews`), push them to the `pr-screenshots` branch under `pr-<number>/`, and link them from a **Screenshots** section in the PR body. `pr-screenshots` shares no history with `main` and is never merged. The commands are in `.cursor/skills/dev-open-pr/SKILL.md` › Screenshots.

@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import IronPetCore
 import SwiftUI
 
 /// Transparent, non-activating panel beside the pet that holds the bubble stack.

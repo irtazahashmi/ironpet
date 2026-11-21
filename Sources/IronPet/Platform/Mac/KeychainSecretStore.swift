@@ -1,4 +1,5 @@
 import Foundation
+import IronPetCore
 import Security
 
 /// Secrets in the macOS Keychain, as generic passwords. The items carry no accessibility attribute, as they never did, so items

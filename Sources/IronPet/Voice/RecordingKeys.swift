@@ -1,5 +1,6 @@
 import Carbon
 import Combine
+import IronPetCore
 
 /// Enter and Esc as global shortcuts, held only while a voice note is recording: Enter stops and transcribes, Esc
 /// cancels. They follow `VoiceController.phase`, so every way a recording can end (stop, cancel, a microphone

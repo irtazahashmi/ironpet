@@ -1,6 +1,7 @@
 import AppKit
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// Drives the pet, the gallery, backgrounds and the asset manifest only through `IronPetAPI`, over temporary folders.
 @MainActor

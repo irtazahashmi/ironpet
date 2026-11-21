@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 @MainActor
 final class MemoryPreambleTests: XCTestCase {

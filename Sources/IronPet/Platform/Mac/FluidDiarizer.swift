@@ -1,5 +1,6 @@
 import FluidAudio
 import Foundation
+import IronPetCore
 
 /// FluidAudio's offline pipeline (a Core ML port of pyannote community-1 with WeSpeaker embeddings). The manager is
 /// created on first use and kept, because loading the models costs more than diarizing a chunk.

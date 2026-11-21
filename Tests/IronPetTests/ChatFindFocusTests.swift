@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// Cmd-F must move keyboard focus into the find field wherever focus was before.
 @MainActor

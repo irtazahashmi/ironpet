@@ -1,6 +1,7 @@
 import CryptoKit
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 private final class SegmentsStub: URLProtocol, @unchecked Sendable {
     override class func canInit(with request: URLRequest) -> Bool { true }

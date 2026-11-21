@@ -1,4 +1,5 @@
 import Foundation
+import IronPetCore
 import ServiceManagement
 
 /// Starts ironpet when the user logs in. Chosen in the welcome window; Settings and the pet's menu toggle it.

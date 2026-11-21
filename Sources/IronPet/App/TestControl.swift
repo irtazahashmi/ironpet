@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 
 /// End-to-end test hooks, served at `/test/*` only when ironpet runs with `--test-mode`.
 /// They drive the same code paths as the UI (show chat, send, Allow/Deny, notification click, capture),

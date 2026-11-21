@@ -3,6 +3,7 @@ import Darwin
 import Security
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class RemoteTestClock: @unchecked Sendable {
     private let lock = NSLock()

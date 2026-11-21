@@ -1,4 +1,5 @@
 import Foundation
+import IronPetCore
 import Network
 
 /// Minimal loopback HTTP endpoint that receives `POST /event` from the hook script.

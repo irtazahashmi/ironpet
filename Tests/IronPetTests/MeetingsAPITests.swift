@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// Drives meetings and transcripts only through `IronPetAPI`. The library and the controller are passed to the helper only to
 /// give them a temporary folder and a stub summary agent.

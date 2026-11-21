@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 
 /// The Dock and ⌘-Tab icon while the app runs: the chosen pet's idle frame. Only `NSApp.applicationIconImage` changes.
 /// The app bundle and the Finder icon stay as they are.

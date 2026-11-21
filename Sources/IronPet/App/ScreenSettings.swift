@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 
 /// Settings → Screen: the master switch for screen capture and everything that goes with it.

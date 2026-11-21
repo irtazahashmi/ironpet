@@ -1,5 +1,6 @@
 import AppKit
 import ImageIO
+import IronPetCore
 import UniformTypeIdentifiers
 
 /// Turns pasted or dropped images into PNG files in the screenshots folder, so they attach

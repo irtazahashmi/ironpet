@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 
 /// The one-time welcome window. Nothing outside `~/.ironpet` is touched until the user presses Start, and only what

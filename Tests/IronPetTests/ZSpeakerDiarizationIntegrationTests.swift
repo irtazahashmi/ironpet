@@ -1,6 +1,7 @@
 import AVFoundation
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// The Z prefix makes this class run last (XCTest runs classes alphabetically): loading Core ML models in this process
 /// must not happen before the AppKit scroll tests in `TranscriptResizeTests`.

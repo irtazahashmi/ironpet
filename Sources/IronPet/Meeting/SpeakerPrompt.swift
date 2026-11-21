@@ -1,4 +1,5 @@
 import AVFoundation
+import IronPetCore
 import SwiftUI
 
 /// Plays the 3 to 5 second clip of a voice from its chunk file. Only the part of the WAV that is needed is read.

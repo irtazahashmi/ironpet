@@ -1,3 +1,4 @@
+import IronPetCore
 import SwiftUI
 
 /// The tasks as five columns. A card opens the task, and dropping it on another column changes its status.

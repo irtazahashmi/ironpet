@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 
 /// The Automations tab: every reminder and watcher with a switch, when it runs next, and how its last run went.

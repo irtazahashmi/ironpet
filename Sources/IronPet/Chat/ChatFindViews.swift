@@ -1,3 +1,4 @@
+import IronPetCore
 import SwiftUI
 
 extension ChatFind {

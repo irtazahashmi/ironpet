@@ -1,5 +1,8 @@
 import AppKit
+import IronPetCore
 import SwiftUI
+
+Log.fallbackSink = OSLogLog()
 
 // `IronPet automations …`, `IronPet tasks …`, `IronPet notifications …` and `IronPet mcp` talk to the running app and never open a window.
 if CommandLine.arguments.dropFirst().first == "automations" {
@@ -34,6 +37,8 @@ if CommandLine.arguments.contains("--uninstall") {
     }
     exit(0)
 }
+
+MainActor.assumeIsolated { PetAPI.live = .onThisMac() }
 
 if CommandLine.arguments.contains("--render-previews") {
     MainActor.assumeIsolated { PreviewRenderer.run(arguments: CommandLine.arguments) }

@@ -21,17 +21,19 @@ final class BoundaryTests: XCTestCase {
     /// Files that build every store from sample data to render screenshots. They are a test harness, not a client.
     static let harnesses: Set<String> = ["App/PreviewRenderer.swift"]
 
-    private static var sources: URL {
-        URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Sources/IronPet")
+    /// The Mac target and the portable core. A path below is relative to whichever folder holds the file.
+    private static var sourceRoots: [URL] {
+        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return ["Sources/IronPet", "Sources/IronPetCore"].map { repo.appendingPathComponent($0) }
     }
 
     private static func swiftFiles() -> [(path: String, text: String)] {
-        let root = sources
-        guard let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else { return [] }
-        return walker.compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }.compactMap { url in
-            guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-            return (String(url.path.dropFirst(root.path.count + 1)), text)
+        sourceRoots.flatMap { root -> [(path: String, text: String)] in
+            guard let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else { return [] }
+            return walker.compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }.compactMap { url in
+                guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+                return (String(url.path.dropFirst(root.path.count + 1)), text)
+            }
         }
     }
 
@@ -168,7 +170,7 @@ final class BoundaryTests: XCTestCase {
     ]
 
     func testCoreFilesNameNoMacOnlyAPIs() {
-        let files = Dictionary(uniqueKeysWithValues: Self.swiftFiles().map { ($0.path, $0.text) })
+        let files = Dictionary(Self.swiftFiles().map { ($0.path, $0.text) }, uniquingKeysWith: { $0 + "\n" + $1 })
         var violations: [String] = []
         for path in Self.coreFiles {
             guard let text = files[path] else { XCTFail("\(path) moved: update BoundaryTests.coreFiles"); continue }

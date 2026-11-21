@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// Drives the shared chat only through `IronPetAPI`: Codable requests, Codable answers and bus events. The agent is a scripted
 /// `turnRunner`; the helper receives the engine only so the test can set that runner, the way it would set a fake agent process.

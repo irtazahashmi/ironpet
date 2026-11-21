@@ -1,4 +1,5 @@
 import Foundation
+import IronPetCore
 
 /// The Mac speaker for a conversation is the speech player.
 extension SpeechPlayer: ConversationSpeaker {}

@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// A running turn that can take messages: queued rows become sent messages in order, and an approval holds them.
 @MainActor

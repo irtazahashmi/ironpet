@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class ActionItemsTests: XCTestCase {
     private let summary = """

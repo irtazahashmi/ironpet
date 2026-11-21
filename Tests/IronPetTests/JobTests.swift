@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// An agent process whose turns follow a script. `hold` keeps a turn open until `release()` or `cancel()`.
 @MainActor

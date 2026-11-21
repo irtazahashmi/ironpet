@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// Builds an `IronPetAPI` over in-memory stores, so an area's tests drive it only through the API. Each step adds its own
 /// stores here as its namespace appears.

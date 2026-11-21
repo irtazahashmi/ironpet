@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 
 /// The text of the Screen section, kept apart from the view so tests can check it.

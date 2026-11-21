@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 
 /// Everything ironpet announces goes out as a bubble next to Ghost, and optionally as a macOS notification too.
@@ -224,7 +225,7 @@ final class Announcer {
         return true
     }
 
-    static let tasksDueID = "task-due"
+    static let tasksDueID = WelcomeBack.tasksDueID
 
     /// Open tasks that are due today or overdue. Stays until answered or closed, since it comes once per due date.
     func tasksDue(_ tasks: [TaskItem], chime: Bool, done: @escaping () -> Void, snooze: @escaping () -> Void,

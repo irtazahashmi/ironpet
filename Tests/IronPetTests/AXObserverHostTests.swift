@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class AXObserverHostTests: XCTestCase {
     /// Records where each step runs and whether a callback arrives after its observer was torn down.

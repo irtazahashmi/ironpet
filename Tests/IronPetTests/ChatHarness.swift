@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// The chat as the Mac builds it: the engine, `ChatAPI` over it, and the window's `ChatViewModel` on top, joined by one event bus.
 /// A test types into `model` and reads `model` or `api`. The engine is passed in only so the test can set its scripted agent.
