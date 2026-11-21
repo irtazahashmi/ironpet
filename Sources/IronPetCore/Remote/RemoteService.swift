@@ -142,7 +142,7 @@ package final class RemoteService: @unchecked Sendable {
     private var buckets: [String: Bucket] = [:]
     private var touched: [String: Date] = [:]
     private var screenWindows: [String: Window] = [:]
-    private var sockets: [UUID: (device: String, close: @Sendable () -> Void)] = [:]
+    private var sockets: [UUID: (device: String, kind: String, close: @Sendable () -> Void)] = [:]
     private var lastPrune = Date.distantPast
 
     package init(store: RemoteStore, identity: RemoteIdentity, now: @escaping () -> Date = Date.init) {
@@ -383,13 +383,17 @@ package final class RemoteService: @unchecked Sendable {
 
     // MARK: Sockets
 
-    /// Registers an open event socket, or returns nil when the device already has three. `close` ends the socket.
-    package func openSocket(device: String, close: @escaping @Sendable () -> Void) -> UUID? {
+    /// The kind of the event socket, `/v1/events`. The voice socket has its own kind, so it does not use up a device's event sockets.
+    package static let eventsSocket = "events"
+    package static let voiceSocket = "voice"
+
+    /// Registers an open socket, or returns nil when the device already has three of this `kind`. `close` ends the socket.
+    package func openSocket(device: String, kind: String = RemoteService.eventsSocket, close: @escaping @Sendable () -> Void) -> UUID? {
         lock.lock()
         defer { lock.unlock() }
-        guard sockets.values.filter({ $0.device == device }).count < Self.socketsPerDevice else { return nil }
+        guard sockets.values.filter({ $0.device == device && $0.kind == kind }).count < Self.socketsPerDevice else { return nil }
         let id = UUID()
-        sockets[id] = (device, close)
+        sockets[id] = (device, kind, close)
         return id
     }
 
@@ -399,10 +403,10 @@ package final class RemoteService: @unchecked Sendable {
         lock.unlock()
     }
 
-    package func socketCount(device: String) -> Int {
+    package func socketCount(device: String, kind: String = RemoteService.eventsSocket) -> Int {
         lock.lock()
         defer { lock.unlock() }
-        return sockets.values.filter { $0.device == device }.count
+        return sockets.values.filter { $0.device == device && $0.kind == kind }.count
     }
 
     package func closeSockets(device: String) {

@@ -363,6 +363,7 @@ private struct FormCard: View {
 
 private struct Composer: View {
     let model: ChatModel
+    @Environment(VoiceModel.self) private var voice: VoiceModel?
     @Binding var showFiles: Bool
     @Binding var photos: [PhotosPickerItem]
     @Binding var focused: Bool
@@ -379,6 +380,7 @@ private struct Composer: View {
                 } label: { Image(systemName: "paperclip").glassCircle() }
                     .accessibilityLabel("Attach").accessibilityIdentifier("attach-button")
                 field
+                if let voice { MicButton(voice: voice) }
                 if model.running {
                     Button { Task { await model.stopTurn() } } label: {
                         Image(systemName: "stop.fill")
@@ -392,6 +394,7 @@ private struct Composer: View {
             }
         }
         .animation(.easeOut(duration: 0.12), value: model.running)
+        .onChange(of: model.draft) { _, _ in voice?.userTyped() }
         .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 8)
     }
 

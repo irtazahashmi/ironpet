@@ -13,6 +13,8 @@ public enum APIPath {
     /// The Mac calls Skip "reject".
     public static func rejectSuggestion(_ id: String) -> String { "/v1/suggestions/\(id)/reject" }
     public static let events = "/v1/events"
+    /// The voice socket: audio from the phone, transcripts and spoken replies from the Mac.
+    public static let voice = "/v1/voice"
     public static let pet = "/v1/pet"
     public static func trick(_ name: String) -> String { "/v1/pet/tricks/\(name)" }
     public static let bubbles = "/v1/bubbles"

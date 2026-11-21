@@ -34,6 +34,7 @@ targets:
         UILaunchScreen: {}
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait, UIInterfaceOrientationLandscapeLeft, UIInterfaceOrientationLandscapeRight]
         NSCameraUsageDescription: IronPet scans the pairing QR code that your Mac shows.
+        NSMicrophoneUsageDescription: IronPet records what you say and sends it to your Mac, which turns it into text.
         NSLocalNetworkUsageDescription: IronPet talks to the IronPet app on your Mac over your local network.
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
