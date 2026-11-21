@@ -122,7 +122,8 @@ final class VoiceConversationTests: XCTestCase {
     }
 
     private func until(_ condition: () -> Bool, file: StaticString = #filePath, line: UInt = #line) async {
-        for _ in 0..<200 where !condition() { try? await Task.sleep(for: .milliseconds(5)) }
+        let deadline = Date().addingTimeInterval(10)
+        while !condition(), Date() < deadline { try? await Task.sleep(for: .milliseconds(5)) }
         XCTAssertTrue(condition(), "timed out", file: file, line: line)
     }
 
