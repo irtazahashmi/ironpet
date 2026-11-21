@@ -36,8 +36,8 @@ enum AgentCatalog {
 /// The PATH of the user's login shell. A Finder-launched app has a minimal PATH that misses Homebrew and nvm.
 enum LoginShell {
     private static let condition = NSCondition()
-    nonisolated(unsafe) private static var resolved: String?
-    nonisolated(unsafe) private static var resolving = false
+    nonisolated(unsafe) private static var resolved: String? // Read and written only while holding `condition`.
+    nonisolated(unsafe) private static var resolving = false // Same: only while holding `condition`.
 
     /// The login-shell PATH once `prepare(spawner:)` has found it. Until `prepare` was called it is the app's PATH plus the usual
     /// folders, without running a shell. While `prepare` is still working, a read waits for it, as the first read always did.

@@ -402,6 +402,8 @@ final class ChatSession: ObservableObject {
 
     /// Lists the installed agents that speak ACP. The first launch switches to an installed one if the saved choice is missing.
     func refreshAgents() async {
+        // Before `AppDelegate` wires the Mac spawner every probe would fail, and the list would lose the agents that answer by spawning.
+        guard spawner.isSupported else { return }
         let found = await ACPProbe.installed(spawner: spawner)
         guard !found.isEmpty else { return }
         agents = found

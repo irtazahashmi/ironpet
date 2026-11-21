@@ -49,7 +49,7 @@ final class VoiceAPI {
     /// Audio to text. Tests replace it; the default posts to the voice server.
     lazy var transcribeAudio: @Sendable (Data, String, String) async throws -> String = { [weak self] audio, name, mime in
         let voice = await MainActor.run { SettingsAPI.live.config.voice }
-        let key = await MainActor.run { self?.voiceKey ?? .unsupported }
+        let key = await MainActor.run { [weak self] in self?.voiceKey ?? .unsupported }
         let transcriber = Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: key.load(), usageFeature: .voiceTranscription)
         // Decodes formats the server may not read (Telegram's Opus voice notes) when macOS can, and sends the rest as they are.
         return try await TelegramVoice.transcribe(audio, name: name, with: transcriber)

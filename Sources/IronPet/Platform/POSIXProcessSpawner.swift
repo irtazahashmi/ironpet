@@ -115,7 +115,7 @@ struct POSIXProcessSpawner: ProcessSpawner {
 }
 
 /// A process started by `POSIXProcessSpawner`. A background thread reaps it with `waitpid`.
-final class POSIXProcess: RunningProcess, @unchecked Sendable {
+final class POSIXProcess: RunningProcess, @unchecked Sendable { // `result` and `handlers` are read and written only under `lock`; the rest is `let`.
     let pid: Int32
     let input: FileHandle?
     let output: FileHandle?

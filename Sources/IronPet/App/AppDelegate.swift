@@ -104,7 +104,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store.appInfo = platform.appInfo
         chat.spawner = platform.processes
         chat.speech.voiceKey = voiceKey
-        settingsModel.platform = platform
         let keyCache = MeetingController.KeyCache(voiceKey: voiceKey)
         let voiceStore = VoiceStore(url: VoiceStore.defaultURL, key: { [secrets = platform.secrets] in VoiceStoreKey(store: secrets).load() })
         for owner in [meeting] {
@@ -321,6 +320,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         chatModel = ChatViewModel(api: api.chat, voiceAPI: api.voice, events: events)
         chatModel.voice.voiceKey = voiceKey
         api.voice.voiceKey = voiceKey
+        // The settings model needs the API (through the Telegram bridge), so it is wired here and not in `wirePlatform`.
+        settingsModel.platform = platform
         pet.chatModel = chatModel
         pet.meetingsAPI = api.meetings
         pet.events = events

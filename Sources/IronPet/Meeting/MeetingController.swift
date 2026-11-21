@@ -75,7 +75,7 @@ final class MeetingController: ObservableObject {
 
     /// Reads the Keychain once per meeting, off the main thread. A Keychain approval dialog would otherwise
     /// freeze the app, and would reappear for every chunk.
-    final class KeyCache: @unchecked Sendable {
+    final class KeyCache: @unchecked Sendable { // `loaded` is touched only under `lock`.
         private let lock = NSLock()
         private var loaded: String??
         private let voiceKey: VoiceKey

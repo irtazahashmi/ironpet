@@ -38,7 +38,7 @@ extension SecretStore {
 }
 
 /// Keeps secrets in memory. Tests use it, and `--test-mode` does, where a Keychain dialog would block an automated run.
-final class InMemorySecretStore: SecretStore, @unchecked Sendable {
+final class InMemorySecretStore: SecretStore, @unchecked Sendable { // `values` is touched only under `lock`.
     private let lock = NSLock()
     private var values: [String: Data] = [:]
 

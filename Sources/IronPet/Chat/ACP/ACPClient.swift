@@ -142,7 +142,7 @@ final class ACPClient {
 }
 
 /// Runs the agent as a child process and talks to its stdin and stdout.
-final class ACPProcessTransport: ACPTransport, @unchecked Sendable {
+final class ACPProcessTransport: ACPTransport, @unchecked Sendable { // Used from the main actor; the callbacks hop to main before touching state.
     private let executable: URL
     private let arguments: [String]
     private let environment: [String: String]
