@@ -51,6 +51,8 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _openConflict: String?
     private var _uploadFails = false
     private var _uploads: [String: Data] = [:]
+    private var _uploadNames: [String: String] = [:]
+    private var _uploadDelay: TimeInterval = 0
     private let encoder = WireJSON.makeEncoder()
     private(set) var port: UInt16 = 0
     private let tlsIdentity: SecIdentity?
@@ -152,6 +154,8 @@ final class MockIronPetServer: @unchecked Sendable {
     var openConflict: String? { get { lock.lock(); defer { lock.unlock() }; return _openConflict } set { lock.lock(); _openConflict = newValue; lock.unlock() } }
     /// True answers every upload with 500.
     var uploadFails: Bool { get { lock.lock(); defer { lock.unlock() }; return _uploadFails } set { lock.lock(); _uploadFails = newValue; lock.unlock() } }
+    /// Seconds the mock waits before it answers an upload, to look at the app while a send is in flight.
+    var uploadDelay: TimeInterval { get { lock.lock(); defer { lock.unlock() }; return _uploadDelay } set { lock.lock(); _uploadDelay = newValue; lock.unlock() } }
     /// The bytes of an upload by id.
     func uploaded(_ id: String) -> Data? { lock.lock(); defer { lock.unlock() }; return _uploads[id] }
 
@@ -524,9 +528,11 @@ extension MockIronPetServer {
         if parts[1] == "uploads", post, parts.count == 2 {
             if uploadFails { fail(connection, 500, "failed", "the upload failed"); return true }
             let id = "up-\(UUID().uuidString.prefix(6))"
-            lock.lock(); _uploads[id] = request.body; lock.unlock()
             let name = (request.headers["x-file-name"] ?? "file").removingPercentEncoding ?? "file"
-            respond(connection, 201, RemoteUpload(id: id, fileName: name, storedName: "\(id.suffix(6))-\(name)", bytes: request.body.count))
+            let stored = "\(id.suffix(6))-\(name)"
+            lock.lock(); _uploads[id] = request.body; _uploadNames[id] = stored; let delay = _uploadDelay; lock.unlock()
+            let answer = RemoteUpload(id: id, fileName: name, storedName: stored, bytes: request.body.count)
+            if delay > 0 { queue.asyncAfter(deadline: .now() + delay) { [self] in respond(connection, 201, answer) } } else { respond(connection, 201, answer) }
             return true
         }
         guard parts[1] == "chat" else { return false }
@@ -546,7 +552,14 @@ extension MockIronPetServer {
             let queued = _chat.running
             let id = "m-\(_chat.items.count + 1)"
             if queued { _chat.queue.append(RemoteQueued(id: "q-\(id)", text: text)) }
-            else { _chat.items.append(RemoteChatItem(id: id, kind: "user", date: Date(), origin: "ios", text: text)); _chat.running = true; _chat.state = "running" }
+            else {
+                _chat.items.append(RemoteChatItem(id: id, kind: "user", date: Date(), origin: "ios", text: text)); _chat.running = true; _chat.state = "running"
+                // The Mac records each upload as a screenshot item under the name it stored the file as.
+                for (index, upload) in ((request.json["upload_ids"] as? [String]) ?? []).enumerated() {
+                    guard let stored = _uploadNames[upload] else { continue }
+                    _chat.items.append(RemoteChatItem(id: "\(id)-file-\(index)", kind: "screenshot", date: Date(), origin: "ios", fileName: stored, isImage: true))
+                }
+            }
             lock.unlock()
             respond(connection, 200, RemoteSendResult(outcome: queued ? "queued" : "sent"))
             publish(queued ? RemoteEvent.chatState : RemoteEvent.chatItem, id: queued ? "queue" : id)

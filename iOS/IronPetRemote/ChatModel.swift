@@ -1,14 +1,19 @@
 import Foundation
 import IronPetKit
 import Observation
+import UIKit
 
-/// A photo or file picked for the next message. It uploads when the message is sent.
+/// A photo, file or pasted image for the next message. It uploads when the message is sent.
 struct PendingAttachment: Identifiable, Equatable {
     let id = UUID()
     var fileName: String
     var contentType: String
     var data: Data
     var isImage: Bool
+    /// A small picture for the composer, set for pasted images. It lives in memory only.
+    var preview: UIImage?
+
+    static func == (a: Self, b: Self) -> Bool { a.id == b.id }
 }
 
 /// The Chat tab: the one chat the Mac has open. It reads `/v1/chat/current`, reads a message again when `chat.item` names it, and
@@ -16,6 +21,8 @@ struct PendingAttachment: Identifiable, Equatable {
 @MainActor @Observable
 final class ChatModel: SocketModel {
     static let maxUploadBytes = 20 << 20
+    /// Pending images at once, as many as the photo picker allows in one go.
+    static let maxPendingImages = 4
 
     private(set) var snapshot: RemoteChatSnapshot?
     private(set) var items: [RemoteChatItem] = []
@@ -29,6 +36,7 @@ final class ChatModel: SocketModel {
     private(set) var threads: [RemoteChatThread] = []
     /// Photos this phone sent, by the name the Mac saved them under, so the transcript shows a thumbnail instead of a chip.
     private(set) var sentPhotos: [String: Data] = [:]
+    @ObservationIgnored private var pastedCount = 0
 
     var approvals: [RemoteApproval] { snapshot?.approvals ?? [] }
     var forms: [RemoteForm] { snapshot?.forms ?? [] }
@@ -93,27 +101,61 @@ final class ChatModel: SocketModel {
         attachments.append(PendingAttachment(fileName: fileName, contentType: contentType, data: data, isImage: contentType.hasPrefix("image/")))
     }
 
+    /// A pasted image. It is converted to JPEG (PNG with transparency), shrunk to 2048 px and stripped of metadata off the main
+    /// thread, then added with a thumbnail. Returns false when it was refused, with `errorMessage` saying why.
+    @discardableResult
+    func attachPastedImage(_ raw: Data) async -> Bool {
+        guard attachments.filter(\.isImage).count < Self.maxPendingImages else {
+            errorMessage = "You can attach up to \(Self.maxPendingImages) images to one message."
+            return false
+        }
+        let image = await Task.detached(priority: .userInitiated) { PastedImage.normalize(data: raw) }.value
+        guard let image else {
+            errorMessage = "That image could not be read."
+            return false
+        }
+        // The paste may have been the fifth while the first was still converting.
+        guard attachments.filter(\.isImage).count < Self.maxPendingImages else {
+            errorMessage = "You can attach up to \(Self.maxPendingImages) images to one message."
+            return false
+        }
+        pastedCount += 1
+        var pending = PendingAttachment(fileName: "pasted-image-\(pastedCount).\(image.fileExtension)", contentType: image.contentType, data: image.data, isImage: true)
+        pending.preview = PastedImage.thumbnail(from: image.data)
+        attachments.append(pending)
+        errorMessage = nil
+        return true
+    }
+
     func removeAttachment(_ attachment: PendingAttachment) { attachments.removeAll { $0 == attachment } }
 
-    /// Uploads the attachments one by one, then sends the message with their ids. When an upload fails nothing is sent and the draft stays.
+    /// Clears the composer at once, then uploads the attachments one by one and sends the message with their ids. When an upload or the
+    /// send fails nothing is sent, and the text, the attachments and the reply come back.
     func send() async {
         guard canSend else { return }
         sending = true
         defer { sending = false }
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        var ids: [String] = []
-        var photos: [String: Data] = [:]
-        for attachment in attachments {
-            guard let upload = await run({ try await self.client.upload(attachment.data, fileName: attachment.fileName, contentType: attachment.contentType) }) else { return }
-            ids.append(upload.id)
-            if attachment.isImage, let stored = upload.storedName { photos[stored] = attachment.data }
-        }
-        let quote = replyTo.map { RemoteReplyRef(itemID: $0.id) }
-        guard await run({ try await self.client.sendMessage(text: text, uploadIDs: ids, reply: quote) }) != nil else { return }
-        sentPhotos.merge(photos) { _, new in new }
+        let original = draft, pending = attachments, quoted = replyTo
         draft = ""
         attachments = []
         replyTo = nil
+        func restore() {
+            // Something typed while the send was running stays, after the text that came back.
+            draft = draft.isEmpty ? original : original + "\n" + draft
+            attachments = pending + attachments
+            if replyTo == nil { replyTo = quoted }
+        }
+        var ids: [String] = []
+        var photos: [String: Data] = [:]
+        for attachment in pending {
+            guard let upload = await run({ try await self.client.upload(attachment.data, fileName: attachment.fileName, contentType: attachment.contentType) }) else { return restore() }
+            ids.append(upload.id)
+            if attachment.isImage, let stored = upload.storedName { photos[stored] = attachment.data }
+        }
+        let quote = quoted.map { RemoteReplyRef(itemID: $0.id) }
+        guard await run({ try await self.client.sendMessage(text: text, uploadIDs: ids, reply: quote) }) != nil else { return restore() }
+        sentPhotos.merge(photos) { _, new in new }
         await reload()
     }
 

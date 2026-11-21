@@ -1,4 +1,6 @@
 import AppKit
+import IronPetKit
+import SwiftUI
 import XCTest
 @testable import IronPet
 
@@ -81,5 +83,35 @@ final class ChatBackgroundTests: XCTestCase {
         XCTAssertEqual(Set(ChatBackground.builtIns.map(\.id)).count, ChatBackground.builtIns.count)
         XCTAssertTrue(ChatBackground.builtIns.contains { $0.doodles.isEmpty })
         XCTAssertGreaterThanOrEqual(ChatBackground.builtIns.count, 4)
+    }
+
+    /// S8: the Mac draws from IronPetKit's table, so the phone draws the same ones.
+    func testTheMacUsesTheSharedTable() {
+        XCTAssertEqual(ChatBackground.builtIns.map(\.id), ChatBackgrounds.builtIns.map(\.id))
+        XCTAssertEqual(ChatBackground.builtIns.map(\.light.0), ChatBackgrounds.builtIns.map(\.light.0))
+        XCTAssertEqual(ChatBackground.builtIns.map(\.dark.1), ChatBackgrounds.builtIns.map(\.dark.1))
+        XCTAssertEqual(ChatBackground.builtIns.map { $0.doodles.count }, ChatBackgrounds.builtIns.map { $0.doodles.count })
+        XCTAssertEqual(ChatBackground.defaultID, ChatBackgrounds.defaultID)
+        XCTAssertEqual(ChatBackground.customID, ChatBackgrounds.customID)
+    }
+
+    /// Renders every built-in in light and dark, as the Mac chat draws it. With `IRONPET_BACKGROUND_RENDERS` set to a folder, the
+    /// PNGs are kept there for a side-by-side look at the phone's screenshots.
+    @MainActor
+    func testEveryBuiltInRendersInLightAndDark() throws {
+        let keep = ProcessInfo.processInfo.environment["IRONPET_BACKGROUND_RENDERS"].map { URL(fileURLWithPath: $0, isDirectory: true) }
+        if let keep { try FileManager.default.createDirectory(at: keep, withIntermediateDirectories: true) }
+        for id in ChatBackground.builtIns.map(\.id) + [ChatBackground.defaultID] {
+            for scheme in [ColorScheme.light, .dark] {
+                let view = ChatBackgroundView(id: id).environment(\.colorScheme, scheme).frame(width: 390, height: 700)
+                let renderer = ImageRenderer(content: view)
+                renderer.scale = 2
+                let image = try XCTUnwrap(renderer.nsImage, "\(id) \(scheme)")
+                XCTAssertEqual(image.size.width, 390)
+                if let keep, let tiff = image.tiffRepresentation, let png = NSBitmapImageRep(data: tiff)?.representation(using: .png, properties: [:]) {
+                    try png.write(to: keep.appendingPathComponent("mac-\(id)-\(scheme == .dark ? "dark" : "light").png"))
+                }
+            }
+        }
     }
 }

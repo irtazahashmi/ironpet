@@ -91,7 +91,7 @@ final class PhaseThreeUITests: XCTestCase {
     func testSendingAMessageShowsItInTheTranscript() {
         pair()
         openChat()
-        let input = app.textFields["chat-input"]
+        let input = app.textViews["chat-input"]
         XCTAssertTrue(input.waitForExistence(timeout: 20))
         input.tap()
         input.typeText("hello")

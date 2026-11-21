@@ -1,3 +1,5 @@
+import CoreGraphics
+import ImageIO
 import XCTest
 @testable import IronPet
 
@@ -295,6 +297,39 @@ final class RemoteChatTests: XCTestCase {
         request.httpBody = data
         let (body, response) = try await h.session.data(for: request)
         return RemoteReply(status: (response as! HTTPURLResponse).statusCode, data: body, headers: [:])
+    }
+
+    /// S7: a JPEG the phone pasted reaches the agent as an ACP image block, like a Mac paste, not as a path in the prompt text.
+    func testAPastedJPEGFromThePhoneIsAnImageBlockForTheAgent() async throws {
+        let bytes = try XCTUnwrap(Self.jpeg())
+        let up = try await upload(bytes, name: "pasted-image-1.jpg")
+        XCTAssertEqual(up.status, 201)
+        let id = try XCTUnwrap(up.json["id"] as? String)
+        let sent = try await post("/v1/chat/current/messages", ["text": "what is this", "upload_ids": [id]])
+        XCTAssertEqual(sent.json["outcome"] as? String, "sent")
+        await settle()
+        let turn = try XCTUnwrap(turns.first)
+        XCTAssertEqual(turn.images.count, 1, "the upload is an image of the turn")
+        XCTAssertTrue(turn.files.isEmpty, "it is not listed as a plain file")
+        let image = try XCTUnwrap(turn.images.first)
+        XCTAssertEqual(image.pathExtension, "jpg")
+        XCTAssertTrue(image.path.hasPrefix(uploads.path), "the file is under the temporary upload folder, never ~/.ironpet")
+        let block = try XCTUnwrap(ACPBackend.imageBlock(image))
+        XCTAssertEqual(block["type"] as? String, "image")
+        XCTAssertEqual(block["mimeType"] as? String, "image/jpeg")
+        XCTAssertEqual(block["data"] as? String, bytes.base64EncodedString())
+    }
+
+    private static func jpeg() -> Data? {
+        let context = CGContext(data: nil, width: 64, height: 48, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(),
+                                bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)
+        context?.setFillColor(red: 0.2, green: 0.6, blue: 0.9, alpha: 1)
+        context?.fill(CGRect(x: 0, y: 0, width: 64, height: 48))
+        guard let image = context?.makeImage() else { return nil }
+        let data = NSMutableData()
+        guard let destination = CGImageDestinationCreateWithData(data, "public.jpeg" as CFString, 1, nil) else { return nil }
+        CGImageDestinationAddImage(destination, image, nil)
+        return CGImageDestinationFinalize(destination) ? data as Data : nil
     }
 
     func testUploadsAreCappedStoredByNameOnlyAndBoundToTheirDevice() async throws {

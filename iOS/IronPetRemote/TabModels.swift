@@ -1,6 +1,7 @@
 import Foundation
 import IronPetKit
 import Observation
+import UIKit
 
 /// What every tab model does with the event socket: read it until `stop()`, reload when it opens or resyncs, and drop the token on a 401.
 @MainActor @Observable
@@ -101,8 +102,11 @@ final class PetModel: SocketModel {
     var lastTrick: String?
     /// When the current mood started, so the sprite plays its row from the first frame.
     private(set) var moodStarted = Date()
+    /// The picture the Mac uses as its chat background, when `background` is `custom`.
+    private(set) var backgroundImage: UIImage?
     @ObservationIgnored let cache: AssetCache
     @ObservationIgnored private var spriteHash: String?
+    @ObservationIgnored private var backgroundHash: String?
 
     init(client: IronPetClient, events: any EventSignalSource, cache: AssetCache, onUnauthorized: @escaping () -> Void) {
         self.cache = cache
@@ -113,6 +117,8 @@ final class PetModel: SocketModel {
     var row: AtlasRow { PetAnimation.row(forMood: mood, in: atlas) }
     var followUp: AtlasRow? { PetAnimation.followUp(forMood: mood) }
     var badge: Int { pet?.badge ?? 0 }
+    /// The Mac's chat background: a built-in id, `default` or `custom`.
+    var backgroundID: String { pet?.background ?? ChatBackgrounds.defaultID }
 
     override func reload() async {
         await reloadPet(applyMood: true)
@@ -126,7 +132,9 @@ final class PetModel: SocketModel {
             if let id = event.id { setMood(id) }
             await reloadPet(applyMood: false)
         case RemoteEvent.bubbleShown, RemoteEvent.bubbleDismissed: await reloadBubbles()
-        case RemoteEvent.assetsChanged: await syncAssets()
+        case RemoteEvent.assetsChanged:
+            await reloadPet(applyMood: false)
+            await syncAssets()
         case RemoteEvent.alertsChanged, RemoteEvent.agentsChanged: await reloadPet(applyMood: false)
         default: break
         }
@@ -151,11 +159,19 @@ final class PetModel: SocketModel {
     /// Fetches the manifest, downloads the sheet if its hash is new and decodes it. A sheet that is already loaded stays as it is.
     func syncAssets() async {
         guard let result = await run({ try await self.cache.sync(with: self.client) }) else { return }
+        syncBackground(result.current["chat.background"])
         guard let hash = result.current["pet.sprite"], hash != spriteHash else { return }
         if let data = cache.data(forHash: hash), let loaded = Atlas.load(data: data) {
             atlas = loaded
             spriteHash = hash
         }
+    }
+
+    /// Decodes the Mac's custom background when its hash changes, at most 2400 px on the long side like the Mac does.
+    private func syncBackground(_ hash: String?) {
+        guard hash != backgroundHash else { return }
+        backgroundHash = hash
+        backgroundImage = hash.flatMap { cache.data(forHash: $0) }.flatMap { PastedImage.thumbnail(from: $0, longSide: 2400) }
     }
 
     func perform(trick: String) async {
