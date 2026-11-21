@@ -407,3 +407,32 @@ final class FacadeBoundaryTests: XCTestCase {
         }
     }
 }
+
+@MainActor
+final class FakePresenceSource: PresenceSource {
+    var idle: TimeInterval = 0
+    var locked = false
+    var lastWake: Date?
+    var calls: Set<String> = []
+    var micStops = 0
+    /// Read instead of `idle` when set, so a test's own clock can drive it.
+    private let idleProvider: (() -> TimeInterval)?
+
+    nonisolated init(idleProvider: (() -> TimeInterval)? = nil) { self.idleProvider = idleProvider }
+
+    func idleSeconds() throws -> TimeInterval { idleProvider?() ?? idle }
+    func isScreenLocked() -> Bool { locked }
+    func wokeSince(_ date: Date) -> Bool { lastWake.map { $0 > date } ?? false }
+    func micCalls() -> Set<String> { calls }
+    func stopMicWatch() { micStops += 1 }
+}
+
+final class FakeURLOpener: URLOpener, @unchecked Sendable { // Appended to from one test at a time.
+    var opened: [URL] = []
+    func open(_ url: URL) throws { opened.append(url) }
+}
+
+struct FakeAudioTranscoder: AudioTranscoder {
+    var result: Data?
+    func wav(from file: URL, maxSeconds: Double) throws -> Data? { result }
+}

@@ -78,9 +78,11 @@ extension Platform {
     /// app's own objects. Screen capture needs the database, which opens later, so it starts `Unsupported` and `AppDelegate`
     /// replaces it once the service exists.
     @MainActor
-    static func mac(meetings: MeetingRecorder, speech: SpeechOutput, capture: CaptureControl = UnsupportedCaptureControl()) -> Platform {
+    static func mac(meetings: MeetingRecorder, speech: SpeechOutput, capture: CaptureControl = UnsupportedCaptureControl(),
+                    presence: PresenceSource? = nil) -> Platform {
         Platform(secrets: KeychainSecretStore(), processes: POSIXProcessSpawner(), log: OSLogLog(),
                  appInfo: MacAppInfo(), clock: SystemClock(), meetings: meetings, capture: capture, speech: speech,
-                 pets: MacPetAssets(), files: MacFileIntake())
+                 pets: MacPetAssets(), files: MacFileIntake(), presence: presence ?? MacPresenceSource(), opener: MacURLOpener(),
+                 audio: MacAudioTranscoder())
     }
 }

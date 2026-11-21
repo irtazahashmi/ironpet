@@ -1,32 +1,12 @@
 import AVFoundation
 import Foundation
 
-/// What `VoiceConversation` needs from the microphone. `ConversationMic` is the real one; tests send events by hand.
-@MainActor
-protocol ConversationListening: AnyObject {
-    var onEvent: ((ConversationMic.Event) -> Void)? { get set }
-    var levels: LevelBuffer { get }
-    /// Plays the pet's voice. Through the microphone's own engine, so echo cancellation knows what to take out.
-    var player: ClipPlaying { get }
-    func start() throws
-    func stop()
-    /// True while the pet speaks: speech must then be louder and longer to count, so the pet does not interrupt itself.
-    func setPlayback(_ on: Bool)
-}
-
 /// The microphone for a voice conversation. One `AVAudioEngine` with voice processing on, so the pet's voice coming
 /// out of the speakers is cancelled from what the microphone hears. Each buffer goes to a serial queue, where an
 /// `UtteranceCutter` finds where the user starts and stops talking; only those moments reach the main actor.
 @MainActor
 final class ConversationMic: ConversationListening {
-    enum Event: Equatable {
-        case speechStarted
-        /// One utterance as a 16 kHz mono WAV.
-        case utterance(Data)
-        /// Something too short to be speech ended.
-        case discarded
-        case failed(String)
-    }
+    typealias Event = ConversationMicEvent
 
     var onEvent: ((Event) -> Void)?
     let levels = LevelBuffer()

@@ -1,4 +1,3 @@
-import CoreGraphics
 import Foundation
 
 /// Decides when each automation is due. It knows nothing about bubbles, agents or shells: it calls `onFire`, and the
@@ -11,10 +10,8 @@ import Foundation
 final class AutomationEngine {
     struct Environment {
         var now: () -> Date = { Date() }
-        /// Seconds since the last keyboard or mouse event.
-        var idleSeconds: () -> TimeInterval = {
-            CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
-        }
+        /// Where the idle time comes from.
+        var presence: PresenceSource = UnsupportedPresenceSource()
         /// An agent or a Ghost chat is running, a good moment to step away.
         var isAgentWorking: () -> Bool = { false }
         /// The user is mid-conversation with Ghost or an agent is waiting on them.
@@ -56,6 +53,10 @@ final class AutomationEngine {
     var mayRun: (Automation) -> Bool = { _ in true }
     /// What a script asked for. `firstRun` is true when the script had no saved state, so an alert can be recorded quietly.
     var onActions: (_ automation: Automation, _ actions: [[String: Any]], _ firstRun: Bool) -> Void = { _, _, _ in }
+    /// A script returned `done: true`. Called after its actions ran and the run was logged.
+    var onDone: (_ automation: Automation) -> Void = { _ in }
+    /// Ids whose run history and log stay when they leave the list, because the automation deleted itself.
+    var keepHistoryOnRemoval: Set<String> = []
     /// Runs a script automation. Replaced in tests to avoid shell and network.
     lazy var runScript: (_ script: String, _ state: String?) async throws -> AutomationScript.Output = { [weak self] script, state in
         try await AutomationScript.run(script: script, state: state, host: .system(spawner: self?.env.spawner ?? UnsupportedProcessSpawner()))
@@ -144,7 +145,7 @@ final class AutomationEngine {
             activeElapsed[gone.id] = nil
             wallLast[gone.id] = nil
             nextPollAt[gone.id] = nil
-            state.forget(gone.id)
+            state.forget(gone.id, keepHistory: keepHistoryOnRemoval.remove(gone.id) != nil)
             polling[gone.id]?.cancel()
             polling[gone.id] = nil
         }
@@ -198,7 +199,7 @@ final class AutomationEngine {
         let elapsed = max(0, now.timeIntervalSince(previous))
         let timing = timing()
         let breakReset = timing.idleResetMinutes * 60
-        let away = env.idleSeconds() >= breakReset || elapsed >= breakReset
+        let away = env.presence.idleOrZero() >= breakReset || elapsed >= breakReset
         let working = env.isAgentWorking()
         let enabled = automations.filter(\.enabled)
 
@@ -358,6 +359,7 @@ final class AutomationEngine {
             detail.append("state: \(output.state.utf8.count) bytes")
             onLog(a.id, "ok", output.actions.isEmpty ? "no actions" : "\(output.actions.count) action\(output.actions.count == 1 ? "" : "s")",
                   detail.joined(separator: "\n"), Date().timeIntervalSince(started))
+            if output.done { onDone(a) }
         } catch {
             onRecord(a.id, "failed", error.localizedDescription)
             onLog(a.id, "failed", error.localizedDescription, error.localizedDescription, Date().timeIntervalSince(started))

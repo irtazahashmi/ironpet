@@ -154,6 +154,31 @@ final class BoundaryTests: XCTestCase {
         }
     }
 
+    /// Files that hold core logic and reach the Mac only through a protocol in `Platform/`. They move into IronPetCore later, so
+    /// none may name a Mac-only framework or type. The Mac adapters live in `Platform/Mac/`.
+    static let coreFiles = [
+        "Automations/AutomationEngine.swift", "Automations/AutomationService.swift", "Activity/WelcomeBack.swift", "Activity/Presence.swift",
+        "Support/ListNavigation.swift", "Bridge/HTTPRequest.swift", "Telegram/TelegramMedia.swift", "Meeting/MeetingRegenerator.swift",
+        "Meeting/MeetingSummary.swift", "Meeting/SpeakerDiarizing.swift", "Voice/VoiceConversation.swift", "Voice/ConversationPorts.swift",
+        "Platform/PresenceSource.swift", "Platform/URLOpener.swift", "Platform/AudioTranscoder.swift",
+    ]
+    static let macOnly = [
+        "import AppKit", "import CoreGraphics", "import AVFoundation", "NSWorkspace", "CGEventSource", "CGSession", "FluidDiarizer",
+        "MeetingController",
+    ]
+
+    func testCoreFilesNameNoMacOnlyAPIs() {
+        let files = Dictionary(uniqueKeysWithValues: Self.swiftFiles().map { ($0.path, $0.text) })
+        var violations: [String] = []
+        for path in Self.coreFiles {
+            guard let text = files[path] else { XCTFail("\(path) moved: update BoundaryTests.coreFiles"); continue }
+            let code = Self.code(text)
+            for token in Self.macOnly where code.contains(token) { violations.append("\(path): \(token)") }
+        }
+        XCTAssertTrue(violations.isEmpty, "core files name a Mac-only API. Put it behind a protocol in Platform/ with an adapter in Platform/Mac/:\n"
+                      + violations.joined(separator: "\n"))
+    }
+
     func testTheScanForTheCodableSurfaceCatchesALeak() {
         XCTAssertEqual(Self.typeNames(in: "func start(_ session: ChatSession) async -> SlashPopupState"), ["ChatSession", "SlashPopupState"])
     }

@@ -113,7 +113,7 @@ final class RemoteServer {
     /// Hash of the certificate the HTTPS listener presents. It differs from the identity's after a rotation, until the server restarts.
     private(set) var servedFingerprint: String?
     /// The keychain that holds the HTTPS listener's identity, deleted when the listener stops.
-    private var keychain: RemoteTLSKeychain?
+    private(set) var keychain: RemoteTLSKeychain?
 
     init(api: IronPetAPI, service: RemoteService, uploads: RemoteUploads? = nil) {
         self.api = api
@@ -142,7 +142,9 @@ final class RemoteServer {
                     throw RemoteServerError.unavailable
                 }
                 let material = service.identity.material
+                RemoteTLSKeychain.removeStale()
                 let made = try RemoteTLSKeychain(material)
+                made.keepUnlocked()
                 tlsKeychain = made
                 guard let options = TSTLSOptions.options(serverIdentity: .secIdentity(made.identity)) else { throw RemoteTLSKeychain.Failure.identity(0) }
                 fingerprint = RemoteHash.hex(material.der)

@@ -66,13 +66,24 @@ final class WelcomeBackTests: XCTestCase {
 
     // MARK: Coordinator
 
+    @MainActor
     private final class Clock {
         var now: Date
-        var idle: TimeInterval = 0
-        var locked = false
+        let presence = FakePresenceSource()
+        var idle: TimeInterval {
+            get { presence.idle }
+            set { presence.idle = newValue }
+        }
+        var locked: Bool {
+            get { presence.locked }
+            set { presence.locked = newValue }
+        }
         var present = false
         var presenceChecks = 0
-        var lastWake: Date?
+        var lastWake: Date? {
+            get { presence.lastWake }
+            set { presence.lastWake = newValue }
+        }
         var enabled = true
         init(_ now: Date) { self.now = now }
     }
@@ -95,10 +106,8 @@ final class WelcomeBackTests: XCTestCase {
         bubbles.now = { clock.now }
         var env = WelcomeBack.Environment()
         env.now = { clock.now }
-        env.idleSeconds = { clock.idle }
-        env.isScreenLocked = { clock.locked }
+        env.presence = clock.presence
         env.isPresent = { clock.presenceChecks += 1; return clock.present }
-        env.wokeSince = { since in clock.lastWake.map { $0 > since } ?? false }
         env.isEnabled = { clock.enabled }
         env.threshold = { 300 }
         let welcome = WelcomeBack(log: log, bubbles: bubbles, env: env)

@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 
 /// What an automation shows: one bubble, plus optionally a macOS notification.
@@ -10,6 +9,8 @@ struct AutomationNotice {
         var destructive = false
         /// Pressing it marks the stored notification read (Done).
         var marksRead = false
+        /// The address the button opens. The client that shows the bubble opens it, as the `open-url` action.
+        var openURL: URL?
         var run: () -> Void
     }
 
@@ -105,6 +106,7 @@ final class AutomationService {
         engine.onLog = { [weak self] id, outcome, summary, detail, duration in self?.log(id, outcome, summary, detail: detail, duration: duration) }
         engine.mayRun = { [weak self] a in !(self?.needsApproval(a) ?? false) }
         engine.onActions = { [weak self] automation, actions, firstRun in self?.perform(actions, for: automation, firstRun: firstRun) }
+        engine.onDone = { [weak self] automation in self?.deleteAfterRun(automation, reason: "the script returned done") }
         store.onChange = { [weak self] list in
             guard let self else { return }
             engine.set(list)
@@ -251,6 +253,7 @@ final class AutomationService {
     func approvalDetail(_ a: Automation) -> String {
         (a.riskText ?? "").split(separator: "\n").map { line -> String in
             let text = String(line)
+            if text == "report:chat" { return "(posts its output to the main chat)" }
             for prefix in ["shell:", "poll:", "prompt:", "http:", "stream:"] where text.hasPrefix(prefix) { return String(text.dropFirst(prefix.count)) }
             return text
         }.joined(separator: "\n")
@@ -315,6 +318,8 @@ final class AutomationService {
 
     /// Runs one automation's action. Returns true when the action goes on in the background and will call `fire.finished`.
     private func handle(_ a: Automation, _ fire: AutomationEngine.Fire) -> Bool {
+        // Several poll items fire one after another. After the first run deleted the automation, the rest have nothing to run.
+        if a.until != nil, !store.automations.contains(where: { $0.id == a.id }) { return false }
         guard !needsApproval(a) else {
             if isRejected(a) { record(a.id, "skipped", "rejected earlier, not run"); return false }
             // A stream event is dropped rather than kept: a stream does not run before it is approved.
@@ -327,9 +332,14 @@ final class AutomationService {
         switch a.action.type {
         case "shell":
             let command = AutomationTemplate.render(a.action.command ?? "", values: values.shellSafe)
+            let toChat = a.action.shellReportsToChat && postNotice != nil
             return runInBackground(a, done: fire.finished) { [self] in
                 let result = await runShell(command, a.action.timeoutSeconds ?? 60)
-                finish(a, ok: result.ok, text: result.summary.isEmpty ? (result.ok ? "done" : "failed") : result.summary, fire: fire, truncated: result.truncated)
+                if toChat {
+                    reportShell(a, command: command, result: result)
+                } else {
+                    finish(a, ok: result.ok, text: result.summary.isEmpty ? (result.ok ? "done" : "failed") : result.summary, fire: fire, truncated: result.truncated)
+                }
             }
         case "prompt" where runsInSession(a):
             let prompt = AutomationTemplate.render(a.action.prompt ?? "", values: values)
@@ -361,7 +371,7 @@ final class AutomationService {
                     if toChat {
                         record(a.id, "failed", error.message)
                         postNotice?("automation:\(a.id)", Self.noticeTitle(a) + " failed", error.message, false)
-                        afterRun(a)
+                        afterRun(a, ok: false)
                     } else {
                         finish(a, ok: false, text: error.message, fire: fire, thread: latestThread(a.id))
                     }
@@ -444,16 +454,70 @@ final class AutomationService {
         if sendToChat?(a.id, message) != true {
             record(a.id, "failed", "the chat did not take the message")
         }
-        afterRun(a)
+        // The turn is not done yet. `chatOutcome` applies `until` when it ends.
+        afterRun(a, finished: false)
+    }
+
+    /// How much of a shell command's output the chat notice carries.
+    static let shellTailBytes = 4 * 1024
+    /// The longest text a script's `chat` action posts.
+    static let maxChatTextBytes = 64 * 1024
+
+    /// The last `limit` bytes of `text`, cut at a character boundary.
+    static func tail(_ text: String, bytes limit: Int) -> (text: String, cut: Bool) {
+        guard text.utf8.count > limit else { return (text, false) }
+        var result = Substring(text)
+        while result.utf8.count > limit { result = result.dropFirst() }
+        return (String(result), true)
+    }
+
+    /// The first `limit` bytes of `text`, cut at a character boundary.
+    static func head(_ text: String, bytes limit: Int) -> (text: String, cut: Bool) {
+        guard text.utf8.count > limit else { return (text, false) }
+        var result = Substring(text)
+        while result.utf8.count > limit { result = result.dropLast() }
+        return (String(result), true)
+    }
+
+    /// Posts a shell action's result to the main chat through the same notice path as a prompt with `report: chat`:
+    /// a result starts a turn, a failure does not, and `quiet` output posts nothing.
+    private func reportShell(_ a: Automation, command: String, result: CommandResult) {
+        let combined = [result.stdout, result.stderr].map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }.joined(separator: "\n")
+        if result.ok, a.action.quietReplies.contains(combined) {
+            record(a.id, "ok", "no changes")
+            afterRun(a)
+            return
+        }
+        let (output, cut) = Self.tail(combined, bytes: Self.shellTailBytes)
+        let status: String
+        if let error = result.spawnError { status = "could not start: \(error)" }
+        else if result.timedOut { status = "timed out" }
+        else { status = "exit code \(result.code.map(String.init) ?? "none")" }
+        let text = """
+            Automation "\(a.name.components(separatedBy: .newlines).joined(separator: " "))" ran a shell command.
+            Command: \(command)
+            Result: \(status)
+            Output\(cut || result.truncated ? " (last \(Self.shellTailBytes / 1024) KB)" : ""):
+            \(output.isEmpty ? "(no output)" : output)
+            """
+        record(a.id, result.ok ? "ok" : "failed", "posted to chat: " + result.summary)
+        postNotice?("automation:\(a.id)", Self.noticeTitle(a) + (result.ok ? "" : " failed"), text, result.ok)
+        afterRun(a, ok: result.ok)
     }
 
     /// How a turn that an automation sent ended. The answer stays in the chat, so only the outcome is recorded.
     func chatOutcome(_ id: String, _ event: ChatSession.AutomationEvent) {
         switch event {
         case .started: record(id, "running", "running in the chat")
-        case .finished: record(id, "ok", "finished in the chat")
-        case .noChange: record(id, "ok", "no changes")
-        case .failed(let reason): record(id, "failed", "failed in the chat: \(reason)")
+        case .finished:
+            record(id, "ok", "finished in the chat")
+            cleanup(id, ok: true)
+        case .noChange:
+            record(id, "ok", "no changes")
+            cleanup(id, ok: true)
+        case .failed(let reason):
+            record(id, "failed", "failed in the chat: \(reason)")
+            cleanup(id, ok: false)
         case .cancelled(let reason): record(id, "skipped", "not finished: \(reason)")
         }
     }
@@ -489,11 +553,46 @@ final class AutomationService {
         show(a, title: title, body: summary ?? String(body.prefix(600)) + (truncated ? "\n(output cut off)" : ""), fire: fire, ok: ok,
              type: .backgroundResult, summary: summary, detail: full,
              links: thread.map { [NotificationLink(.thread, $0, label: "Run in chat history")] } ?? [])
-        afterRun(a)
+        afterRun(a, ok: ok)
     }
 
-    private func afterRun(_ a: Automation) {
+    /// `finished` is false for a run that goes on elsewhere, such as a prompt sent to the chat. Its end calls `cleanup`.
+    private func afterRun(_ a: Automation, ok: Bool = true, finished: Bool = true) {
+        if finished, deleteIfDone(a, ok: ok) { return }
         if a.trigger.type == "once" { try? store.update(a.id) { $0.enabled = false } }
+    }
+
+    private func cleanup(_ id: String, ok: Bool) {
+        guard let a = store.automations.first(where: { $0.id == id }) else { return }
+        deleteIfDone(a, ok: ok)
+    }
+
+    /// Applies `until` once a run has finished and its report was posted. Returns true when the automation was deleted.
+    @discardableResult
+    private func deleteIfDone(_ a: Automation, ok: Bool) -> Bool {
+        guard let until = a.until, until == "once" || ok else { return false }
+        return deleteAfterRun(a, reason: until == "once" ? "ran once" : "succeeded")
+    }
+
+    /// Deletes an automation from inside its own run. It runs after the work and the report, and only when the stored
+    /// definition is still the one that ran, so an edit made while the command was running is not lost. The run history
+    /// and the log stay, with a line that says why it went.
+    @discardableResult
+    func deleteAfterRun(_ a: Automation, reason: String) -> Bool {
+        guard let current = store.automations.first(where: { $0.id == a.id }) else { return false }
+        guard current.trigger == a.trigger, current.action == a.action else {
+            record(a.id, "skipped", "not deleted: changed while it ran")
+            return false
+        }
+        engine.keepHistoryOnRemoval.insert(a.id)
+        do { try store.replace(store.automations.filter { $0.id != a.id }) } catch {
+            engine.keepHistoryOnRemoval.remove(a.id)
+            record(a.id, "failed", "could not delete: \(error.localizedDescription)")
+            return false
+        }
+        dismissNotice(Self.approvalID(a.id))
+        record(a.id, "deleted", "deleted itself: \(reason)")
+        return true
     }
 
     private func templateValues(_ a: Automation, item: [String: Any]?, count: Int? = nil) -> [String: Any] {
@@ -558,6 +657,7 @@ final class AutomationService {
             case "bubble": problem = scriptBubble(action, a)
             case "alert": problem = scriptAlert(action, a, firstRun: firstRun)
             case "prompt": problem = scriptPrompt(action, a)
+            case "chat": problem = scriptChat(action, a)
             case "suggest_task":
                 do {
                     let draft = try TaskSuggestion.Draft(action: action)
@@ -566,7 +666,7 @@ final class AutomationService {
                 } catch {
                     problem = error.localizedDescription
                 }
-            default: problem = "type must be bubble, alert, prompt or suggest_task"
+            default: problem = "type must be bubble, alert, prompt, suggest_task or chat"
             }
             if let problem { record(a.id, "failed", "action \(index + 1): \(problem)") }
         }
@@ -623,7 +723,7 @@ final class AutomationService {
         let key = text(action, "id") ?? (title + "\n" + (text(action, "body") ?? ""))
         let url = text(action, "url").flatMap(URL.init(string:))
         var buttons: [AutomationNotice.Button] = []
-        if let url { buttons.append(.init(title: "Open", primary: true) { NSWorkspace.shared.open(url) }) }
+        if let url { buttons.append(.init(title: "Open", primary: true, openURL: url) {}) }
         let extras = Self.notificationFields(action)
         if let problem = extras.problem { record(a.id, "ok", "bubble: " + problem) }
         let tint: AutomationNotice.Tint = level == "bad" ? .bad : level == "warn" ? .warn : level == "good" ? .good : .info
@@ -665,6 +765,20 @@ final class AutomationService {
         engine.state.setAlertHash(a.id, id, fingerprint, signal: signal)
         // An empty stored hash is an alert from before payloads were stored, so it comes back without a bubble.
         alert(signal, !firstRun && known != "")
+        return nil
+    }
+
+    /// Posts a system notice to the main chat, the same notice as a prompt with `report: chat`. The text goes to the chat's
+    /// agent inside the data-marked `<ironpet-meta>` block, never as instructions. A newer notice from this automation
+    /// replaces one the agent has not read yet, so a run that has several things to say should send one `chat` action.
+    private func scriptChat(_ action: [String: Any], _ a: Automation) -> String? {
+        guard let body = text(action, "text"), !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "a chat action needs text" }
+        guard let postNotice else { return "the main chat is not available" }
+        var (posted, cut) = Self.head(body, bytes: Self.maxChatTextBytes)
+        if cut { posted += "\n(text cut off at \(Self.maxChatTextBytes / 1024) KiB)" }
+        let line = text(action, "title").map { $0.components(separatedBy: .newlines).joined(separator: " ") }
+        postNotice("automation:\(a.id)", Self.noticeTitle(a) + (line.map { ": " + $0 } ?? ""), posted, true)
+        record(a.id, "ok", "posted to chat: " + String(posted.prefix(200)))
         return nil
     }
 
@@ -719,8 +833,12 @@ final class AutomationService {
                 let waiting = needsApproval(a)
                 return .success(["id": a.id, "status": waiting ? "waiting for approval" : "started"])
             case "history":
-                let a = try find(args)
                 let limit = (args["limit"] as? Int) ?? 20
+                // An automation that deleted itself leaves its history, so it can still be read.
+                if let id = args["id"] as? String, !store.automations.contains(where: { $0.id == id }), !engine.state.history(id, limit: 1).isEmpty {
+                    return .success(history(id, limit: limit))
+                }
+                let a = try find(args)
                 return .success(history(a.id, limit: limit))
             default:
                 return .failure(.init(message: "unknown operation \"\(op)\""))

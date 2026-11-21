@@ -315,8 +315,10 @@ final class AutomationState {
     private static let tables = ["automation_seen", "automation_state", "automation_runs", "automation_approvals", "automation_snoozes", "automation_script_state", "automation_alerts", "automation_logs", "automation_daily"]
 
     /// Forgets everything about an automation that was deleted.
-    func forget(_ id: String) {
-        write { db in for table in Self.tables { try db.execute("DELETE FROM \(table) WHERE automation = ?", [id]) } }
+    /// `keepHistory` leaves the run history and the execution log, for an automation that deleted itself.
+    func forget(_ id: String, keepHistory: Bool = false) {
+        let kept: Set<String> = keepHistory ? ["automation_runs", "automation_logs"] : []
+        write { db in for table in Self.tables where !kept.contains(table) { try db.execute("DELETE FROM \(table) WHERE automation = ?", [id]) } }
     }
 
     /// Drops seen items and history that are past their retention, and state of automations that no longer exist.
@@ -328,7 +330,12 @@ final class AutomationState {
             guard let ids else { return }
             for table in Self.tables {
                 let stored = try db.rows("SELECT DISTINCT automation FROM \(table)").compactMap { $0[0] as? String }
-                for stale in Set(stored).subtracting(ids) { try db.execute("DELETE FROM \(table) WHERE automation = ?", [stale]) }
+                for stale in Set(stored).subtracting(ids) {
+                    // An automation that deleted itself keeps its history and log, so the deletion stays readable after a restart.
+                    if table == "automation_runs" || table == "automation_logs",
+                       !(try db.rows("SELECT 1 FROM \(table) WHERE automation = ? AND outcome = 'deleted' LIMIT 1", [stale])).isEmpty { continue }
+                    try db.execute("DELETE FROM \(table) WHERE automation = ?", [stale])
+                }
             }
         }
     }

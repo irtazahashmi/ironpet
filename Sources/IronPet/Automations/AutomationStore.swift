@@ -220,6 +220,7 @@ enum AutomationSchema {
             "enabled": { "type": "boolean", "default": true },
             "createdBy": { "type": "string", "description": "\"user\" or the name of the agent that wrote it. Anything else needs approval before a shell command or prompt runs." },
             "note": { "type": "string" },
+            "until": { "enum": ["success", "once"], "description": "Deletes the automation after a run. success: after the first run whose action succeeded (a shell command that exits 0), once: after the first completed run. Not for script triggers, which return done: true." },
             "trigger": { "$ref": "#/definitions/trigger" },
             "action": { "$ref": "#/definitions/action" },
             "presentation": { "$ref": "#/definitions/presentation" }
@@ -275,7 +276,8 @@ enum AutomationSchema {
             "model": { "type": "string", "description": "The model for a session new or own run; leave it out to keep the skill's or the agent's own. Also used by the restricted background run. A prompt that runs in the chat uses the chat's model." },
             "command": { "type": "string" },
             "timeoutSeconds": { "type": "number", "minimum": 1, "maximum": 600 },
-            "quiet": { "type": "string", "description": "prompt action: a reply that means nothing happened. A run whose final reply is exactly this text is hidden from the chat and recorded as no changes." },
+            "quiet": { "type": "string", "description": "prompt action, or shell action with report chat: a reply or output that means nothing happened. A run whose final reply is exactly this text is hidden from the chat and recorded as no changes." },
+            "report": { "enum": ["bubble", "chat"], "description": "prompt action with a background session, or shell action: bubble shows the result as a bubble, chat posts it to the main chat as a system notice that the chat's agent reads. A shell action posts the command, exit code and the last 4 KB of output. Not for bubble or digest actions." },
             "session": { "enum": ["chat", "new", "own"], "description": "prompt action: chat (default) posts into the open chat. new runs in a fresh agent session every time. own reuses one thread for this automation and starts a fresh one after 50 runs. new and own runs show up in the thread list as automation runs, and have the agent's full tools minus disallowedTools. A prompt that uses {{item.*}} stays read-only whatever session says." },
             "allowedTools": { "type": "array", "items": { "type": "string" }, "description": "prompt action with session new or own: tools the agent may use without asking, such as Bash(gh pr list:*)." },
             "disallowedTools": { "type": "array", "items": { "type": "string" }, "description": "prompt action with session new or own: tools the agent may not use, such as Bash(rm:*) or WebFetch." },

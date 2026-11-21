@@ -5,7 +5,11 @@ import Foundation
 
 extension VoiceAPI {
     /// A voice API with its own speaker, for Settings rendered without the app, so Preview still has something to play through.
-    static func standalone(settings: SettingsAPI) -> VoiceAPI { VoiceAPI(speech: SpeechPlayer(), settings: settings) }
+    static func standalone(settings: SettingsAPI) -> VoiceAPI {
+        let api = VoiceAPI(speech: SpeechPlayer(), settings: settings)
+        api.transcoder = MacAudioTranscoder()
+        return api
+    }
 }
 
 extension ScreenAPI {

@@ -6,7 +6,10 @@ import Combine
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The one set of platform adapters, built here and handed to everything that spawns a process or reads a secret.
-    private lazy var platform = Platform.mac(meetings: meeting, speech: chat.speech)
+    private lazy var platform = Platform.mac(meetings: meeting, speech: chat.speech,
+                                             presence: MacPresenceSource(ignoredMicApps: { ConfigStore.shared.config.meetings.ignoredMicApps }))
+    /// The presence source the away checks read. Test mode moves its idle time with `/test/idle`; the automation clock keeps the real one.
+    private lazy var awayPresence = MacPresenceSource(ignoredMicApps: { ConfigStore.shared.config.meetings.ignoredMicApps })
     private lazy var voiceKey = VoiceKey(store: platform.secrets)
     /// The bot token's store. Memory in `--test-mode`, where a Keychain approval dialog would block an automated run.
     private lazy var telegramTokens: TelegramTokenStore = TelegramAPI.testMode ? MemoryTokenStore() : TelegramToken(secrets: platform.secrets)
@@ -35,8 +38,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var activity: ActivityLog?
     private var remote: RemoteController?
     private var welcomeBack: WelcomeBack?
-    /// Replaces the system idle time in test mode (`POST /test/presence`). Nil otherwise.
-    private var testIdleSeconds: TimeInterval?
     private var brief: TodayAPI?
     /// The task store, for the meeting suggestions and the test endpoints. Everything else uses `api.tasks`.
     private var taskStore: TaskStore?
@@ -105,6 +106,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func wirePlatform() {
         store.appInfo = platform.appInfo
         chat.spawner = platform.processes
+        announcer.urlOpener = platform.opener
         chat.speech.voiceKey = voiceKey
         let keyCache = MeetingController.KeyCache(voiceKey: voiceKey)
         let voiceStore = VoiceStore(url: VoiceStore.defaultURL, key: { [secrets = platform.secrets] in VoiceStoreKey(store: secrets).load() })
@@ -115,6 +117,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         meetings.regenerator.spawner = platform.processes
         meetings.regenerator.keyCache = keyCache
+        meetings.regenerator.diarizer = meeting.diarizer
+        meetings.regenerator.speakerModelsReady = { MainActor.assumeIsolated { SpeakerModels.shared.isReady } }
         meetings.regenerator.voiceStore = voiceStore
     }
 
@@ -288,6 +292,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         HeartbeatRemoval.runOnce(store: store)
         let engine = AutomationEngine(env: .init(
             now: { [weak self] in Date().addingTimeInterval(self?.testClockOffset ?? 0) },
+            presence: platform.presence,
             isAgentWorking: { [weak self] in
                 guard let self else { return false }
                 return self.chat.state == .running || self.store.sessions.values.contains { $0.status == .running }
@@ -322,6 +327,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         chatModel = ChatViewModel(api: api.chat, voiceAPI: api.voice, events: events)
         chatModel.voice.voiceKey = voiceKey
         api.voice.voiceKey = voiceKey
+        api.voice.transcoder = platform.audio
         // The settings model needs the API (through the Telegram bridge), so it is wired here and not in `wirePlatform`.
         settingsModel.platform = platform
         pet.chatModel = chatModel
@@ -504,9 +510,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let calls = callMonitor.flatMap { $0.isRunning ? $0.detector.activeApps : nil } ?? speechMic.calls()
             return calls.isEmpty ? nil : "a call"
         }
-        let systemIdle = WelcomeBack.Environment().idleSeconds
         controller.isAway = { [weak self] in
-            (self?.testIdleSeconds ?? systemIdle()) >= ConfigStore.shared.config.reminders.idleResetMinutes * 60
+            (self?.awayPresence.idleOrZero() ?? 0) >= ConfigStore.shared.config.reminders.idleResetMinutes * 60
         }
         controller.pauseChatDictation = { [weak self] paused in
             guard let self else { return }
@@ -1064,7 +1069,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             control.remote = remote
             control.chatModel = chatModel
             control.welcomeBack = welcomeBack
-            control.setIdleSeconds = { [weak self] seconds in self?.testIdleSeconds = seconds }
+            control.setIdleSeconds = { [weak self] seconds in self?.awayPresence.idleOverride = seconds }
             control.showInspector = { [weak self] in
                 self?.pet.showWindow(.screen)
                 return self?.pet.windowNumber ?? 0
@@ -1299,15 +1304,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// automation clock's 30 s tick would leave the user waiting for the summary.
     private func setUpWelcomeBack(_ log: ActivityLog, tasks: TaskStore) {
         var env = WelcomeBack.Environment()
-        let systemIdle = env.idleSeconds
-        env.idleSeconds = { [weak self] in self?.testIdleSeconds ?? systemIdle() }
-        let micWatch = MicWatch(ignored: { ConfigStore.shared.config.meetings.ignoredMicApps })
+        env.presence = awayPresence
         let presence = Presence(
             meetingActive: { [weak self] in self.map { [.recording, .finishing, .summarizing].contains($0.meeting.phase) } ?? false },
             detectedCalls: { [weak self] in self?.callMonitor.flatMap { $0.isRunning ? $0.detector.activeApps : nil } },
-            micCalls: micWatch.calls)
+            micCalls: awayPresence.micCalls)
         env.isPresent = presence.isPresent
-        env.presenceNotNeeded = micWatch.stop
+        env.presenceNotNeeded = awayPresence.stopMicWatch
         env.isEnabled = { ConfigStore.shared.config.welcomeBack.enabled }
         env.threshold = { ConfigStore.shared.config.reminders.idleResetMinutes * 60 }
         let welcome = WelcomeBack(log: log, bubbles: announcer.bubbles, env: env)

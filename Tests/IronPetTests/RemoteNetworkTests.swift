@@ -119,6 +119,46 @@ final class RemoteNetworkTests: XCTestCase {
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.path), [], "the keychain file is gone after close")
     }
 
+    // S1
+    func testTheTLSKeychainNeverLocksItself() throws {
+        // File keychains can block on a UI prompt on headless CI runners, which hangs the whole test job. These run locally only.
+        try XCTSkipIf(ProcessInfo.processInfo.environment["CI"] != nil, "file keychain tests are not run on CI")
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-kc-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let keychain = try RemoteTLSKeychain(RemoteIdentity(storage: MemoryKeyStorage()).material, folder: folder)
+        defer { keychain.close() }
+        var settings = SecKeychainSettings(version: UInt32(SEC_KEYCHAIN_SETTINGS_VERS1), lockOnSleep: true, useLockInterval: true, lockInterval: 300)
+        XCTAssertEqual(SecKeychainCopySettings(keychain.keychain, &settings), errSecSuccess)
+        XCTAssertFalse(settings.lockOnSleep.boolValue, "the keychain does not lock when the Mac sleeps")
+        // SecKeychainCopySettings always reports useLockInterval true for a file keychain. Int32.max is the value `security show-keychain-info`
+        // prints as "no-timeout".
+        XCTAssertEqual(settings.lockInterval, UInt32(Int32.max), "the keychain does not lock after an idle time")
+    }
+
+    // S3
+    func testStartingClearsKeychainFilesThatNoRunningListenerOwns() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-kc-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        func make(_ name: String) -> URL {
+            let url = folder.appendingPathComponent(name)
+            FileManager.default.createFile(atPath: url.path, contents: Data("x".utf8))
+            return url
+        }
+        // A pid above the macOS limit (99999) cannot belong to a live process.
+        let dead = make("ironpet-remote-4000000-\(UUID().uuidString).keychain-db")
+        let legacy = make("ironpet-remote-\(UUID().uuidString).keychain-db")
+        let ours = make("ironpet-remote-\(getpid())-\(UUID().uuidString).keychain-db")
+        let live = make("ironpet-remote-1-\(UUID().uuidString).keychain-db")
+        let running = make("ironpet-remote-\(getpid())-\(UUID().uuidString).keychain-db")
+        let unrelated = make("other.keychain-db")
+        RemoteTLSKeychain.removeStale(in: folder, keeping: running)
+        let left = Set(try FileManager.default.contentsOfDirectory(atPath: folder.path))
+        XCTAssertEqual(left, [live.lastPathComponent, running.lastPathComponent, unrelated.lastPathComponent])
+        XCTAssertFalse(left.contains(dead.lastPathComponent) || left.contains(legacy.lastPathComponent) || left.contains(ours.lastPathComponent))
+    }
+
     func testAnOlderEd25519KeyFileIsReplaced() {
         let storage = MemoryKeyStorage()
         storage.save(Data(repeating: 7, count: 32).base64EncodedData())
@@ -147,6 +187,36 @@ final class RemoteSecureListenerTests: XCTestCase {
         let paired = try await h.pairDevice()
         let tasks = try await h.request("GET", "/v1/tasks", token: paired.token)
         XCTAssertEqual(tasks.status, 200)
+        await h.stop()
+    }
+
+    // S2
+    func testAHandshakeSucceedsAfterSomethingLocksTheTLSKeychain() async throws {
+        // File keychains can block on a UI prompt on headless CI runners, which hangs the whole test job. These run locally only.
+        try XCTSkipIf(ProcessInfo.processInfo.environment["CI"] != nil, "file keychain tests are not run on CI")
+        let h = RemoteServerHarness()
+        try await h.startSecure(loopback.ip)
+        let fingerprint = h.service.newPairingCode().fingerprint
+        let keychain = try XCTUnwrap(h.controller.server?.keychain)
+        let before = try await h.secureRequest("GET", address: loopback.ip, port: h.port, "/v1/tasks", fingerprint: fingerprint)
+        XCTAssertEqual(before.status, 401, "the TLS handshake works before the lock (no token, so the gate answers)")
+        XCTAssertEqual(SecKeychainLock(keychain.keychain), errSecSuccess)
+        // The timer unlocks the keychain within half a second, so a handshake right after the lock can still fail. A phone retries, and so
+        // does this: the handshake has to complete within a few seconds of the lock.
+        let started = Date()
+        var after: RemoteReply?
+        var lastError: Error?
+        while after == nil, Date().timeIntervalSince(started) < 5 {
+            do {
+                after = try await h.secureRequest("GET", address: loopback.ip, port: h.port, "/v1/tasks", fingerprint: fingerprint)
+            } catch {
+                lastError = error
+                try await Task.sleep(for: .milliseconds(50))
+            }
+        }
+        XCTAssertLessThan(Date().timeIntervalSince(started), 3)
+        XCTAssertEqual(after?.status, 401, "a new handshake completes after the keychain was locked: \(String(describing: lastError))")
+        XCTAssertTrue(keychain.isUnlocked)
         await h.stop()
     }
 

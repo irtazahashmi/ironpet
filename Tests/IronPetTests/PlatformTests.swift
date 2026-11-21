@@ -45,7 +45,8 @@ final class PlatformTests: XCTestCase {
     func testMacPlatformReportsEveryCapabilityAsSupported() {
         let capabilities = Self.macPlatform().capabilities
         XCTAssertEqual(capabilities.map(\.name), ["SecretStore", "ProcessSpawner", "LogSink", "AppInfo", "WallClock", "MeetingRecorder",
-                                                  "CaptureControl", "SpeechOutput", "PetAssets", "FileIntake"])
+                                                  "CaptureControl", "SpeechOutput", "PetAssets", "FileIntake", "PresenceSource", "URLOpener",
+                                                  "AudioTranscoder"])
         XCTAssertTrue(capabilities.allSatisfy(\.supported))
     }
 
@@ -63,7 +64,7 @@ final class PlatformTests: XCTestCase {
         let platform = Platform(secrets: InMemorySecretStore(), processes: POSIXProcessSpawner(), log: StderrLogSink(),
                                 appInfo: FakeAppInfo(owners: [1: "x"]), clock: FixedClock(date: Date(timeIntervalSince1970: 5), zone: TimeZone(identifier: "UTC")!),
                                 meetings: FakeMeetingRecorder(), capture: FakeCaptureControl(), speech: FakeSpeechOutput(), pets: FakePetAssets(),
-                                files: FakeFileIntake())
+                                files: FakeFileIntake(), presence: FakePresenceSource(), opener: FakeURLOpener(), audio: FakeAudioTranscoder())
         XCTAssertEqual(try platform.clock.now, Date(timeIntervalSince1970: 5))
         XCTAssertTrue(platform.capabilities.allSatisfy(\.supported))
     }
@@ -89,6 +90,30 @@ final class PlatformTests: XCTestCase {
         expect("WallClock") { _ = try clock.now }
         expect("WallClock") { _ = try clock.timeZone }
         XCTAssertFalse(UnsupportedLogSink().isSupported)
+        let presence = UnsupportedPresenceSource()
+        expect("PresenceSource") { _ = try presence.idleSeconds() }
+        XCTAssertEqual(presence.idleOrZero(), 0, "an unsupported source reports a user who is at the keyboard")
+        XCTAssertFalse(presence.isScreenLocked())
+        XCTAssertFalse(presence.wokeSince(.distantPast))
+        XCTAssertTrue(presence.micCalls().isEmpty)
+        let opener = UnsupportedURLOpener()
+        expect("URLOpener") { try opener.open(URL(string: "https://example.com")!) }
+        let audio = UnsupportedAudioTranscoder()
+        expect("AudioTranscoder") { _ = try audio.wav(from: URL(fileURLWithPath: "/x.wav"), maxSeconds: 1) }
+        let mic = UnsupportedConversationMic()
+        expect("ConversationListening") { try mic.start() }
+        do {
+            try await UnsupportedConversationSpeaker().say("hi")
+            XCTFail("expected an error")
+        } catch {
+            XCTAssertEqual(error as? CapabilityError, .unsupported(capability: "ConversationSpeaker", platform: platform))
+        }
+        do {
+            _ = try await UnsupportedDiarizer().diarize(wav: URL(fileURLWithPath: "/x.wav"))
+            XCTFail("expected an error")
+        } catch {
+            XCTAssertEqual(error as? CapabilityError, .unsupported(capability: "SpeakerDiarizing", platform: platform))
+        }
         XCTAssertEqual(CapabilityError.unsupported(capability: "SecretStore", platform: "Linux").localizedDescription, "SecretStore is not available on Linux")
     }
 
