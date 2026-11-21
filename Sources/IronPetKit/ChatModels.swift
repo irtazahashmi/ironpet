@@ -37,6 +37,8 @@ public enum RemoteChatRow: Equatable, Sendable {
     /// A file sent with a message. `isImage` tells a photo from another file.
     case attachment(fileName: String, isImage: Bool)
     case form(message: String, skipped: Bool, lines: [RemoteFormLine])
+    /// A system notice from IronPet. The first line is its label and the rest shows when it is expanded.
+    case notice(String)
     case unsupported(String)
 }
 
@@ -91,6 +93,7 @@ public struct RemoteChatItem: Codable, Equatable, Hashable, Identifiable, Sendab
         case "error": return .error(text ?? "")
         case "screenshot": return .attachment(fileName: fileName ?? "file", isImage: isImage ?? true)
         case "form": return .form(message: text ?? "", skipped: skipped ?? false, lines: lines ?? [])
+        case "notice": return .notice(text ?? "")
         default: return .unsupported(text ?? "")
         }
     }
@@ -233,6 +236,8 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
     public var state: String
     public var running: Bool
     public var activity: String?
+    /// When the running turn started, so the phone shows the same elapsed time the Mac does.
+    public var runStarted: Date?
     public var folderLabel: String
     public var agent: RemoteChatAgent
     public var model: String?
@@ -245,14 +250,16 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
 
     enum CodingKeys: String, CodingKey {
         case title, state, running, activity, agent, model, notice, items, approvals, forms, queue
+        case runStarted = "run_started"
         case threadID = "thread_id"
         case folderLabel = "folder_label"
     }
 
     public init(threadID: String? = nil, title: String = "New chat", state: String = "idle", running: Bool = false, activity: String? = nil,
                 folderLabel: String = "demo-app", agent: RemoteChatAgent = RemoteChatAgent(id: "claude", name: "Claude Code"), model: String? = nil,
-                notice: String? = nil, items: [RemoteChatItem] = [], approvals: [RemoteApproval] = [], forms: [RemoteForm] = [], queue: [RemoteQueued] = []) {
+                runStarted: Date? = nil, notice: String? = nil, items: [RemoteChatItem] = [], approvals: [RemoteApproval] = [], forms: [RemoteForm] = [], queue: [RemoteQueued] = []) {
         self.threadID = threadID; self.title = title; self.state = state; self.running = running; self.activity = activity
+        self.runStarted = runStarted
         self.folderLabel = folderLabel; self.agent = agent; self.model = model; self.notice = notice; self.items = items
         self.approvals = approvals; self.forms = forms; self.queue = queue
     }
@@ -264,6 +271,7 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
         state = try c.decodeIfPresent(String.self, forKey: .state) ?? "idle"
         running = try c.decodeIfPresent(Bool.self, forKey: .running) ?? false
         activity = try c.decodeIfPresent(String.self, forKey: .activity)
+        runStarted = try? c.decodeIfPresent(Date.self, forKey: .runStarted)
         folderLabel = try c.decodeIfPresent(String.self, forKey: .folderLabel) ?? ""
         agent = try c.decodeIfPresent(RemoteChatAgent.self, forKey: .agent) ?? RemoteChatAgent(id: "", name: "Agent")
         model = try c.decodeIfPresent(String.self, forKey: .model)
@@ -281,6 +289,7 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
         try c.encode(state, forKey: .state)
         try c.encode(running, forKey: .running)
         try c.encodeIfPresent(activity, forKey: .activity)
+        try c.encodeIfPresent(runStarted, forKey: .runStarted)
         try c.encode(folderLabel, forKey: .folderLabel)
         try c.encode(agent, forKey: .agent)
         try c.encodeIfPresent(model, forKey: .model)
