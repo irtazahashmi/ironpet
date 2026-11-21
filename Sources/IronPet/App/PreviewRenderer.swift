@@ -128,6 +128,10 @@ enum PreviewRenderer {
         ConfigStore.shared.usePreview(screenConfig)
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks")
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks-light", scheme: .light)
+        for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
+            render(TaskBoardView(columns: TaskBoard.columns(tasks.all, label: nil, query: ""), onOpen: { _ in }, onDrop: { _, _ in })
+                .frame(width: 1240, height: 520).panel(), to: dir, "tasks-board" + suffix, scheme: scheme)
+        }
         if let sample = tasks.all.first {
             render(TaskDetailPage(tasks: tasks, id: sample.id, onBack: {}, onOpen: { _ in }).frame(width: 760, height: 640).panel(), to: dir, "task-detail")
             render(TaskDetailPage(tasks: tasks, id: sample.id, onBack: {}, onOpen: { _ in }).frame(width: 760, height: 640).panel(), to: dir, "task-detail-light", scheme: .light)

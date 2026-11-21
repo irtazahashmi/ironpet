@@ -409,7 +409,14 @@ final class MockIronPetServer: @unchecked Sendable {
             lock.unlock()
             return fail(connection, 404, "not_found", "no task \(id)")
         }
-        if let raw = request.json["status"] as? String, let status = TaskStatus(rawValue: raw) { _tasks[index].status = status }
+        if let raw = request.json["status"] as? String, let status = TaskStatus(rawValue: raw) {
+            _tasks[index].status = status
+            _tasks[index].closed = status == .done ? Date() : nil
+        }
+        if let name = request.json["waiting_on"] as? String {
+            let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+            _tasks[index].waitingOn = trimmed.isEmpty ? nil : trimmed
+        }
         let task = _tasks[index]
         lock.unlock()
         respond(connection, 200, task)

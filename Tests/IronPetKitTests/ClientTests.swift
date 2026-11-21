@@ -70,6 +70,18 @@ final class ClientTests: XCTestCase {
         XCTAssertEqual(server.requests[4].json["note"] as? String, "started")
     }
 
+    func testSetWaitingOnSendsWaitingOnAndClearsItWithABlankName() async throws {
+        let client = paired()
+        _ = try await client.setWaitingOn(id: "t-backlog", name: "Ana")
+        _ = try await client.setWaitingOn(id: "t-backlog", name: nil, status: .needsYou, note: "back to me")
+        XCTAssertEqual(server.requests.map(\.line), ["PATCH /v1/tasks/t-backlog", "PATCH /v1/tasks/t-backlog"])
+        XCTAssertEqual(server.requests[0].json["waiting_on"] as? String, "Ana")
+        XCTAssertNil(server.requests[0].json["status"], "the status stays when none is given")
+        XCTAssertEqual(server.requests[1].json["waiting_on"] as? String, "")
+        XCTAssertEqual(server.requests[1].json["status"] as? String, "needs_you")
+        XCTAssertEqual(server.requests[1].json["note"] as? String, "back to me")
+    }
+
     func testRevokeSelf() async throws {
         try await paired().revokeSelf()
         XCTAssertEqual(server.requests.last?.line, "DELETE /v1/devices/me")

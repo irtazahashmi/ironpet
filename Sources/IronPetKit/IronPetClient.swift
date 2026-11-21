@@ -150,6 +150,15 @@ public final class IronPetClient: @unchecked Sendable {
         try await send(RemoteTask.self, "PATCH", APIPath.task(id), body: ["status": status.rawValue, "note": note])
     }
 
+    /// Names who holds the task, or clears that with a nil or blank `name`. A `status` in the same call changes it in the same update.
+    /// The Mac has taken `waiting_on` on `PATCH /v1/tasks/:id` since the route was added, so an older Mac accepts this too.
+    public func setWaitingOn(id: String, name: String?, status: TaskStatus? = nil, note: String = "") async throws -> RemoteTask {
+        var body = ["waiting_on": name ?? ""]
+        if let status { body["status"] = status.rawValue }
+        if !note.isEmpty { body["note"] = note }
+        return try await send(RemoteTask.self, "PATCH", APIPath.task(id), body: body)
+    }
+
     // MARK: Pet, bubbles, agents, alerts, today
 
     public func pet() async throws -> RemotePet { try await get(RemotePet.self, APIPath.pet) }

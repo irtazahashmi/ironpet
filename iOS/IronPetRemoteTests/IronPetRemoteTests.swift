@@ -120,6 +120,78 @@ final class TasksModelTests: XCTestCase {
         XCTAssertEqual(model.done.map(\.id), ["t-done"])
     }
 
+    // MARK: Board
+
+    private func boardModel() async -> TasksModel {
+        var recent = server.tasks.first { $0.id == "t-done" }!
+        recent.closed = Date()
+        server.tasks = server.tasks.map { $0.id == "t-done" ? recent : $0 }
+        let model = makeModel()
+        await model.reload()
+        return model
+    }
+
+    func testBoardColumnsHoldTheListGroupsAndOnlyRecentDoneTasks() async {
+        let model = await boardModel()
+        let columns = model.boardColumns
+        XCTAssertEqual(columns[.needsYou]?.map(\.id), ["t-needs"])
+        XCTAssertEqual(columns[.inProgress]?.map(\.id), ["t-progress"])
+        XCTAssertEqual(columns[.backlog]?.map(\.id), ["t-backlog"])
+        XCTAssertEqual(columns[.waiting]?.map(\.id), ["t-waiting"])
+        XCTAssertEqual(columns[.done]?.map(\.id), ["t-done"])
+        let old = RemoteTask(id: "old", title: "Old", status: .done, closed: Date().addingTimeInterval(-8 * 86_400))
+        XCTAssertNil(TasksModel.boardColumns([old])[.done], "a task closed 8 days ago is past the 7 day window")
+    }
+
+    func testDroppingOnAnotherColumnSendsTheStatus() async {
+        let model = await boardModel()
+        let outcome = await model.drop("t-progress", on: .needsYou)
+        XCTAssertEqual(outcome, .moved)
+        XCTAssertEqual(server.requests.filter { $0.line == "PATCH /v1/tasks/t-progress" }.count, 1)
+        XCTAssertEqual(server.requests.last { $0.method == "PATCH" }?.json["status"] as? String, "needs_you")
+        XCTAssertEqual(server.tasks.first { $0.id == "t-progress" }?.status, .needsYou)
+        XCTAssertEqual(model.boardColumns[.needsYou]?.map(\.id).sorted(), ["t-needs", "t-progress"])
+        let again = await model.drop("t-progress", on: .needsYou)
+        XCTAssertEqual(again, .unchanged)
+    }
+
+    func testDroppingOnWaitingAsksForANameAndHoldSendsIt() async {
+        let model = await boardModel()
+        let outcome = await model.drop("t-backlog", on: .waiting)
+        XCTAssertEqual(outcome, .needsName)
+        XCTAssertTrue(server.requests.filter { $0.method == "PATCH" }.isEmpty, "nothing is sent before a name is given")
+        let blank = await model.hold("t-backlog", name: "  ")
+        XCTAssertFalse(blank)
+        let held = await model.hold("t-backlog", name: "Ana")
+        XCTAssertTrue(held)
+        XCTAssertEqual(server.requests.last { $0.method == "PATCH" }?.json["waiting_on"] as? String, "Ana")
+        XCTAssertNil(server.requests.last { $0.method == "PATCH" }?.json["status"])
+        XCTAssertEqual(model.boardColumns[.waiting]?.map(\.id).sorted(), ["t-backlog", "t-waiting"])
+    }
+
+    func testDroppingAWaitingTaskElsewhereClearsWaitingOnInTheSameRequest() async {
+        let model = await boardModel()
+        let outcome = await model.drop("t-waiting", on: .inProgress)
+        XCTAssertEqual(outcome, .moved)
+        let patches = server.requests.filter { $0.method == "PATCH" }
+        XCTAssertEqual(patches.count, 1)
+        XCTAssertEqual(patches[0].json["waiting_on"] as? String, "")
+        XCTAssertEqual(patches[0].json["status"] as? String, "in_progress")
+        XCTAssertNil(server.tasks.first { $0.id == "t-waiting" }?.waitingOn)
+    }
+
+    func testDroppingOnDoneClosesTheTask() async {
+        let model = await boardModel()
+        let outcome = await model.drop("t-needs", on: .done)
+        XCTAssertEqual(outcome, .moved)
+        XCTAssertEqual(server.count("POST /v1/tasks/t-needs/close"), 1)
+        XCTAssertEqual(server.tasks.first { $0.id == "t-needs" }?.status, .done)
+        let waiting = await model.drop("t-waiting", on: .done)
+        XCTAssertEqual(waiting, .moved)
+        XCTAssertNil(server.tasks.first { $0.id == "t-waiting" }?.waitingOn)
+        XCTAssertEqual(server.tasks.first { $0.id == "t-waiting" }?.status, .done)
+    }
+
     /// S5
     func testAddSendsAcceptAndUpdatesTheList() async {
         let model = makeModel()

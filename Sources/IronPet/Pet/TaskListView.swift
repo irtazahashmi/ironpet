@@ -22,6 +22,12 @@ struct TaskListView: View {
     /// The suggestion open in full. Suggestions have no page of their own in the store, so they get a simple one.
     @State private var suggestionNav = ListNavigation<String>()
     @State private var search = ""
+    @AppStorage(TaskViewMode.key) private var modeRaw = TaskViewMode.list.rawValue
+    /// A card dropped on Waiting on others, until the user says who holds it.
+    @State private var holdingTask: String?
+    @State private var holder = ""
+
+    private var mode: TaskViewMode { TaskViewMode(rawValue: modeRaw) ?? .list }
 
     enum Content: Equatable { case unavailable, empty, list }
 
@@ -29,7 +35,7 @@ struct TaskListView: View {
     static func content(unavailable: Bool, isEmpty: Bool) -> Content { !isEmpty ? .list : unavailable ? .unavailable : .empty }
 
     var body: some View {
-        ListScreen(title: IronPetSection.tasks.title, search: $search, detailOpen: nav.opened != nil || suggestionNav.opened != nil, trailing: { labelFilterMenu }) {
+        ListScreen(title: IronPetSection.tasks.title, search: $search, detailOpen: nav.opened != nil || suggestionNav.opened != nil, trailing: { viewModePicker; labelFilterMenu }) {
             // The list stays in the hierarchy under the detail page so its scroll position survives opening a task.
             ZStack {
                 listPage
@@ -46,7 +52,18 @@ struct TaskListView: View {
                         .transition(.opacity)
                 }
             }
+            .alert("Waiting on whom?", isPresented: holdingAlertShown) {
+                TextField("Name", text: $holder)
+                Button("Cancel", role: .cancel) {}
+                Button("Set") { if let id = holdingTask { TaskBoard.hold(id, name: holder, tasks: tasks) } }
+            } message: {
+                Text("The task moves to Waiting on others.")
+            }
         }
+    }
+
+    private var holdingAlertShown: Binding<Bool> {
+        Binding(get: { holdingTask != nil }, set: { if !$0 { holdingTask = nil } })
     }
 
     private var isDetailOpen: Bool { nav.opened != nil || suggestionNav.opened != nil }
@@ -74,7 +91,8 @@ struct TaskListView: View {
                 DatabaseBanner(reason: reason)
             }
             let content = Self.content(unavailable: tasks.unavailable != nil, isEmpty: tasks.suggestions.isEmpty && tasks.all.isEmpty)
-            let nothingShown = suggestionRows.isEmpty && open.isEmpty && done.isEmpty
+            let columns = Self.columns(tasks.all, label: labelFilter, query: search)
+            let nothingShown = suggestionRows.isEmpty && columns.isEmpty
             if content == .unavailable {
                 Spacer()
             } else if content == .empty {
@@ -82,22 +100,31 @@ struct TaskListView: View {
                            detail: "Ask \(petName) to keep track of something, or finish a meeting.")
             } else if nothingShown {
                 NoMatches()
+            } else if mode == .board {
+                if !suggestionRows.isEmpty {
+                    ListScroll { suggestions }.frame(maxHeight: 190)
+                    Divider()
+                }
+                TaskBoardView(columns: columns, highlighted: highlighted, onOpen: { nav.open($0) },
+                              onDrop: drop(_:on:))
+                    .onAppear { reveal(focus.wrappedValue, nil) }
+                    .onChange(of: focus.wrappedValue) { reveal(focus.wrappedValue, nil) }
             } else {
                 ScrollViewReader { proxy in
                     ListScroll {
                         suggestions
-                        ForEach([TaskStatus.needsYou, .inProgress, .backlog], id: \.self) { status in
-                            let items = open.filter { $0.waitingOn == nil && $0.status == status }
+                        ForEach([TaskColumn.needsYou, .inProgress, .backlog], id: \.self) { column in
+                            let items = columns[column] ?? []
                             if !items.isEmpty {
-                                ListGroupTitle(status.title)
+                                ListGroupTitle(column.title)
                                 ForEach(items) { row($0) }
                             }
                         }
-                        if !waiting.isEmpty {
-                            ListGroupTitle("Waiting on others")
-                            ForEach(waiting) { row($0) }
+                        if let items = columns[.waiting], !items.isEmpty {
+                            ListGroupTitle(TaskColumn.waiting.title)
+                            ForEach(items) { row($0) }
                         }
-                        doneSection
+                        doneSection(columns[.done] ?? [])
                     }
                     .onAppear { reveal(focus.wrappedValue, proxy) }
                     .onChange(of: focus.wrappedValue) { reveal(focus.wrappedValue, proxy) }
@@ -110,7 +137,16 @@ struct TaskListView: View {
 
     private var petName: String { SettingsAPI.live.config.pet.name }
 
-    private var open: [TaskItem] { tasks.all.filter { $0.status != .done && matches($0) } }
+    private func drop(_ id: String, on column: TaskColumn) {
+        if TaskBoard.drop(id, on: column, tasks: tasks) == .needsName {
+            holder = ""
+            holdingTask = id
+        }
+    }
+
+    private static func columns(_ tasks: [TaskItem], label: String?, query: String) -> [TaskColumn: [TaskItem]] {
+        TaskBoard.columns(tasks, label: label, query: query)
+    }
 
     /// A task shows when it has the chosen label and its title or notes contain the search text.
     func matches(_ task: TaskItem) -> Bool {
@@ -124,6 +160,17 @@ struct TaskListView: View {
 
     private var suggestionRows: [TaskSuggestion] {
         tasks.suggestions.filter { ListSearch.matches(search, in: [$0.title]) }
+    }
+
+    private var viewModePicker: some View {
+        Picker("View", selection: $modeRaw) {
+            ForEach(TaskViewMode.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
+        }
+        .pickerStyle(.segmented)
+        .labelsHidden()
+        .fixedSize()
+        .accessibilityLabel("Show tasks as a list or a board")
+        .help("Show the tasks as a list or as a board of columns")
     }
 
     /// A menu of the labels in use, in the title row. Picking one shows only tasks with it; the chip clears it.
@@ -155,14 +202,6 @@ struct TaskListView: View {
         }
     }
 
-    private var waiting: [TaskItem] { open.filter { $0.waitingOn != nil } }
-
-    /// Done tasks stay in the database for `tasks.keepDoneDays`; the list only shows the last week.
-    private var done: [TaskItem] {
-        let cutoff = Date().addingTimeInterval(-7 * 86_400)
-        return tasks.all.filter { $0.status == .done && ($0.closed ?? $0.updated) >= cutoff && matches($0) }
-    }
-
     @ViewBuilder private var suggestions: some View {
         if !suggestionRows.isEmpty {
             SectionHeader("Suggestions", action: "Add all", help: "Add every suggested new task. Updates to existing tasks are accepted one by one") { tasks.acceptAll() }
@@ -176,7 +215,7 @@ struct TaskListView: View {
         }
     }
 
-    @ViewBuilder private var doneSection: some View {
+    @ViewBuilder private func doneSection(_ done: [TaskItem]) -> some View {
         if !done.isEmpty {
             Button {
                 withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) { showDone.toggle() }
@@ -218,14 +257,14 @@ struct TaskListView: View {
     }
 
     /// Scrolls to the task a Today row opened and highlights it for a moment.
-    private func reveal(_ id: String?, _ proxy: ScrollViewProxy) {
+    private func reveal(_ id: String?, _ proxy: ScrollViewProxy?) {
         guard let id, let task = tasks.task(id) else { return }
         focus.wrappedValue = nil
         nav.close()
         if task.status == .done { showDone = true }
         highlighted = id
         DispatchQueue.main.async {
-            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { proxy.scrollTo(id, anchor: .center) }
+            withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { proxy?.scrollTo(id, anchor: .center) }
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
             if highlighted == id { withAnimation(reduceMotion ? nil : .easeOut(duration: 0.3)) { highlighted = nil } }
@@ -298,11 +337,7 @@ private struct TaskRow: View {
     }
 
     /// The first non-empty line of the notes, without markdown list or heading marks.
-    static func firstLine(_ notes: String) -> String? {
-        notes.split(whereSeparator: \.isNewline)
-            .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "#-*> ").union(.whitespaces)) }
-            .first { !$0.isEmpty }
-    }
+    static func firstLine(_ notes: String) -> String? { TaskItem.firstLine(of: notes) }
 
     private var details: some View {
         let now = Date()

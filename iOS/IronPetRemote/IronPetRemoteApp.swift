@@ -9,7 +9,10 @@ struct IronPetRemoteApp: App {
         let store = KeychainCredentialStore()
         #if DEBUG
         // UI tests start from an unpaired app.
-        if ProcessInfo.processInfo.arguments.contains("--reset-credentials") { store.delete() }
+        if ProcessInfo.processInfo.arguments.contains("--reset-credentials") {
+            store.delete()
+            UserDefaults.standard.removeObject(forKey: TasksViewMode.key)
+        }
         #endif
         _model = State(initialValue: AppModel(store: store))
     }
