@@ -100,15 +100,18 @@ final class TranscriptGate {
     @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private var backgroundedAt: Date?
     @ObservationIgnored var onLock: () -> Void = {}
+    /// What the system prompt says it is for.
+    @ObservationIgnored let reason: String
 
-    init(authenticator: any DeviceAuthenticating = LocalAuthenticator(), now: @escaping () -> Date = Date.init) {
+    init(authenticator: any DeviceAuthenticating = LocalAuthenticator(), reason: String = "Show meeting transcripts", now: @escaping () -> Date = Date.init) {
         self.authenticator = authenticator
+        self.reason = reason
         self.now = now
     }
 
     func unlock() async {
         guard !isUnlocked else { return }
-        let ok = await authenticator.authenticate(reason: "Show meeting transcripts")
+        let ok = await authenticator.authenticate(reason: reason)
         refused = !ok
         isUnlocked = ok
         if ok { backgroundedAt = nil }

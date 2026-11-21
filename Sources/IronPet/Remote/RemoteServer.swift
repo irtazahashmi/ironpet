@@ -46,7 +46,7 @@ struct RemoteGate: RouterMiddleware {
         if response.headers[.cacheControl] == nil { response.headers[.cacheControl] = "no-store" }
         let elapsed = ContinuousClock.now - started
         let ms = Int(elapsed.components.seconds * 1000 + elapsed.components.attoseconds / 1_000_000_000_000_000)
-        service.log(RemoteAccessRow(at: Date(), deviceID: context.device?.id, method: request.method.rawValue,
+        service.log(RemoteAccessRow(at: service.currentTime, deviceID: context.device?.id, method: request.method.rawValue,
                                     route: Self.template(context.endpointPath) ?? "-", status: Int(response.status.code),
                                     bytes: response.body.contentLength ?? 0, durationMs: ms))
         return response
@@ -340,6 +340,40 @@ final class RemoteServer {
         addAutomationRoutes(to: router)
         addMeetingRoutes(to: router)
         addSettingsRoutes(to: router)
+        addScreenRoutes(to: router)
+    }
+
+    /// Screen captures (phase 5). Every route needs the `screen` scope, which only the Mac grants, and counts against 200 requests an hour.
+    private func addScreenRoutes(to router: Router<RemoteContext>) {
+        router.get("/v1/screen/status") { [self] _, context in await self.screenCall(context) { await RemoteScreen(screen: $0).status() } }
+        router.get("/v1/screen/changes") { [self] request, context in
+            let query = Self.query(request)
+            return await self.screenCall(context) { try RemoteScreen(screen: $0).changes(query: query) }
+        }
+        router.get("/v1/screen/captures/:id") { [self] request, context in
+            let id = Self.parameter(context, "id"), query = Self.query(request)
+            return await self.screenCall(context) { try RemoteScreen(screen: $0).capture(id, query: query) }
+        }
+        router.get("/v1/screen/search") { [self] request, context in
+            let query = Self.query(request)
+            return await self.screenCall(context) { try RemoteScreen(screen: $0).search(query: query) }
+        }
+        router.post("/v1/screen/pause") { [self] request, context in
+            let body = try await Self.object(request, context)
+            return await self.screenCall(context) { try await RemoteScreen(screen: $0).pause(body) }
+        }
+    }
+
+    /// Checks the device's `screen` scope (403) and its hourly limit (429), then runs the call on the main actor.
+    private func screenCall(_ context: RemoteContext, _ body: @MainActor (ScreenAPI) async throws -> [String: Any]) async -> Response {
+        guard let device = context.device else { return Self.error(401, "unauthorized", "unauthorized") }
+        switch service.authorizeScreen(device) {
+        case .forbidden: return Self.error(403, "forbidden", "This device may not read the screen. Turn on Screen text for it in Settings → Devices on the Mac.")
+        case .limited(let seconds): return Self.limited(seconds)
+        case .allowed: break
+        }
+        guard let screen = api.screen else { return Self.error(503, "unavailable", "screen capture is not available") }
+        do { return Self.json(200, try await body(screen)) } catch { return Self.errorResponse(RemoteFailure(error)) }
     }
 
     /// Automations (phase 4). The device is the author of what it creates or changes, so risky automations wait for Approve on the Mac.

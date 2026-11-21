@@ -73,7 +73,7 @@ class SocketModel {
     }
 }
 
-/// The tabs of the app. Alerts, Automations, Meetings and Settings sit behind More.
+/// The tabs of the app. Alerts, Automations, Meetings, Screen and Settings sit behind More.
 enum AppTab: Hashable {
     case pet, chat, tasks, agents, more
 
@@ -89,7 +89,7 @@ enum AppTab: Hashable {
 
 /// The screens behind the More tab.
 enum MoreDestination: Hashable {
-    case alerts, automations, meetings, settings
+    case alerts, automations, meetings, screen, settings
 
     static func destination(for target: TodayTarget) -> MoreDestination? {
         switch target.type {
