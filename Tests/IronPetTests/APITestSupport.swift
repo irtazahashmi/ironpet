@@ -9,7 +9,8 @@ enum APITestSupport {
     static func makeAPI(events: APIEventBus? = nil, now: @escaping () -> Date = Date.init,
                         automations: [Automation] = [], clock: AutomationTestClock = AutomationTestClock(),
                         signals: SignalStore? = nil, bubbles: BubbleStore? = nil, notifications: NotificationStore? = nil, sessions: SessionStore? = nil, chat: ChatSession? = nil,
-                        meeting: MeetingController? = nil, meetingLibrary: MeetingLibrary? = nil, config: ConfigStore? = nil, petFolders: IronPetAPI.PetFolders? = nil, usage: UsageStore? = nil) -> IronPetAPI {
+                        meeting: MeetingRecorder? = nil, meetingLibrary: MeetingLibrary? = nil, config: ConfigStore? = nil, speech: SpeechOutput? = nil, petAssets: PetAssets? = nil,
+                        files: FileIntake? = nil, usage: UsageStore? = nil) -> IronPetAPI {
         TestMemory.isolate()
         let tasks = TaskStore(database: memoryDatabase(), now: now, keepDoneDays: { 30 })
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-api-\(UUID().uuidString)")
@@ -18,11 +19,14 @@ enum APITestSupport {
         let store = AutomationStore(paths: paths, defaults: { automations }, watch: false)
         let service = AutomationService(store: store, engine: AutomationEngine(env: clock.environment))
         service.runShell = { _, _ in CommandResult(code: 0, stdout: "ok") }
-        return IronPetAPI(stores: .init(tasks: tasks, automations: service, signals: signals ?? SignalStore(), bubbles: bubbles ?? BubbleStore(), notifications: notifications ?? NotificationStore(database: memoryDatabase()), sessions: sessions ?? SessionStore(), chat: chat ?? ChatSession(restore: false),
+        let chat = chat ?? ChatSession(restore: false)
+        return IronPetAPI(stores: .init(tasks: tasks, automations: service, signals: signals ?? SignalStore(), bubbles: bubbles ?? BubbleStore(), notifications: notifications ?? NotificationStore(database: memoryDatabase()), sessions: sessions ?? SessionStore(), chat: chat,
                                  meeting: meeting ?? MeetingController(), meetingLibrary: meetingLibrary ?? MeetingLibrary(root: dir.appendingPathComponent("meetings")),
                                  config: config ?? ConfigStore(memory: Config()),
-                                 petFolders: petFolders ?? .init(library: dir.appendingPathComponent("pets"), bundled: nil,
-                                                                  backgrounds: dir.appendingPathComponent("backgrounds")),
+                                 speech: speech ?? chat.speech,
+                                 petAssets: petAssets ?? MacPetAssets(library: dir.appendingPathComponent("pets"), bundled: nil,
+                                                                      backgrounds: dir.appendingPathComponent("backgrounds")),
+                                 files: files ?? FolderFileIntake(directory: dir.appendingPathComponent("attachments")),
                                  usage: usage ?? UsageStore(database: memoryDatabase())),
                           events: events)
     }

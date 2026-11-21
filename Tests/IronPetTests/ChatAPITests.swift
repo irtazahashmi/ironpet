@@ -218,7 +218,7 @@ final class ChatAPITests: XCTestCase {
     func testUploadsAreSavedByNameOnlyAndHandedToTheAgent() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-uploads-\(UUID().uuidString)")
         defer { try? FileManager.default.removeItem(at: dir) }
-        let chat = ChatAPI(session: session, uploads: dir)
+        let chat = ChatAPI(session: session, files: FolderFileIntake(directory: dir))
         _ = try await chat.send(SendChatRequest(text: "see file", origin: phone, uploads: [ChatUpload(fileName: "../../evil.txt", data: Data("hi".utf8))]))
         await settle()
         let saved = try FileManager.default.contentsOfDirectory(atPath: dir.path)

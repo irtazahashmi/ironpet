@@ -15,7 +15,7 @@ final class ChatViewModel: ObservableObject {
     // MARK: This window's own state
 
     /// Where text over `DraftPolicy.limit` is saved. Tests point it at a temporary folder.
-    var draftDirectory = FileIntake.directory
+    var draftDirectory = MacFileIntake.directory
     @Published var input = "" {
         didSet {
             // The popup needs the commands only once the user types a slash.

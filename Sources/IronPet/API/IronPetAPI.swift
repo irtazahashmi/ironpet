@@ -22,18 +22,16 @@ final class IronPetAPI {
         var notifications: NotificationStore
         var sessions: SessionStore
         var chat: ChatSession
-        var meeting: MeetingController
+        var meeting: MeetingRecorder
         var meetingLibrary: MeetingLibrary
         var config: ConfigStore
+        /// The speaker that reads replies aloud.
+        var speech: SpeechOutput
         /// Where pet sheets and background images live. The app's own folders unless a test says otherwise.
-        var petFolders = PetFolders()
+        var petAssets: PetAssets = MacPetAssets()
+        /// Where files a client attaches to the chat land.
+        var files: FileIntake = MacFileIntake()
         var usage: UsageStore?
-    }
-
-    struct PetFolders {
-        var library = PetLibrary.folder
-        var bundled = PetLibrary.bundledFolder
-        var backgrounds = ChatBackground.folder
     }
 
     let events: APIEventBus
@@ -72,14 +70,13 @@ final class IronPetAPI {
         stores.sessions.events = events
         agents = AgentsAPI(store: stores.sessions)
         stores.chat.events = events
-        chat = ChatAPI(session: stores.chat)
+        chat = ChatAPI(session: stores.chat, files: stores.files)
         stores.meeting.events = events
         stores.meetingLibrary.events = events
         stores.config.events = events
         settings = SettingsAPI(store: stores.config)
-        pet = PetAPI(settings: settings, library: stores.petFolders.library, bundled: stores.petFolders.bundled,
-                     backgrounds: stores.petFolders.backgrounds)
-        voice = VoiceAPI(speech: stores.chat.speech, settings: settings)
+        pet = PetAPI(settings: settings, assets: stores.petAssets)
+        voice = VoiceAPI(speech: stores.speech, settings: settings)
         pet.events = events
         today = TodayAPI(tasks: tasks, sessions: stores.sessions, signals: stores.signals)
         if let usageStore = stores.usage {
@@ -89,10 +86,10 @@ final class IronPetAPI {
         if stores.config === ConfigStore.shared { PetAPI.live = pet }
         // Tests build their own API over a memory-only config and must not replace the app's.
         if stores.config === ConfigStore.shared { SettingsAPI.live = settings }
-        meetings = MeetingsAPI(controller: stores.meeting, library: stores.meetingLibrary)
+        meetings = MeetingsAPI(recorder: stores.meeting, library: stores.meetingLibrary)
     }
 
-    func attach(capture service: CaptureService) { screen = ScreenAPI(service: service) }
+    func attach(capture control: CaptureControl) { screen = ScreenAPI(control: control) }
 
     func attach(desktop service: DesktopService) { desktop = DesktopAPI(service: service, settings: settings) }
 

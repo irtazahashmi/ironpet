@@ -107,7 +107,7 @@ final class ChangeSignalStoreTests: XCTestCase {
     func testMeetingLibraryRegeneratorAndMeetingsAPI() {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-signal-\(UUID().uuidString)")
         let library = MeetingLibrary(root: root)
-        let api = MeetingsAPI(controller: MeetingController(), library: library)
+        let api = MeetingsAPI(recorder: MeetingController(), library: library)
         var apiCount = 0
         let token = api.changes.observe { apiCount += 1 }
         var libraryCount = 0

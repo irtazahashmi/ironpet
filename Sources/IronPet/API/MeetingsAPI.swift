@@ -70,24 +70,18 @@ struct MeetingStatus: Codable, Equatable {
 final class MeetingsAPI {
     /// Fires before the recording, the library or a regeneration change.
     let changes = ChangeSignal()
-    private let controller: MeetingController
+    private let recorder: MeetingRecorder
     private let library: MeetingLibrary
     private var forwarding: [ChangeToken] = []
-    #if canImport(Combine)
-    /// `MeetingController` is not on `ChangeSignal` yet, so its publisher is forwarded here.
-    private var controllerForwarding: AnyCancellable?
-    #endif
 
     /// Opens the chat with these files attached. The app owner sets it.
     var askHandler: (([URL]) -> Void)?
 
-    init(controller: MeetingController, library: MeetingLibrary) {
-        self.controller = controller
+    init(recorder: MeetingRecorder, library: MeetingLibrary) {
+        self.recorder = recorder
         self.library = library
-        #if canImport(Combine)
-        controllerForwarding = controller.objectWillChange.sink { [weak self] _ in self?.changes.send() }
-        #endif
         forwarding = [
+            recorder.changes.observe { [weak self] in self?.changes.send() },
             library.changes.observe { [weak self] in self?.changes.send() },
             library.regenerator.changes.observe { [weak self] in self?.changes.send() },
         ]
@@ -157,87 +151,88 @@ final class MeetingsAPI {
     // MARK: Recording
 
     var status: MeetingStatus {
-        let counts = controller.counts
-        return MeetingStatus(phase: controller.phase.rawValue, folder: controller.folder?.path, appName: controller.appName,
-                             startedAt: controller.startedAt, chunksDone: counts.done, chunksWaiting: counts.waiting,
-                             chunksFailed: counts.failed, speakersToName: controller.speakersToName.count)
+        let counts = recorder.counts
+        return MeetingStatus(phase: recorder.phase.rawValue, folder: recorder.folder?.path, appName: recorder.appName,
+                             startedAt: recorder.startedAt, chunksDone: counts.done, chunksWaiting: counts.waiting,
+                             chunksFailed: counts.failed, speakersToName: recorder.speakersToName.count)
     }
 
     /// The folder of the meeting being recorded or summarized, if any.
     var activeFolder: URL? {
-        [.recording, .finishing, .summarizing].contains(controller.phase) ? controller.folder : nil
+        [.recording, .finishing, .summarizing].contains(recorder.phase) ? recorder.folder : nil
     }
 
     /// Ends the recording. The transcript and summary follow.
     func stopRecording() throws {
-        guard controller.isRecording else { throw APIError.conflict("no meeting is being recorded") }
-        controller.stop()
+        guard recorder.isRecording else { throw APIError.conflict("no meeting is being recorded") }
+        do { try recorder.stop() } catch { throw APIError.unavailable(error.localizedDescription) }
     }
 
     // MARK: Speakers
 
     func nameSpeaker(_ request: NameSpeakerRequest) throws {
-        guard controller.speakersToName.contains(where: { $0.id == request.speaker }) || controller.speakerTable.speaker(request.speaker) != nil else {
+        guard recorder.speakersToName.contains(where: { $0.id == request.speaker }) || recorder.speakerTable.speaker(request.speaker) != nil else {
             throw APIError.notFound("no speaker \(request.speaker) in the last meeting")
         }
         guard !request.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { throw APIError.invalid("the name is empty") }
-        controller.nameSpeaker(request.speaker, as: request.name)
+        recorder.nameSpeaker(request.speaker, as: request.name)
     }
 
     func dismissSpeaker(_ request: DismissSpeakerRequest) throws {
-        guard controller.speakerTable.speaker(request.speaker) != nil else { throw APIError.notFound("no speaker \(request.speaker) in the last meeting") }
-        controller.dismissSpeaker(request.speaker, mixed: request.mixed)
+        guard recorder.speakerTable.speaker(request.speaker) != nil else { throw APIError.notFound("no speaker \(request.speaker) in the last meeting") }
+        recorder.dismissSpeaker(request.speaker, mixed: request.mixed)
     }
 
     // MARK: Stored voices
 
     /// The voices ironpet recognises in later meetings, each with how much speech it holds.
-    func voiceprints() -> [StoredVoice] { controller.voiceStore.voices() }
+    func voiceprints() -> [StoredVoice] { recorder.voiceStore.voices() }
 
     /// Whether the encrypted voice file exists, even when it holds no voice ironpet can read.
-    var hasVoiceFile: Bool { controller.voiceStore.hasFile }
+    var hasVoiceFile: Bool { recorder.voiceStore.hasFile }
 
     func forgetVoice(_ id: String) throws {
-        guard controller.voiceStore.voices().contains(where: { $0.id == id }) else { throw APIError.notFound("no stored voice with id \"\(id)\"") }
-        controller.voiceStore.forget(id: id)
+        guard recorder.voiceStore.voices().contains(where: { $0.id == id }) else { throw APIError.notFound("no stored voice with id \"\(id)\"") }
+        recorder.voiceStore.forget(id: id)
     }
 
-    func forgetAllVoices() { controller.voiceStore.forgetAll() }
+    func forgetAllVoices() { recorder.voiceStore.forgetAll() }
 
     // MARK: The recording panel
 
-    var phase: MeetingController.Phase { controller.phase }
-    var apps: [AudioApp] { controller.apps }
-    var choice: AudioChoice { get { controller.choice } set { controller.choice = newValue } }
-    var notice: String? { controller.notice }
-    var appName: String { controller.appName }
-    var startedAt: Date? { controller.startedAt }
+    var phase: MeetingPhase { recorder.phase }
+    var apps: [AudioApp] { recorder.apps }
+    var choice: AudioChoice { get { recorder.choice } set { recorder.choice = newValue } }
+    var notice: String? { recorder.notice }
+    var appName: String { recorder.appName }
+    var startedAt: Date? { recorder.startedAt }
     /// The name of the folder the open meeting is saved in.
-    var folderLabel: String { controller.folder?.lastPathComponent ?? "" }
-    var myLevels: LevelBuffer { controller.myLevels }
-    var theirLevels: LevelBuffer { controller.theirLevels }
-    var counts: (done: Int, waiting: Int, failed: Int) { controller.counts }
-    var recentLines: [MeetingLine] { controller.recentLines }
-    var summaryState: MeetingController.SummaryState { controller.summary }
-    func start() { controller.start() }
-    func dismiss() { controller.dismiss() }
-    func confirmDiscard() { controller.confirmDiscard() }
-    func retryFailed() { controller.retryFailed() }
-    func openTranscript() { controller.openTranscript() }
-    func openSummary() { controller.openSummary() }
-    func openInChat() { controller.openInChat() }
+    var folderLabel: String { recorder.folder?.lastPathComponent ?? "" }
+    var myLevels: LevelBuffer { recorder.myLevels }
+    var theirLevels: LevelBuffer { recorder.theirLevels }
+    var counts: (done: Int, waiting: Int, failed: Int) { recorder.counts }
+    var recentLines: [MeetingLine] { recorder.recentLines }
+    var summaryState: MeetingSummaryState { recorder.summary }
+    /// Starts a recording. Where nothing can record, it does nothing.
+    func start() { try? recorder.start() }
+    func dismiss() { recorder.dismiss() }
+    func confirmDiscard() { recorder.confirmDiscard() }
+    func retryFailed() { recorder.retryFailed() }
+    func openTranscript() { recorder.openTranscript() }
+    func openSummary() { recorder.openSummary() }
+    func openInChat() { recorder.openInChat() }
     /// Opens Settings on the Meetings page, where voices are named.
-    func labelSpeakers() { controller.onLabelSpeakers?() }
+    func labelSpeakers() { recorder.onLabelSpeakers?() }
 
     // Naming the voices of the last meeting.
-    var hasSpeakersToName: Bool { controller.hasSpeakersToName }
-    var speakersToName: [MeetingSpeaker] { controller.speakersToName }
-    var storedNames: [String] { controller.storedNames }
-    func knownNames(stored: [String]) -> [String] { controller.knownNames(stored: stored) }
-    func sampleLine(for id: Int) -> String? { controller.sampleLine(for: id) }
-    var canRegenerateSummary: Bool { controller.canRegenerateSummary }
-    var regeneratingSummary: Bool { controller.regeneratingSummary }
-    func regenerateSummary() { controller.regenerateSummary() }
+    var hasSpeakersToName: Bool { recorder.hasSpeakersToName }
+    var speakersToName: [MeetingSpeaker] { recorder.speakersToName }
+    var storedNames: [String] { recorder.storedNames }
+    func knownNames(stored: [String]) -> [String] { recorder.knownNames(stored: stored) }
+    func sampleLine(for id: Int) -> String? { recorder.sampleLine(for: id) }
+    var canRegenerateSummary: Bool { recorder.canRegenerateSummary }
+    var regeneratingSummary: Bool { recorder.regeneratingSummary }
+    func regenerateSummary() { recorder.regenerateSummary() }
 
     private func record(_ id: String) throws -> MeetingRecord {
         guard let record = library.meetings.first(where: { $0.id == id }) else { throw APIError.notFound("no meeting with id \"\(id)\"") }

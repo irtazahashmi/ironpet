@@ -16,7 +16,7 @@ final class PetAPITests: XCTestCase {
         events = APIEventBus()
         seen = []
         events.subscribe { [unowned self] in seen.append($0) }
-        api = APITestSupport.makeAPI(events: events, petFolders: .init(library: root.appendingPathComponent("pets"), bundled: root.appendingPathComponent("bundled"),
+        api = APITestSupport.makeAPI(events: events, petAssets: MacPetAssets(library: root.appendingPathComponent("pets"), bundled: root.appendingPathComponent("bundled"),
                                                                        backgrounds: root.appendingPathComponent("backgrounds")))
     }
 

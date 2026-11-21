@@ -23,7 +23,7 @@ enum PasteIntake {
     /// The attachments a paste produces. An empty result means the text field should handle the paste.
     static func importPaste(_ pasteboard: NSPasteboard,
                             imageDirectory: URL = ScreenCapture.directory,
-                            textDirectory: URL = FileIntake.directory,
+                            textDirectory: URL = MacFileIntake.directory,
                             limits: PasteLimits? = nil) -> [URL] {
         switch decide(pasteboard, limits: limits) {
         case .field: return []

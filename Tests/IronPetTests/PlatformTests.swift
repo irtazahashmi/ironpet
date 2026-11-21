@@ -34,10 +34,18 @@ struct FixedClock: WallClock {
     var timeZone: TimeZone { zone }
 }
 
+@MainActor
 final class PlatformTests: XCTestCase {
+    /// The Mac platform over the real recorder and speaker, and a capture service on an in-memory database.
+    static func macPlatform() -> Platform {
+        let capture = CaptureService(store: CaptureStore(database: APITestSupport.memoryDatabase()), config: { Config().screenCapture })
+        return Platform.mac(meetings: MeetingController(), speech: SpeechPlayer(), capture: capture)
+    }
+
     func testMacPlatformReportsEveryCapabilityAsSupported() {
-        let capabilities = Platform.mac().capabilities
-        XCTAssertEqual(capabilities.map(\.name), ["SecretStore", "ProcessSpawner", "LogSink", "AppInfo", "WallClock"])
+        let capabilities = Self.macPlatform().capabilities
+        XCTAssertEqual(capabilities.map(\.name), ["SecretStore", "ProcessSpawner", "LogSink", "AppInfo", "WallClock", "MeetingRecorder",
+                                                  "CaptureControl", "SpeechOutput", "PetAssets", "FileIntake"])
         XCTAssertTrue(capabilities.allSatisfy(\.supported))
     }
 
@@ -46,14 +54,16 @@ final class PlatformTests: XCTestCase {
     }
 
     func testCapabilitiesReportOnlyTheUnsupportedAdapter() {
-        var platform = Platform.mac()
+        var platform = Self.macPlatform()
         platform.secrets = UnsupportedSecretStore()
         XCTAssertEqual(platform.capabilities.filter { !$0.supported }.map(\.name), ["SecretStore"])
     }
 
     func testAFakePlatformCanBeBuiltFromFakes() throws {
         let platform = Platform(secrets: InMemorySecretStore(), processes: POSIXProcessSpawner(), log: StderrLogSink(),
-                                appInfo: FakeAppInfo(owners: [1: "x"]), clock: FixedClock(date: Date(timeIntervalSince1970: 5), zone: TimeZone(identifier: "UTC")!))
+                                appInfo: FakeAppInfo(owners: [1: "x"]), clock: FixedClock(date: Date(timeIntervalSince1970: 5), zone: TimeZone(identifier: "UTC")!),
+                                meetings: FakeMeetingRecorder(), capture: FakeCaptureControl(), speech: FakeSpeechOutput(), pets: FakePetAssets(),
+                                files: FakeFileIntake())
         XCTAssertEqual(try platform.clock.now, Date(timeIntervalSince1970: 5))
         XCTAssertTrue(platform.capabilities.allSatisfy(\.supported))
     }

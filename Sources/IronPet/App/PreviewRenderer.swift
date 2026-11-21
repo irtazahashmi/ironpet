@@ -61,7 +61,7 @@ enum PreviewRenderer {
         chat.loadPreview(.done)
         let meetingLibrary = MeetingLibrary(root: sampleMeetings())
         meetingLibrary.reload()
-        let meetings = MeetingsAPI(controller: MeetingController(), library: meetingLibrary)
+        let meetings = MeetingsAPI(recorder: MeetingController(), library: meetingLibrary)
         func list(_ sessions: SessionStore, tasks: TasksAPI, on section: IronPetSection? = nil) -> some View {
             let model = IronPetWindowModel(defaults: UserDefaults(suiteName: "ironpet-previews") ?? .standard)
             model.section = section ?? IronPetSection.needingAttention(agents: AgentsAPI(store: sessions), alerts: AlertsAPI(store: signals), tasks: tasks)
