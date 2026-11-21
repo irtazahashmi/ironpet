@@ -61,6 +61,8 @@ final class ChatSession {
         var automation: String? = nil
         /// A turn that only delivers pending system notices. It has no text and never reaches the draft.
         var notice = false
+        /// Whether a running turn can take it. Automations and notices wait for the turn to end.
+        var steerable: Bool { automation == nil && !notice }
     }
 
     /// What happened to a turn that an automation started, for `onAutomation`.
@@ -293,6 +295,16 @@ final class ChatSession {
     private var lastTurn: ACPTurn?
     /// Replaces the agent turn in tests: receives the turn and the callback that delivers its events.
     var turnRunner: ((ACPTurn, @escaping (AgentEvent) -> Void) async -> Void)?
+    /// Replaces `ACPBackend.steer` in tests. Setting it also turns steering on, as an agent that advertises it would.
+    var steerRunner: ((ACPTurn) async -> ACPBackend.SteerOutcome)?
+    /// True while a steered message is being handed to the agent, so they go one at a time and in order.
+    private var steering = false
+    /// Set when the agent refused a steered message. The rest of this turn's queue waits for the turn to end.
+    private var steerFailed = false
+    /// Counts `stop()` calls, so a steer that was in flight when the user pressed Stop does not send its message after it.
+    private var stops = 0
+    /// Senders whose messages went into the running turn. They hear how the turn ended, like the sender that started it.
+    private var steeredOrigins: [ChatOrigin] = []
     private var toolItems: [String: UUID] = [:]
     /// A tool row's own summary, before the count of its subagent's tool calls is added.
     private var toolBase: [String: String] = [:]
@@ -692,6 +704,7 @@ final class ChatSession {
         }
         if isRunning {
             queue.append(QueuedMessage(text: prompt, attachments: files, reply: reply))
+            steerNext()
             return .queued
         }
         return start(prompt: prompt, shots: files, reply: reply) ? .sent : .needsFolder
@@ -802,6 +815,76 @@ final class ChatSession {
         events?.publish(.chatState, id: "draft")
     }
 
+    /// True when the running turn takes a message typed now: the agent advertised steering.
+    private var canSteer: Bool {
+        if turnRunner != nil { return steerRunner != nil }
+        return acp?.canSteer == true
+    }
+
+    /// True while queued messages wait for the user to answer an approval or a form. The agent would hold a steered message
+    /// until then, and an interrupting one would cancel the card, so ironpet sends it after the answer.
+    var queueWaitsForAnswer: Bool {
+        isRunning && canSteer && !steerFailed && (!approvals.isEmpty || !forms.isEmpty) && queue.contains { $0.steerable }
+    }
+
+    /// Hands the oldest steerable queued message to the running turn, then the next, in order. Does nothing for an agent that
+    /// did not advertise steering, or while an approval or form is open. The row becomes a normal sent message once the agent has it.
+    private func steerNext() {
+        guard !steering, isRunning, canSteer, !steerFailed, approvals.isEmpty, forms.isEmpty,
+              let message = queue.first(where: \.steerable) else { return }
+        steering = true
+        let generation = stops
+        queue.removeAll { $0.id == message.id }
+        let turn = steerTurn(message)
+        Task { [weak self] in
+            let outcome: ACPBackend.SteerOutcome
+            if let run = self?.steerRunner { outcome = await run(turn) } else { outcome = await self?.acp?.steer(turn) ?? .notRunning }
+            self?.steered(message, outcome: outcome, generation: generation)
+        }
+    }
+
+    private static func displayText(_ message: QueuedMessage) -> String {
+        message.text.isEmpty ? (message.origin == nil ? "Help me with what's on my screen." : "Help me with the attached file.") : message.text
+    }
+
+    private func steerTurn(_ message: QueuedMessage) -> ACPTurn {
+        let prompt = Self.displayText(message)
+        let sent = MetaTag.escape(message.reply.map { Self.replyPrompt($0, text: prompt) } ?? prompt)
+        return ACPTurn(prompt: Self.withVoiceMode(sent, on: voiceModeOn()), preamble: nil, workspace: workspace ?? Self.scratchWorkspace,
+                       resume: threadID, model: model,
+                       images: message.attachments.filter(FolderFileIntake.isImageFile), files: message.attachments.filter { !FolderFileIntake.isImageFile($0) })
+    }
+
+    private func steered(_ message: QueuedMessage, outcome: ACPBackend.SteerOutcome, generation: Int) {
+        steering = false
+        switch outcome {
+        case .delivered:
+            let origin = message.origin?.client
+            items += message.attachments.map { Item(kind: .screenshot($0.path), origin: origin) }
+            let prompt = Self.displayText(message)
+            items.append(Item(kind: .user(prompt), origin: origin, reply: message.reply))
+            if let sender = message.origin, stops != generation {
+                // Stop came while the message was on its way. Nothing is left to report the turn's end to this sender.
+                onTurn?(sender, .failed("Stopped on the Mac."))
+            } else if let sender = message.origin {
+                if turnOrigin == nil { turnOrigin = sender } else if turnOrigin != sender, !steeredOrigins.contains(sender) { steeredOrigins.append(sender) }
+                if turnOrigin == sender { onTurn?(sender, .started) }
+            }
+            if isRunning { activity = "Thinking" }
+        case .notRunning, .failed:
+            if case .failed(let reason) = outcome { steerFailed = true; ChatLog.note("steering failed: \(reason)") }
+            queue.insert(message, at: 0)
+            if stops != generation {
+                restoreQueue()
+            } else if !isRunning {
+                // The turn ended while the message was on its way. Its end found a queue without it.
+                sendNextQueued()
+            }
+        }
+        // A message that found no running turn waits for the turn's end, so only a delivery moves on to the next one.
+        if case .delivered = outcome { steerNext() }
+    }
+
     /// Sends the oldest queued message through the normal path.
     private func sendNextQueued() {
         guard let next = queue.first else { return }
@@ -822,6 +905,7 @@ final class ChatSession {
         guard !isRunning else {
             queue.append(QueuedMessage(text: prompt, attachments: files, origin: origin, reply: reply))
             onTurn?(origin, .queued)
+            steerNext()
             return
         }
         start(prompt: prompt, shots: files, from: origin, reply: reply)
@@ -911,12 +995,13 @@ final class ChatSession {
     /// Tells the sender how its turn ended. Called before the next queued message starts, which replaces `turnOrigin`.
     private func finishTurn(error: String?, noChange: Bool = false) {
         finishAutomationTurn(error: error, noChange: noChange)
-        guard let origin = turnOrigin else { return }
+        let origins = ([turnOrigin].compactMap { $0 }) + steeredOrigins
         turnOrigin = nil
-        if let error {
-            onTurn?(origin, .failed(error))
-        } else {
-            onTurn?(origin, .finished(lastAnswer()))
+        steeredOrigins = []
+        steerFailed = false
+        let answer = error == nil ? lastAnswer() : nil
+        for origin in origins {
+            if let error { onTurn?(origin, .failed(error)) } else { onTurn?(origin, .finished(answer)) }
         }
     }
 
@@ -942,6 +1027,7 @@ final class ChatSession {
         backend.onPermission = { [weak self] call, respond in self?.handlePermission(call, respond: respond) }
         backend.onElicitation = { [weak self] form, respond in self?.handleElicitation(form, respond: respond) }
         backend.onBackground = { [weak self] event in self?.handleBackground(event) }
+        backend.onPromptSent = { [weak self] in self?.steerNext() }
         acp = backend
         return backend
     }
@@ -957,6 +1043,11 @@ final class ChatSession {
     var activeModel: String? { acp?.activeModel }
 
     func stop() {
+        stops += 1
+        steerFailed = false
+        let steered = steeredOrigins
+        steeredOrigins = []
+        for origin in steered { onTurn?(origin, .failed("Stopped on the Mac.")) }
         restoreQueue()
         speech.stop()
         turnSpoken = false
@@ -999,6 +1090,7 @@ final class ChatSession {
         current.respond(allow ? .allow : .deny())
         onApprovalResolved?(id)
         if let origin = turnOrigin { onTurn?(origin, .approvalDecided(id: id, outcome: allow ? .allowed : .denied)) }
+        steerNext()
     }
 
     /// Shows the agent's `elicitation/create` form as a card. The reply goes out when the user submits or skips.
@@ -1030,6 +1122,7 @@ final class ChatSession {
         forms.removeAll { $0.id == pending.id }
         items.append(Item(kind: .form(record)))
         pending.respond(reply)
+        steerNext()
     }
 
     /// The turn stopped or ended with forms open. The agent aborts the tool call that asked.

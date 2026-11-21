@@ -21,7 +21,8 @@ final class ACPBackendTests: XCTestCase {
         if method == "initialize":
             send({"jsonrpc": "2.0", "id": mid, "result": {"protocolVersion": 1,
                   "agentCapabilities": {"loadSession": True, "promptCapabilities": {"image": True}},
-                  "authMethods": [{"id": "login", "name": "Log in"}]}})
+                  "authMethods": [{"id": "login", "name": "Log in"}],
+                  **({"_meta": {"steering": {"supported": True}}} if os.environ.get("FAKE_STEER") else {})}})
         elif method in ("session/new", "session/load"):
             if mode == "auth":
                 send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32000, "message": "Authentication required"}}); continue
@@ -41,6 +42,17 @@ final class ACPBackendTests: XCTestCase {
             send({"jsonrpc": "2.0", "id": mid, "result": {}})
         elif method == "session/prompt":
             text = "".join(b.get("text", "") for b in p["prompt"])
+            if "STEERABLE" in text:
+                update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "working"}})
+                for l in sys.stdin:
+                    c = json.loads(l); log.write(l); log.flush()
+                    if c.get("method") in ("_session/steering", "session/prompt"):
+                        said = "".join(b.get("text", "") for b in c["params"]["prompt"])
+                        update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": " steered:" + said}})
+                        send({"jsonrpc": "2.0", "id": c["id"], "result": {"outcome": "injected", "stopReason": "end_turn"}})
+                        send({"jsonrpc": "2.0", "id": mid, "result": {"stopReason": "end_turn"}})
+                        break
+                continue
             if "SLOW" in text:
                 update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "working"}})
                 for l in sys.stdin:
@@ -113,6 +125,7 @@ final class ACPBackendTests: XCTestCase {
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.appendingPathComponent("fake-agent").path)
         setenv("FAKE_LOG", dir.appendingPathComponent("log").path, 1)
         unsetenv("FAKE_MODE")
+        unsetenv("FAKE_STEER")
     }
 
     override func tearDown() {
@@ -169,6 +182,67 @@ final class ACPBackendTests: XCTestCase {
         let capabilities = try XCTUnwrap((initialize["params"] as? JSON)?["clientCapabilities"] as? JSON)
         XCTAssertNil(capabilities["fs"])
         XCTAssertNil(capabilities["terminal"])
+        backend.shutdown()
+    }
+
+    /// Runs a steerable turn, steers once it is working, and returns what the turn said and the steer's outcome.
+    private func steerDuringTurn(_ agent: ACPAgent) async throws -> (said: String, outcome: ACPBackend.SteerOutcome, backend: ACPBackend) {
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
+        var events: [AgentEvent] = []
+        let running = Task { await backend.runTurn(turn("STEERABLE")) { events.append($0) } }
+        for _ in 0..<100 where !events.contains(where: { if case .assistant = $0 { return true } else { return false } }) {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        let outcome = await backend.steer(turn("change course"))
+        await running.value
+        return (text(events), outcome, backend)
+    }
+
+    func testAgentThatAdvertisesSteeringGetsTheMessageInsideTheRunningTurn() async throws {
+        setenv("FAKE_STEER", "1", 1)
+        let (said, outcome, backend) = try await steerDuringTurn(agent)
+        XCTAssertEqual(backend.steering, .request)
+        XCTAssertEqual(outcome, .delivered)
+        XCTAssertEqual(said, "working steered:change course", "the reply of the turn that was running reflects the message")
+        let steering = try XCTUnwrap(logged().first { $0["method"] as? String == "_session/steering" })
+        let params = try XCTUnwrap(steering["params"] as? JSON)
+        XCTAssertEqual((((params["_meta"] as? JSON)?["steering"]) as? JSON)?["idleBehavior"] as? String, "promptRequired")
+        XCTAssertEqual(logged().filter { $0["method"] as? String == "session/prompt" }.count, 1, "no second turn")
+        backend.shutdown()
+    }
+
+    func testClaudeSteersWithAConcurrentPromptSoTheAgentTakesItAtItsNextStep() async throws {
+        setenv("FAKE_STEER", "1", 1)
+        let claude = ACPAgent(id: "claude", name: "Claude Code", command: dir.appendingPathComponent("fake-agent").path, args: [], helper: nil)
+        let (said, outcome, backend) = try await steerDuringTurn(claude)
+        XCTAssertEqual(backend.steering, .concurrentPrompt)
+        XCTAssertEqual(outcome, .delivered)
+        XCTAssertEqual(said, "working steered:change course")
+        XCTAssertFalse(logged().contains { $0["method"] as? String == "_session/steering" }, "the request would interrupt the running step")
+        XCTAssertEqual(logged().filter { $0["method"] as? String == "session/prompt" }.count, 2)
+        backend.shutdown()
+    }
+
+    func testAgentWithoutTheSteeringFlagDoesNotSteer() async throws {
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
+        let running = Task { await backend.runTurn(turn("SLOW")) { _ in } }
+        for _ in 0..<100 where backend.sessionID == nil { try await Task.sleep(nanoseconds: 50_000_000) }
+        XCTAssertEqual(backend.steering, .none)
+        XCTAssertFalse(backend.canSteer)
+        let outcome = await backend.steer(turn("hello"))
+        XCTAssertEqual(outcome, .notRunning)
+        backend.cancel()
+        await running.value
+        XCTAssertFalse(logged().contains { $0["method"] as? String == "_session/steering" })
+        backend.shutdown()
+    }
+
+    func testSteeringWithNoTurnRunningDoesNothing() async {
+        setenv("FAKE_STEER", "1", 1)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
+        _ = await run(backend, turn("hi"))
+        let outcome = await backend.steer(turn("late"))
+        XCTAssertEqual(outcome, .notRunning)
         backend.shutdown()
     }
 

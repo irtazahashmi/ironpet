@@ -104,6 +104,29 @@ final class ACPBackend {
     private(set) var sessionID: String?
     private(set) var capabilities: JSON = [:]
     private(set) var authMethods: [AuthMethod] = []
+    /// How this agent takes a message into a running turn, from `_meta.steering.supported` in its `initialize` response.
+    private(set) var steering = Steering.none
+    var canSteer: Bool { steering != .none && client?.isClosed == false }
+
+    /// The ways to put a message into a running turn.
+    enum Steering: Equatable {
+        /// The agent did not advertise steering. Messages wait for the turn to end.
+        case none
+        /// A second `session/prompt` while the first runs. Claude Code's adapter pushes its text to Claude Code with no priority, so the
+        /// agent reads it at its next step. `_session/steering` would use priority `now`, which aborts the step that is running.
+        case concurrentPrompt
+        /// The `_session/steering` request (Codex `turn/steer`, OpenCode).
+        case request
+    }
+
+    /// What happened to a steered message.
+    enum SteerOutcome: Equatable {
+        /// The running turn has the message.
+        case delivered
+        /// No turn was running, so the caller sends it as a normal turn.
+        case notRunning
+        case failed(String)
+    }
 
     /// A restricted run gets only its own working folder: no memory or screenshot folders. Meeting summaries use it.
     var restricted = false
@@ -126,6 +149,9 @@ final class ACPBackend {
     /// Receives transcript updates (text, tool calls) that arrive while no prompt is in flight, such as a background
     /// subagent's result after its turn ended.
     var onBackground: ((AgentEvent) -> Void)?
+
+    /// Called when a prompt goes out, the first moment a message can join the turn.
+    var onPromptSent: (() -> Void)?
 
     /// Called when the agent asks to run something. Answer once.
     var onPermission: ((ACPToolCall, @escaping (ApprovalDecision) -> Void) -> Void)?
@@ -199,6 +225,7 @@ final class ACPBackend {
             promptInFlight = true
             promptCount += 1
             defer { promptInFlight = false }
+            onPromptSent?()
             started = Date()
             modelAtTurnStart = currentModel
             modelReportedInTurn = nil
@@ -213,6 +240,32 @@ final class ACPBackend {
             // A turn that failed after the prompt went out still counts, and may have cost something.
             if let started { recordUsage([:], started: started) }
             emit(.finished(error: describe(error)))
+        }
+    }
+
+    /// Puts a message into the running turn, in the way the agent advertised. Never throws.
+    func steer(_ turn: ACPTurn) async -> SteerOutcome {
+        guard promptInFlight, let client, !client.isClosed, let sessionID else { return .notRunning }
+        let blocks = promptBlocks(turn)
+        switch steering {
+        case .none:
+            return .notRunning
+        case .concurrentPrompt:
+            // The reply streams through the running turn's updates. This request ends when the adapter settles the message's own
+            // turn, which is not a turn boundary for ironpet, so only a failure matters.
+            Task { [weak self] in
+                do { _ = try await client.request("session/prompt", ["sessionId": sessionID, "prompt": blocks]) }
+                catch { ChatLog.note("steered message failed: \(self?.describe(error) ?? "\(error)")") }
+            }
+            return .delivered
+        case .request:
+            do {
+                let result = try await client.request("_session/steering", [
+                    "sessionId": sessionID, "prompt": blocks, "_meta": ["steering": ["idleBehavior": "promptRequired"]]])
+                return result["outcome"] as? String == "injected" ? .delivered : .notRunning
+            } catch {
+                return .failed(describe(error))
+            }
         }
     }
 
@@ -372,6 +425,8 @@ final class ACPBackend {
                                                           "clientInfo": ["name": "ironpet", "title": "ironpet", "version": "0.1.0"]])
             }
             capabilities = result["agentCapabilities"] as? JSON ?? [:]
+            let advertised = ((result["_meta"] as? JSON)?["steering"] as? JSON)?["supported"] as? Bool == true
+            steering = advertised ? (agent.id == "claude" ? .concurrentPrompt : .request) : .none
             authMethods = (result["authMethods"] as? [JSON] ?? []).map(AuthMethod.init(json:))
         } catch {
             client.close()
