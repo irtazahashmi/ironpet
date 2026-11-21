@@ -276,7 +276,20 @@ final class VoiceConversationTests: XCTestCase {
     }
 
     func testSilenceEndsTheConversation() async {
-        let conversation = await started(silence: 0.05)
+        // The silence timer is a gate the test opens, so a slow machine cannot end the conversation before the
+        // test has seen it listening.
+        var waiting: [CheckedContinuation<Void, Error>] = []
+        var asked: [TimeInterval] = []
+        let conversation = conversation(silence: 7)
+        conversation.silenceSleep = { seconds in
+            asked.append(seconds)
+            try await withCheckedThrowingContinuation { waiting.append($0) }
+        }
+        conversation.start()
+        await until { conversation.state == .listening && !waiting.isEmpty }
+        XCTAssertEqual(asked, [7], "the timer waits for the configured silence")
+        XCTAssertEqual(events, ["started microphone"])
+        waiting.forEach { $0.resume() }
         await until { conversation.state == .idle }
         XCTAssertTrue(mic.stopped)
         XCTAssertEqual(desk.finishes, 1)
