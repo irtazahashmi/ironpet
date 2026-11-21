@@ -41,11 +41,11 @@ struct VoiceStatus: Codable, Equatable {
 final class VoiceAPI {
     /// Fires before the speaker or the settings it reads change.
     let changes = ChangeSignal()
-    private let speech: SpeechPlayer
+    private let speech: SpeechOutput
     private let settings: SettingsAPI
 
     /// Text to audio. Tests replace it; the default asks the voice server.
-    lazy var synthesize: (String) async throws -> Data = { [weak self] in try await SpeechPlayer.synthesizer(voiceKey: self?.voiceKey ?? .unsupported).speak($0) }
+    lazy var synthesize: (String) async throws -> Data = { [weak self] in try await Synthesizer.saved(voiceKey: self?.voiceKey ?? .unsupported).speak($0) }
     /// Audio to text. Tests replace it; the default posts to the voice server.
     lazy var transcribeAudio: @Sendable (Data, String, String) async throws -> String = { [weak self] audio, name, mime in
         let voice = await MainActor.run { SettingsAPI.live.config.voice }
@@ -61,23 +61,14 @@ final class VoiceAPI {
     }
 
     private var forwarding: [ChangeToken] = []
-    #if canImport(Combine)
-    /// `SpeechPlayer` is not on `ChangeSignal` yet, so its publisher is forwarded here.
-    private var speechForwarding: AnyCancellable?
-    #endif
 
-    init(speech: SpeechPlayer, settings: SettingsAPI) {
+    init(speech: SpeechOutput, settings: SettingsAPI) {
         self.speech = speech
         self.settings = settings
-        #if canImport(Combine)
-        speechForwarding = speech.objectWillChange.sink { [weak self] in self?.changes.send() }
-        #endif
+        forwarding = [speech.changes.observe { [weak self] in self?.changes.send() }]
         // The player and every client decide from the same settings.
         speech.isEnabled = { [weak settings] in settings?.config.speech.enabled ?? false }
     }
-
-    /// A voice API with its own speaker, for Settings rendered without the app, so Preview still has something to play through.
-    static func standalone(settings: SettingsAPI) -> VoiceAPI { VoiceAPI(speech: SpeechPlayer(), settings: settings) }
 
     /// The chat message being read aloud, so its speaker button shows Stop.
     var speakingItem: UUID? { speech.speakingID }
@@ -91,18 +82,18 @@ final class VoiceAPI {
     func speak(_ request: SpeakRequest) throws {
         guard settings.config.speech.canSpeak else { throw APIError.unavailable("no speech model is set in Settings") }
         guard !SpeechText.chunks(of: request.text).isEmpty else { throw APIError.invalid("there is nothing to read in that text") }
-        speech.speak(request.text, id: request.item ?? UUID())
+        do { try speech.speak(request.text, id: request.item ?? UUID()) } catch { throw APIError.unavailable(error.localizedDescription) }
     }
 
     func stop() { speech.stop() }
 
     /// The voice names the server offers for the saved speech model. Empty when it has no list.
-    func voices() async -> [String] { await SpeechPlayer.synthesizer(voiceKey: voiceKey).voices() }
+    func voices() async -> [String] { await Synthesizer.saved(voiceKey: voiceKey).voices() }
 
     /// Speaks one line with the saved settings even with spoken replies off, so Settings can test the server. Throws what the
     /// server answered, or `CancellationError` when `stop()` or a reply cut it short.
     func preview(_ text: String) async throws {
-        try await speech.preview(text, using: SpeechPlayer.synthesizer(voiceKey: voiceKey))
+        try await speech.preview(text, using: Synthesizer.saved(voiceKey: voiceKey))
     }
 
     /// The audio for a reply, one chunk at a time, without playing anything here. The first chunk is one sentence, so a client

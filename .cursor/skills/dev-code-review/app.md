@@ -23,7 +23,7 @@ The design is `SPEC.md`. Swift 5.10 tools (Swift 5 language mode), macOS 14 mini
 | `Meeting/` | Meeting transcripts: call detection, track sources (mic and ScreenCaptureKit), recorder and chunker, transcript assembly, summary, panel |
 | `Reminders/` | Break reminders scheduler |
 | `Activity/` | The local activity log in `ironpet.db` (`ActivityEvent`, `ActivityLog`), the digest built from it (`ActivityDigest`), away detection and the welcome back summary (`AwayTracker`, `WelcomeBack`) |
-| `Platform/` | One protocol per platform capability (`SecretStore`, `ProcessSpawner`, `LogSink`, `AppInfo`, `WallClock`), their `Unsupported` and portable adapters, `CapabilityError` and the `Platform` registry `AppDelegate` builds. `Platform/Mac/` holds the Keychain, `os.Logger` and `proc_pidpath` adapters. No `SecItem*`, `posix_spawn` or `proc_pidpath` outside them (`AdapterBoundaryTests`) |
+| `Platform/` | One protocol per platform capability (`SecretStore`, `ProcessSpawner`, `LogSink`, `AppInfo`, `WallClock`, `MeetingRecorder`, `CaptureControl`, `SpeechOutput`, `PetAssets`, `FileIntake`), their `Unsupported` and portable adapters, `CapabilityError` and the `Platform` registry `AppDelegate` builds. `Platform/Mac/` holds the Keychain, `os.Logger` and `proc_pidpath` adapters. No `SecItem*`, `posix_spawn` or `proc_pidpath` outside them (`AdapterBoundaryTests`) |
 | `Support/` | `Config` and `ConfigStore`, `Paths` (everything under `~/.ironpet`) |
 | `Tests/IronPetTests/` | XCTest, one file per area (`ApprovalRulesTests`, `HookInstallerTests`, `ConfigTests`, `ACPClientTests`, `MeetingTests`, …) |
 

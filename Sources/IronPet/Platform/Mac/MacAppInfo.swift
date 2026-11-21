@@ -74,9 +74,13 @@ struct MacAppInfo: AppInfo {
 }
 
 extension Platform {
-    /// The platform on a Mac, with every adapter real. `AppDelegate` builds it once.
-    static func mac() -> Platform {
+    /// The platform on a Mac, with every adapter real. `AppDelegate` builds it once. The meeting recorder and the speaker are the
+    /// app's own objects. Screen capture needs the database, which opens later, so it starts `Unsupported` and `AppDelegate`
+    /// replaces it once the service exists.
+    @MainActor
+    static func mac(meetings: MeetingRecorder, speech: SpeechOutput, capture: CaptureControl = UnsupportedCaptureControl()) -> Platform {
         Platform(secrets: KeychainSecretStore(), processes: POSIXProcessSpawner(), log: OSLogLog(),
-                 appInfo: MacAppInfo(), clock: SystemClock())
+                 appInfo: MacAppInfo(), clock: SystemClock(), meetings: meetings, capture: capture, speech: speech,
+                 pets: MacPetAssets(), files: MacFileIntake())
     }
 }

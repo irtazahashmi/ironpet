@@ -211,13 +211,14 @@ struct ChatSnapshot: Codable, Equatable {
 @MainActor
 final class ChatAPI {
     private let session: ChatSession
-    private let uploads: URL
+    private let files: FileIntake
     private var listeners: [UUID: (ChatOrigin, ChatTurnEvent) -> Void] = [:]
     private var formListeners: [UUID: () -> Void] = [:]
 
-    init(session: ChatSession, uploads: URL = FileIntake.directory) {
+    /// `files` receives what a client uploads. `IronPetAPI` passes the platform's; the default is the Mac's.
+    init(session: ChatSession, files: FileIntake = MacFileIntake()) {
         self.session = session
-        self.uploads = uploads
+        self.files = files
         session.onTurn = { [weak self] origin, event in
             guard let self else { return }
             for listener in Array(listeners.values) { listener(origin, event) }
@@ -449,13 +450,9 @@ final class ChatAPI {
 
     private func save(_ uploads: [ChatUpload]) throws -> [URL] {
         guard !uploads.isEmpty else { return [] }
-        try FileManager.default.createDirectory(at: self.uploads, withIntermediateDirectories: true)
         return try uploads.map { upload in
             // A file name only: a remote client must not choose where on this Mac the file lands.
-            let name = (upload.fileName as NSString).lastPathComponent
-            let url = self.uploads.appendingPathComponent("\(UUID().uuidString.prefix(8))-" + (name.isEmpty ? "file" : name))
-            try upload.data.write(to: url)
-            return url
+            try files.save(upload.data, named: (upload.fileName as NSString).lastPathComponent)
         }
     }
 

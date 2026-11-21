@@ -29,7 +29,7 @@ final class RemoteResourcesTests: XCTestCase {
         turns = []
         chat.turnRunner = { [unowned self] turn, _ in turns.append(turn) }
         h = RemoteServerHarness(sessions: sessions, signals: signals, chat: chat,
-                                petFolders: .init(library: root.appendingPathComponent("pets"), bundled: root.appendingPathComponent("bundled"),
+                                petAssets: MacPetAssets(library: root.appendingPathComponent("pets"), bundled: root.appendingPathComponent("bundled"),
                                                   backgrounds: root.appendingPathComponent("backgrounds")))
         seen = []
         h.events.subscribe { [unowned self] in seen.append($0) }

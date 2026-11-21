@@ -6,7 +6,7 @@ import Combine
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The one set of platform adapters, built here and handed to everything that spawns a process or reads a secret.
-    private let platform = Platform.mac()
+    private lazy var platform = Platform.mac(meetings: meeting, speech: chat.speech)
     private lazy var voiceKey = VoiceKey(store: platform.secrets)
     /// The bot token's store. Memory in `--test-mode`, where a Keychain approval dialog would block an automated run.
     private lazy var telegramTokens: TelegramTokenStore = TelegramAPI.testMode ? MemoryTokenStore() : TelegramToken(secrets: platform.secrets)
@@ -308,7 +308,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         taskStore = tasks
         let service = AutomationService(store: store, engine: engine, database: database)
         let notificationStore = NotificationStore(database: database)
-        api = IronPetAPI(stores: .init(tasks: tasks, automations: service, signals: signals, bubbles: announcer.bubbles, notifications: notificationStore, sessions: self.store, chat: chat, meeting: meeting, meetingLibrary: meetings, config: config, usage: UsageStore.shared), events: events)
+        api = IronPetAPI(stores: .init(tasks: tasks, automations: service, signals: signals, bubbles: announcer.bubbles, notifications: notificationStore, sessions: self.store, chat: chat, meeting: platform.meetings, meetingLibrary: meetings, config: config, speech: platform.speech, petAssets: platform.pets, files: platform.files, usage: UsageStore.shared), events: events)
         pet.tasks = api.tasks
         pet.notifications = NotificationsModel(api: api.notifications, events: events)
         announcer.notifications = notificationStore
@@ -636,7 +636,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         let service = CaptureService(store: captureStore, config: { ConfigStore.shared.config.screenCapture }, dependencies: dependencies)
         capture = service
-        api.attach(capture: service)
+        platform.capture = service
+        api.attach(capture: platform.capture)
         settingsModel.capture = api.screen
         service.refreshModel()
         service.apply()

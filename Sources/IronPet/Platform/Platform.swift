@@ -2,12 +2,17 @@ import Foundation
 
 /// Every adapter the core code can use, in one value. `AppDelegate` builds the Mac one, tests build a fake one, and nothing
 /// looks an adapter up globally: whoever needs one receives it through an initialiser.
-struct Platform: Sendable {
+struct Platform: @unchecked Sendable { // The main-actor adapters are used only from the main actor.
     var secrets: SecretStore
     var processes: ProcessSpawner
     var log: LogSink
     var appInfo: AppInfo
     var clock: WallClock
+    var meetings: MeetingRecorder
+    var capture: CaptureControl
+    var speech: SpeechOutput
+    var pets: PetAssets
+    var files: FileIntake
 
     struct Capability: Equatable, Sendable {
         let name: String
@@ -22,12 +27,20 @@ struct Platform: Sendable {
             Capability(name: "LogSink", supported: log.isSupported),
             Capability(name: "AppInfo", supported: appInfo.isSupported),
             Capability(name: "WallClock", supported: clock.isSupported),
+            Capability(name: "MeetingRecorder", supported: meetings.isSupported),
+            Capability(name: "CaptureControl", supported: capture.isSupported),
+            Capability(name: "SpeechOutput", supported: speech.isSupported),
+            Capability(name: "PetAssets", supported: pets.isSupported),
+            Capability(name: "FileIntake", supported: files.isSupported),
         ]
     }
 
     /// A platform that can do nothing. Owners start with it, and `AppDelegate` replaces it with the Mac one.
+    @MainActor
     static var unsupported: Platform {
         Platform(secrets: UnsupportedSecretStore(), processes: UnsupportedProcessSpawner(), log: UnsupportedLogSink(),
-                 appInfo: UnsupportedAppInfo(), clock: UnsupportedClock())
+                 appInfo: UnsupportedAppInfo(), clock: UnsupportedClock(), meetings: UnsupportedMeetingRecorder(),
+                 capture: UnsupportedCaptureControl(), speech: UnsupportedSpeechOutput(), pets: UnsupportedPetAssets(),
+                 files: UnsupportedFileIntake())
     }
 }

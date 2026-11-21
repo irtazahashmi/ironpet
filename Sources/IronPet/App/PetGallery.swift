@@ -24,7 +24,7 @@ final class PetGalleryModel: ObservableObject {
     private let library: URL
     private let bundled: URL?
     /// The pet API the gallery selects and imports through. `AppDelegate` sets the app's; the default works on `library`.
-    lazy var api = PetAPI(settings: .live, library: library, bundled: bundled)
+    lazy var api = PetAPI(settings: .live, assets: MacPetAssets(library: library, bundled: bundled, backgrounds: ChatBackground.folder))
     private let spriteOverride: (() -> String?)?
     private var animationTimer: Timer?
     private var pollTimer: Timer?

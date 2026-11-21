@@ -16,14 +16,14 @@ final class FileIntakeTests: XCTestCase {
     func testCopyKeepsNameAndContent() throws {
         let source = dir.appendingPathComponent("notes.md")
         try "hello".write(to: source, atomically: true, encoding: .utf8)
-        let copy = try XCTUnwrap(FileIntake.copy(source, into: dir.appendingPathComponent("out")))
+        let copy = try XCTUnwrap(FolderFileIntake.copy(source, into: dir.appendingPathComponent("out")))
         XCTAssertEqual(copy.lastPathComponent, "notes.md")
         XCTAssertNotEqual(copy, source)
         XCTAssertEqual(try String(contentsOf: copy, encoding: .utf8), "hello")
     }
 
     func testFoldersAreNotAttached() {
-        XCTAssertNil(FileIntake.copy(dir, into: dir.appendingPathComponent("out")))
+        XCTAssertNil(FolderFileIntake.copy(dir, into: dir.appendingPathComponent("out")))
     }
 
     func testPruneKeepsNewestFolders() throws {
@@ -31,7 +31,7 @@ final class FileIntakeTests: XCTestCase {
         for name in ["2026-01-01-a", "2026-01-02-b", "2026-01-03-c"] {
             try FileManager.default.createDirectory(at: out.appendingPathComponent(name), withIntermediateDirectories: true)
         }
-        FileIntake.prune(out, keep: 2)
+        FolderFileIntake.prune(out, keep: 2)
         let left = try FileManager.default.contentsOfDirectory(atPath: out.path).sorted()
         XCTAssertEqual(left, ["2026-01-02-b", "2026-01-03-c"])
     }

@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import Combine
 import Foundation
 
 /// One chunk on its way through transcription.
@@ -20,7 +21,12 @@ struct MeetingJob: Equatable {
 /// summarizing, done. The panel, the menu, the hotkey and the `--test-mode` endpoints all drive this one object.
 @MainActor
 final class MeetingController: ObservableObject {
-    enum Phase: String { case idle, choosing, recording, finishing, summarizing, done }
+    /// Fires before anything the panel or the API reads changes. It follows `objectWillChange`, so `MeetingRecorder` clients
+    /// need no Combine.
+    let changes = ChangeSignal()
+    private var changeForwarding: AnyCancellable?
+
+    typealias Phase = MeetingPhase
 
     /// Minimum and maximum chunk length. Tests and `--test-mode` override them.
     struct ChunkLengths {
@@ -31,9 +37,7 @@ final class MeetingController: ObservableObject {
         static func test(_ seconds: Double) -> ChunkLengths { ChunkLengths(minSeconds: seconds * 0.6, maxSeconds: seconds) }
     }
 
-    enum SummaryState: Equatable {
-        case none, running, ready(URL), failed(String)
-    }
+    typealias SummaryState = MeetingSummaryState
 
     @Published private(set) var phase: Phase = .idle
     @Published private(set) var apps: [AudioApp] = []
@@ -141,6 +145,10 @@ final class MeetingController: ObservableObject {
     private var finalPass = false
 
     static let consentKey = "meetingConsentShown"
+
+    init() {
+        changeForwarding = objectWillChange.sink { [weak self] _ in self?.changes.send() }
+    }
 
     nonisolated static func hotkey(in config: Config) -> String? {
         guard config.meetings.enabled, !config.hotkeys.meeting.isEmpty else { return nil }

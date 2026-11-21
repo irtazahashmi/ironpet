@@ -112,7 +112,7 @@ struct ChatView: View {
             for provider in providers {
                 _ = provider.loadObject(ofClass: URL.self) { url, _ in
                     guard let url else { return }
-                    let saved = FileIntake.attach([url])
+                    let saved = MacFileIntake.attach([url])
                     DispatchQueue.main.async { saved.forEach(session.attach) }
                 }
             }
@@ -1169,7 +1169,7 @@ struct ChatView: View {
         panel.message = "Attach files to your message"
         NSApp.activate()
         guard panel.runModal() == .OK else { return }
-        FileIntake.attach(panel.urls).forEach(session.attach)
+        MacFileIntake.attach(panel.urls).forEach(session.attach)
     }
 
     private func chooseFolder() {

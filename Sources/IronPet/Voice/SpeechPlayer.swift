@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import Foundation
 
 /// Where audio goes: the local speaker (`ClipPlayer`), or a test. It plays one clip at a time. A client that is not this
@@ -60,6 +61,10 @@ final class SpeechChunkReader {
 final class SpeechPlayer: ObservableObject {
     enum Phase: String { case idle, preparing, playing }
 
+    /// Fires before the phase or the item being read change. It follows `objectWillChange`, so `SpeechOutput` clients need no Combine.
+    let changes = ChangeSignal()
+    private var changeForwarding: AnyCancellable?
+
     @Published private(set) var phase: Phase = .idle
     /// The chat item being read, so its speaker button shows Stop.
     @Published private(set) var speakingID: UUID?
@@ -78,13 +83,12 @@ final class SpeechPlayer: ObservableObject {
 
     init(player: ClipPlaying? = nil) {
         self.player = player ?? ClipPlayer()
+        changeForwarding = objectWillChange.sink { [weak self] _ in self?.changes.send() }
     }
 
     /// The synthesizer for the saved settings: the voice server's URL and key with the speech model and voice.
     static func synthesizer(voiceKey: VoiceKey, model: String? = nil, voice: String? = nil) -> Synthesizer {
-        let config = ConfigStore.shared.config
-        return Synthesizer(baseURL: config.voice.baseUrl, model: model ?? config.speech.model,
-                           voice: voice ?? config.speech.voice, speed: config.speech.speed, apiKey: voiceKey.load())
+        Synthesizer.saved(voiceKey: voiceKey, model: model, voice: voice)
     }
 
     var isSpeaking: Bool { speakingID != nil }

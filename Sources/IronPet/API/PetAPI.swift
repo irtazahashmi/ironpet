@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import IronPetKit
 
 struct PetState: Codable, Equatable {
     /// The mood the pet shows, such as `idle`, `working`, `needsInput`.
@@ -62,14 +63,12 @@ struct AssetManifest: Codable, Equatable {
 @MainActor
 final class PetAPI {
     private let settings: SettingsAPI
-    private let library: URL
-    private let bundled: URL?
-    private let backgrounds: URL
+    private let assets: PetAssets
     private var assetSignature: [String]?
     weak var events: APIEventBus?
 
     /// The running app's pet API, for the Settings pages. `IronPetAPI` sets it to its own, so there is one instance.
-    static var live = PetAPI(settings: .live)
+    static var live = PetAPI.onThisMac()
 
     /// The pet's current mood and badge. The pet window supplies it.
     var stateProvider: () -> PetState = { PetState(mood: "idle", badge: 0) }
@@ -78,12 +77,9 @@ final class PetAPI {
     /// The tricks the pet knows, in menu order.
     var trickNames: () -> [String] = { [] }
 
-    init(settings: SettingsAPI, library: URL = PetLibrary.folder, bundled: URL? = PetLibrary.bundledFolder,
-         backgrounds: URL = ChatBackground.folder) {
+    init(settings: SettingsAPI, assets: PetAssets) {
         self.settings = settings
-        self.library = library
-        self.bundled = bundled
-        self.backgrounds = backgrounds
+        self.assets = assets
     }
 
     // MARK: Mood and tricks
@@ -100,18 +96,18 @@ final class PetAPI {
 
     /// The pets in the gallery, built-in ones first. Reads the sheets off the main thread, so it can take a moment.
     func pets() async -> [PetInfo] {
-        let (library, bundled, current) = (library, bundled, settings.config.pet.sprite)
-        let entries = await Task.detached { PetLibrary.entries(bundled: bundled, library: library, current: current) }.value
-        let selected = PetLibrary.selectedID(in: entries, sprite: current)
+        let (assets, current) = (assets, settings.config.pet.sprite)
+        let entries = await Task.detached { (try? assets.entries(current: current)) ?? [] }.value
+        let selected = assets.selectedID(in: entries, sprite: current)
         return entries.map { entry in
-            PetInfo(id: entry.id, name: entry.name, builtIn: PetLibrary.builtInNames.contains(entry.url.deletingPathExtension().lastPathComponent.lowercased()),
+            PetInfo(id: entry.id, name: entry.name, builtIn: assets.builtInNames.contains(entry.url.deletingPathExtension().lastPathComponent.lowercased()),
                     selected: entry.id == selected)
         }
     }
 
     func selectPet(_ request: SelectPetRequest) async throws {
-        let (library, bundled, current) = (library, bundled, settings.config.pet.sprite)
-        let entries = await Task.detached { PetLibrary.entries(bundled: bundled, library: library, current: current) }.value
+        let (assets, current) = (assets, settings.config.pet.sprite)
+        let entries = await Task.detached { (try? assets.entries(current: current)) ?? [] }.value
         guard let entry = entries.first(where: { $0.id == request.id }) else { throw APIError.notFound("no pet with id \"\(request.id)\"") }
         select(entry)
     }
@@ -119,18 +115,15 @@ final class PetAPI {
     /// Makes a gallery entry the pet.
     func select(_ entry: PetEntry) {
         let before = settings.config.pet.sprite
-        settings.update { PetLibrary.select(entry, in: &$0) }
+        settings.update { [assets] in assets.select(entry, in: &$0) }
         if settings.config.pet.sprite != before { events?.publish(.assetsChanged) }
     }
 
     /// Copies a sprite sheet into the pet library and makes it the pet.
     @discardableResult
     func importPet(_ source: URL) throws -> PetEntry {
-        let copy: URL
-        do { copy = try PetLibrary.importSheet(source, into: library) } catch { throw APIError.invalid(error.localizedDescription) }
-        guard let atlas = Atlas.load(copy) else { throw APIError.invalid("\(source.lastPathComponent) isn't a sprite sheet in the expected layout.") }
-        let name = PetLibrary.displayName(forStem: copy.deletingPathExtension().lastPathComponent)
-        let entry = PetEntry(id: PetLibrary.standardized(copy.path), name: name, url: copy, atlas: atlas)
+        let entry: PetEntry
+        do { entry = try assets.importSheet(source) } catch { throw APIError.invalid(error.localizedDescription) }
         select(entry)
         checkAssets()
         return entry
@@ -140,28 +133,28 @@ final class PetAPI {
 
     func backgroundList() -> [BackgroundInfo] {
         let current = settings.config.chat.background
-        var list = [BackgroundInfo(id: ChatBackground.defaultID, name: "Default", selected: current == ChatBackground.defaultID)]
-        list += ChatBackground.builtIns.map { BackgroundInfo(id: $0.id, name: $0.name, selected: current == $0.id) }
-        list.append(BackgroundInfo(id: ChatBackground.customID, name: "Custom image", selected: current == ChatBackground.customID))
+        var list = [BackgroundInfo(id: ChatBackgrounds.defaultID, name: "Default", selected: current == ChatBackgrounds.defaultID)]
+        list += ChatBackgrounds.builtIns.map { BackgroundInfo(id: $0.id, name: $0.name, selected: current == $0.id) }
+        list.append(BackgroundInfo(id: ChatBackgrounds.customID, name: "Custom image", selected: current == ChatBackgrounds.customID))
         return list
     }
 
     func selectBackground(_ request: SelectBackgroundRequest) throws {
-        if request.id == ChatBackground.customID {
+        if request.id == ChatBackgrounds.customID {
             guard settings.config.chat.customImage != nil else { throw APIError.invalid("no custom image has been added yet") }
-        } else if request.id != ChatBackground.defaultID, ChatBackground.builtIn(request.id) == nil {
+        } else if request.id != ChatBackgrounds.defaultID, ChatBackgrounds.builtIn(request.id) == nil {
             throw APIError.notFound("no background with id \"\(request.id)\"")
         }
         let before = settings.config.chat.background
         settings.update { $0.chat.background = request.id }
-        if request.id != before, request.id == ChatBackground.customID || before == ChatBackground.customID { events?.publish(.assetsChanged) }
+        if request.id != before, request.id == ChatBackgrounds.customID || before == ChatBackgrounds.customID { events?.publish(.assetsChanged) }
     }
 
     /// Copies an image into the backgrounds folder and makes it the chat background. The previous custom image is removed.
     func importBackground(_ source: URL) throws {
         do {
-            let name = try ChatBackground.importImage(from: source, into: backgrounds, replacing: settings.config.chat.customImage)
-            settings.update { $0.chat.background = ChatBackground.customID; $0.chat.customImage = name }
+            let name = try assets.importBackground(from: source, replacing: settings.config.chat.customImage)
+            settings.update { $0.chat.background = ChatBackgrounds.customID; $0.chat.customImage = name }
             checkAssets()
         } catch {
             throw APIError.invalid(error.localizedDescription)
@@ -201,7 +194,7 @@ final class PetAPI {
     private var resolvedCache: (key: [String], assets: [ResolvedAsset])?
 
     private func resolvedAssets() async -> [ResolvedAsset] {
-        let (library, bundled, backgrounds, custom, sprite) = (library, bundled, backgrounds, settings.config.chat.customImage, settings.config.pet.sprite)
+        let (folders, custom, sprite) = (assets, settings.config.chat.customImage, settings.config.pet.sprite)
         let spriteFile = (sprite.flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: ($0 as NSString).expandingTildeInPath) })
             .flatMap { try? $0.resourceValues(forKeys: [.fileSizeKey, .contentModificationDateKey]) }
         let key = signature() + PetFolderSignature(folder: Paths.petDir).items
@@ -209,21 +202,22 @@ final class PetAPI {
         if let cached = resolvedCache, cached.key == key { return cached.assets }
         let assets = await Task.detached { () -> [ResolvedAsset] in
             var byName: [String: URL] = [:]
-            for url in PetLibrary.sheetFiles(in: bundled) { byName[url.lastPathComponent] = url }
+            let sheets = folders.sheetFiles()
+            for url in sheets.bundled { byName[url.lastPathComponent] = url }
             // A sheet in the user's folder replaces a bundled one of the same name.
-            for url in PetLibrary.sheetFiles(in: library) { byName[url.lastPathComponent] = url }
+            for url in sheets.library { byName[url.lastPathComponent] = url }
             var assets = byName.keys.sorted().compactMap { name in Self.entry(.sprite, byName[name]!).map { ResolvedAsset(entry: $0, url: byName[name]!) } }
             // The sheet the pet shows now, under one id whatever its file is called. Same order as `Atlas.loadDefault`.
             var candidates: [URL] = []
             if let sprite, !sprite.isEmpty { candidates.append(URL(fileURLWithPath: (sprite as NSString).expandingTildeInPath)) }
             candidates += [Paths.petDir.appendingPathComponent("spritesheet.webp"), Paths.petDir.appendingPathComponent("spritesheet.png")]
-            candidates += PetLibrary.sheetFiles(in: bundled).filter { $0.deletingPathExtension().lastPathComponent.lowercased() == "ghost" }
+            candidates += sheets.bundled.filter { $0.deletingPathExtension().lastPathComponent.lowercased() == "ghost" }
             if let url = candidates.first(where: { Self.entry(.sprite, $0) != nil }), var active = Self.entry(.sprite, url) {
                 active.id = "pet.sprite"
                 assets.insert(ResolvedAsset(entry: active, url: url), at: 0)
             }
             if let custom, !custom.contains("/") {
-                let url = backgrounds.appendingPathComponent(custom)
+                let url = folders.backgroundsFolder.appendingPathComponent(custom)
                 if var image = Self.entry(.background, url) {
                     image.id = "chat.background"
                     assets.append(ResolvedAsset(entry: image, url: url))
@@ -245,8 +239,7 @@ final class PetAPI {
     }
 
     private func signature() -> [String] {
-        PetFolderSignature(folder: library).items + (bundled.map { PetFolderSignature(folder: $0).items } ?? [])
-            + ((try? FileManager.default.contentsOfDirectory(atPath: backgrounds.path)) ?? []).sorted().map { "bg|\($0)" }
+        assets.folderSignature()
     }
 
     nonisolated private static func entry(_ kind: AssetKind, _ url: URL) -> AssetEntry? {
