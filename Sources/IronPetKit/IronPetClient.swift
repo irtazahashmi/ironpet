@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Where the Mac is and, for a self-signed `https` address, the certificate fingerprint to pin.
 public struct ServerEndpoint: Codable, Equatable, Sendable {
@@ -44,15 +47,21 @@ public final class IronPetClient: @unchecked Sendable {
         self.token = token
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 15
+#if canImport(Darwin)
         configuration.waitsForConnectivity = false
+#endif
         // Nothing the Mac answers is kept, not even in memory: screen text must not sit in a cache.
         configuration.urlCache = nil
         configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+#if canImport(Security)
         if endpoint.pinsCertificate, let pin = endpoint.pin {
             session = URLSession(configuration: configuration, delegate: PinnedSessionDelegate(pin: pin), delegateQueue: nil)
         } else {
             session = URLSession(configuration: configuration)
         }
+#else
+        session = URLSession(configuration: configuration)
+#endif
     }
 
     deinit { session.finishTasksAndInvalidate() }

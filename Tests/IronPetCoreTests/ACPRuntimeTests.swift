@@ -36,6 +36,9 @@ final class ACPRuntimeTests: XCTestCase {
     }
 
     func testInstallsWhenTheChecksumMatches() async throws {
+        #if !canImport(Darwin)
+        throw XCTSkip("builds its test archive with /usr/bin/ditto, which only macOS has")
+        #endif
         let asset = "bun-darwin-aarch64.zip"
         let archive = try makeArchive(asset: asset)
         let shasums = "\(String(repeating: "0", count: 64))  other.zip\n\(BunRuntime.sha256(archive))  \(asset)\n"
@@ -45,6 +48,9 @@ final class ACPRuntimeTests: XCTestCase {
     }
 
     func testATamperedDownloadIsRejectedAndNothingIsWritten() async throws {
+        #if !canImport(Darwin)
+        throw XCTSkip("builds its test archive with /usr/bin/ditto, which only macOS has")
+        #endif
         let asset = "bun-darwin-aarch64.zip"
         let archive = try makeArchive(asset: asset)
         let shasums = "\(BunRuntime.sha256(archive))  \(asset)\n"
@@ -60,6 +66,9 @@ final class ACPRuntimeTests: XCTestCase {
     }
 
     func testAMissingChecksumLineIsRejected() async throws {
+        #if !canImport(Darwin)
+        throw XCTSkip("builds its test archive with /usr/bin/ditto, which only macOS has")
+        #endif
         let asset = "bun-darwin-aarch64.zip"
         let archive = try makeArchive(asset: asset)
         do {

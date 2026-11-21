@@ -1,4 +1,11 @@
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import XCTest
 @testable import IronPetCore
 
@@ -187,7 +194,7 @@ final class MeetingRegenerationTests: XCTestCase {
         XCTAssertEqual(read("transcript.md"), oldTranscript)
     }
 
-    func testReplaceRestoresTheFirstFileWhenTheSecondSwapFails() throws {
+    func testReplaceRestoresTheFirstFileWhenTheSecondSwapFails() async throws {
         // Moves 1 and 2 swap transcript.md, move 3 starts on summary.md and fails.
         var moves = 0
         let flaky: (URL, URL) throws -> Void = { from, to in
@@ -231,7 +238,7 @@ final class MeetingRegenerationTests: XCTestCase {
         XCTAssertFalse(summary.contains("Call Sam"))
     }
 
-    func testCarryCheckedIgnoresOtherSectionsAndKeepsOpenItemsOpen() {
+    func testCarryCheckedIgnoresOtherSectionsAndKeepsOpenItemsOpen() async {
         let old = "## Decisions\n- [x] Ship it\n\n## Action items\n- [ ] Call Sam (owner: Me)\n- [X] Pay the invoice (owner: Me, due: Friday)\n"
         let new = "## Decisions\n- [ ] Ship it\n\n## Action items\n- [ ] Call Sam (owner: Me)\n* [ ] pay the invoice (owner: Them)\n"
         XCTAssertEqual(ActionItems.carryChecked(from: old, into: new),
@@ -239,7 +246,7 @@ final class MeetingRegenerationTests: XCTestCase {
         XCTAssertEqual(ActionItems.carryChecked(from: "## Action items\nNone.\n", into: new), new)
     }
 
-    func testOnlyNewItemsAreOfferedAsTasksAgain() {
+    func testOnlyNewItemsAreOfferedAsTasksAgain() async {
         let new = "## Action items\n- [ ] Send the deck (owner: Me)\n- [ ] Book the room (owner: Me)\n- [ ] Ask Sam (owner: Sam, waiting: yes)\n- [ ] Fix the build (owner: Joonas)\n"
         let offered = ActionItems.newSuggestions(old: oldSummary, new: new)
         XCTAssertEqual(offered.map(\.title), ["Book the room", "Ask Sam"])
@@ -247,7 +254,7 @@ final class MeetingRegenerationTests: XCTestCase {
         XCTAssertEqual(ActionItems.newSuggestions(old: nil, new: new).map(\.title), ["Send the deck", "Book the room", "Ask Sam"])
     }
 
-    func testASuggestionThatComesBackIsNotAddedTwice() {
+    func testASuggestionThatComesBackIsNotAddedTwice() async {
         let store = TaskStore(database: Database.open(path: nil, migrations: TaskStore.migrations).database)
         let meeting = folder!
         XCTAssertEqual(store.suggest([("Send the deck", nil, nil)], meeting: meeting).count, 1)
@@ -257,7 +264,7 @@ final class MeetingRegenerationTests: XCTestCase {
 
     // MARK: S5
 
-    func testTheButtonIsDisabledWithAReason() throws {
+    func testTheButtonIsDisabledWithAReason() async throws {
         XCTAssertNil(regenerator.unavailableReason(for: try record(), activeFolder: nil))
 
         XCTAssertEqual(regenerator.unavailableReason(for: try record(), activeFolder: folder),
@@ -313,7 +320,7 @@ final class MeetingRegenerationTests: XCTestCase {
 
     // MARK: Folder facts
 
-    func testChunkNames() {
+    func testChunkNames() async {
         XCTAssertEqual(MeetingFolderScan.chunkName("mic-001.wav")?.track, .me)
         XCTAssertEqual(MeetingFolderScan.chunkName("them-012.wav")?.index, 12)
         XCTAssertNil(MeetingFolderScan.chunkName("mic-001.wav.tmp"))
@@ -321,7 +328,7 @@ final class MeetingRegenerationTests: XCTestCase {
         XCTAssertNil(MeetingFolderScan.chunkName("other-001.wav"))
     }
 
-    func testScanOrdersChunksAndAddsUpOffsetsPerTrack() throws {
+    func testScanOrdersChunksAndAddsUpOffsetsPerTrack() async throws {
         let found = try MeetingFolderScan.scan(folder)
         XCTAssertEqual(found.chunks.map { $0.url.lastPathComponent }, ["mic-001.wav", "them-001.wav", "mic-002.wav", "them-002.wav"])
         XCTAssertEqual(found.chunks.map(\.offset), [0, 0, 3, 3])
@@ -329,7 +336,7 @@ final class MeetingRegenerationTests: XCTestCase {
         XCTAssertFalse(found.chunks.contains(where: \.silent))
     }
 
-    func testAppNameFallsBackWhenTheHeaderIsMissing() {
+    func testAppNameFallsBackWhenTheHeaderIsMissing() async {
         XCTAssertEqual(MeetingFolderScan.appName(fromTranscript: nil), "unknown app")
         XCTAssertEqual(MeetingFolderScan.appName(fromTranscript: "no header"), "unknown app")
         XCTAssertEqual(MeetingFolderScan.appName(fromTranscript: "# Meeting 2026-11-14 14:00 (All system audio)\n[x]"), "All system audio")

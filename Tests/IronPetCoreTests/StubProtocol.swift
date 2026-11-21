@@ -1,4 +1,7 @@
 import Foundation
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 
 /// Answers every request with a canned response (or error) and keeps what it was sent.
 final class StubProtocol: URLProtocol, @unchecked Sendable {

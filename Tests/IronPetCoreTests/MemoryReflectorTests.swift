@@ -17,7 +17,7 @@ final class MemoryReflectorTests: XCTestCase {
     private var clock = Date(timeIntervalSince1970: 1_795_000_000)
     private var workspace: URL!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         dir = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-reflector-\(UUID().uuidString)")
         workspace = dir.appendingPathComponent("app")
         try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
@@ -36,7 +36,7 @@ final class MemoryReflectorTests: XCTestCase {
         reflector.petName = { "Ghost" }
     }
 
-    override func tearDownWithError() throws {
+    override func tearDown() async throws {
         try? FileManager.default.removeItem(at: dir)
     }
 
@@ -347,7 +347,7 @@ final class MemoryReflectorTests: XCTestCase {
         XCTAssertGreaterThan(store.document(store.aboutMe)?.notes.count ?? 0, 200, "undo goes back to the version before the tidy")
     }
 
-    func testTidyRejectsAnswersThatAddOrChangeNotes() {
+    func testTidyRejectsAnswersThatAddOrChangeNotes() async {
         let original = "# About me\n\n- One <!-- 2026-11-01 chat:a -->\n- Two <!-- 2026-11-02 chat:b -->\n- Hand written\n"
         func answer(_ file: String) -> String { String(decoding: try! JSONSerialization.data(withJSONObject: ["file": file]), as: UTF8.self) }
         XCTAssertEqual(try MemoryTidier.validate(original: original, answer: answer("# About me\n\n- One and two <!-- 2026-11-02 chat:b -->\n- Hand written\n")).get(),
@@ -442,7 +442,7 @@ final class MemoryReflectorTests: XCTestCase {
         XCTAssertTrue(finished.skipped, "the run in flight saves nothing")
     }
 
-    func testTranscriptKeepsTheNewestMessagesWithinTheLimit() {
+    func testTranscriptKeepsTheNewestMessagesWithinTheLimit() async {
         let long = String(repeating: "x", count: 10_000)
         let messages = (0..<5).map { (id: "\($0)", user: true, text: "m\($0) " + long) }
         let text = reflector.transcript(messages)
@@ -451,7 +451,7 @@ final class MemoryReflectorTests: XCTestCase {
         XCTAssertFalse(text.contains("m0 "))
     }
 
-    func testParseReadsFencedJSONAndSkipsBadEntries() {
+    func testParseReadsFencedJSONAndSkipsBadEntries() async {
         let answer = "Here:\n```json\n{\"notes\":[{\"scope\":\"ME\",\"text\":\"a\"},{\"scope\":\"world\",\"text\":\"b\"},{\"text\":\"c\"}]}\n```"
         XCTAssertEqual(MemoryReflector.parse(answer), [.init(scope: .me, text: "a", person: nil, replaces: [])])
         XCTAssertNil(MemoryReflector.parse("no notes today"))

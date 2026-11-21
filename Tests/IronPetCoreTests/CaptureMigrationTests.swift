@@ -24,7 +24,7 @@ final class CaptureMigrationTests: XCTestCase {
         Set(try database.read { try $0.rows("SELECT name FROM sqlite_master WHERE type IN ('table', 'view')") }.compactMap { $0[0] as? String })
     }
 
-    func testOldTablesAreDroppedNewOnesCreatedAndTaskDataKept() throws {
+    func testOldTablesAreDroppedNewOnesCreatedAndTaskDataKept() async throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-capture-migration-\(UUID().uuidString)/ironpet.db")
         addTeardownBlock { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
         let meeting = "/tmp/meetings/2026-11-17-0930"
@@ -75,7 +75,7 @@ final class CaptureMigrationTests: XCTestCase {
         XCTAssertEqual(store.search("fresh").count, 1)
     }
 
-    func testAFreshDatabaseHasTheNewTablesOnly() throws {
+    func testAFreshDatabaseHasTheNewTablesOnly() async throws {
         let database = Database.open(path: nil, migrations: AppMigrations.all).database
         let names = try tables(database)
         XCTAssertTrue(names.isSuperset(of: ["capture_window", "capture", "capture_fts", "task_items", "task_suggestions"]))

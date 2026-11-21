@@ -244,7 +244,7 @@ package enum PollExtractor {
     private static func stringify(_ value: Any) -> String {
         if let s = value as? String { return s }
         if let n = value as? NSNumber {
-            if CFGetTypeID(n) == CFBooleanGetTypeID() { return n.boolValue ? "true" : "false" }
+            if n.isJSONBoolean { return n.boolValue ? "true" : "false" }
             return n.doubleValue == n.doubleValue.rounded() ? String(n.int64Value) : String(n.doubleValue)
         }
         let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys, .fragmentsAllowed])

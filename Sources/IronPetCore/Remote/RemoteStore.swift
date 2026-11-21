@@ -83,8 +83,13 @@ package enum RemoteHash {
     /// `count` random bytes as unpadded base64url.
     package static func random(_ count: Int) -> String {
         var bytes = [UInt8](repeating: 0, count: count)
+        #if canImport(Security)
         let status = SecRandomCopyBytes(kSecRandomDefault, count, &bytes)
         precondition(status == errSecSuccess, "no random bytes")
+        #else
+        var generator = SystemRandomNumberGenerator()
+        for index in bytes.indices { bytes[index] = UInt8.random(in: .min ... .max, using: &generator) }
+        #endif
         return Data(bytes).base64URL
     }
 }

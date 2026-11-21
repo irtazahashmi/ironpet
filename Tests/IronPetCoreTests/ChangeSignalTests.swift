@@ -7,7 +7,7 @@ import Combine
 @MainActor
 final class ChangeSignalTests: XCTestCase {
     // S1
-    func testEveryObserverRunsOncePerSend() {
+    func testEveryObserverRunsOncePerSend() async {
         let signal = ChangeSignal()
         var first = 0, second = 0
         let a = signal.observe { first += 1 }
@@ -20,7 +20,7 @@ final class ChangeSignalTests: XCTestCase {
     }
 
     // S1
-    func testAReleasedOrCancelledTokenStopsItsHandler() {
+    func testAReleasedOrCancelledTokenStopsItsHandler() async {
         let signal = ChangeSignal()
         var kept = 0, cancelled = 0, released = 0
         let keep = signal.observe { kept += 1 }
@@ -34,7 +34,7 @@ final class ChangeSignalTests: XCTestCase {
     }
 
     // S1
-    func testAHandlerCancelledByAnEarlierHandlerDoesNotRun() {
+    func testAHandlerCancelledByAnEarlierHandlerDoesNotRun() async {
         let signal = ChangeSignal()
         var later = 0
         var laterToken: ChangeToken?
@@ -80,7 +80,7 @@ final class ChangeSignalTests: XCTestCase {
 
     #if canImport(Combine)
     // S2
-    func testTheCombinePublisherFiresBeforeTheObserveHandlers() {
+    func testTheCombinePublisherFiresBeforeTheObserveHandlers() async {
         let signal = ChangeSignal()
         var order: [String] = []
         let token = signal.observe { order.append("observe") }

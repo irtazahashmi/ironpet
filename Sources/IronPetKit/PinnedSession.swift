@@ -1,3 +1,4 @@
+#if canImport(Security)
 import CryptoKit
 import Foundation
 import Security
@@ -33,3 +34,4 @@ public final class PinnedSessionDelegate: NSObject, URLSessionDelegate, @uncheck
         completionHandler(.useCredential, URLCredential(trust: trust))
     }
 }
+#endif

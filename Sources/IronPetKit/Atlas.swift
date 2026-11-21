@@ -1,6 +1,8 @@
-import CoreGraphics
 import Foundation
+#if canImport(CoreGraphics)
+import CoreGraphics
 import ImageIO
+#endif
 
 /// One animation row of a Codex v2 pet atlas.
 public struct AtlasRow: Equatable, Sendable {
@@ -37,6 +39,7 @@ public struct Atlas: @unchecked Sendable {
     public static let width = 1536
     public static let heights = [2288, 2704]
 
+#if canImport(CoreGraphics)
     public let rows: [[CGImage]]
     public let look: [CGImage]
 
@@ -85,6 +88,47 @@ public struct Atlas: @unchecked Sendable {
               let width = properties[kCGImagePropertyPixelWidth] as? Int, let height = properties[kCGImagePropertyPixelHeight] as? Int else { return nil }
         return (width, height)
     }
+
+#else
+    // Linux has no CoreGraphics or ImageIO, so it cannot cut frames. It still checks that a PNG has the atlas layout, which is all
+    // the core needs to import and list pets.
+    public let rowCount: Int
+
+    public init?(width: Int, height: Int) {
+        guard Self.isValid(width: width, height: height) else { return nil }
+        rowCount = height / Int(Self.cell.height)
+    }
+
+    public func has(_ row: AtlasRow) -> Bool { row.index < rowCount && !(9..<11).contains(row.index) }
+
+    /// The atlas in a PNG file, or nil when the file is missing, unreadable, not a PNG or not in the atlas layout.
+    public static func load(_ url: URL) -> Atlas? {
+        guard let size = pixelSize(of: url) else { return nil }
+        return Atlas(width: size.width, height: size.height)
+    }
+
+    /// The atlas in PNG bytes.
+    public static func load(data: Data) -> Atlas? {
+        guard let size = pngSize(data) else { return nil }
+        return Atlas(width: size.width, height: size.height)
+    }
+
+    /// The pixel size of a PNG file, read from its header without decoding it.
+    public static func pixelSize(of url: URL) -> (width: Int, height: Int)? {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
+        defer { try? handle.close() }
+        guard let head = try? handle.read(upToCount: 24) else { return nil }
+        return pngSize(head)
+    }
+
+    private static func pngSize(_ data: Data) -> (width: Int, height: Int)? {
+        let bytes = [UInt8](data.prefix(24))
+        let signature: [UInt8] = [0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]
+        guard bytes.count == 24, Array(bytes[0..<8]) == signature else { return nil }
+        func value(_ at: Int) -> Int { bytes[at..<(at + 4)].reduce(0) { $0 << 8 | Int($1) } }
+        return (value(16), value(20))
+    }
+#endif
 
     /// Whether a pixel size is one of the atlas layouts.
     public static func isValid(width: Int, height: Int) -> Bool { width == Self.width && heights.contains(height) }

@@ -7,7 +7,7 @@ extension JMES {
         case nil, is NSNull: return false
         case let n as NSNumber:
             // JSONSerialization numbers bridge to Bool for 0 and 1, so check for a real boolean first.
-            if CFGetTypeID(n) == CFBooleanGetTypeID() { return n.boolValue }
+            if n.isJSONBoolean { return n.boolValue }
             return true
         case let b as Bool: return b
         case let s as String: return !s.isEmpty

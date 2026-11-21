@@ -238,6 +238,33 @@ jobs:
             -destination "platform=iOS Simulator,id=$device" -derivedDataPath "$RUNNER_TEMP/dd" \
             CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= CODE_SIGN_IDENTITY=-
 
+  # IronPetCore on Linux. It is non-blocking for now (continue-on-error), and the "build" gate below does not wait for it.
+  linux:
+    needs: changes
+    if: needs.changes.outputs.mac == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    container: swift:6.1-noble
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install SQLite headers and unzip
+        run: apt-get update && apt-get install -y libsqlite3-dev pkg-config unzip
+
+      # The key leaves out the sources for the same reason as the macOS jobs. The resolved checkouts live inside .build.
+      - name: Cache the build and the resolved checkouts
+        uses: actions/cache@v4
+        with:
+          path: .build
+          key: spm-linux-${{ runner.os }}-swift-6.1-noble-${{ hashFiles('Package.resolved', 'Package.swift') }}
+
+      - name: Build the core
+        run: swift build --target IronPetCore
+
+      - name: Core tests
+        run: swift test --filter IronPetCoreTests
+
   # Branch protection requires a check named "build". Skipped Mac jobs count as OK for docs-only PRs.
   build:
     needs: [changes, test, bundle, scripts]

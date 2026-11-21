@@ -125,12 +125,18 @@ package enum BunRuntime {
         let zip = work.appendingPathComponent(asset)
         try archive.write(to: zip)
         let unpacked = work.appendingPathComponent("out")
+        #if canImport(Darwin)
         try run("/usr/bin/ditto", ["-x", "-k", zip.path, unpacked.path], spawner: spawner)
+        #else
+        try run("/usr/bin/unzip", ["-q", zip.path, "-d", unpacked.path], spawner: spawner)
+        #endif
         let folder = asset.replacingOccurrences(of: ".zip", with: "")
         let bun = unpacked.appendingPathComponent(folder).appendingPathComponent("bun")
         guard fm.isExecutableFile(atPath: bun.path) else { throw Failure.unpackFailed("the archive has no bun executable") }
         // The checksum has passed, so the download is the release Oven published. Clear the quarantine flag.
+        #if canImport(Darwin)
         _ = try? run("/usr/bin/xattr", ["-d", "com.apple.quarantine", bun.path], spawner: spawner)
+        #endif
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
         let target = directory.appendingPathComponent("bun")
         try? fm.removeItem(at: target)

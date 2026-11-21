@@ -1,3 +1,5 @@
+// lzfse compression exists only in Apple's Foundation.
+#if canImport(Darwin)
 import XCTest
 @testable import IronPetCore
 
@@ -52,3 +54,4 @@ final class CaptureStorageBenchmarkTests: XCTestCase {
         if let path = ProcessInfo.processInfo.environment["IRONPET_S0_REPORT"] { try? report.write(toFile: path, atomically: true, encoding: .utf8) }
     }
 }
+#endif

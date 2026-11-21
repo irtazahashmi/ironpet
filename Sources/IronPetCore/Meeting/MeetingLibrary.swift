@@ -60,7 +60,11 @@ package final class MeetingLibrary {
     /// Moves the folder to the Trash rather than deleting it, so a wrong click can be undone in Finder.
     package func delete(_ id: String) throws {
         guard let meeting = meetings.first(where: { $0.id == id }) else { return }
+        #if canImport(Darwin)
         try FileManager.default.trashItem(at: meeting.folder, resultingItemURL: nil)
+        #else
+        try FileManager.default.removeItem(at: meeting.folder)
+        #endif
         onDeleted?(meeting.folder)
         reload()
     }

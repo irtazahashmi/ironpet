@@ -234,7 +234,7 @@ package struct RemoteChat {
             return .many(list)
         case .text, .number:
             if let text = raw as? String { return .text(text) }
-            if let number = raw as? NSNumber, CFGetTypeID(number) != CFBooleanGetTypeID() { return .text(number.stringValue) }
+            if let number = raw as? NSNumber, !number.isJSONBoolean { return .text(number.stringValue) }
             throw wrong
         case .boolean:
             guard let flag = raw as? Bool else { throw wrong }
