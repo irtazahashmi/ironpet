@@ -246,6 +246,28 @@ package final class MeetingsAPI {
         recorder.voiceStore.forget(id: id)
     }
 
+    /// Renames a stored voice and the speaker in its past meetings. The voiceprint itself does not change.
+    /// Throws `invalid` for an empty name or a name another stored voice has, and changes nothing then.
+    package func renameVoice(_ id: String, to name: String) throws {
+        let old: String
+        do {
+            old = try recorder.voiceStore.rename(id: id, to: name)
+        } catch let error as VoiceStore.RenameError {
+            switch error {
+            case .emptyName: throw APIError.invalid("Type a name.")
+            case .nameTaken: throw APIError.invalid("Another voice already has that name.")
+            case .notFound: throw APIError.notFound("no stored voice with id \"\(id)\"")
+            case .unavailable: throw APIError.unavailable("The voice file cannot be read or written.")
+            }
+        }
+        let new = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard old != new else { return }
+        let outcome = library.renameSpeaker(from: old, to: new, skipping: activeFolder.map { [$0] } ?? [])
+        if outcome.failed > 0 {
+            throw APIError.failed("The voice was renamed, but \(outcome.failed) past meeting(s) could not be updated.")
+        }
+    }
+
     package func forgetAllVoices() { recorder.voiceStore.forgetAll() }
 
     // MARK: The recording panel

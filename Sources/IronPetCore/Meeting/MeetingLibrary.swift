@@ -57,6 +57,14 @@ package final class MeetingLibrary {
         meetings = folders.compactMap(Self.record).sorted { ($0.date, $0.id) > ($1.date, $1.id) }
     }
 
+    /// Writes `new` over `old` in the saved meetings that have a line from that speaker. The caller names the folder
+    /// being recorded, which the recorder still writes itself.
+    package func renameSpeaker(from old: String, to new: String, skipping: Set<URL> = []) -> SpeakerRename.Outcome {
+        let outcome = SpeakerRename.apply(root: root, from: old, to: new, skipping: skipping)
+        reload()
+        return outcome
+    }
+
     /// Moves the folder to the Trash rather than deleting it, so a wrong click can be undone in Finder.
     package func delete(_ id: String) throws {
         guard let meeting = meetings.first(where: { $0.id == id }) else { return }

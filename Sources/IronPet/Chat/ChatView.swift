@@ -1,6 +1,7 @@
 import AppKit
 import ImageIO
 import IronPetCore
+import IronPetKit
 import SwiftUI
 
 extension View {
@@ -1416,7 +1417,6 @@ private struct ToolSteps: View {
     /// Highlights for the steps that hold a match, by item id.
     var finds: [(UUID, ChatFind.RowHighlight)] = []
     @State private var expanded = false
-    @State private var hovering = false
 
     private var steps: [(id: UUID, summary: String, ok: Bool?)] {
         items.compactMap { item in
@@ -1426,52 +1426,26 @@ private struct ToolSteps: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Button { withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() } } label: {
+        ChatSystemRow(expanded: expanded, label: Text(LocalizedStringKey(headerText)),
+                      toggle: { withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() } },
+                      icon: { ChatToolRunIcon(ChatToolSteps.state(steps.map { ($0.summary, $0.ok) })) },
+                      detail: {
+            ChatStepList(count: steps.count) { index in
+                let step = steps[index]
                 HStack(spacing: 6) {
-                    headerIcon
-                    Text(LocalizedStringKey(headerText)).lineLimit(1).truncationMode(.middle)
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 9, weight: .semibold))
-                        .rotationEffect(.degrees(expanded ? 90 : 0))
-                        .opacity(hovering || expanded ? 1 : 0.6)
+                    ChatStepIcon(step.ok)
+                    stepText(step)
+                        .lineLimit(1).truncationMode(.middle)
+                        .textSelection(.enabled)
                     Spacer(minLength: 0)
                 }
                 .font(.system(size: 11.5))
-                .foregroundStyle(hovering ? .primary : .secondary)
-                .padding(.vertical, 4)
-                .contentShape(Rectangle())
+                .foregroundStyle(.secondary)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
             }
-            .buttonStyle(.plain)
-            .pointerCursor()
-            .onHover { hovering = $0 }
-            .help(expanded ? "Hide steps" : "Show steps")
-
-            if expanded {
-                VStack(alignment: .leading, spacing: 0) {
-                    ForEach(Array(steps.enumerated()), id: \.element.id) { index, step in
-                        if index > 0 { Rectangle().fill(Color.primary.opacity(0.07)).frame(height: 1) }
-                        HStack(spacing: 6) {
-                            icon(step.ok)
-                            stepText(step)
-                                .lineLimit(1).truncationMode(.middle)
-                                .textSelection(.enabled)
-                            Spacer(minLength: 0)
-                        }
-                        .font(.system(size: 11.5))
-                        .foregroundStyle(.secondary)
-                        .padding(.horizontal, 10)
-                        .padding(.vertical, 6)
-                    }
-                }
-                .background(Color.primary.opacity(0.035), in: RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.08)))
-                .padding(.top, 2)
-                .transition(.opacity.combined(with: .move(edge: .top)))
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(.leading, 32)
+        })
+        .help(expanded ? "Hide steps" : "Show steps")
         // The step holding the current match opens, so the highlight is visible. Collapsed steps still count.
         .onChange(of: finds.first { $0.1.current != nil }?.0) { _, id in
             if id != nil, !expanded { withAnimation(.easeInOut(duration: 0.15)) { expanded = true } }
@@ -1487,49 +1461,9 @@ private struct ToolSteps: View {
         return ChatFind.text(Markdown.inline(step.summary), segment: 0, find: find)
     }
 
-    @ViewBuilder
-    private var headerIcon: some View {
-        if steps.contains(where: { $0.ok == nil }) {
-            icon(nil)
-        } else if steps.contains(where: { $0.ok == false }) {
-            Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.orange)
-        } else {
-            Image(systemName: "checkmark.circle").foregroundStyle(.secondary)
-        }
-    }
-
     /// The running step while one is in flight, otherwise a count per kind of step.
     private var headerText: String {
-        if !expanded, let running = steps.last(where: { $0.ok == nil }) { return running.summary }
-        var counts: [(verb: String, noun: String, count: Int)] = []
-        for step in steps {
-            let (verb, noun) = Self.kind(of: step.summary)
-            if let i = counts.firstIndex(where: { $0.verb == verb }) { counts[i].count += 1 } else { counts.append((verb, noun, 1)) }
-        }
-        let parts = counts.map { "\($0.verb) \($0.count) \($0.noun)\($0.count == 1 ? "" : "s")" }
-        let text = parts.joined(separator: ", ")
-        return text.prefix(1).uppercased() + text.dropFirst()
-    }
-
-    private static func kind(of summary: String) -> (String, String) {
-        let first = summary.split(separator: " ").first.map(String.init)?.lowercased() ?? ""
-        switch first {
-        case "ran": return ("ran", "command")
-        case "read": return ("read", "file")
-        case "edited", "wrote", "created": return ("edited", "file")
-        case "deleted": return ("deleted", "file")
-        case "searched", "grepped", "listed", "found": return ("searched", "time")
-        default: return ("used", "tool")
-        }
-    }
-
-    @ViewBuilder
-    private func icon(_ ok: Bool?) -> some View {
-        switch ok {
-        case nil: ProgressView().controlSize(.mini).frame(width: 12, height: 12)
-        case true?: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-        case false?: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
-        }
+        ChatToolSteps.header(steps.map { ($0.summary, $0.ok) }, expanded: expanded)
     }
 }
 

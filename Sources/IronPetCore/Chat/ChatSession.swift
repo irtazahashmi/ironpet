@@ -509,11 +509,22 @@ package final class ChatSession {
     }
 
     /// Sample conversations for `--render-previews`.
-    package enum Preview { case done, approval, markdown, form }
+    package enum Preview { case done, approval, markdown, form, rows }
 
     package func loadPreview(_ preview: Preview) {
         workspace = URL(fileURLWithPath: "/Users/you/code/demo-app")
         needsWorkspace = false
+        if preview == .rows {
+            // An automation notice above a folded run of commands, to compare the two quiet rows.
+            items = [
+                Item(kind: .notice("Automation: Task review\nReview the open tasks and report which are blocked.")),
+                Item(kind: .tool("Ran `git status`", ok: true)),
+                Item(kind: .tool("Ran `npm test`", ok: true)),
+                Item(kind: .assistant("Two tasks are blocked on review.")),
+            ]
+            state = .done
+            return
+        }
         if preview == .markdown {
             items = [
                 Item(kind: .user("how does login refresh the token?")),
@@ -567,7 +578,7 @@ package final class ChatSession {
             items.append(Item(kind: .assistant("Done! `login()` now waits for the token refresh, and the test passed 20 runs in a row.")))
             state = .done
             lastRunDuration = 14
-        case .markdown:
+        case .markdown, .rows:
             break
         case .form:
             state = .running

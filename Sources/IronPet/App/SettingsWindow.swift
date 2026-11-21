@@ -870,6 +870,9 @@ private struct SpeakerSettings: View {
     @ObservedObject private var models = SpeakerModels.shared
     @State private var voices: [StoredVoice] = []
     @State private var confirmForgetAll = false
+    @State private var renaming: String?
+    @State private var draft = ""
+    @State private var renameError: String?
 
     var body: some View {
         Section {
@@ -881,13 +884,21 @@ private struct SpeakerSettings: View {
             if !voices.isEmpty {
                 ForEach(voices) { voice in
                     HStack {
-                        Text(voice.name)
-                        Text("\(Int(voice.seconds / 60)) min of speech").font(.caption).foregroundStyle(.secondary)
-                        Spacer()
+                        if renaming == voice.id {
+                            TextField("Name", text: $draft).onSubmit { commitRename(voice) }
+                            Button("Save") { commitRename(voice) }.controlSize(.small)
+                            Button("Cancel") { renaming = nil; renameError = nil }.controlSize(.small)
+                        } else {
+                            Text(voice.name)
+                            Text("\(Int(voice.seconds / 60)) min of speech").font(.caption).foregroundStyle(.secondary)
+                            Spacer()
+                            Button("Rename") { draft = voice.name; renameError = nil; renaming = voice.id }.controlSize(.small)
+                        }
                         Button("Forget this voice") { try? meetings?.forgetVoice(voice.id); reload() }.controlSize(.small)
                     }
                 }
             }
+            if let renameError { Text(renameError).font(.caption).foregroundStyle(.red) }
             Button("Forget all voices", role: .destructive) { confirmForgetAll = true }
                 .disabled(voices.isEmpty && meetings?.hasVoiceFile != true)
                 .confirmationDialog("Forget all voices?", isPresented: $confirmForgetAll) {
@@ -898,6 +909,17 @@ private struct SpeakerSettings: View {
                 .font(.caption).foregroundStyle(.secondary)
         }
         .onAppear(perform: reload)
+    }
+
+    private func commitRename(_ voice: StoredVoice) {
+        do {
+            try meetings?.renameVoice(voice.id, to: draft)
+            renaming = nil
+            renameError = nil
+        } catch {
+            renameError = (error as? APIError)?.message ?? error.localizedDescription
+        }
+        reload()
     }
 
     @ViewBuilder private var status: some View {

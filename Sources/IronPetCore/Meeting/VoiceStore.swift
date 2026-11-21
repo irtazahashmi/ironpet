@@ -119,6 +119,34 @@ package final class VoiceStore {
         write(stored.filter { $0.id != id && $0.modelId == modelId })
     }
 
+    /// Why `rename` changed nothing.
+    package enum RenameError: Error, Equatable {
+        case emptyName
+        case nameTaken
+        case notFound
+        /// The file cannot be read or written, so it is left as it is.
+        case unavailable
+    }
+
+    /// Gives the voice a new name. Only the name changes: the centroid, speech seconds and meeting count stay, and the
+    /// store is sealed again with the same key. Returns the name the voice had.
+    @discardableResult
+    package func rename(id: String, to newName: String) throws -> String {
+        let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw RenameError.emptyName }
+        lock.lock()
+        defer { lock.unlock() }
+        guard let stored = read() else { throw RenameError.unavailable }
+        var all = stored.filter { $0.modelId == modelId }
+        guard let index = all.firstIndex(where: { $0.id == id }) else { throw RenameError.notFound }
+        // `enroll` matches names without regard to case, so a case-only difference from another voice is a clash too.
+        guard !all.contains(where: { $0.id != id && $0.name.caseInsensitiveCompare(name) == .orderedSame }) else { throw RenameError.nameTaken }
+        let old = all[index].name
+        all[index].name = name
+        guard write(all) else { throw RenameError.unavailable }
+        return old
+    }
+
     /// Deletes the file, so nothing is left to recover.
     package func forgetAll() {
         lock.lock()
@@ -137,22 +165,25 @@ package final class VoiceStore {
         return try? JSONDecoder.iso.decode([StoredVoice].self, from: plain)
     }
 
-    private func write(_ voices: [StoredVoice]) {
+    @discardableResult
+    private func write(_ voices: [StoredVoice]) -> Bool {
         if voices.isEmpty {
             try? FileManager.default.removeItem(at: url)
-            return
+            return true
         }
         guard let key = key(), let plain = try? JSONEncoder.iso.encode(voices),
               let sealed = try? AES.GCM.seal(plain, using: key).combined else {
             NSLog("ironpet: could not encrypt the voice store")
-            return
+            return false
         }
         do {
             try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
             try sealed.write(to: url, options: .atomic)
             try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+            return true
         } catch {
             NSLog("ironpet: could not write the voice store: \(error)")
+            return false
         }
     }
 }

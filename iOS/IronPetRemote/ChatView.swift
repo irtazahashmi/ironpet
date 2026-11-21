@@ -9,6 +9,8 @@ struct ChatView: View {
     /// The Mac's chat background: its id, and the picture for `custom`.
     var backgroundID = ChatBackgrounds.defaultID
     var backgroundImage: UIImage?
+    /// The pet's face, which marks the agent's replies as it does on the Mac.
+    var avatar: CGImage?
     @State private var showThreads = false
     @State private var showFiles = false
     @State private var photos: [PhotosPickerItem] = []
@@ -23,7 +25,7 @@ struct ChatView: View {
                         .accessibilityIdentifier("chat-error")
                 }
                 // The composer floats over the transcript, so the background shows through the glass.
-                Transcript(model: model)
+                Transcript(model: model, avatar: avatar)
                     .glassBottomBar {
                         VStack(spacing: 6) {
                             if let notice = model.snapshot?.notice {
@@ -55,7 +57,7 @@ struct ChatView: View {
                         .accessibilityLabel("Chats").accessibilityIdentifier("threads-button")
                 }
             }
-            .sheet(isPresented: $showThreads) { ThreadsSheet(model: model) }
+            .sheet(isPresented: $showThreads) { ThreadsSheet(model: model, avatar: avatar) }
             .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
                 guard case .success(let urls) = result else { return }
                 for url in urls {
@@ -85,51 +87,136 @@ struct ChatView: View {
 
 // MARK: Transcript
 
+/// Where the end of the transcript is, and how big the content and the viewport are, for `TranscriptFollowState`.
+private struct EndPosition: Equatable {
+    var contentHeight: CGFloat = 0
+    /// The bottom of the last row, in screen coordinates.
+    var bottom: CGFloat = 0
+}
+
+private struct EndPositionKey: PreferenceKey {
+    static let defaultValue = EndPosition()
+    static func reduce(value: inout EndPosition, nextValue: () -> EndPosition) { value = nextValue() }
+}
+
+private final class FollowTracker {
+    var state = TranscriptFollowState()
+}
+
 private struct Transcript: View {
     let model: ChatModel
+    var avatar: CGImage?
+    /// The follow logic keeps its last measurements in a reference, so a scroll frame does not invalidate the view. Only a change of
+    /// `pinned` or `newBelow` does.
+    @State private var tracker = FollowTracker()
+    @State private var pinned = true
+    @State private var newBelow = false
+    @State private var viewport = CGRect.zero
+    @State private var dragging = false
+    @State private var lastItemID: String?
+    @State private var lastContentKey = ""
+    /// Which long messages the reader opened. The transcript owns it because a lazy row that scrolls away loses its own state.
+    @State private var expandedMessages: Set<String> = []
+
+    /// Changes whenever something arrives that a reader at the end should see: a message, streamed text, a card or the working row.
+    private var contentKey: String {
+        "\(model.items.count)-\(model.items.last?.text?.utf16.count ?? 0)-\(model.approvals.count)-\(model.forms.count)-\(model.queue.count)-\(showsTyping)"
+    }
+
+    private func publish() {
+        if pinned != tracker.state.pinned { pinned = tracker.state.pinned }
+        if newBelow != tracker.state.newBelow { newBelow = tracker.state.newBelow }
+    }
+
+    private var showsTyping: Bool { model.running && model.approvals.isEmpty && model.forms.isEmpty }
 
     var body: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
-                    ForEach(model.items) { item in
-                        MessageRow(item: item, photo: item.fileName.flatMap { model.sentPhotos[$0] },
-                                   onReply: item.canReply ? { model.replyTo = item } : nil)
+                // The end marker sits outside the lazy stack, so it keeps reporting its position while the rows around it are not built.
+                VStack(spacing: 0) {
+                    LazyVStack(alignment: .leading, spacing: 10) {
+                        ForEach(RemoteTranscriptGroup.make(model.items)) { group in
+                            TranscriptGroupView(group: group, photos: model.sentPhotos, avatar: avatar, expanded: expandedMessages,
+                                                toggleExpand: { id in if !expandedMessages.insert(id).inserted { expandedMessages.remove(id) } },
+                                                onReply: { model.replyTo = $0 })
+                        }
+                        if showsTyping { TypingRow(started: model.snapshot?.runStarted, avatar: avatar) }
+                        ForEach(model.approvals) { ApprovalCard(approval: $0, model: model) }
+                        ForEach(model.forms) { FormCard(form: $0, model: model) }
+                        ForEach(model.queue) { QueuedRow(queued: $0) }
                     }
-                    ForEach(model.approvals) { ApprovalCard(approval: $0, model: model) }
-                    ForEach(model.forms) { FormCard(form: $0, model: model) }
-                    ForEach(model.queue) { QueuedRow(queued: $0) }
-                    if model.running { RunningRow(model: model) }
                     Color.clear.frame(height: 1).id("bottom")
+                        .background(GeometryReader { geometry in
+                            Color.clear.preference(key: EndPositionKey.self,
+                                                   value: EndPosition(contentHeight: geometry.frame(in: .named("content")).maxY, bottom: geometry.frame(in: .global).maxY))
+                        })
                 }
+                .coordinateSpace(name: "content")
                 .padding(.horizontal).padding(.vertical, 8)
             }
-            // Content that grows (a streamed reply) stays pinned to the bottom, and a reader who scrolled up stays where they are.
+            // The first screen of a chat opens at its newest message. After that, `follow` decides whether new content scrolls.
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
             .softBottomEdge()
+            .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame in
+                viewport = frame
+                if pinned { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            .onPreferenceChange(EndPositionKey.self) { position in
+                tracker.state.measure(contentHeight: position.contentHeight, viewportHeight: viewport.height,
+                                      distanceFromBottom: position.bottom - viewport.maxY, userDriven: dragging)
+                publish()
+            }
+            .simultaneousGesture(DragGesture(minimumDistance: 6).onChanged { _ in dragging = true }.onEnded { _ in dragging = false })
+            .overlay(alignment: .bottom) {
+                if newBelow {
+                    JumpToLatestButton {
+                        tracker.state.jumpedToLatest()
+                        publish()
+                        proxy.scrollTo("bottom", anchor: .bottom)
+                    }
+                    .padding(.bottom, 8)
+                    .transition(.opacity)
+                }
+            }
+            .animation(.easeOut(duration: 0.15), value: newBelow)
             .overlay {
                 if model.loaded, model.items.isEmpty {
                     ContentUnavailableView("No messages", systemImage: "bubble.left", description: Text("Say something to start."))
                 }
             }
-            .onChange(of: model.items.count) { _, _ in proxy.scrollTo("bottom", anchor: .bottom) }
+            .onChange(of: contentKey) {
+                // A message this phone just sent always jumps to the end. Streamed text follows only while the reader is at the end.
+                let last = model.items.last
+                let readerSent = last?.id != lastItemID && last?.kind == "user" && last?.origin == "ios"
+                lastItemID = last?.id
+                tracker.state.contentArrived(readerSent: readerSent)
+                publish()
+                if tracker.state.pinned { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
             .accessibilityIdentifier("transcript")
         }
     }
 }
 
-private struct RunningRow: View {
-    let model: ChatModel
+/// One group of the transcript: a run of tool steps, or one message.
+private struct TranscriptGroupView: View {
+    let group: RemoteTranscriptGroup
+    let photos: [String: Data]
+    var avatar: CGImage?
+    var expanded: Set<String> = []
+    var toggleExpand: (String) -> Void = { _ in }
+    var onReply: (RemoteChatItem) -> Void = { _ in }
 
     var body: some View {
-        HStack {
-            ProgressView().controlSize(.small)
-            Text(model.snapshot?.activity ?? "Working").font(.footnote).foregroundStyle(.secondary)
-            Spacer()
+        switch group {
+        case .tools(let steps):
+            ToolStepsRow(steps: steps)
+        case .item(let item):
+            MessageRow(item: item, photo: item.fileName.flatMap { photos[$0] }, avatar: avatar, expanded: expanded.contains(item.id),
+                       onToggleExpand: { toggleExpand(item.id) }, onReply: item.canReply ? { onReply(item) } : nil)
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityIdentifier("running-row")
     }
 }
 
@@ -154,21 +241,19 @@ private struct QueuedRow: View {
 struct MessageRow: View {
     let item: RemoteChatItem
     var photo: Data?
+    var avatar: CGImage?
+    var expanded = false
+    var onToggleExpand: () -> Void = {}
     var onReply: (() -> Void)?
 
     var body: some View {
         Group {
             switch item.row {
-            case .user(let text): bubble(text, mine: true)
-            case .assistant(let text): bubble(text, mine: false)
-            case .tool(let text, let ok):
-                HStack(spacing: 6) {
-                    Image(systemName: ok == nil ? "gearshape" : (ok == true ? "checkmark.circle" : "xmark.circle"))
-                        .foregroundStyle(ok == false ? .red : .secondary)
-                    Text(text).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(2)
-                }
-            case .error(let text):
-                Label(text, systemImage: "exclamationmark.triangle.fill").font(.footnote).foregroundStyle(.red)
+            case .user(let text): UserBubble(item: item, text: text, expanded: expanded, onToggleExpand: onToggleExpand)
+            case .assistant(let text): AssistantBubble(item: item, text: text, avatar: avatar)
+            case .tool: ToolStepsRow(steps: [item])
+            case .error(let text): ErrorRow(text: text)
+            case .notice(let text): NoticeRow(notice: ChatNotice(text))
             case .attachment(let name, let isImage):
                 Attachment(name: name, isImage: isImage, photo: photo, mine: item.origin == "ios")
             case .form(let message, let skipped, let lines):
@@ -189,45 +274,10 @@ struct MessageRow: View {
         }
     }
 
-    private func bubble(_ text: String, mine: Bool) -> some View {
-        VStack(alignment: mine ? .trailing : .leading, spacing: 3) {
-            if let reply = item.reply { Quote(reply: reply) }
-            Text(Self.markdown(text))
-                .padding(.horizontal, 12).padding(.vertical, 8)
-                .foregroundStyle(mine ? Color.white : Color.primary)
-                .background(mine ? Color.accentColor : Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 16))
-                .textSelection(.enabled)
-                .accessibilityIdentifier("bubble-\(item.id)")
-            if let origin = item.origin, origin != "ios" { Text(Self.originName(origin)).font(.caption2).foregroundStyle(.secondary) }
-        }
-    }
-
-    static func markdown(_ text: String) -> AttributedString {
-        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
-    }
+    static func markdown(_ text: String) -> AttributedString { ChatMarkdown.inline(text) }
 
     static func originName(_ origin: String) -> String {
-        switch origin {
-        case "telegram": return "Telegram"
-        case "automation": return "Automation"
-        case "job": return "Background job"
-        case "voice": return "Voice"
-        default: return origin.capitalized
-        }
-    }
-}
-
-private struct Quote: View {
-    let reply: RemoteChatReply
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(reply.sender).font(.caption2.bold())
-            Text(reply.text).font(.caption).lineLimit(2)
-        }
-        .foregroundStyle(.secondary)
-        .padding(.leading, 8)
-        .overlay(alignment: .leading) { Rectangle().fill(Color.accentColor).frame(width: 2) }
+        OriginBadge(origin: origin)?.label ?? origin.capitalized
     }
 }
 
@@ -239,13 +289,21 @@ private struct Attachment: View {
 
     var body: some View {
         if let photo, let image = UIImage(data: photo) {
-            Image(uiImage: image).resizable().scaledToFit().frame(maxWidth: 220, maxHeight: 220).clipShape(RoundedRectangle(cornerRadius: 12))
+            // The Mac's thumbnail: 110 pt high, rounded, with a hairline edge.
+            Image(uiImage: image).resizable().aspectRatio(contentMode: .fit).frame(height: 110)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.15)))
                 .accessibilityIdentifier("photo-\(name)")
         } else {
             // A screenshot the Mac took, or a file whose bytes the phone does not have. The Mac does not offer them for download.
-            Label(mine ? Self.display(name) : "Screenshot on the Mac", systemImage: isImage ? "photo" : "doc")
-                .font(.footnote).padding(8).background(.quaternary, in: Capsule())
-                .accessibilityIdentifier("chip-\(name)")
+            HStack(spacing: 6) {
+                Image(systemName: isImage ? "photo" : "doc").foregroundStyle(.secondary)
+                Text(mine ? Self.display(name) : (isImage ? "Screenshot on the Mac" : Self.display(name))).font(.system(size: 11.5)).lineLimit(2).truncationMode(.middle)
+            }
+            .padding(.horizontal, 8).frame(height: 48)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.15)))
+            .accessibilityIdentifier("chip-\(name)")
         }
     }
 
@@ -262,13 +320,20 @@ private struct FormRecord: View {
     let lines: [RemoteFormLine]
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Label(skipped ? "Skipped: \(message)" : message, systemImage: skipped ? "arrow.uturn.right" : "checkmark.bubble").font(.footnote.bold())
+        VStack(alignment: .leading, spacing: 6) {
+            Label(message.isEmpty ? "Question" : message, systemImage: skipped ? "forward.circle" : "checkmark.circle.fill")
+                .font(.system(size: 12.5, weight: .semibold)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if skipped { Text("Skipped").font(.system(size: 12)).foregroundStyle(.secondary) }
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
-                Text("\(line.question): \(line.answer)").font(.caption).foregroundStyle(.secondary)
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(line.question).font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(line.answer).font(.system(size: 12.5)).textSelection(.enabled)
+                }
+                .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .padding(8).frame(maxWidth: .infinity, alignment: .leading).background(.quaternary, in: RoundedRectangle(cornerRadius: 10))
+        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
@@ -280,17 +345,22 @@ private struct ApprovalCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(approval.title, systemImage: "hand.raised.fill").font(.subheadline.bold())
-            if !approval.detail.isEmpty { Text(approval.detail).font(.caption.monospaced()).foregroundStyle(.secondary).lineLimit(6) }
+            Label(approval.title, systemImage: "hand.raised.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(.orange)
+            if !approval.detail.isEmpty {
+                Text(approval.detail).font(.system(size: 11.5, design: .monospaced)).lineLimit(10).textSelection(.enabled)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(8)
+                    .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
+            }
             HStack {
-                Button("Allow") { Task { await model.decide(approval, allow: true) } }.buttonStyle(.borderedProminent)
+                Button { Task { await model.decide(approval, allow: true) } } label: { Label("Allow", systemImage: "checkmark").frame(minWidth: 70) }.buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("allow-\(approval.id)")
-                Button("Deny", role: .destructive) { Task { await model.decide(approval, allow: false) } }.buttonStyle(.bordered)
+                Button { Task { await model.decide(approval, allow: false) } } label: { Label("Deny", systemImage: "xmark").frame(minWidth: 70) }.buttonStyle(.bordered)
                     .accessibilityIdentifier("deny-\(approval.id)")
             }
         }
         .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.orange.opacity(0.15), in: RoundedRectangle(cornerRadius: 12))
+        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.orange.opacity(0.5)))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("approval-\(approval.id)")
     }
@@ -303,17 +373,19 @@ private struct FormCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label(form.message, systemImage: "questionmark.bubble.fill").font(.subheadline.bold())
+            Label(form.message.isEmpty ? "The agent has a question" : form.message, systemImage: "questionmark.bubble.fill")
+                .font(.system(size: 13, weight: .semibold)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             ForEach(form.fields) { field in fieldView(field) }
             HStack {
-                Button("Submit") { Task { await model.submit(form) } }.buttonStyle(.borderedProminent).disabled(!form.canSubmit)
+                Button { Task { await model.submit(form) } } label: { Label("Submit", systemImage: "checkmark").frame(minWidth: 70) }.buttonStyle(.borderedProminent).disabled(!form.canSubmit)
                     .accessibilityIdentifier("submit-\(form.id)")
-                Button("Skip") { Task { await model.skip(form) } }.buttonStyle(.bordered)
+                Button { Task { await model.skip(form) } } label: { Label("Skip", systemImage: "forward").frame(minWidth: 70) }.buttonStyle(.bordered)
                     .accessibilityIdentifier("skip-\(form.id)")
             }
         }
         .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.blue.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+        .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
+        .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.orange.opacity(0.5)))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("form-\(form.id)")
     }
@@ -321,8 +393,8 @@ private struct FormCard: View {
     @ViewBuilder
     private func fieldView(_ field: RemoteFormField) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            if !field.title.isEmpty { Text(field.title + (field.required ? " *" : "")).font(.footnote.bold()) }
-            if !field.detail.isEmpty { Text(field.detail).font(.caption).foregroundStyle(.secondary) }
+            if !field.title.isEmpty { Text(field.title + (field.required ? " *" : "")).font(.system(size: 12, weight: .semibold)) }
+            if !field.detail.isEmpty { Text(field.detail).font(.system(size: 11.5)).foregroundStyle(.secondary) }
             switch field.type {
             case "single":
                 ForEach(field.options ?? [], id: \.value) { option in
@@ -402,7 +474,7 @@ private struct Composer: View {
         VStack(alignment: .leading, spacing: 6) {
             if let reply = model.replyTo {
                 HStack(spacing: 4) {
-                    Quote(reply: RemoteChatReply(itemID: reply.id, sender: reply.kind == "user" ? "You" : "Reply", text: reply.text ?? ""))
+                    ReplyQuote(reply: RemoteChatReply(itemID: reply.id, sender: reply.kind == "user" ? "You" : "Reply", text: reply.text ?? ""))
                     Spacer(minLength: 0)
                     Button { model.replyTo = nil } label: { Image(systemName: "xmark.circle.fill") }.foregroundStyle(.secondary)
                         .accessibilityLabel("Cancel reply").accessibilityIdentifier("cancel-reply")
@@ -480,6 +552,7 @@ private struct Composer: View {
 
 private struct ThreadsSheet: View {
     let model: ChatModel
+    var avatar: CGImage?
     @Environment(\.dismiss) private var dismiss
 
     var body: some View {
@@ -505,10 +578,10 @@ private struct ThreadsSheet: View {
                 }
             }
             .navigationTitle("Chats")
-            .navigationDestination(for: RemoteChatThread.self) { ThreadReader(model: model, thread: $0, dismissSheet: { dismiss() }) }
+            .navigationDestination(for: RemoteChatThread.self) { ThreadReader(model: model, thread: $0, avatar: avatar, dismissSheet: { dismiss() }) }
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .task { await model.loadThreads() }
-            .alert("Cannot do that now", isPresented: Binding(get: { model.conflictMessage != nil }, set: { if !$0 { model.conflictMessage = nil } })) {
+            .alert("Cannot do that now", isPresented: Binding(get: { model.conflictMessage != nil && !model.readerOpen }, set: { if !$0 { model.conflictMessage = nil } })) {
                 Button("OK", role: .cancel) {}
             } message: {
                 Text(model.conflictMessage ?? "")
@@ -520,13 +593,18 @@ private struct ThreadsSheet: View {
 private struct ThreadReader: View {
     let model: ChatModel
     let thread: RemoteChatThread
+    var avatar: CGImage?
     let dismissSheet: () -> Void
     @State private var items: [RemoteChatItem] = []
+    @State private var expandedMessages: Set<String> = []
 
     var body: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 10) {
-                ForEach(items) { MessageRow(item: $0) }
+                ForEach(RemoteTranscriptGroup.make(items)) { group in
+                    TranscriptGroupView(group: group, photos: [:], avatar: avatar, expanded: expandedMessages,
+                                        toggleExpand: { id in if !expandedMessages.insert(id).inserted { expandedMessages.remove(id) } })
+                }
             }
             .padding()
         }
@@ -538,5 +616,13 @@ private struct ThreadReader: View {
             }
         }
         .task { items = await model.thread(thread.id)?.items ?? [] }
+        .onAppear { model.readerOpen = true }
+        .onDisappear { model.readerOpen = false }
+        // The sheet's own alert sits under this pushed screen, so a refusal from "Open on Mac" shows here.
+        .alert("Cannot do that now", isPresented: Binding(get: { model.conflictMessage != nil }, set: { if !$0 { model.conflictMessage = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.conflictMessage ?? "")
+        }
     }
 }
