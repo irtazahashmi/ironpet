@@ -13,6 +13,8 @@ enum APIEventKind: String, Codable, CaseIterable {
     case bubbleDismissed = "bubble.dismissed"
     case notificationsChanged = "notifications.changed"
     case automationsChanged = "automations.changed"
+    /// An automation waits for the user to press Approve on the Mac. The event carries the automation id and no buttons.
+    case automationNeedsApproval = "automation.needsApproval"
     case meetingsChanged = "meetings.changed"
     case settingsChanged = "settings.changed"
     case petMood = "pet.mood"

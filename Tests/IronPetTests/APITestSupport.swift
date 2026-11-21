@@ -10,7 +10,8 @@ enum APITestSupport {
                         automations: [Automation] = [], clock: AutomationTestClock = AutomationTestClock(),
                         signals: SignalStore? = nil, bubbles: BubbleStore? = nil, notifications: NotificationStore? = nil, sessions: SessionStore? = nil, chat: ChatSession? = nil,
                         meeting: MeetingRecorder? = nil, meetingLibrary: MeetingLibrary? = nil, config: ConfigStore? = nil, speech: SpeechOutput? = nil, petAssets: PetAssets? = nil,
-                        files: FileIntake? = nil, usage: UsageStore? = nil) -> IronPetAPI {
+                        files: FileIntake? = nil, usage: UsageStore? = nil,
+                        configureAutomations: ((AutomationService) -> Void)? = nil) -> IronPetAPI {
         TestMemory.isolate()
         let tasks = TaskStore(database: memoryDatabase(), now: now, keepDoneDays: { 30 })
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-api-\(UUID().uuidString)")
@@ -19,6 +20,7 @@ enum APITestSupport {
         let store = AutomationStore(paths: paths, defaults: { automations }, watch: false)
         let service = AutomationService(store: store, engine: AutomationEngine(env: clock.environment))
         service.runShell = { _, _ in CommandResult(code: 0, stdout: "ok") }
+        configureAutomations?(service)
         let chat = chat ?? ChatSession(restore: false)
         return IronPetAPI(stores: .init(tasks: tasks, automations: service, signals: signals ?? SignalStore(), bubbles: bubbles ?? BubbleStore(), notifications: notifications ?? NotificationStore(database: memoryDatabase()), sessions: sessions ?? SessionStore(), chat: chat,
                                  meeting: meeting ?? MeetingController(), meetingLibrary: meetingLibrary ?? MeetingLibrary(root: dir.appendingPathComponent("meetings")),

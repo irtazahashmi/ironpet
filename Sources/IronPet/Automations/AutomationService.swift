@@ -233,7 +233,8 @@ final class AutomationService {
         let live = Set(store.automations.map(\.id))
         for id in pending.keys where !live.contains(id) { pending[id] = nil }
         for a in store.automations where a.enabled && needsApproval(a) && !isRejected(a) {
-            if autoApproveEnabled() {
+            // Auto-approve is for what an agent on this Mac writes. A phone is another machine's input, so what it writes waits for Approve.
+            if autoApproveEnabled(), !a.createdBy.hasPrefix("remote:") {
                 approve(a.id)
                 post(AutomationNotice(id: "automation-auto-approved:\(a.id)", symbol: "checkmark.shield.fill", tint: .info,
                                         title: "Auto-approved \"\(a.name)\"", subtitle: "Created by \(a.createdBy).", expires: 15,
@@ -257,6 +258,7 @@ final class AutomationService {
 
     private func askApproval(_ a: Automation) {
         announced[a.id] = AutomationState.hash(a.riskText ?? "")
+        store.events?.publish(.automationNeedsApproval, id: a.id)
         let detail = approvalDetail(a)
         let kind = a.action.type == "prompt" ? "prompt" : "command"
         post(AutomationNotice(
