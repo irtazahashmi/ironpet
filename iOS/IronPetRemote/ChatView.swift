@@ -6,10 +6,13 @@ import UniformTypeIdentifiers
 /// The Chat tab. The Mac has one chat open, and this screen reads and drives it.
 struct ChatView: View {
     let model: ChatModel
+    /// The Mac's chat background: its id, and the picture for `custom`.
+    var backgroundID = ChatBackgrounds.defaultID
+    var backgroundImage: UIImage?
     @State private var showThreads = false
     @State private var showFiles = false
     @State private var photos: [PhotosPickerItem] = []
-    @FocusState private var focused: Bool
+    @State private var focused = false
 
     var body: some View {
         NavigationStack {
@@ -19,13 +22,24 @@ struct ChatView: View {
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.vertical, 6)
                         .accessibilityIdentifier("chat-error")
                 }
+                // The composer floats over the transcript, so the background shows through the glass.
                 Transcript(model: model)
-                if let notice = model.snapshot?.notice {
-                    Label(notice, systemImage: "desktopcomputer").font(.footnote)
-                        .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.vertical, 6)
-                        .background(.thinMaterial).accessibilityIdentifier("chat-notice")
-                }
-                Composer(model: model, showFiles: $showFiles, photos: $photos, focused: $focused)
+                    .glassBottomBar {
+                        VStack(spacing: 6) {
+                            if let notice = model.snapshot?.notice {
+                                Label(notice, systemImage: "desktopcomputer").font(.footnote)
+                                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.vertical, 6)
+                                    .background(.thinMaterial).accessibilityIdentifier("chat-notice")
+                            }
+                            Composer(model: model, showFiles: $showFiles, photos: $photos, focused: $focused)
+                        }
+                    }
+            }
+            .background {
+                ChatBackgroundPicture(id: backgroundID, customImage: backgroundImage.map(Image.init(uiImage:)), fallback: Color(.systemBackground))
+                    .ignoresSafeArea()
+                    .accessibilityHidden(true)
+                    .accessibilityIdentifier("chat-background-\(backgroundID)")
             }
             .navigationTitle(model.title)
             .navigationBarTitleDisplayMode(.inline)
@@ -93,6 +107,7 @@ private struct Transcript: View {
             // Content that grows (a streamed reply) stays pinned to the bottom, and a reader who scrolled up stays where they are.
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
+            .softBottomEdge()
             .overlay {
                 if model.loaded, model.items.isEmpty {
                     ContentUnavailableView("No messages", systemImage: "bubble.left", description: Text("Say something to start."))
@@ -112,8 +127,6 @@ private struct RunningRow: View {
             ProgressView().controlSize(.small)
             Text(model.snapshot?.activity ?? "Working").font(.footnote).foregroundStyle(.secondary)
             Spacer()
-            Button("Stop", role: .destructive) { Task { await model.stopTurn() } }
-                .buttonStyle(.bordered).font(.footnote).accessibilityIdentifier("stop-button")
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("running-row")
@@ -352,52 +365,111 @@ private struct Composer: View {
     let model: ChatModel
     @Binding var showFiles: Bool
     @Binding var photos: [PhotosPickerItem]
-    var focused: FocusState<Bool>.Binding
+    @Binding var focused: Bool
+
+    /// Width the inline send button takes at the field's trailing edge, so text wraps before it.
+    private static let inlineSendWidth: CGFloat = 28
 
     var body: some View {
-        VStack(spacing: 6) {
+        GlassGroup {
+            HStack(alignment: .bottom, spacing: 8) {
+                Menu {
+                    PhotosPicker(selection: $photos, maxSelectionCount: ChatModel.maxPendingImages, matching: .images) { Label("Photo", systemImage: "photo") }
+                    Button { showFiles = true } label: { Label("File", systemImage: "doc") }
+                } label: { Image(systemName: "paperclip").glassCircle() }
+                    .accessibilityLabel("Attach").accessibilityIdentifier("attach-button")
+                field
+                if model.running {
+                    Button { Task { await model.stopTurn() } } label: {
+                        Image(systemName: "stop.fill")
+                            .font(.system(size: 15, weight: .medium)).foregroundStyle(.white)
+                            .frame(width: GlassCircleButtonStyle.size, height: GlassCircleButtonStyle.size)
+                            .tintedCircle(.red)
+                    }
+                    .buttonStyle(.plain).accessibilityLabel("Stop").accessibilityIdentifier("stop-button")
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: model.running)
+        .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 8)
+    }
+
+    private var field: some View {
+        VStack(alignment: .leading, spacing: 6) {
             if let reply = model.replyTo {
-                HStack {
+                HStack(spacing: 4) {
                     Quote(reply: RemoteChatReply(itemID: reply.id, sender: reply.kind == "user" ? "You" : "Reply", text: reply.text ?? ""))
-                    Spacer()
+                    Spacer(minLength: 0)
                     Button { model.replyTo = nil } label: { Image(systemName: "xmark.circle.fill") }.foregroundStyle(.secondary)
                         .accessibilityLabel("Cancel reply").accessibilityIdentifier("cancel-reply")
                 }
-                .padding(.horizontal)
+                .padding(.horizontal, 6).padding(.top, 4)
                 .accessibilityIdentifier("reply-bar")
             }
             if !model.attachments.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack {
-                        ForEach(model.attachments) { attachment in
-                            HStack(spacing: 4) {
-                                Image(systemName: attachment.isImage ? "photo" : "doc")
-                                Text(attachment.fileName).lineLimit(1)
-                                Button { model.removeAttachment(attachment) } label: { Image(systemName: "xmark.circle.fill") }
-                            }
-                            .font(.caption).padding(.horizontal, 8).padding(.vertical, 4).background(.quaternary, in: Capsule())
+                    HStack(spacing: 6) {
+                        ForEach(Array(model.attachments.enumerated()), id: \.element.id) { index, attachment in
+                            if let preview = attachment.preview { thumbnail(preview, attachment, index) } else { chip(attachment, index) }
                         }
                     }
-                    .padding(.horizontal)
+                    .padding(.horizontal, 4)
                 }
                 .accessibilityIdentifier("attachments")
             }
-            HStack(alignment: .bottom, spacing: 8) {
-                Menu {
-                    PhotosPicker(selection: $photos, maxSelectionCount: 4, matching: .images) { Label("Photo", systemImage: "photo") }
-                    Button { showFiles = true } label: { Label("File", systemImage: "doc") }
-                } label: { Image(systemName: "plus.circle.fill").font(.title2) }
-                    .accessibilityLabel("Attach").accessibilityIdentifier("attach-button")
-                TextField("Message", text: Bindable(model).draft, axis: .vertical)
-                    .lineLimit(1...5).textFieldStyle(.roundedBorder).focused(focused)
-                    .accessibilityIdentifier("chat-input")
-                Button { Task { await model.send() } } label: { Image(systemName: "arrow.up.circle.fill").font(.title2) }
-                    .disabled(!model.canSend).accessibilityLabel("Send").accessibilityIdentifier("send-button")
+            ZStack(alignment: .topLeading) {
+                if model.draft.isEmpty {
+                    Text("Message").foregroundStyle(.placeholder).padding(.leading, 6).padding(.vertical, 8).allowsHitTesting(false).accessibilityHidden(true)
+                }
+                ComposerTextView(text: Bindable(model).draft, isFocused: $focused) { data in Task { await model.attachPastedImage(data) } }
+                    .padding(.trailing, model.canSend ? Self.inlineSendWidth : 0)
             }
-            .padding(.horizontal)
         }
-        .padding(.vertical, 8)
-        .background(.bar)
+        .padding(4)
+        .frame(minHeight: GlassCircleButtonStyle.size)
+        .overlay(alignment: .bottomTrailing) {
+            if model.canSend {
+                Button { Task { await model.send() } } label: {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
+                        .frame(width: Self.inlineSendWidth - 4, height: Self.inlineSendWidth - 4)
+                        .tintedCircle(.accentColor)
+                }
+                .buttonStyle(.plain).accessibilityLabel("Send").accessibilityIdentifier("send-button")
+                .padding(4)
+                .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .animation(.easeOut(duration: 0.12), value: model.canSend)
+        .chromeGlass(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .contentShape(Rectangle())
+        .onTapGesture { focused = true }
+    }
+
+    /// A pasted image: 48 pt high, with its remove button at the top trailing corner, like the Mac's thumbnail.
+    private func thumbnail(_ image: UIImage, _ attachment: PendingAttachment, _ index: Int) -> some View {
+        Image(uiImage: image).resizable().aspectRatio(contentMode: .fit).frame(height: 48)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
+            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.15)))
+            .accessibilityElement(children: .ignore).accessibilityLabel("Pasted image").accessibilityIdentifier("attachment-thumbnail-\(index)")
+            .overlay(alignment: .topTrailing) {
+                Button { model.removeAttachment(attachment) } label: {
+                    Image(systemName: "xmark.circle.fill").symbolRenderingMode(.palette).foregroundStyle(.white, .black.opacity(0.6))
+                }
+                .padding(2).accessibilityLabel("Remove image").accessibilityIdentifier("attachment-remove-\(index)")
+            }
+    }
+
+    /// A photo from the picker or a file, which the phone shows by name.
+    private func chip(_ attachment: PendingAttachment, _ index: Int) -> some View {
+        HStack(spacing: 4) {
+            Image(systemName: attachment.isImage ? "photo" : "doc")
+            Text(attachment.fileName).lineLimit(1)
+            Button { model.removeAttachment(attachment) } label: { Image(systemName: "xmark.circle.fill") }
+                .accessibilityLabel("Remove \(attachment.fileName)").accessibilityIdentifier("attachment-remove-\(index)")
+        }
+        .font(.caption).padding(.horizontal, 8).padding(.vertical, 4).background(.quaternary, in: Capsule())
     }
 }
 

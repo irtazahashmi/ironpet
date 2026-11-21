@@ -70,7 +70,7 @@ struct MainTabs: View {
         TabView(selection: $tab) {
             PetView(model: pet, today: today, app: model, client: client, open: open)
                 .tabItem { Label("Pet", systemImage: "pawprint.fill") }.tag(AppTab.pet)
-            ChatView(model: chat)
+            ChatView(model: chat, backgroundID: pet.backgroundID, backgroundImage: pet.backgroundImage)
                 .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }.badge(chat.approvals.count + chat.forms.count).tag(AppTab.chat)
             TasksView(model: tasks)
                 .tabItem { Label("Tasks", systemImage: "checklist") }.tag(AppTab.tasks)
@@ -80,7 +80,9 @@ struct MainTabs: View {
                 .tabItem { Label("Alerts", systemImage: "bell") }.badge(alerts.alerts.count).tag(AppTab.alerts)
         }
         // The alert count and the waiting approvals are on their tabs before the user opens it.
-        .task { alerts.start(); chat.start() }
+        .task { alerts.start(); chat.start(); pet.start() }
+        // A background changed on the Mac shows when the Chat tab opens.
+        .onChange(of: tab) { _, next in if next == .chat { Task { await pet.reloadPet(applyMood: false) } } }
         // Leaving the tabs (unpair or a 401) must close the socket, which otherwise keeps reconnecting with the old token.
         .onDisappear { [tasks, pet, chat, today, agents, alerts] in tasks.stop(); pet.stop(); chat.stop(); today.stop(); agents.stop(); alerts.stop() }
     }

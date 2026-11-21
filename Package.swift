@@ -31,7 +31,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-service-context.git", exact: "1.3.0"),
     ],
     targets: [
-        // The wire types, the client and the sprite atlas that the iOS app and the Mac app share. It imports only Foundation, CryptoKit, Security, CoreGraphics and ImageIO, so it builds for iOS.
+        // The wire types, the client and the sprite atlas that the iOS app and the Mac app share. It imports only Foundation, CryptoKit, Security, CoreGraphics, ImageIO and SwiftUI, so it builds for iOS.
         .target(name: "IronPetKit", path: "Sources/IronPetKit"),
         .testTarget(name: "IronPetKitTests", dependencies: ["IronPetKit"], path: "Tests/IronPetKitTests"),
         // SQLite for Linux and Windows. Apple platforms use the SQLite3 module from the SDK, so nothing links this there.
