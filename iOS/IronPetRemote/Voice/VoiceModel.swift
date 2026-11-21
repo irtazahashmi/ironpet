@@ -244,6 +244,11 @@ final class VoiceModel {
             case .error(let id, let message):
                 errorMessage = message
                 if let id, id == streamID {
+                    // The Mac refused or ended the stream. A mic that still runs would keep sending frames nobody reads.
+                    mic?.stop()
+                    mic = nil
+                    pump?.cancel()
+                    pump = nil
                     streamID = nil
                     state = .idle
                 }

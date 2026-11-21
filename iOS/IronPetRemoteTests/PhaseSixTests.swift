@@ -67,6 +67,7 @@ private final class FakeEngine: ClipEngine {
 /// A microphone that hears nothing. Its stream ends when `stop()` is called, as the engine's does.
 private final class SilentMic: MicSource {
     private var finish: () -> Void = {}
+    private(set) var stopped = false
 
     func start() async throws -> AsyncStream<Data> {
         let (stream, continuation) = AsyncStream<Data>.makeStream()
@@ -74,7 +75,10 @@ private final class SilentMic: MicSource {
         return stream
     }
 
-    func stop() { finish() }
+    func stop() {
+        stopped = true
+        finish()
+    }
 }
 
 @MainActor
@@ -159,14 +163,16 @@ final class PhaseSixTests: XCTestCase {
     }
 
     func testAMacErrorEndsTheRecordingWithItsMessage() async {
+        let mic = SilentMic()
         let log = Log()
         let channel = FakeChannel(log: log)
-        let model = VoiceModel(player: ReplyPlayer(engine: FakeEngine(log: log)), defaults: defaults(), openChannel: { channel }, makeMic: { SilentMic() })
+        let model = VoiceModel(player: ReplyPlayer(engine: FakeEngine(log: log)), defaults: defaults(), openChannel: { channel }, makeMic: { mic })
         await model.micTapped()
         guard case .start(let id, _)? = channel.sentTexts.first.flatMap(VoiceClientMessage.parse) else { return XCTFail() }
         model.handle(.text(VoiceServerMessage.error(id: id, message: "Voice input is off in Settings.").json))
         XCTAssertEqual(model.errorMessage, "Voice input is off in Settings.")
         XCTAssertEqual(model.state, .idle)
+        XCTAssertTrue(mic.stopped, "an error for the stream also stops the microphone")
     }
 
     // MARK: S6
