@@ -64,8 +64,8 @@ final class AnnouncerDigestTests: XCTestCase {
         var all = 0
         let bubble = Announcer.digestBubble(digest, id: "x", title: "t", subtitle: nil, petName: "Ghost",
                                             open: { opened.append($0) }, showAll: { all += 1 })
-        bubble.lines[0].run()
-        bubble.lines[1].run()
+        bubble.handlers.lines[bubble.lines[0].id]?()
+        bubble.handlers.lines[bubble.lines[1].id]?()
         XCTAssertEqual(opened, [.url(url)])
         XCTAssertEqual(all, 1, "a line with nothing to open shows the window")
     }

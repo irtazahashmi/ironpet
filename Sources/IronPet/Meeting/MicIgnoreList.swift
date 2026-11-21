@@ -120,16 +120,16 @@ final class MicIgnoreModel: ObservableObject {
 @MainActor
 enum CallOffer {
     static func recordActions(bundleID: String, name: String, ignore: MicIgnoreModel, record: @escaping () -> Void,
-                              notNow: @escaping () -> Void, close: @escaping () -> Void) -> [Bubble.Action] {
-        [.init(title: "Record", style: .primary) {
+                              notNow: @escaping () -> Void, close: @escaping () -> Void) -> [BubbleDraft.Button] {
+        [.init("record", "Record", style: .primary) {
             close()
             record()
         },
-         .init(title: "Not now") {
+         .init("not-now", "Not now") {
             notNow()
             close()
         },
-         .init(title: "Always ignore \(name)") {
+         .init("ignore", "Always ignore \(name)") {
             // The parent id, so the app's helper processes are covered. A refused entry (already ignored) still closes the offer.
             ignore.add(CallApps.parentBundleID(bundleID))
             close()

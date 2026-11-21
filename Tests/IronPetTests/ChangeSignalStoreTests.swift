@@ -50,7 +50,7 @@ final class ChangeSignalStoreTests: XCTestCase {
         var storeCount = 0, apiCount = 0
         let a = store.changes.observe { storeCount += 1 }
         let b = api.changes.observe { apiCount += 1 }
-        store.show(Bubble(id: "one", symbol: "bell", tint: .orange, title: "Hello"))
+        store.show(BubbleDraft(id: "one", symbol: "bell", tint: .orange, title: "Hello"))
         XCTAssertEqual([storeCount, apiCount], [1, 1])
         store.dismiss("one")
         XCTAssertEqual([storeCount, apiCount], [2, 2])

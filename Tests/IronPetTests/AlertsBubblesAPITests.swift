@@ -69,9 +69,9 @@ final class AlertsBubblesAPITests: XCTestCase {
 
     func testPressingABubbleButtonRunsItsActionAndClosesTheBubble() throws {
         var approved = 0, denied = 0
-        bubbles.show(Bubble(id: "ask", symbol: "hand.raised", tint: .orange, title: "Allow?", actions: [
-            .init(title: "Allow", style: .primary) { approved += 1 },
-            .init(title: "Deny", style: .destructive) { denied += 1 }]))
+        bubbles.show(BubbleDraft(id: "ask", symbol: "hand.raised", tint: .orange, title: "Allow?", actions: [
+            .init("allow", "Allow", style: .primary) { approved += 1 },
+            .init("deny", "Deny", style: .destructive) { denied += 1 }]))
         let info = try XCTUnwrap(api.bubbles.list().first)
         XCTAssertEqual(info.actions.map(\.title), ["Allow", "Deny"])
         XCTAssertEqual(info.actions.map(\.style), ["primary", "destructive"])
@@ -82,10 +82,10 @@ final class AlertsBubblesAPITests: XCTestCase {
 
     func testPressingALineAndTheBubbleItself() throws {
         var opened: [String] = []
-        bubbles.show(Bubble(id: "summary", symbol: "list.bullet", tint: .blue, title: "Back", lines: [
-            .init(symbol: "x", tint: .red, text: "One alert") { opened.append("line") }]))
-        bubbles.show(Bubble(id: "tap", symbol: "star", tint: .blue, title: "Tap me", onTap: { opened.append("tap") }))
-        bubbles.show(Bubble(id: "plain", symbol: "star", tint: .blue, title: "Nothing"))
+        bubbles.show(BubbleDraft(id: "summary", symbol: "list.bullet", tint: .blue, title: "Back", lines: [
+            .init(id: "one", symbol: "x", tint: .red, text: "One alert") { opened.append("line") }]))
+        bubbles.show(BubbleDraft(id: "tap", symbol: "star", tint: .blue, title: "Tap me", onTap: { opened.append("tap") }))
+        bubbles.show(BubbleDraft(id: "plain", symbol: "star", tint: .blue, title: "Nothing"))
         let line = try XCTUnwrap(api.bubbles.list().first { $0.id == "summary" }?.lines.first)
         try api.bubbles.press(PressBubbleRequest(bubble: "summary", line: line.id))
         try api.bubbles.press(PressBubbleRequest(bubble: "tap"))
@@ -96,7 +96,7 @@ final class AlertsBubblesAPITests: XCTestCase {
     }
 
     func testDismissAndShownEvents() throws {
-        bubbles.show(Bubble(id: "x", symbol: "star", tint: .blue, title: "X"))
+        bubbles.show(BubbleDraft(id: "x", symbol: "star", tint: .blue, title: "X"))
         try api.bubbles.dismiss("x")
         XCTAssertThrowsError(try api.bubbles.dismiss("x")) { XCTAssertEqual(($0 as? APIError)?.code, .notFound) }
         XCTAssertEqual(seen.map(\.kind), [.bubbleShown, .bubbleDismissed])
@@ -104,16 +104,16 @@ final class AlertsBubblesAPITests: XCTestCase {
     }
 
     func testExpiryAndTheBubbleLimitPublishDismissals() {
-        bubbles.show(Bubble(id: "short", symbol: "star", tint: .blue, title: "S", expires: Date(timeIntervalSince1970: 10)))
+        bubbles.show(BubbleDraft(id: "short", symbol: "star", tint: .blue, title: "S", expires: Date(timeIntervalSince1970: 10)))
         bubbles.sweep(now: Date(timeIntervalSince1970: 20))
         XCTAssertEqual(seen.map(\.kind), [.bubbleShown, .bubbleDismissed])
         seen = []
-        for i in 0...BubbleStore.limit { bubbles.show(Bubble(id: "b\(i)", symbol: "star", tint: .blue, title: "B")) }
+        for i in 0...BubbleStore.limit { bubbles.show(BubbleDraft(id: "b\(i)", symbol: "star", tint: .blue, title: "B")) }
         XCTAssertEqual(seen.filter { $0.kind == .bubbleDismissed }.count, 1, "the bubble pushed out by the limit is reported")
     }
 
     func testBubbleInfoRoundTripsAsJSON() throws {
-        bubbles.show(Bubble(id: "x", symbol: "star", tint: .blue, title: "X", body: "Body", onTap: {}))
+        bubbles.show(BubbleDraft(id: "x", symbol: "star", tint: .blue, title: "X", body: "Body", onTap: {}))
         let info = try XCTUnwrap(api.bubbles.list().first)
         XCTAssertEqual(try JSONDecoder().decode(BubbleInfo.self, from: JSONEncoder().encode(info)), info)
         XCTAssertTrue(info.tappable)

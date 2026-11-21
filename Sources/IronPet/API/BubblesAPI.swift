@@ -55,7 +55,7 @@ final class BubblesAPI {
         ]
     }
 
-    /// The bubbles for the view that draws them. A bubble can carry live SwiftUI content, so a client that cannot draw it uses `list`.
+    /// The bubbles for the view that draws them. A bubble with live content has a `contentKind` the view draws itself, so a client that cannot draw it uses `list`.
     var bubbles: [Bubble] { store.bubbles }
     var petOnLeft: Bool { store.petOnLeft }
 
@@ -66,9 +66,9 @@ final class BubblesAPI {
     func list() -> [BubbleInfo] {
         store.bubbles.map { bubble in
             BubbleInfo(id: bubble.id, symbol: bubble.symbol, title: bubble.title, subtitle: bubble.subtitle, body: bubble.body,
-                       lines: bubble.lines.map { BubbleLineInfo(id: $0.id.uuidString, symbol: $0.symbol, text: $0.text) },
-                       actions: bubble.actions.map { BubbleActionInfo(id: $0.id.uuidString, title: $0.title, style: Self.name($0.style)) },
-                       expires: bubble.expires, tappable: bubble.onTap != nil, macOnly: bubble.macOnly)
+                       lines: bubble.lines.map { BubbleLineInfo(id: $0.id, symbol: $0.symbol, text: $0.text) },
+                       actions: bubble.actions.map { BubbleActionInfo(id: $0.id, title: $0.title, style: Self.name($0.style)) },
+                       expires: bubble.expires, tappable: bubble.tappable, macOnly: bubble.macOnly)
         }
     }
 
@@ -77,14 +77,11 @@ final class BubblesAPI {
             throw APIError.notFound("no bubble with id \"\(request.bubble)\"")
         }
         if let id = request.action {
-            guard let action = bubble.actions.first(where: { $0.id.uuidString == id }) else { throw APIError.notFound("no action \"\(id)\" on this bubble") }
-            action.run()
+            try store.actions.runAction(bubble: bubble.id, action: id)
         } else if let id = request.line {
-            guard let line = bubble.lines.first(where: { $0.id.uuidString == id }) else { throw APIError.notFound("no line \"\(id)\" on this bubble") }
-            line.run()
+            try store.actions.runLine(bubble: bubble.id, line: id)
         } else {
-            guard let tap = bubble.onTap else { throw APIError.invalid("this bubble has no action") }
-            tap()
+            try store.actions.runTap(bubble: bubble.id)
         }
         store.dismiss(bubble.id)
     }
@@ -95,13 +92,7 @@ final class BubblesAPI {
         store.dismiss(id)
     }
 
-    private static func name(_ style: Bubble.Action.Style) -> String {
-        switch style {
-        case .primary: return "primary"
-        case .normal: return "normal"
-        case .destructive: return "destructive"
-        }
-    }
+    private static func name(_ style: Bubble.Action.Style) -> String { style.rawValue }
 }
 
 #if canImport(Combine)

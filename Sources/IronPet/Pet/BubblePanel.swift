@@ -17,7 +17,7 @@ final class BubblePanel {
         didSet { if isSuppressed != oldValue { update() } }
     }
 
-    init(store: BubbleStore) {
+    init(store: BubbleStore, meetings: @escaping () -> MeetingsAPI? = { nil }) {
         self.store = store
         panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isOpaque = false
@@ -26,7 +26,7 @@ final class BubblePanel {
         panel.level = .floating
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary]
         panel.hidesOnDeactivate = false
-        host = FirstMouseHostingView(rootView: BubbleStackView(api: BubblesAPI(store: store)))
+        host = FirstMouseHostingView(rootView: BubbleStackView(api: BubblesAPI(store: store), meetings: meetings))
         panel.contentView = host
         // The signal fires before `bubbles` changes, so the panel reads the store one main-actor turn later.
         changeToken = store.changes.observe { [weak self] in

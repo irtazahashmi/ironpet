@@ -40,11 +40,11 @@ final class Announcer {
 
     func session(_ session: AgentSession) {
         let id = session.id
-        let open = Bubble.Action(title: Editors.label(for: session), style: .primary) { [weak self] in
+        let open = BubbleDraft.Button("open", Editors.label(for: session), style: .primary) { [weak self] in
             self?.openSession(id)
         }
         let body = session.status == .needsInput ? (session.detail ?? session.prompt) : (session.summary ?? session.prompt)
-        bubbles.show(Bubble(id: "session:\(id)", symbol: session.status.symbol, tint: session.status.tint,
+        bubbles.show(BubbleDraft(id: "session:\(id)", symbol: session.status.symbol, tint: session.status.bubbleTint,
                             title: "\(session.workspaceName): \(session.status.label)", subtitle: session.source.displayName,
                             body: body, actions: [open], onTap: { [weak self] in self?.openSession(id) },
                             expires: Date().addingTimeInterval(session.status == .done ? 15 : 45)))
@@ -63,12 +63,12 @@ final class Announcer {
 
     /// The Allow and Deny bubble of a chat tool request. Only the Mac answers it.
     static func approvalBubble(id: UUID, heading: String, detail: String, decide: @escaping (Bool) -> Void, openChat: @escaping () -> Void,
-                               open: (() -> Void)?) -> Bubble {
-        Bubble(id: approvalID(id), symbol: "hand.raised.fill", tint: .orange, title: heading, body: String(detail.prefix(240)),
+                               open: (() -> Void)?) -> BubbleDraft {
+        BubbleDraft(id: approvalID(id), symbol: "hand.raised.fill", tint: .orange, title: heading, body: String(detail.prefix(240)),
                actions: [
-                   .init(title: "Allow", style: .primary) { decide(true) },
-                   .init(title: "Deny", style: .destructive) { decide(false) },
-                   .init(title: "Open chat", run: openChat),
+                   .init("allow", "Allow", style: .primary) { decide(true) },
+                   .init("deny", "Deny", style: .destructive) { decide(false) },
+                   .init("open-chat", "Open chat", run: openChat),
                ], onTap: open, macOnly: true)
     }
 
@@ -78,28 +78,28 @@ final class Announcer {
         chime()
     }
 
-    static func telegramPairingBubble(_ request: TelegramBridge.Pending, allow: @escaping () -> Void, deny: @escaping () -> Void) -> Bubble {
+    static func telegramPairingBubble(_ request: TelegramBridge.Pending, allow: @escaping () -> Void, deny: @escaping () -> Void) -> BubbleDraft {
         let user = request.user
         let handle = user.username.map { "@\($0), " } ?? ""
-        return Bubble(id: telegramID(user.id), symbol: "paperplane.fill", tint: .blue,
+        return BubbleDraft(id: telegramID(user.id), symbol: "paperplane.fill", tint: .blue,
                       title: "Telegram user \(user.displayName) (\(handle)id \(user.id)) wants to connect",
                       body: "Allow them to chat with \(ConfigStore.shared.config.pet.name) from Telegram?",
-                      actions: [.init(title: "Allow", style: .primary, run: allow), .init(title: "Deny", style: .destructive, run: deny)], macOnly: true)
+                      actions: [.init("allow", "Allow", style: .primary, run: allow), .init("deny", "Deny", style: .destructive, run: deny)], macOnly: true)
     }
 
     /// The bubble for a phone that sent a valid pairing code. Allow gives it a token that reads and changes tasks on this Mac, so the
     /// bubble says so and expires with the code.
-    static func remotePairingBubble(_ request: RemotePairingRequest, machine: String, allow: @escaping () -> Void, deny: @escaping () -> Void) -> Bubble {
-        Bubble(id: remotePairingID(request.id), symbol: "iphone", tint: .blue,
+    static func remotePairingBubble(_ request: RemotePairingRequest, machine: String, allow: @escaping () -> Void, deny: @escaping () -> Void) -> BubbleDraft {
+        BubbleDraft(id: remotePairingID(request.id), symbol: "iphone", tint: .blue,
                title: "Allow \(request.deviceName) to connect to \(machine)?",
                body: "This device asked to pair with the remote API. Only allow it if you just scanned the pairing code yourself.",
-               actions: [.init(title: "Allow", style: .primary, run: allow), .init(title: "Deny", style: .destructive, run: deny)],
+               actions: [.init("allow", "Allow", style: .primary, run: allow), .init("deny", "Deny", style: .destructive, run: deny)],
                expires: request.created.addingTimeInterval(RemoteService.codeLifetime), macOnly: true)
     }
 
     /// Too many requests without a valid token. One bubble per lockout, replaced if it comes again.
-    static func remoteBlockedBubble() -> Bubble {
-        Bubble(id: "remote:blocked", symbol: "exclamationmark.shield", tint: .orange, title: "Remote API: blocked requests",
+    static func remoteBlockedBubble() -> BubbleDraft {
+        BubbleDraft(id: "remote:blocked", symbol: "exclamationmark.shield", tint: .orange, title: "Remote API: blocked requests",
                body: "Several requests without a valid device token arrived. The remote API ignores unauthenticated requests for five minutes.",
                expires: Date().addingTimeInterval(60))
     }
@@ -119,14 +119,14 @@ final class Announcer {
 
     func signal(_ signal: Signal) {
         let url = signal.url
-        var actions: [Bubble.Action] = []
-        if let url { actions.append(.init(title: "Open", style: .primary) { NSWorkspace.shared.open(url) }) }
+        var actions: [BubbleDraft.Button] = []
+        if let url { actions.append(.init("open", "Open", style: .primary) { NSWorkspace.shared.open(url) }) }
         if let prompt = signal.ask {
-            actions.append(.init(title: "Ask \(ConfigStore.shared.config.pet.name)") { [weak self] in self?.ask(prompt) })
+            actions.append(.init("ask", "Ask \(ConfigStore.shared.config.pet.name)") { [weak self] in self?.ask(prompt) })
         }
         let quiet = signal.mood == .done
         let open = store(NotificationDraft(signal: signal))
-        bubbles.show(Bubble(id: "signal:\(signal.id)", symbol: signal.symbol, tint: quiet ? .green : signal.mood == .failed ? .red : .orange,
+        bubbles.show(BubbleDraft(id: "signal:\(signal.id)", symbol: signal.symbol, tint: quiet ? .green : signal.mood == .failed ? .red : .orange,
                             title: signal.label, subtitle: signal.subtitle, body: signal.title, actions: actions,
                             onTap: open ?? url.map { link in { NSWorkspace.shared.open(link) } },
                             expires: Date().addingTimeInterval(quiet ? 15 : 40)))
@@ -142,27 +142,27 @@ final class Announcer {
         if alsoSystemNotifications || notice.systemNotification { notifier.announceAutomation(notice) }
     }
 
-    static func automationBubble(_ notice: AutomationNotice, dismiss: @escaping () -> Void, open: (() -> Void)?) -> Bubble {
-        let tint: Color
+    static func automationBubble(_ notice: AutomationNotice, dismiss: @escaping () -> Void, open: (() -> Void)?) -> BubbleDraft {
+        let tint: BubbleTint
         switch notice.tint {
         case .info: tint = .cyan
         case .good: tint = .green
         case .bad: tint = .red
         case .warn: tint = .orange
         }
-        let actions = notice.buttons.map { button in
-            Bubble.Action(title: button.title, style: button.primary ? .primary : button.destructive ? .destructive : .normal) {
+        let actions = notice.buttons.enumerated().map { index, button in
+            BubbleDraft.Button("button:\(index)", button.title, style: button.primary ? .primary : button.destructive ? .destructive : .normal) {
                 dismiss()
                 button.run()
             }
         }
-        return Bubble(id: notice.id, symbol: notice.symbol, tint: tint, title: notice.title, subtitle: notice.subtitle, body: notice.body,
+        return BubbleDraft(id: notice.id, symbol: notice.symbol, tint: tint, title: notice.title, subtitle: notice.subtitle, body: notice.body,
                       actions: actions, onTap: open, expires: notice.expires.map { Date().addingTimeInterval($0) }, macOnly: notice.macOnly)
     }
 
     func chat(_ title: String, detail: String = "Click to open the chat.") {
-        bubbles.show(Bubble(id: "chat", symbol: "bubble.left.fill", tint: .accentColor, title: title, body: detail,
-                            actions: [.init(title: "Open chat", style: .primary) { [weak self] in self?.openChat() }],
+        bubbles.show(BubbleDraft(id: "chat", symbol: "bubble.left.fill", tint: .accent, title: title, body: detail,
+                            actions: [.init("open-chat", "Open chat", style: .primary) { [weak self] in self?.openChat() }],
                             onTap: { [weak self] in self?.openChat() },
                             expires: Date().addingTimeInterval(20)))
         chime()
@@ -172,9 +172,9 @@ final class Announcer {
     /// A meeting summary was written. Clicking opens it.
     func meetingSummary(_ url: URL) {
         let open: () -> Void = { NSWorkspace.shared.open(url) }
-        bubbles.show(Bubble(id: "meeting-summary", symbol: "doc.text.fill", tint: .green, title: "Meeting summary ready",
+        bubbles.show(BubbleDraft(id: "meeting-summary", symbol: "doc.text.fill", tint: .green, title: "Meeting summary ready",
                             body: url.deletingLastPathComponent().lastPathComponent,
-                            actions: [.init(title: "Open summary", style: .primary) { open() }], onTap: open,
+                            actions: [.init("open-summary", "Open summary", style: .primary) { open() }], onTap: open,
                             expires: Date().addingTimeInterval(60)))
         chime()
         if alsoSystemNotifications { notifier.announceMeetingSummary(url) }
@@ -184,7 +184,7 @@ final class Announcer {
 
     /// One info bubble for suggestions that just arrived from a meeting summary or a watcher: the count and the
     /// first title, no buttons. They stay pending until resolved in the Tasks tab or over MCP. Nil when there are none.
-    static func taskSuggestionsBubble(_ added: [TaskSuggestion], review: @escaping () -> Void = {}, now: Date = Date()) -> Bubble? {
+    static func taskSuggestionsBubble(_ added: [TaskSuggestion], review: @escaping () -> Void = {}, now: Date = Date()) -> BubbleDraft? {
         guard let first = added.first else { return nil }
         let title: String
         switch first.origin {
@@ -192,7 +192,7 @@ final class Announcer {
         case .automation(_, let name): title = name
         }
         let count = added.count
-        return Bubble(id: taskSuggestionsID, symbol: first.source.symbol, tint: .blue, title: title,
+        return BubbleDraft(id: taskSuggestionsID, symbol: first.source.symbol, tint: .blue, title: title,
                       body: "\(count) \(count == 1 ? "suggestion" : "suggestions") for review\n\(first.title)",
                       onTap: review, expires: now.addingTimeInterval(20))
     }
@@ -230,7 +230,7 @@ final class Announcer {
     }
 
     static func tasksDueBubble(_ tasks: [TaskItem], now: Date, calendar: Calendar = .current, done: @escaping () -> Void,
-                               snooze: @escaping () -> Void, open: @escaping () -> Void) -> Bubble {
+                               snooze: @escaping () -> Void, open: @escaping () -> Void) -> BubbleDraft {
         let overdue = tasks.contains { TaskDue.kind($0, now: now, calendar: calendar) == .overdue }
         let title: String
         let subtitle: String?
@@ -260,10 +260,10 @@ final class Announcer {
             body = lines.joined(separator: "\n")
         }
         let later = TaskDue.snoozesToTomorrow(tasks, calendar: calendar) ? "Remind tomorrow" : "Snooze 1 h"
-        return Bubble(id: tasksDueID, symbol: overdue ? "calendar.badge.exclamationmark" : "calendar", tint: overdue ? .orange : .accentColor,
+        return BubbleDraft(id: tasksDueID, symbol: overdue ? "calendar.badge.exclamationmark" : "calendar", tint: overdue ? .orange : .accent,
                       title: title, subtitle: subtitle, body: body,
-                      actions: [.init(title: tasks.count == 1 ? "Done" : "All done", style: .primary, run: done),
-                                .init(title: later, run: snooze), .init(title: "Open", run: open)],
+                      actions: [.init("done", tasks.count == 1 ? "Done" : "All done", style: .primary, run: done),
+                                .init("snooze", later, run: snooze), .init("open", "Open", run: open)],
                       onTap: open)
     }
 
@@ -280,21 +280,21 @@ final class Announcer {
     /// A summary bubble for any digest: up to five lines, the last one "and N more" when it does not fit.
     static func digestBubble(_ digest: ActivityDigest, id: String, title: String, subtitle: String?, petName: String,
                              open: @escaping (ActivityDigest.Target) -> Void, showAll: @escaping () -> Void,
-                             expires: TimeInterval = 180, now: Date = Date()) -> Bubble {
+                             expires: TimeInterval = 180, now: Date = Date()) -> BubbleDraft {
         let fits = digest.items.count <= digestLineLimit
         let shown = fits ? digest.items : Array(digest.items.prefix(digestLineLimit - 1))
-        var lines = shown.map { item in
+        var lines = shown.enumerated().map { index, item in
             let line = digestLine(item, petName: petName)
             let target = item.target
-            return Bubble.Line(symbol: line.symbol, tint: line.tint, text: line.text) { if let target { open(target) } else { showAll() } }
+            return BubbleDraft.Row(id: "line:\(index)", symbol: line.symbol, tint: line.tint, text: line.text) { if let target { open(target) } else { showAll() } }
         }
         if !fits {
             let rest = digest.items.dropFirst(shown.count).reduce(0) { $0 + $1.count }
-            lines.append(Bubble.Line(symbol: "ellipsis.circle", tint: .secondary, text: "and \(rest) more", run: showAll))
+            lines.append(BubbleDraft.Row(id: "line:more", symbol: "ellipsis.circle", tint: .secondary, text: "and \(rest) more", run: showAll))
         }
         let urgent = digest.items.contains(where: \.isUrgent)
-        return Bubble(id: id, symbol: urgent ? "exclamationmark.bubble.fill" : "sun.max.fill", tint: urgent ? .orange : .accentColor,
-                      title: title, subtitle: subtitle, lines: lines, actions: [.init(title: "Show all", run: showAll)],
+        return BubbleDraft(id: id, symbol: urgent ? "exclamationmark.bubble.fill" : "sun.max.fill", tint: urgent ? .orange : .accent,
+                      title: title, subtitle: subtitle, lines: lines, actions: [.init("show-all", "Show all", run: showAll)],
                       expires: now.addingTimeInterval(expires))
     }
 
@@ -306,7 +306,7 @@ final class Announcer {
     }
 
     /// One line of a summary: the thing itself when there is one, a count when there are several.
-    static func digestLine(_ item: ActivityDigest.Item, petName: String) -> (symbol: String, tint: Color, text: String) {
+    static func digestLine(_ item: ActivityDigest.Item, petName: String) -> (symbol: String, tint: BubbleTint, text: String) {
         let n = item.count
         let first = item.events.first
         let name = first?.title ?? ""
@@ -324,15 +324,15 @@ final class Announcer {
         case .alertResolved:
             return ("checkmark.seal.fill", .green, n == 1 ? "Cleared: " + alertText(first) : "\(n) alerts cleared")
         case .taskDue:
-            return ("calendar", .accentColor, n == 1 ? "Task due: \(name)" : "\(n) tasks due")
+            return ("calendar", .accent, n == 1 ? "Task due: \(name)" : "\(n) tasks due")
         case .taskSuggested:
-            return ("checklist", .accentColor, n == 1 ? "Suggested task: \(name)" : "\(n) suggested tasks")
+            return ("checklist", .accent, n == 1 ? "Suggested task: \(name)" : "\(n) suggested tasks")
         case .meetingSummary:
             return ("doc.text.fill", .green, n == 1 ? "Meeting summary ready: \(name)" : "\(n) meeting summaries ready")
         case .chatFinished:
-            return ("bubble.left.fill", .accentColor, name.isEmpty ? "\(petName) finished your task" : name)
+            return ("bubble.left.fill", .accent, name.isEmpty ? "\(petName) finished your task" : name)
         case .automationBubble:
-            let tint: Color
+            let tint: BubbleTint
             switch first?.extra[ActivityEvent.AutomationKey.tint] {
             case "good": tint = .green
             case "bad": tint = .red
@@ -374,7 +374,7 @@ final class Announcer {
 
     /// Stays until the end of the day, since it comes once a day. An empty one, which only Run now shows, goes in 15 seconds.
     static func briefBubble(_ brief: Brief, automation: Automation, now: Date, calendar: Calendar = .current,
-                            open: @escaping () -> Void) -> Bubble {
+                            open: @escaping () -> Void) -> BubbleDraft {
         var day = Date.FormatStyle.dateTime.weekday(.wide).day().month(.wide)
         day.calendar = calendar
         day.timeZone = calendar.timeZone
@@ -386,16 +386,16 @@ final class Announcer {
         } else {
             expires = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))
         }
-        return Bubble(id: briefID(brief.kind), symbol: automation.presentation.symbol ?? brief.kind.symbol,
+        return BubbleDraft(id: briefID(brief.kind), symbol: automation.presentation.symbol ?? brief.kind.symbol,
                       tint: brief.kind == .brief ? .orange : .indigo,
                       title: automation.action.title ?? brief.kind.title, subtitle: (brief.kind == .recap ? brief.window.start : now).formatted(day),
                       body: brief.isEmpty ? "Nothing to report" : brief.lines.prefix(4).joined(separator: "\n"),
-                      actions: [.init(title: "Open", style: .primary, run: open)], onTap: open, expires: expires)
+                      actions: [.init("open", "Open", style: .primary, run: open)], onTap: open, expires: expires)
     }
 
     /// Small talk from the Actions menu.
     func say(_ text: String) {
-        bubbles.show(Bubble(id: "say", symbol: "pawprint.fill", tint: .accentColor, title: ConfigStore.shared.config.pet.name, body: text,
+        bubbles.show(BubbleDraft(id: "say", symbol: "pawprint.fill", tint: .accent, title: ConfigStore.shared.config.pet.name, body: text,
                             expires: Date().addingTimeInterval(8)))
     }
 

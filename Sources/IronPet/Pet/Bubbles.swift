@@ -2,47 +2,25 @@ import AppKit
 import Combine
 import SwiftUI
 
-/// Something Ghost says next to himself: agent updates, approvals, alerts, reminders.
-struct Bubble: Identifiable {
-    struct Action: Identifiable {
-        enum Style { case primary, normal, destructive }
-        let id = UUID()
-        let title: String
-        var style: Style = .normal
-        let run: () -> Void
+extension BubbleTint {
+    var color: Color {
+        switch self {
+        case .accent: return .accentColor
+        case .orange: return .orange
+        case .blue: return .blue
+        case .green: return .green
+        case .red: return .red
+        case .cyan: return .cyan
+        case .indigo: return .indigo
+        case .secondary: return .secondary
+        }
     }
-
-    /// A clickable line in a summary bubble, each opening its own thing.
-    struct Line: Identifiable {
-        let id = UUID()
-        var symbol: String
-        var tint: Color
-        var text: String
-        let run: () -> Void
-    }
-
-    /// Showing a bubble with the same id replaces the old one.
-    let id: String
-    var symbol: String
-    var tint: Color
-    var title: String
-    var subtitle: String?
-    var body: String?
-    /// Shown instead of `body` when set.
-    var lines: [Line] = []
-    var actions: [Action] = []
-    var onTap: (() -> Void)?
-    /// nil stays until answered or closed.
-    var expires: Date?
-    /// Replaces the icon, title and text, for a bubble that shows live state (the meeting status).
-    var content: AnyView?
-    /// The buttons decide something only the Mac may decide (a tool approval, a pairing request). The remote API sends the bubble
-    /// without them and refuses a press, so a paired phone cannot approve what it is asked to approve itself.
-    var macOnly = false
 }
 
 struct BubbleStackView: View {
     @ObservedObject var api: BubblesAPI
+    /// The meeting controller a `.meeting` bubble draws. A closure, since the app creates it after the panel.
+    var meetings: () -> MeetingsAPI? = { nil }
     static let padding: CGFloat = 14
     static let tailFromBottom: CGFloat = padding + 20
 
@@ -51,7 +29,7 @@ struct BubbleStackView: View {
             ForEach(api.bubbles) { bubble in
                 BubbleView(bubble: bubble,
                            tail: bubble.id == api.bubbles.last?.id ? (api.petOnLeft ? .leading : .trailing) : nil,
-                           api: api)
+                           api: api, meetings: meetings)
                     .transition(.asymmetric(insertion: .scale(scale: 0.85, anchor: api.petOnLeft ? .bottomLeading : .bottomTrailing)
                                                 .combined(with: .opacity),
                                             removal: .opacity))
@@ -67,14 +45,15 @@ private struct BubbleView: View {
     let bubble: Bubble
     let tail: HorizontalEdge?
     let api: BubblesAPI
+    let meetings: () -> MeetingsAPI?
     @State private var hovering = false
 
     private func dismiss() { try? api.dismiss(bubble.id) }
 
     var body: some View {
         Group {
-            if let content = bubble.content {
-                content.overlay(alignment: .topTrailing) { closeButton }
+            if bubble.contentKind == .meeting, let controller = meetings() {
+                MeetingView(controller: controller, embedded: true).overlay(alignment: .topTrailing) { closeButton }
             } else {
                 standard
             }
@@ -86,7 +65,7 @@ private struct BubbleView: View {
         .shadow(color: .black.opacity(0.28), radius: 8, y: 3)
         .contentShape(Rectangle())
         .onTapGesture {
-            guard bubble.onTap != nil else { return }
+            guard bubble.tappable else { return }
             try? api.press(PressBubbleRequest(bubble: bubble.id))
         }
         .onHover { hovering = $0 }
@@ -106,7 +85,7 @@ private struct BubbleView: View {
         HStack(alignment: .top, spacing: 10) {
             Image(systemName: bubble.symbol)
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundStyle(bubble.tint)
+                .foregroundStyle(bubble.tint.color)
                 .frame(width: 20)
                 .padding(.top, 1)
             VStack(alignment: .leading, spacing: 3) {
@@ -151,12 +130,12 @@ private struct BubbleView: View {
 
     private func lineButton(_ line: Bubble.Line) -> some View {
         Button {
-            try? api.press(PressBubbleRequest(bubble: bubble.id, line: line.id.uuidString))
+            try? api.press(PressBubbleRequest(bubble: bubble.id, line: line.id))
         } label: {
             HStack(spacing: 7) {
                 Image(systemName: line.symbol)
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(line.tint)
+                    .foregroundStyle(line.tint.color)
                     .frame(width: 14)
                 Text(line.text)
                     .font(.system(size: 12))
@@ -177,7 +156,7 @@ private struct BubbleView: View {
     }
 
     @ViewBuilder private func button(_ action: Bubble.Action) -> some View {
-        let run: () -> Void = { try? api.press(PressBubbleRequest(bubble: bubble.id, action: action.id.uuidString)) }
+        let run: () -> Void = { try? api.press(PressBubbleRequest(bubble: bubble.id, action: action.id)) }
         switch action.style {
         case .primary: Button(action.title, action: run).buttonStyle(.borderedProminent)
         case .destructive: Button(action.title, role: .destructive, action: run).buttonStyle(.bordered)

@@ -117,8 +117,8 @@ final class RemoteResourcesTests: XCTestCase {
 
     func testABubbleButtonRunsItsClosureOnceAndAnUnknownOrUsedIdIs404() async throws {
         var done = 0, snoozed = 0
-        h.bubbles.show(Bubble(id: "due", symbol: "calendar", tint: .blue, title: "Task due", body: "Send the report",
-                              actions: [.init(title: "Done", style: .primary) { done += 1 }, .init(title: "Snooze") { snoozed += 1 }]))
+        h.bubbles.show(BubbleDraft(id: "due", symbol: "calendar", tint: .blue, title: "Task due", body: "Send the report",
+                              actions: [.init("done", "Done", style: .primary) { done += 1 }, .init("snooze", "Snooze") { snoozed += 1 }]))
         let list = try await get("/v1/bubbles")
         let bubble = try XCTUnwrap((list.json["bubbles"] as? [[String: Any]])?.first)
         XCTAssertEqual(bubble["mac_only"] as? Bool, false)
