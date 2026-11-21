@@ -138,7 +138,10 @@ final class VoiceConversation: ObservableObject {
             guard !endRequested else { mic?.stop(); return }
             self.mic = mic
             self.mode = mode
-            speaker = makeSpeaker(mic)
+            let made = makeSpeaker(mic)
+            // The default speaker is a `SpeechPlayer`, which needs the key the conversation was given.
+            (made as? SpeechPlayer)?.voiceKey = voiceKey
+            speaker = made
             heard = nil
             reply = nil
             frontDesk.prepare()

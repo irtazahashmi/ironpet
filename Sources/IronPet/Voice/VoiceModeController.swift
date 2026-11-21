@@ -38,7 +38,10 @@ final class VoiceModeController {
 
     /// The voice server's key. `AppDelegate` sets the Mac one.
     var voiceKey = VoiceKey.unsupported {
-        didSet { conversation.voiceKey = voiceKey }
+        didSet {
+            conversation.voiceKey = voiceKey
+            updates.voiceKey = voiceKey
+        }
     }
 
     init(frontDesk: FrontDesk) {
