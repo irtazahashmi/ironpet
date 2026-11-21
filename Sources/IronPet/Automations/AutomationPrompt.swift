@@ -18,13 +18,13 @@ enum AutomationPrompt {
         return .deny("Automations can only read")
     }
 
-    static func run(_ automation: Automation, prompt: String, workspace: URL, timeout: TimeInterval = 300,
+    static func run(_ automation: Automation, prompt: String, workspace: URL, spawner: ProcessSpawner, timeout: TimeInterval = 300,
                     agentOverride: ACPAgent? = nil) async -> Result<String, AutomationError> {
         guard let agent = agentOverride ?? AgentCatalog.agent(id: agentID(automation)) else {
             return .failure(.init(message: "no agent is available"))
         }
         try? FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
-        let runner = ACPBackend(agent: agent)
+        let runner = ACPBackend(agent: agent, spawner: spawner)
         runner.restricted = true
         runner.usageFeature = .automations
         runner.onPermission = { call, respond in respond(decision(for: call)) }

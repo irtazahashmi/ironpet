@@ -182,7 +182,7 @@ final class AutomationScriptTests: XCTestCase {
     }
 
     func testRealShellThroughTheSandbox() async throws {
-        let out = try await run("function poll() { const r = sh('echo real'); return { state: r.stdout.trim() }; }", host: .system)
+        let out = try await run("function poll() { const r = sh('echo real'); return { state: r.stdout.trim() }; }", host: .system(spawner: POSIXProcessSpawner()))
         XCTAssertEqual(out.state, "\"real\"")
     }
 }

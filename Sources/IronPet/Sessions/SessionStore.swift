@@ -21,6 +21,8 @@ final class SessionStore {
     }
     /// Where changes are published for API clients.
     weak var events: APIEventBus?
+    /// Finds which app owns an agent's process. `AppDelegate` sets the Mac one.
+    var appInfo: AppInfo = UnsupportedAppInfo()
 
     /// Called when a session enters a status worth announcing.
     var onAttention: ((AgentSession) -> Void)?
@@ -53,7 +55,7 @@ final class SessionStore {
         if session.origin.ownerBundleID == nil, let pid = event.origin.pid {
             // Resolve now: the agent's process can exit before the user clicks the button.
             session.origin.pid = pid
-            session.origin.ownerBundleID = ProcessTree.owningBundleID(pid: pid)
+            session.origin.ownerBundleID = (try? appInfo.owningBundleID(pid: pid)) ?? nil
         }
         session.updatedAt = Date()
 

@@ -39,8 +39,10 @@ extension ACPBackend: FrontDeskAgent {}
 final class FrontDesk: FrontDeskTalking {
     /// The agent and the model to use; the model is voice mode's setting or the agent's fastest.
     var currentAgent: () -> (agent: ACPAgent, model: String?)? = { nil }
-    var makeAgent: (ACPAgent) -> FrontDeskAgent = { agent in
-        let backend = ACPBackend(agent: agent)
+    /// Starts the agent's process. `AppDelegate` sets the Mac one.
+    var spawner: ProcessSpawner = UnsupportedProcessSpawner()
+    lazy var makeAgent: (ACPAgent) -> FrontDeskAgent = { [weak self] agent in
+        let backend = ACPBackend(agent: agent, spawner: self?.spawner ?? UnsupportedProcessSpawner())
         backend.usageFeature = .voiceMode
         backend.mcpServers = MCPEndpoint.voiceScoped(ACPBackend.defaultMCPServers())
         // Nobody can fill in a form by voice.

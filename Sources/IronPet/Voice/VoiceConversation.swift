@@ -34,9 +34,11 @@ final class VoiceConversation: ObservableObject {
     var quietReason: () -> String? = { nil }
     var microphoneAllowed: () async -> Bool = { await VoiceController.microphoneAllowed() }
     var makeMic: () -> ConversationListening = { ConversationMic() }
-    var transcribe: (Data) async throws -> String = { wav in
+    /// The voice server's key. `VoiceModeController` passes the one `AppDelegate` gave it.
+    var voiceKey = VoiceKey.unsupported
+    lazy var transcribe: (Data) async throws -> String = { [weak self] wav in
         let voice = ConfigStore.shared.config.voice
-        return try await Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: VoiceKey.load(), timeout: 30,
+        return try await Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: self?.voiceKey.load(), timeout: 30,
                                      usageFeature: .voiceTranscription).transcribe(wav: wav)
     }
     /// The voice for the conversation: through the microphone's engine when there is one, so echo cancellation can hear it.
@@ -136,7 +138,10 @@ final class VoiceConversation: ObservableObject {
             guard !endRequested else { mic?.stop(); return }
             self.mic = mic
             self.mode = mode
-            speaker = makeSpeaker(mic)
+            let made = makeSpeaker(mic)
+            // The default speaker is a `SpeechPlayer`, which needs the key the conversation was given.
+            (made as? SpeechPlayer)?.voiceKey = voiceKey
+            speaker = made
             heard = nil
             reply = nil
             frontDesk.prepare()

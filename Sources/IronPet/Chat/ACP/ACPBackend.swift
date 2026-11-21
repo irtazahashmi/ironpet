@@ -169,8 +169,12 @@ final class ACPBackend {
     /// The model the session is using, as the agent last reported or accepted it.
     var activeModel: String? { currentModel }
 
-    init(agent: ACPAgent) {
+    /// Starts the agent's process and the probes. `AppDelegate`'s owners pass the Mac one; the default starts nothing.
+    let spawner: ProcessSpawner
+
+    init(agent: ACPAgent, spawner: ProcessSpawner = UnsupportedProcessSpawner()) {
         self.agent = agent
+        self.spawner = spawner
     }
 
     // MARK: Turns
@@ -346,9 +350,9 @@ final class ACPBackend {
         client = nil
         sessionReady = false
         timedOut = false
-        let launch = try Self.launch(for: agent)
+        let launch = try Self.launch(for: agent, spawner: spawner)
         let transport = ACPProcessTransport(executable: launch.executable, arguments: launch.arguments, environment: launch.environment,
-                                            directory: workspace)
+                                            directory: workspace, spawner: spawner)
         let client = ACPClient(transport: transport)
         client.onNotification = { [weak self] method, params in self?.notification(method, params) }
         client.onRequest = { [weak self] method, params, respond in self?.agentRequest(method, params, respond) }
@@ -394,7 +398,7 @@ final class ACPBackend {
         let environment: [String: String]
     }
 
-    static func launch(for agent: ACPAgent) throws -> Launch {
+    static func launch(for agent: ACPAgent, spawner: ProcessSpawner) throws -> Launch {
         var env = LoginShell.environment()
         // Cursor and Claude Code run ironpet's status hooks for chats started here too. The hook script skips this run.
         env["IRONPET_ACP_RUN"] = "1"
@@ -403,7 +407,7 @@ final class ACPBackend {
             return Launch(executable: cli, arguments: agent.args, environment: env)
         }
         guard let adapter = ACPRuntime.adapterFile(helper.adapter) else { throw ACPLaunchError.adapterMissing(helper.adapter) }
-        guard let runtime = ACPRuntime.resolve(adapter: helper.adapter) else { throw ACPLaunchError.runtimeMissing }
+        guard let runtime = ACPRuntime.resolve(adapter: helper.adapter, spawner: spawner) else { throw ACPLaunchError.runtimeMissing }
         env[helper.pathVariable] = cli.path
         return Launch(executable: runtime.executable, arguments: [adapter.path] + agent.args, environment: env)
     }
@@ -414,15 +418,10 @@ final class ACPBackend {
     private func logCLIVersion() {
         guard agent.viaHelper, Self.loggedVersions.insert(agent.command).inserted, let cli = LoginShell.find(agent.command) else { return }
         let name = agent.command
+        let spawner = spawner
         Task.detached {
-            let process = Process()
-            process.executableURL = cli
-            process.arguments = ["--version"]
-            let pipe = Pipe()
-            process.standardOutput = pipe
-            process.standardError = FileHandle.nullDevice
-            guard (try? process.run()) != nil else { return }
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            guard let process = try? spawner.spawn(ProcessSpec(executable: cli.path, arguments: ["--version"], error: .null)) else { return }
+            let data = process.output?.readDataToEndOfFile() ?? Data()
             process.waitUntilExit()
             NSLog("ironpet: \(name) --version: \(String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines))")
         }
@@ -726,13 +725,13 @@ enum ACPProbe {
     /// Native agents must answer `initialize`; adapter-backed agents count as present when their CLI is installed,
     /// because the adapter answers for them.
     @MainActor
-    static func installed() async -> [ACPAgent] {
+    static func installed(spawner: ProcessSpawner) async -> [ACPAgent] {
         let present = AgentCatalog.present()
         var result: [ACPAgent] = []
         await withTaskGroup(of: (ACPAgent, Bool).self) { group in
             for agent in present {
                 if agent.viaHelper { result.append(agent); continue }
-                group.addTask { (agent, await answersInitialize(agent)) }
+                group.addTask { (agent, await answersInitialize(agent, spawner: spawner)) }
             }
             for await (agent, ok) in group where ok { result.append(agent) }
         }
@@ -740,14 +739,15 @@ enum ACPProbe {
     }
 
     @MainActor
-    static func answersInitialize(_ agent: ACPAgent) async -> Bool {
+    static func answersInitialize(_ agent: ACPAgent, spawner: ProcessSpawner) async -> Bool {
         guard let exe = LoginShell.find(agent.command) else { return false }
         let stamp = (try? FileManager.default.attributesOfItem(atPath: exe.path)[.modificationDate] as? Date)?.timeIntervalSince1970 ?? 0
         let key = "\(exe.path):\(stamp)"
         if let known = answered[key] { return known }
         var env = LoginShell.environment()
         env["IRONPET_ACP_RUN"] = "1"
-        let transport = ACPProcessTransport(executable: exe, arguments: agent.args, environment: env, directory: FileManager.default.temporaryDirectory)
+        let transport = ACPProcessTransport(executable: exe, arguments: agent.args, environment: env, directory: FileManager.default.temporaryDirectory,
+                                            spawner: spawner)
         let client = ACPClient(transport: transport)
         guard (try? client.start()) != nil else { return false }
         let watchdog = Task {

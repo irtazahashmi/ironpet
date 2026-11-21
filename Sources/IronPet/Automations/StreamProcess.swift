@@ -19,6 +19,7 @@ final class StreamProcess: @unchecked Sendable {
     }
 
     let pid: pid_t
+    private let process: RunningProcess
     private let queue = DispatchQueue(label: "ironpet.stream-process")
     private let maxLine: Int
     private let grace: TimeInterval
@@ -40,7 +41,7 @@ final class StreamProcess: @unchecked Sendable {
         var errorDescription: String? { message }
     }
 
-    init(command: String, environment: [String: String], maxLine: Int, grace: TimeInterval,
+    init(command: String, spawner: ProcessSpawner, environment: [String: String], maxLine: Int, grace: TimeInterval,
          onLine: @escaping (String) -> Void, onStderr: @escaping (String) -> Void,
          onLong: @escaping () -> Void, onExit: @escaping (Exit) -> Void) throws {
         self.maxLine = maxLine
@@ -50,60 +51,24 @@ final class StreamProcess: @unchecked Sendable {
         self.onLong = onLong
         self.onExit = onExit
 
-        var outPipe: [Int32] = [0, 0], errPipe: [Int32] = [0, 0]
-        guard pipe(&outPipe) == 0 else { throw SpawnError(message: "cannot create a pipe: \(String(cString: strerror(errno)))") }
-        guard pipe(&errPipe) == 0 else {
-            close(outPipe[0]); close(outPipe[1])
-            throw SpawnError(message: "cannot create a pipe: \(String(cString: strerror(errno)))")
-        }
-        for fd in outPipe + errPipe { _ = fcntl(fd, F_SETFD, FD_CLOEXEC) }
-
-        var actions: posix_spawn_file_actions_t?
-        posix_spawn_file_actions_init(&actions)
-        defer { posix_spawn_file_actions_destroy(&actions) }
-        posix_spawn_file_actions_addopen(&actions, 0, "/dev/null", O_RDONLY, 0)
-        posix_spawn_file_actions_adddup2(&actions, outPipe[1], 1)
-        posix_spawn_file_actions_adddup2(&actions, errPipe[1], 2)
-
-        var attr: posix_spawnattr_t?
-        posix_spawnattr_init(&attr)
-        defer { posix_spawnattr_destroy(&attr) }
-        // A new process group (pgid = pid), default signal handlers and an empty mask, and nothing inherited but 0, 1 and 2.
-        var defaults = sigset_t(), mask = sigset_t()
-        sigfillset(&defaults)
-        sigemptyset(&mask)
-        posix_spawnattr_setsigdefault(&attr, &defaults)
-        posix_spawnattr_setsigmask(&attr, &mask)
-        posix_spawnattr_setpgroup(&attr, 0)
-        let flags = POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK | 0x4000 /* POSIX_SPAWN_CLOEXEC_DEFAULT */
-        posix_spawnattr_setflags(&attr, Int16(flags))
-
-        let argv: [String] = ["/bin/sh", "-c", command]
-        let envp: [String] = environment.map { "\($0.key)=\($0.value)" }
-        var args: [UnsafeMutablePointer<CChar>?] = argv.map { strdup($0) }
-        var env: [UnsafeMutablePointer<CChar>?] = envp.map { strdup($0) }
-        args.append(nil)
-        env.append(nil)
-        defer { for p in args + env { free(p) } }
-        var child: pid_t = 0
-        let status = posix_spawn(&child, "/bin/sh", &actions, &attr, args, env)
-        close(outPipe[1])
-        close(errPipe[1])
-        guard status == 0 else {
-            close(outPipe[0]); close(errPipe[0])
-            throw SpawnError(message: "cannot run /bin/sh: \(String(cString: strerror(status)))")
-        }
-        pid = child
-        outFD = outPipe[0]
-        errFD = errPipe[0]
+        // A new process group (pgid = pid), so stopping signals the command's children too.
+        let spec = ProcessSpec.shell(command, environment: environment)
+        let process = try spawner.spawn(spec)
+        guard let out = process.output, let err = process.error else { throw SpawnError(message: "the process has no output pipes") }
+        self.process = process
+        pid = process.pid
+        outFD = out.fileDescriptor
+        errFD = err.fileDescriptor
         queue.async { [self] in
             outSource = makeSource(outFD) { [self] data in feed(data, into: &outBuffer, line: true) }
             errSource = makeSource(errFD) { [self] data in feed(data, into: &errBuffer, line: false) }
         }
-        DispatchQueue.global().async { [self] in
-            var raw: Int32 = 0
-            while waitpid(pid, &raw, 0) < 0, errno == EINTR {}
-            let exit: Exit = (raw & 0x7f) == 0 ? .code((raw >> 8) & 0xff) : .signal(raw & 0x7f)
+        process.whenExited { [self] result in
+            let exit: Exit
+            switch result {
+            case .code(let code): exit = .code(code)
+            case .signal(let signal): exit = .signal(signal)
+            }
             queue.async { [self] in finish(exit) }
         }
     }
@@ -202,8 +167,8 @@ final class StreamProcess: @unchecked Sendable {
         finished = true
         outSource?.cancel()
         errSource?.cancel()
-        close(outFD)
-        close(errFD)
+        try? process.output?.close()
+        try? process.error?.close()
         // Children that outlived the shell are stopped too.
         if killpg(pid, 0) == 0 {
             killpg(pid, SIGTERM)

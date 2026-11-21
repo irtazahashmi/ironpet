@@ -26,7 +26,7 @@ enum AutomationSession {
     typealias TurnRunner = (ACPTurn, @escaping (AgentEvent) -> Void) async -> Void
 
     /// `agentOverride` and `turnRunner` let tests run a scripted agent.
-    static func run(_ automation: Automation, prompt: String, workspace: URL, timeout: TimeInterval = 900,
+    static func run(_ automation: Automation, prompt: String, workspace: URL, spawner: ProcessSpawner, timeout: TimeInterval = 900,
                     agentOverride: ACPAgent? = nil, turnRunner: TurnRunner? = nil, now: Date = Date(),
                     fork: String? = nil, onNote: ((String) -> Void)? = nil) async -> Result<String, AutomationError> {
         guard let agent = agentOverride ?? AgentCatalog.agent(id: AutomationPrompt.agentID(automation)) else {
@@ -46,7 +46,7 @@ enum AutomationSession {
         var backend: ACPBackend?
         var run = turnRunner
         if run == nil {
-            let created = ACPBackend(agent: agent)
+            let created = ACPBackend(agent: agent, spawner: spawner)
             created.usageFeature = .automations
             created.mcpCaller = "automation:\(automation.id)"
             created.sharesMemoryFolder = false

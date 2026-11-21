@@ -102,6 +102,7 @@ final class TelegramBridge: ObservableObject {
          filesDirectory: URL = Paths.telegramFiles,
          voiceEnabled: (() -> Bool)? = nil,
          transcribe: (@Sendable (Data, String) async throws -> String)? = nil,
+         voiceKey: VoiceKey = .unsupported,
          petName: @escaping () -> String = { "Ghost" },
          sleep: @escaping (TimeInterval) async throws -> Void = { try await Task.sleep(nanoseconds: UInt64($0 * 1_000_000_000)) },
          now: @escaping () -> Date = Date.init) {
@@ -111,7 +112,7 @@ final class TelegramBridge: ObservableObject {
         self.storage = storage
         self.filesDirectory = filesDirectory
         self.voiceEnabled = voiceEnabled ?? { SettingsAPI.live.config.voice.enabled }
-        self.transcribe = transcribe ?? TelegramVoice.configuredTranscribe
+        self.transcribe = transcribe ?? TelegramVoice.configuredTranscribe(voiceKey: voiceKey)
         self.petName = petName
         self.sleep = sleep
         self.now = now

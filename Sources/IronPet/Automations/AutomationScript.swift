@@ -55,14 +55,16 @@ enum AutomationScript {
     struct HostIO {
         var sh: (_ command: String, _ timeout: TimeInterval) -> CommandResult
 
-        static let system = HostIO(sh: { command, timeout in
-            CommandRunner.runBlocking(executable: "/bin/sh", arguments: ["-c", command], timeout: timeout,
-                                      environment: CommandRunner.defaultEnvironment(), stdin: nil, maxBytes: CommandRunner.maxOutput)
-        })
+        static func system(spawner: ProcessSpawner) -> HostIO {
+            HostIO(sh: { command, timeout in
+                CommandRunner.runBlocking(executable: "/bin/sh", arguments: ["-c", command], spawner: spawner, timeout: timeout,
+                                          environment: CommandRunner.defaultEnvironment(), stdin: nil, maxBytes: CommandRunner.maxOutput)
+            })
+        }
     }
 
     /// Runs `poll(state)` off the main thread. `state` is the JSON text the last run returned, or nil on the first run.
-    static func run(script: String, state: String?, deadline: TimeInterval = defaultDeadline, host: HostIO = .system) async throws -> Output {
+    static func run(script: String, state: String?, deadline: TimeInterval = defaultDeadline, host: HostIO) async throws -> Output {
         try await withCheckedThrowingContinuation { continuation in
             let thread = Thread {
                 do { continuation.resume(returning: try runBlocking(script: script, state: state, deadline: deadline, host: host)) } catch {

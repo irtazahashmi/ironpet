@@ -36,6 +36,14 @@ final class VoiceModeController {
 
     static let escapeHotKeyID: UInt32 = 11
 
+    /// The voice server's key. `AppDelegate` sets the Mac one.
+    var voiceKey = VoiceKey.unsupported {
+        didSet {
+            conversation.voiceKey = voiceKey
+            updates.voiceKey = voiceKey
+        }
+    }
+
     init(frontDesk: FrontDesk) {
         self.frontDesk = frontDesk
         conversation = VoiceConversation(frontDesk: frontDesk)
@@ -55,7 +63,7 @@ final class VoiceModeController {
     /// server that can't do either shows up now rather than in the first conversation.
     static func enable(using player: VoiceAPI) async -> Enabling {
         let voice = ConfigStore.shared.config.voice
-        let transcriber = Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: VoiceKey.load(), timeout: 30)
+        let transcriber = Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: player.voiceKey.load(), timeout: 30)
         do {
             _ = try await transcriber.transcribe(wav: VoiceSettings.testClip)
         } catch {

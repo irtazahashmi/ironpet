@@ -29,16 +29,17 @@ enum CommandRunner {
     static let maxOutput = 256 * 1024
 
     /// Runs `/bin/sh -c command`, killing it when it runs past `timeout` or prints more than `maxOutput` bytes.
-    static func run(shell command: String, timeout: TimeInterval, environment: [String: String]? = nil,
+    static func run(shell command: String, spawner: ProcessSpawner, timeout: TimeInterval, environment: [String: String]? = nil,
                     stdin: Data? = nil, maxBytes: Int = maxOutput) async -> CommandResult {
-        await run(executable: "/bin/sh", arguments: ["-c", command], timeout: timeout, environment: environment, stdin: stdin, maxBytes: maxBytes)
+        await run(executable: "/bin/sh", arguments: ["-c", command], spawner: spawner, timeout: timeout, environment: environment,
+                  stdin: stdin, maxBytes: maxBytes)
     }
 
-    static func run(executable: String, arguments: [String], timeout: TimeInterval, environment: [String: String]? = nil,
-                    stdin: Data? = nil, maxBytes: Int = maxOutput) async -> CommandResult {
+    static func run(executable: String, arguments: [String], spawner: ProcessSpawner, timeout: TimeInterval,
+                    environment: [String: String]? = nil, stdin: Data? = nil, maxBytes: Int = maxOutput) async -> CommandResult {
         await withCheckedContinuation { continuation in
             DispatchQueue.global().async {
-                continuation.resume(returning: runBlocking(executable: executable, arguments: arguments, timeout: timeout,
+                continuation.resume(returning: runBlocking(executable: executable, arguments: arguments, spawner: spawner, timeout: timeout,
                                                            environment: environment, stdin: stdin, maxBytes: maxBytes))
             }
         }
@@ -51,34 +52,31 @@ enum CommandRunner {
         var isSet: Bool { lock.withLock { value } }
     }
 
-    static func runBlocking(executable: String, arguments: [String], timeout: TimeInterval, environment: [String: String]?,
-                            stdin: Data?, maxBytes: Int) -> CommandResult {
+    static func runBlocking(executable: String, arguments: [String], spawner: ProcessSpawner, timeout: TimeInterval,
+                            environment: [String: String]?, stdin: Data?, maxBytes: Int) -> CommandResult {
         var result = CommandResult()
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: executable)
-        process.arguments = arguments
-        if let environment { process.environment = environment }
-        let out = Pipe(), err = Pipe(), input = Pipe()
-        process.standardOutput = out
-        process.standardError = err
-        process.standardInput = stdin == nil ? FileHandle.nullDevice : input
-        do { try process.run() } catch {
-            result.spawnError = "cannot run \(executable): \(error.localizedDescription)"
+        let process: RunningProcess
+        do {
+            process = try spawner.spawn(ProcessSpec(executable: executable, arguments: arguments, environment: environment,
+                                                    input: stdin == nil ? .null : .pipe))
+        } catch {
+            result.spawnError = error.localizedDescription
             return result
         }
         let timedOut = Flag(), overflow = Flag()
         let killer = DispatchWorkItem { if process.isRunning { timedOut.set(); process.terminate() } }
         DispatchQueue.global().asyncAfter(deadline: .now() + timeout, execute: killer)
-        if let stdin {
+        if let stdin, let input = process.input {
             DispatchQueue.global().async {
-                try? input.fileHandleForWriting.write(contentsOf: stdin)
-                try? input.fileHandleForWriting.close()
+                try? input.write(contentsOf: stdin)
+                try? input.close()
             }
         }
-        func drain(_ pipe: Pipe) -> Data {
+        func drain(_ pipe: FileHandle?) -> Data {
+            guard let pipe else { return Data() }
             var data = Data()
             while true {
-                let chunk = pipe.fileHandleForReading.availableData
+                let chunk = pipe.availableData
                 if chunk.isEmpty { break }
                 if data.count + chunk.count > maxBytes {
                     data.append(chunk.prefix(maxBytes - data.count))
@@ -93,8 +91,8 @@ enum CommandRunner {
         let errBox = DataBox()
         let group = DispatchGroup()
         group.enter()
-        DispatchQueue.global().async { errBox.set(drain(err)); group.leave() }
-        let outData = drain(out)
+        DispatchQueue.global().async { errBox.set(drain(process.error)); group.leave() }
+        let outData = drain(process.output)
         group.wait()
         process.waitUntilExit()
         killer.cancel()

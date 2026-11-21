@@ -141,9 +141,9 @@ final class AutomationReportTests: AutomationTestCase {
         let saved = ThreadStore.directory
         ThreadStore.directory = dir.appendingPathComponent("threads")
         defer { ThreadStore.directory = saved }
-        _ = await AutomationSession.run(a, prompt: "/review", workspace: dir.appendingPathComponent("ws"), turnRunner: runner, fork: "main-session")
+        _ = await AutomationSession.run(a, prompt: "/review", workspace: dir.appendingPathComponent("ws"), spawner: UnsupportedProcessSpawner(), turnRunner: runner, fork: "main-session")
         XCTAssertEqual(seen.first?.fork, "main-session")
-        _ = await AutomationSession.run(job(session: "new"), prompt: "/review", workspace: dir.appendingPathComponent("ws"), turnRunner: runner)
+        _ = await AutomationSession.run(job(session: "new"), prompt: "/review", workspace: dir.appendingPathComponent("ws"), spawner: UnsupportedProcessSpawner(), turnRunner: runner)
         XCTAssertNil(seen.last?.fork)
     }
 }

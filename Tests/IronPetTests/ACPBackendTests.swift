@@ -141,7 +141,7 @@ final class ACPBackendTests: XCTestCase {
     }
 
     func testTurnStreamsTextAndReportsSessionAndModels() async {
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         let events = await run(backend, turn("hello"))
         XCTAssertTrue(text(events).hasPrefix("pid="))
         guard case .finished(let error) = events.last, error == nil else { return XCTFail("expected a clean finish") }
@@ -152,7 +152,7 @@ final class ACPBackendTests: XCTestCase {
     }
 
     func testCommandListIsReportedEvenWhileTheSessionReplays() async {
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         let events = await run(backend, turn("hello", resume: "sess-1"))
         XCTAssertFalse(text(events).contains("REPLAY"))
         let commands = events.compactMap { event -> [SlashCommand]? in if case .commands(let list) = event { return list } else { return nil } }.first
@@ -163,7 +163,7 @@ final class ACPBackendTests: XCTestCase {
     }
 
     func testInitializeDeclaresNoFilesystemOrTerminalCapability() async throws {
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         _ = await run(backend, turn("hello"))
         let initialize = try XCTUnwrap(logged().first { $0["method"] as? String == "initialize" })
         let capabilities = try XCTUnwrap((initialize["params"] as? JSON)?["clientCapabilities"] as? JSON)
@@ -180,7 +180,7 @@ final class ACPBackendTests: XCTestCase {
     }
 
     func testUpdatesAfterThePromptResponseGoToTheBackgroundHandler() async {
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         var late: [AgentEvent] = []
         backend.onBackground = { late.append($0) }
         let events = await run(backend, turn("BACKGROUND"))
@@ -192,7 +192,7 @@ final class ACPBackendTests: XCTestCase {
     }
 
     func testSubagentCallsAreTaggedWithTheirParentAndItsChatterIsDropped() async {
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         let events = await run(backend, turn("SUBAGENT"))
         XCTAssertEqual(text(events), "an offer to start recording.")
         let subagent = events.compactMap { event -> (String, String, Bool?)? in
@@ -212,7 +212,7 @@ final class ACPBackendTests: XCTestCase {
     }
 
     func testStopWithNoTurnRunningSendsNoCancel() async {
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         _ = await run(backend, turn("BACKGROUND"))
         backend.cancel()
         try? await Task.sleep(nanoseconds: 500_000_000)
@@ -227,7 +227,7 @@ final class ACPBackendTests: XCTestCase {
         var lines: [String] = []
         ChatLog.sink = { lines.append($0) }
         defer { ChatLog.sink = nil }
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         let events = await run(backend, turn("hello", resume: "old-thread"))
         guard case .finished(let error) = events.last, error == nil else { return XCTFail("expected a clean finish") }
         XCTAssertTrue(events.contains { if case .session("sess-1") = $0 { return true } else { return false } })
@@ -241,7 +241,7 @@ final class ACPBackendTests: XCTestCase {
         var lines: [String] = []
         ChatLog.sink = { lines.append($0) }
         defer { ChatLog.sink = nil }
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         let first = text(await run(backend, turn("one")))
         let pid = try XCTUnwrap(backend.processID)
         kill(pid, SIGKILL)
@@ -258,7 +258,7 @@ final class ACPBackendTests: XCTestCase {
     }
 
     func testSecondTurnUsesTheSameProcessAndSession() async {
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         let first = text(await run(backend, turn("one")))
         let pid = backend.processID
         let second = text(await run(backend, turn("two")))
@@ -270,7 +270,7 @@ final class ACPBackendTests: XCTestCase {
     }
 
     func testPreambleIsSentOnlyWithTheFirstPrompt() async {
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         _ = await run(backend, turn("one"))
         _ = await run(backend, turn("two"))
         let prompts = logged().filter { $0["method"] as? String == "session/prompt" }
@@ -282,7 +282,7 @@ final class ACPBackendTests: XCTestCase {
 
     func testPermissionRequestIsAnsweredWithTheChosenOption() async {
         for (decision, optionID, ok) in [(ApprovalDecision.allow, "yes", true), (ApprovalDecision.deny(), "no", false)] {
-            let backend = ACPBackend(agent: agent)
+            let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
             var asked: ACPToolCall?
             backend.onPermission = { call, respond in
                 asked = call
@@ -313,7 +313,7 @@ final class ACPBackendTests: XCTestCase {
     }
 
     func testSubmittedFormIsAnsweredWithAcceptAndContent() async throws {
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         var asked: ElicitationForm?
         backend.onElicitation = { form, respond in
             asked = form
@@ -329,7 +329,7 @@ final class ACPBackendTests: XCTestCase {
     }
 
     func testSkippedFormIsAnsweredWithDecline() async {
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         backend.onElicitation = { _, respond in respond(.decline) }
         let events = await run(backend, turn("ELICIT"))
         XCTAssertEqual(text(events), "got decline")
@@ -338,7 +338,7 @@ final class ACPBackendTests: XCTestCase {
     }
 
     func testCancellingTheTurnCancelsTheOpenFormOnce() async throws {
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         var late: ((ElicitationReply) -> Void)?
         backend.onElicitation = { _, respond in late = respond }
         let running = Task { await backend.runTurn(turn("ELICIT")) { _ in } }
@@ -353,7 +353,7 @@ final class ACPBackendTests: XCTestCase {
     }
 
     func testFormWithNestedObjectIsDeclinedWithoutAsking() async {
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         var asked = false
         backend.onElicitation = { _, _ in asked = true }
         let events = await run(backend, turn("ELICIT NESTED"))
@@ -363,7 +363,7 @@ final class ACPBackendTests: XCTestCase {
     }
 
     func testCancelSendsSessionCancelAndKeepsTheProcess() async throws {
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         var events: [AgentEvent] = []
         let running = Task { await backend.runTurn(turn("SLOW")) { events.append($0) } }
         for _ in 0..<100 where !events.contains(where: { if case .assistant = $0 { return true } else { return false } }) {
@@ -383,7 +383,7 @@ final class ACPBackendTests: XCTestCase {
     }
 
     func testTheCancelWatchdogDoesNotKillALaterPrompt() async throws {
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         var events: [AgentEvent] = []
         let running = Task { await backend.runTurn(turn("SLOW")) { events.append($0) } }
         for _ in 0..<100 where !events.contains(where: { if case .assistant = $0 { return true } else { return false } }) {
@@ -405,7 +405,7 @@ final class ACPBackendTests: XCTestCase {
     func testBypassModeFromTheUsersSettingsIsSwitchedToTheAskingMode() async {
         setenv("FAKE_MODE", "bypass", 1)
         defer { unsetenv("FAKE_MODE") }
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         _ = await run(backend, turn("hi"))
         let set = logged().first { $0["method"] as? String == "session/set_mode" }
         XCTAssertEqual((set?["params"] as? JSON)?["modeId"] as? String, "default")
@@ -413,7 +413,7 @@ final class ACPBackendTests: XCTestCase {
     }
 
     func testAnAskingModeIsLeftAlone() async {
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         _ = await run(backend, turn("hi"))
         XCTAssertFalse(logged().contains { $0["method"] as? String == "session/set_mode" })
         backend.shutdown()
@@ -432,7 +432,7 @@ final class ACPBackendTests: XCTestCase {
     }
 
     func testStoredSessionIsReopenedWithSessionLoad() async {
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         let events = await run(backend, turn("continue", resume: "old-session"))
         XCTAssertTrue(logged().contains { $0["method"] as? String == "session/load" && ($0["params"] as? JSON)?["sessionId"] as? String == "old-session" })
         XCTAssertFalse(logged().contains { $0["method"] as? String == "session/new" })
@@ -443,7 +443,7 @@ final class ACPBackendTests: XCTestCase {
     }
 
     func testChosenModelIsAppliedToTheSession() async {
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         _ = await run(backend, turn("hi", model: "m2"))
         let set = logged().first { $0["method"] as? String == "session/set_model" }
         XCTAssertEqual((set?["params"] as? JSON)?["modelId"] as? String, "m2")
@@ -453,7 +453,7 @@ final class ACPBackendTests: XCTestCase {
     func testAuthRequiredBecomesASignInOffer() async {
         setenv("FAKE_MODE", "auth", 1)
         defer { unsetenv("FAKE_MODE") }
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         let events = await run(backend, turn("hi"))
         guard case .needsSignIn(let methods)? = events.last else { return XCTFail("expected needsSignIn, got \(events)") }
         XCTAssertEqual(methods.map(\.name), ["Log in"])
@@ -464,7 +464,7 @@ final class ACPBackendTests: XCTestCase {
     func testImagesAreSentAsImageBlocksWhenTheAgentAccepts() async throws {
         let image = dir.appendingPathComponent("shot.png")
         try Data([0x89, 0x50, 0x4E, 0x47]).write(to: image)
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         _ = await run(backend, turn("look", images: [image]))
         let prompt = (logged().first { $0["method"] as? String == "session/prompt" }?["params"] as? JSON)?["prompt"] as? [JSON]
         let block = prompt?.first { $0["type"] as? String == "image" }
@@ -475,7 +475,7 @@ final class ACPBackendTests: XCTestCase {
     }
 
     func testMissingExecutableFailsWithAClearMessage() async {
-        let backend = ACPBackend(agent: ACPAgent(id: "nope", name: "Nope", command: "/nonexistent/agent", args: [], helper: nil))
+        let backend = ACPBackend(agent: ACPAgent(id: "nope", name: "Nope", command: "/nonexistent/agent", args: [], helper: nil), spawner: POSIXProcessSpawner())
         let events = await run(backend, turn("hi"))
         guard case .finished(let error)? = events.last else { return XCTFail("expected a finish") }
         XCTAssertTrue(error?.contains("not found") == true, error ?? "")
@@ -494,7 +494,7 @@ final class ACPBackendTests: XCTestCase {
     func testResumedSessionsFirstLifetimeTotalIsNotRecordedAsTheTurnsCost() async throws {
         setenv("FAKE_MODE", "usageresume", 1)
         let store = try usageStore()
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         backend.usageFeature = .chat
         backend.usageStore = store
         _ = await run(backend, turn("one", resume: "sess-1"))
@@ -519,7 +519,7 @@ final class ACPBackendTests: XCTestCase {
     func testTurnWithReportedUsageStoresOneChatRecord() async throws {
         setenv("FAKE_MODE", "usage", 1)
         let store = try usageStore()
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         backend.usageFeature = .chat
         backend.usageStore = store
         _ = await run(backend, turn("hello"))
@@ -539,7 +539,7 @@ final class ACPBackendTests: XCTestCase {
     func testCostIsTheChangeInSessionCostNotTheRunningTotal() async throws {
         setenv("FAKE_MODE", "usage", 1)
         let store = try usageStore()
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         backend.usageFeature = .chat
         backend.usageStore = store
         _ = await run(backend, turn("one"))
@@ -552,7 +552,7 @@ final class ACPBackendTests: XCTestCase {
 
     func testAgentWithoutUsageStoresTurnAndDurationOnly() async throws {
         let store = try usageStore()
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         backend.usageFeature = .chat
         backend.usageStore = store
         _ = await run(backend, turn("hello"))
@@ -569,7 +569,7 @@ final class ACPBackendTests: XCTestCase {
     func testBackendWithoutAFeatureRecordsNothing() async throws {
         setenv("FAKE_MODE", "usage", 1)
         let store = try usageStore()
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         backend.usageStore = store
         _ = await run(backend, turn("hello"))
         XCTAssertTrue(recorded(store).rows.isEmpty)
@@ -583,14 +583,14 @@ final class ACPBackendTests: XCTestCase {
         defer { UsageStore.shared = previous }
         let automation = Automation(id: "a", name: "A", trigger: .init(type: "interval", minutes: 5, clock: "wall"),
                                     action: .init(type: "prompt", title: "A"), createdBy: "user")
-        let result = await AutomationPrompt.run(automation, prompt: "hi", workspace: dir.appendingPathComponent("ws"), agentOverride: agent)
+        let result = await AutomationPrompt.run(automation, prompt: "hi", workspace: dir.appendingPathComponent("ws"), spawner: POSIXProcessSpawner(), agentOverride: agent)
         guard case .success = result else { return XCTFail("the prompt run failed: \(result)") }
         XCTAssertEqual(recorded(store).rows.map(\.feature), [.automations])
     }
 
     func testMeetingSummaryRunnerCountsUnderMeetingSummaries() async throws {
         let store = try usageStore()
-        let runner = MeetingController.makeSummaryRunner(agent)
+        let runner = MeetingController.makeSummaryRunner(agent, spawner: POSIXProcessSpawner())
         runner.usageStore = store
         _ = await run(runner, turn("summarize"))
         XCTAssertEqual(recorded(store).rows.map(\.feature), [.meetingSummary])

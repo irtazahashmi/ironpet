@@ -5,6 +5,11 @@ import Combine
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
+    /// The one set of platform adapters, built here and handed to everything that spawns a process or reads a secret.
+    private let platform = Platform.mac()
+    private lazy var voiceKey = VoiceKey(store: platform.secrets)
+    /// The bot token's store. Memory in `--test-mode`, where a Keychain approval dialog would block an automated run.
+    private lazy var telegramTokens: TelegramTokenStore = TelegramAPI.testMode ? MemoryTokenStore() : TelegramToken(secrets: platform.secrets)
     private let store = SessionStore()
     private let signals = SignalStore()
     private let chat = ChatSession()
@@ -75,7 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var api: IronPetAPI!
     private var setupWindow: SetupWindow?
     private lazy var telegram = TelegramBridge(
-        client: TelegramAPI(token: { TelegramToken.shared.load() }), host: api.chat, tokens: TelegramToken.shared,
+        client: TelegramAPI(token: { [telegramTokens] in telegramTokens.load() }), host: api.chat, tokens: telegramTokens,
         storage: .init(
             users: { ConfigStore.shared.config.telegram.allowedUsers },
             add: { user in ConfigStore.shared.update { $0.telegram.allowedUsers.append(user) } },
@@ -93,6 +98,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         suspendHotKeys: { [weak self] suspended in suspended ? self?.unregisterHotKeys() : self?.registerHotKeys() },
         buildPet: { [weak self] description in self?.requestPet(description) }
     ), announcer: announcer, telegram: telegram)
+
+    /// Hands the platform adapters to the objects built before the database opens. The rest get theirs where they are built.
+    private func wirePlatform() {
+        store.appInfo = platform.appInfo
+        chat.spawner = platform.processes
+        chat.speech.voiceKey = voiceKey
+        let keyCache = MeetingController.KeyCache(voiceKey: voiceKey)
+        let voiceStore = VoiceStore(url: VoiceStore.defaultURL, key: { [secrets = platform.secrets] in VoiceStoreKey(store: secrets).load() })
+        for owner in [meeting] {
+            owner.spawner = platform.processes
+            owner.keyCache = keyCache
+            owner.voiceStore = voiceStore
+        }
+        meetings.regenerator.spawner = platform.processes
+        meetings.regenerator.keyCache = keyCache
+        meetings.regenerator.voiceStore = voiceStore
+    }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.mainMenu = makeMainMenu()
@@ -112,6 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         signals.events = events
         announcer.bubbles.events = events
         meeting.events = events
+        wirePlatform()
 
         announcer.openSession = { [weak self] id in self?.openSession(id) }
         announcer.openChat = { [weak self] in self?.showChat() }
@@ -120,7 +143,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         announcer.automationAction = { [weak self] ids, snooze in self?.automations.notificationAction(ids: ids, snooze: snooze) }
         notifier.start()
         // Resolving the login-shell PATH runs the user's shell, so do it before the first chat needs it.
-        Task.detached { _ = LoginShell.path }
+        LoginShell.prepare(spawner: platform.processes)
         store.onAttention = { [weak self] session in
             if let event = ActivityEvent.session(session) { self?.activity?.record(event) }
             // A job waits for input only on an approval, which has its own bubble.
@@ -270,7 +293,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             isBusy: { [weak self] in
                 guard let self else { return false }
                 return self.chat.isVisible || !self.chat.approvals.isEmpty || self.store.summary.status == .needsInput
-            }))
+            },
+            spawner: platform.processes))
         engine.timing = { [config] in
             let r = config.config.reminders
             return .init(paused: r.paused, idleResetMinutes: r.idleResetMinutes, snoozeMinutes: r.snoozeMinutes)
@@ -294,6 +318,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         api.attach(memory: { [weak self] in self?.memoryServices })
         pet.agents = api.agents
         chatModel = ChatViewModel(api: api.chat, voiceAPI: api.voice, events: events)
+        chatModel.voice.voiceKey = voiceKey
+        api.voice.voiceKey = voiceKey
+        // The settings model needs the API (through the Telegram bridge), so it is wired here and not in `wirePlatform`.
+        settingsModel.platform = platform
         pet.chatModel = chatModel
         pet.meetingsAPI = api.meetings
         pet.events = events
@@ -352,7 +380,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         service.suggested = { [weak self] added in self?.offerSuggestions(added) }
         let workspace = store.paths.workspace
         // Not read by memory: this restricted run is for prompts with item text from outside, and its answer is built from that text.
-        service.runPrompt = { automation, prompt in await AutomationPrompt.run(automation, prompt: prompt, workspace: workspace) }
+        let spawner = platform.processes
+        service.runPrompt = { automation, prompt in await AutomationPrompt.run(automation, prompt: prompt, workspace: workspace, spawner: spawner) }
         service.forkSource = { [weak self] automation in
             guard let chat = self?.chat, chat.agent.id == AutomationPrompt.agentID(automation) else { return nil }
             return chat.sessionID
@@ -362,7 +391,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         service.runSession = { [weak self, weak service] automation, prompt, fork in
             let agent = AutomationPrompt.agentID(automation)
-            let result = await AutomationSession.run(automation, prompt: prompt, workspace: workspace, fork: fork,
+            let result = await AutomationSession.run(automation, prompt: prompt, workspace: workspace, spawner: spawner, fork: fork,
                                                      onNote: { service?.record(automation.id, "warning", $0) })
             self?.chat.refreshHistory()
             if case .success(let answer) = result { self?.memorySawAutomation(automation.id, answer: answer, agent: agent) }
@@ -413,6 +442,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// threads in the chat.
     private func setUpJobs(_ database: Database, tasks: TaskStore) {
         let service = JobService(database: database, tasks: tasks)
+        service.spawner = platform.processes
         service.currentAgent = { [weak self] in self.map { ($0.chat.agent, $0.chat.model) } }
         service.onChange = { [weak self] job in
             self?.store.setJob(Job.sessionKey(job.id), job.agentSession)
@@ -449,6 +479,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// meeting recordings, and job updates are not spoken to an empty room.
     private func makeVoiceMode() -> VoiceModeController {
         let desk = FrontDesk()
+        desk.spawner = platform.processes
         desk.currentAgent = { [weak self] in
             guard let self else { return nil }
             let configured = config.config.voiceMode.model
@@ -457,6 +488,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         desk.onThreadSaved = { [weak self] thread in self?.chat.threadSaved(thread) }
         desk.onConversationEnded = { [weak self] thread in self?.memory?.left(thread: thread) }
         let controller = VoiceModeController(frontDesk: desk)
+        controller.voiceKey = voiceKey
         controller.petFrame = { [weak self] in self?.pet.panel.frame ?? .zero }
         controller.quietReason = { [weak self] in
             guard let self else { return nil }
@@ -561,12 +593,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if index.count(.note) == 0, !store.files().isEmpty { store.reindexAll() }
         ThreadStore.didSave = { [index] thread in index.indexThread(thread) }
         index.backfill(threads: { ThreadStore.recent(limit: .max, automationLimit: 0) }, meetings: Paths.meetings)
-        let reflector = MemoryReflector(store: store, index: index)
+        let reflector = MemoryReflector(store: store, index: index, spawner: platform.processes)
         reflector.automatic = !TestControl.isEnabled
         reflector.onChange = { [weak self] in self?.settingsModel.memory?.reload() }
         reflector.seedIfNeeded()
         memory = reflector
-        settingsModel.memory = MemorySettingsModel(store: store, index: index, reflector: reflector)
+        let memorySettings = MemorySettingsModel(store: store, index: index, reflector: reflector)
+        memorySettings.spawner = platform.processes
+        settingsModel.memory = memorySettings
         chat.onTurnEnded = { [weak reflector] id in reflector?.turnEnded(thread: id) }
         chat.onThreadLeft = { [weak reflector] id in reflector?.left(thread: id) }
         timers.append(Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak reflector] _ in

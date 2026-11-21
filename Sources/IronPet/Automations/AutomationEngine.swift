@@ -20,6 +20,8 @@ final class AutomationEngine {
         /// The user is mid-conversation with Ghost or an agent is waiting on them.
         var isBusy: () -> Bool = { false }
         var calendar: Calendar = .autoupdatingCurrent
+        /// Starts poll commands, scripts' `sh` calls and `stream` commands. `AppDelegate` passes the Mac one.
+        var spawner: ProcessSpawner = UnsupportedProcessSpawner()
     }
 
     struct Timing {
@@ -55,11 +57,13 @@ final class AutomationEngine {
     /// What a script asked for. `firstRun` is true when the script had no saved state, so an alert can be recorded quietly.
     var onActions: (_ automation: Automation, _ actions: [[String: Any]], _ firstRun: Bool) -> Void = { _, _, _ in }
     /// Runs a script automation. Replaced in tests to avoid shell and network.
-    var runScript: (_ script: String, _ state: String?) async throws -> AutomationScript.Output = { script, state in
-        try await AutomationScript.run(script: script, state: state)
+    lazy var runScript: (_ script: String, _ state: String?) async throws -> AutomationScript.Output = { [weak self] script, state in
+        try await AutomationScript.run(script: script, state: state, host: .system(spawner: self?.env.spawner ?? UnsupportedProcessSpawner()))
     }
     /// Runs a poll command. Replaced in tests.
-    var runPoll: (Automation) async -> CommandResult = AutomationEngine.defaultRunPoll
+    lazy var runPoll: (Automation) async -> CommandResult = { [weak self] automation in
+        await AutomationEngine.defaultRunPoll(automation, spawner: self?.env.spawner ?? UnsupportedProcessSpawner())
+    }
     var state = AutomationState() {
         didSet { wireStreamState() }
     }
@@ -78,6 +82,7 @@ final class AutomationEngine {
         self.env = env
         lastTick = env.now()
         streams.now = { [env] in env.now() }
+        streams.spawner = env.spawner
         streams.fire = { [weak self] automation, item, count, done in
             self?.onFire(Fire(automations: [automation], item: item, agentWorking: self?.env.isAgentWorking() ?? false, count: count, finished: done))
                 ?? done()
@@ -416,13 +421,13 @@ final class AutomationEngine {
     }
 
     /// Runs the source: a shell command or an HTTP GET (through curl, with `${ENV}` headers filled in).
-    static func defaultRunPoll(_ a: Automation) async -> CommandResult {
+    static func defaultRunPoll(_ a: Automation, spawner: ProcessSpawner) async -> CommandResult {
         guard let source = a.trigger.source else { return CommandResult(spawnError: "no source") }
         let timeout = source.timeoutSeconds ?? 30
         let env = CommandRunner.defaultEnvironment()
         switch source.type {
         case "shell":
-            return await CommandRunner.run(shell: source.command ?? "", timeout: timeout, environment: env)
+            return await CommandRunner.run(shell: source.command ?? "", spawner: spawner, timeout: timeout, environment: env)
         case "http":
             // Headers go in through stdin so a token never shows in the process list.
             var headers = ""
@@ -432,7 +437,8 @@ final class AutomationEngine {
                 headers += "\(name): \(resolved)\n"
             }
             let args = ["-sS", "-L", "--max-time", String(Int(timeout)), "--fail-with-body", "-H", "@-", "--", source.url ?? ""]
-            return await CommandRunner.run(executable: "/usr/bin/curl", arguments: args, timeout: timeout + 5, environment: env, stdin: Data(headers.utf8))
+            return await CommandRunner.run(executable: "/usr/bin/curl", arguments: args, spawner: spawner, timeout: timeout + 5, environment: env,
+                                           stdin: Data(headers.utf8))
         default:
             return CommandResult(spawnError: "unsupported source")
         }

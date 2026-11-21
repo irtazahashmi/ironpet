@@ -1,5 +1,4 @@
 import Foundation
-import Security
 
 struct TelegramUser: Codable, Equatable {
     let id: Int64
@@ -314,33 +313,17 @@ final class MemoryTokenStore: TelegramTokenStore, @unchecked Sendable {
     }
 }
 
-/// The bot token, kept in the Keychain (service `ironpet.telegram`) and never written to `~/.ironpet`.
+/// The bot token, kept in the secret store (service `ironpet.telegram`) and never written to `~/.ironpet`.
 final class TelegramToken: TelegramTokenStore, @unchecked Sendable {
-    static let shared: TelegramTokenStore = TelegramAPI.testMode ? MemoryTokenStore() : TelegramToken()
+    static let service = "ironpet.telegram"
+    static let account = "bot-token"
 
-    private let service = "ironpet.telegram"
-    private let account = "bot-token"
+    private let secrets: SecretStore
 
-    private var match: [String: Any] {
-        [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
-    }
+    init(secrets: SecretStore) { self.secrets = secrets }
 
-    func load() -> String? {
-        var query = match
-        query[kSecReturnData as String] = true
-        var result: AnyObject?
-        guard SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data else { return nil }
-        let token = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        return token.isEmpty ? nil : token
-    }
+    func load() -> String? { secrets.text(service: Self.service, account: Self.account) }
 
     /// Stores `token`, replacing any earlier one. An empty token removes it.
-    func save(_ token: String) -> Bool {
-        let trimmed = token.trimmingCharacters(in: .whitespacesAndNewlines)
-        SecItemDelete(match as CFDictionary)
-        guard !trimmed.isEmpty else { return true }
-        var item = match
-        item[kSecValueData as String] = Data(trimmed.utf8)
-        return SecItemAdd(item as CFDictionary, nil) == errSecSuccess
-    }
+    func save(_ token: String) -> Bool { secrets.save(text: token, service: Self.service, account: Self.account) }
 }

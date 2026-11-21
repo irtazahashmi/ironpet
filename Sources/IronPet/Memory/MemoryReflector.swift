@@ -76,10 +76,11 @@ final class MemoryReflector {
     /// The last answer of each automation that was queued, so a watcher that says the same thing every run is read once.
     private var lastAnswers: [String: String] = [:]
 
-    init(store: MemoryStore, index: MemoryIndex, runner: @escaping Runner = MemoryReflector.agentRunner) {
+    /// `spawner` starts the default runner's agent. A `runner` passed in does not use it.
+    init(store: MemoryStore, index: MemoryIndex, spawner: ProcessSpawner = UnsupportedProcessSpawner(), runner: Runner? = nil) {
         self.store = store
         self.index = index
-        self.runner = runner
+        self.runner = runner ?? { prompt, reader in await MemoryReflector.agentRunner(prompt: prompt, reader: reader, spawner: spawner) }
     }
 
     // MARK: Triggers
@@ -420,13 +421,13 @@ final class MemoryReflector {
 
     /// The app's runner: the agent from Settings on a restricted backend in `~/.ironpet/scratch/memory`, every permission refused, with
     /// a three-minute limit. Its turns count as Memory in the Usage tab.
-    static func agentRunner(prompt: String, reader: Reader) async -> Result<String, RunError> {
+    static func agentRunner(prompt: String, reader: Reader, spawner: ProcessSpawner) async -> Result<String, RunError> {
         guard let agent = AgentCatalog.agent(id: reader.agent) else {
             return .failure(RunError("the agent \"\(reader.agent)\" is not available. Pick another in Settings → Memory."))
         }
         let workspace = Paths.root.appendingPathComponent("scratch/memory")
         try? FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: spawner)
         backend.restricted = true
         backend.usageFeature = .memory
         backend.onPermission = { _, respond in respond(.deny("Ghost's memory pass only answers")) }

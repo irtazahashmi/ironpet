@@ -12,7 +12,7 @@ The design is `SPEC.md`. Swift 5.10 tools (Swift 5 language mode), macOS 14 mini
 | `Pet/` | The pet window and sprite atlas (`PetController`, `PetView`, `Atlas`, `PetMood`), speech bubbles, the ironpet window (`IronPetPanel`: chat, agents, alerts, tasks, transcripts, actions, automations and Today in one sidebar window) |
 | `Brief/` | The morning brief and recap: `BriefBuilder` (pure, local data only), `BriefSource` and `BriefModel` (gather from the stores, feed the Today page) |
 | `Jobs/` | Background jobs (`JobService`, `Job`, migration 500), folder matching (`ProjectResolver`), and the `jobs_*`, `status_*` and `projects_resolve` tools (`AssistantMCP`, `AssistantContext`) |
-| `Sessions/` | Watched agent sessions: hook event mapping to status (`SessionStore`, `AgentSession`), process ancestry (`ProcessTree`) |
+| `Sessions/` | Watched agent sessions: hook event mapping to status (`SessionStore`, `AgentSession`), process ancestry (`AppInfo`, Mac adapter `Platform/Mac/MacAppInfo`) |
 | `Hooks/` | The hook shell script (`HookScript`) and merging it into each agent's config, with backups and uninstall (`HookInstaller`) |
 | `Bridge/` | Local HTTP server on `127.0.0.1` with the token (`EventServer`), the status snapshot it serves |
 | `Chat/` | The chat view, sessions, saved threads, markdown, screenshots and image/file intake, Wispr Flow bridge, workspace detection, MCP sign-in sharing |
@@ -23,6 +23,7 @@ The design is `SPEC.md`. Swift 5.10 tools (Swift 5 language mode), macOS 14 mini
 | `Meeting/` | Meeting transcripts: call detection, track sources (mic and ScreenCaptureKit), recorder and chunker, transcript assembly, summary, panel |
 | `Reminders/` | Break reminders scheduler |
 | `Activity/` | The local activity log in `ironpet.db` (`ActivityEvent`, `ActivityLog`), the digest built from it (`ActivityDigest`), away detection and the welcome back summary (`AwayTracker`, `WelcomeBack`) |
+| `Platform/` | One protocol per platform capability (`SecretStore`, `ProcessSpawner`, `LogSink`, `AppInfo`, `WallClock`), their `Unsupported` and portable adapters, `CapabilityError` and the `Platform` registry `AppDelegate` builds. `Platform/Mac/` holds the Keychain, `os.Logger` and `proc_pidpath` adapters. No `SecItem*`, `posix_spawn` or `proc_pidpath` outside them (`AdapterBoundaryTests`) |
 | `Support/` | `Config` and `ConfigStore`, `Paths` (everything under `~/.ironpet`) |
 | `Tests/IronPetTests/` | XCTest, one file per area (`ApprovalRulesTests`, `HookInstallerTests`, `ConfigTests`, `ACPClientTests`, `MeetingTests`, …) |
 

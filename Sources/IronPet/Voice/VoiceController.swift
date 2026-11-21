@@ -25,9 +25,11 @@ final class VoiceController: ObservableObject {
     var onTranscript: ((String) -> Void)?
     /// A message for the chat, and whether Retry makes sense for it.
     var onFailure: ((String, Bool) -> Void)?
-    var makeTranscriber: () -> Transcriber = {
+    /// The voice server's key. `AppDelegate` sets the Mac one.
+    var voiceKey = VoiceKey.unsupported
+    lazy var makeTranscriber: () -> Transcriber = { [weak self] in
         let voice = ConfigStore.shared.config.voice
-        return Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: VoiceKey.load(), usageFeature: .voiceTranscription)
+        return Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: self?.voiceKey.load(), usageFeature: .voiceTranscription)
     }
     var isEnabled: () -> Bool = { ConfigStore.shared.config.voice.enabled }
 

@@ -20,24 +20,24 @@ final class EditorTests: XCTestCase {
         let parents: [Int32: Int32] = [300: 200, 200: 100, 100: 1]
         let paths: [Int32: String] = [300: "/usr/local/bin/claude", 200: "/usr/local/bin/node",
                                       100: "/Applications/Band.app/Contents/MacOS/Band"]
-        let id = ProcessTree.owningBundleID(pid: 300, parent: { parents[$0] }, executablePath: { paths[$0] },
+        let id = MacAppInfo.owningBundleID(pid: 300, parent: { parents[$0] }, executablePath: { paths[$0] },
                                             bundleID: { $0 == "/Applications/Band.app" ? "app.getband.agent" : nil })
         XCTAssertEqual(id, "app.getband.agent")
     }
 
     func testProcessWalkUsesOutermostApp() {
-        XCTAssertEqual(ProcessTree.appBundlePath(in: "/Applications/Band.app/Contents/Frameworks/Band Helper.app/Contents/MacOS/x"),
+        XCTAssertEqual(MacAppInfo.appBundlePath(in: "/Applications/Band.app/Contents/Frameworks/Band Helper.app/Contents/MacOS/x"),
                        "/Applications/Band.app")
     }
 
     func testProcessWalkWithoutAppIsNil() {
         let parents: [Int32: Int32] = [30: 20, 20: 1]
-        XCTAssertNil(ProcessTree.owningBundleID(pid: 30, parent: { parents[$0] }, executablePath: { _ in "/bin/zsh" },
+        XCTAssertNil(MacAppInfo.owningBundleID(pid: 30, parent: { parents[$0] }, executablePath: { _ in "/bin/zsh" },
                                                 bundleID: { _ in "x" }))
     }
 
     func testProcessWalkForExitedProcessIsNil() {
-        XCTAssertNil(ProcessTree.owningBundleID(pid: 999999, parent: { _ in nil }, executablePath: { _ in nil }))
+        XCTAssertNil(MacAppInfo.owningBundleID(pid: 999999, parent: { _ in nil }, executablePath: { _ in nil }))
     }
 
     func testAutoUsesOwningAppFromTable() {

@@ -17,23 +17,18 @@ struct ACPRuntime {
     }
 
     /// The user's `node` if it is new enough, else a Bun downloaded earlier, else nil.
-    static func resolve(adapter: String, path: String = LoginShell.path, bun: URL = BunRuntime.executable) -> ACPRuntime? {
-        if let node = LoginShell.find("node", path: path), let major = major(of: node), major >= minimumNodeMajor(adapter: adapter) {
+    static func resolve(adapter: String, path: String = LoginShell.path, bun: URL = BunRuntime.executable,
+                        spawner: ProcessSpawner) -> ACPRuntime? {
+        if let node = LoginShell.find("node", path: path), let major = major(of: node, spawner: spawner), major >= minimumNodeMajor(adapter: adapter) {
             return ACPRuntime(kind: .node, executable: node)
         }
         if FileManager.default.isExecutableFile(atPath: bun.path) { return ACPRuntime(kind: .bun, executable: bun) }
         return nil
     }
 
-    private static func major(of node: URL) -> Int? {
-        let process = Process()
-        process.executableURL = node
-        process.arguments = ["--version"]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        guard (try? process.run()) != nil else { return nil }
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    private static func major(of node: URL, spawner: ProcessSpawner) -> Int? {
+        guard let process = try? spawner.spawn(ProcessSpec(executable: node.path, arguments: ["--version"], error: .null)) else { return nil }
+        let data = process.output?.readDataToEndOfFile() ?? Data()
         process.waitUntilExit()
         return nodeMajor(fromVersionOutput: String(decoding: data, as: UTF8.self))
     }
@@ -101,16 +96,16 @@ enum BunRuntime {
 
     /// Downloads Bun, checks it against the release's `SHASUMS256.txt`, then unpacks it. Nothing is written to `directory`
     /// unless the checksum matches.
-    static func install(directory: URL = BunRuntime.directory, asset: String = BunRuntime.assetName,
+    static func install(spawner: ProcessSpawner, directory: URL = BunRuntime.directory, asset: String = BunRuntime.assetName,
                         fetch: (URL) async throws -> Data = { try await URLSession.shared.data(from: $0).0 }) async throws {
         let shasums = String(decoding: try await fetch(releaseURL("SHASUMS256.txt")), as: UTF8.self)
         guard let expected = expectedChecksum(in: shasums, file: asset) else { throw Failure.checksumMissing(asset) }
         let archive = try await fetch(releaseURL(asset))
         guard sha256(archive) == expected else { throw Failure.checksumMismatch }
-        try unpack(archive, asset: asset, into: directory)
+        try unpack(archive, asset: asset, into: directory, spawner: spawner)
     }
 
-    private static func unpack(_ archive: Data, asset: String, into directory: URL) throws {
+    private static func unpack(_ archive: Data, asset: String, into directory: URL, spawner: ProcessSpawner) throws {
         let fm = FileManager.default
         let work = fm.temporaryDirectory.appendingPathComponent("ironpet-bun-\(UUID().uuidString)")
         try fm.createDirectory(at: work, withIntermediateDirectories: true)
@@ -118,12 +113,12 @@ enum BunRuntime {
         let zip = work.appendingPathComponent(asset)
         try archive.write(to: zip)
         let unpacked = work.appendingPathComponent("out")
-        try run("/usr/bin/ditto", ["-x", "-k", zip.path, unpacked.path])
+        try run("/usr/bin/ditto", ["-x", "-k", zip.path, unpacked.path], spawner: spawner)
         let folder = asset.replacingOccurrences(of: ".zip", with: "")
         let bun = unpacked.appendingPathComponent(folder).appendingPathComponent("bun")
         guard fm.isExecutableFile(atPath: bun.path) else { throw Failure.unpackFailed("the archive has no bun executable") }
         // The checksum has passed, so the download is the release Oven published. Clear the quarantine flag.
-        _ = try? run("/usr/bin/xattr", ["-d", "com.apple.quarantine", bun.path])
+        _ = try? run("/usr/bin/xattr", ["-d", "com.apple.quarantine", bun.path], spawner: spawner)
         try fm.createDirectory(at: directory, withIntermediateDirectories: true)
         let target = directory.appendingPathComponent("bun")
         try? fm.removeItem(at: target)
@@ -132,15 +127,9 @@ enum BunRuntime {
     }
 
     @discardableResult
-    private static func run(_ tool: String, _ args: [String]) throws -> String {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: tool)
-        process.arguments = args
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = pipe
-        try process.run()
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+    private static func run(_ tool: String, _ args: [String], spawner: ProcessSpawner) throws -> String {
+        let process = try spawner.spawn(ProcessSpec(executable: tool, arguments: args, error: .mergedIntoOutput))
+        let data = process.output?.readDataToEndOfFile() ?? Data()
         process.waitUntilExit()
         let output = String(decoding: data, as: UTF8.self)
         guard process.terminationStatus == 0 else { throw Failure.unpackFailed(output.trimmingCharacters(in: .whitespacesAndNewlines)) }

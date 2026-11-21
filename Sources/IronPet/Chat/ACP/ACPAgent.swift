@@ -35,14 +35,43 @@ enum AgentCatalog {
 
 /// The PATH of the user's login shell. A Finder-launched app has a minimal PATH that misses Homebrew and nvm.
 enum LoginShell {
-    static let path: String = resolve()
+    private static let condition = NSCondition()
+    nonisolated(unsafe) private static var resolved: String? // Read and written only while holding `condition`.
+    nonisolated(unsafe) private static var resolving = false // Same: only while holding `condition`.
 
-    static func resolve() -> String {
+    /// The login-shell PATH once `prepare(spawner:)` has found it. Until `prepare` was called it is the app's PATH plus the usual
+    /// folders, without running a shell. While `prepare` is still working, a read waits for it, as the first read always did.
+    static var path: String {
+        condition.lock()
+        defer { condition.unlock() }
+        while resolving { condition.wait() }
+        return resolved ?? resolve(spawner: nil)
+    }
+
+    /// Runs the user's login shell to read its PATH, in the background, and stores the result. Call it once at launch. Reads of
+    /// `path` made meanwhile wait for it.
+    static func prepare(spawner: ProcessSpawner) {
+        condition.lock()
+        guard resolved == nil, !resolving else { return condition.unlock() }
+        resolving = true
+        condition.unlock()
+        DispatchQueue.global().async {
+            let value = resolve(spawner: spawner)
+            condition.lock()
+            resolved = value
+            resolving = false
+            condition.broadcast()
+            condition.unlock()
+        }
+    }
+
+    /// The PATH of the user's login shell when `spawner` can run it, else the app's PATH and the usual folders.
+    static func resolve(spawner: ProcessSpawner?) -> String {
         if let forced = ProcessInfo.processInfo.environment["IRONPET_LOGIN_PATH"] { return forced }
         let home = FileManager.default.homeDirectoryForCurrentUser.path
         let fallback = ["\(home)/.local/bin", "/opt/homebrew/bin", "/usr/local/bin", "\(home)/.claude/local", "/usr/bin", "/bin"]
         var parts: [String] = []
-        if let output = run(shell: ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh") {
+        if let spawner, let output = run(shell: ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh", spawner: spawner) {
             parts = parse(output)
         }
         parts += (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":").map(String.init)
@@ -58,19 +87,13 @@ enum LoginShell {
         return output[start.upperBound..<end.lowerBound].split(separator: ":").map(String.init)
     }
 
-    private static func run(shell: String) -> String? {
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: shell)
-        process.arguments = ["-ilc", #"printf '__IRONPET_PATH_BEGIN__%s__IRONPET_PATH_END__' "$PATH""#]
-        let pipe = Pipe()
-        process.standardOutput = pipe
-        process.standardError = FileHandle.nullDevice
-        process.standardInput = FileHandle.nullDevice
-        guard (try? process.run()) != nil else { return nil }
+    private static func run(shell: String, spawner: ProcessSpawner) -> String? {
+        let args = ["-ilc", #"printf '__IRONPET_PATH_BEGIN__%s__IRONPET_PATH_END__' "$PATH""#]
+        guard let process = try? spawner.spawn(ProcessSpec(executable: shell, arguments: args, error: .null)) else { return nil }
         // A slow rc file must not stall the app: give the shell five seconds.
         let killer = DispatchWorkItem { if process.isRunning { process.terminate() } }
         DispatchQueue.global().asyncAfter(deadline: .now() + 5, execute: killer)
-        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let data = process.output?.readDataToEndOfFile() ?? Data()
         process.waitUntilExit()
         killer.cancel()
         return String(decoding: data, as: UTF8.self)
