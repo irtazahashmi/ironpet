@@ -36,7 +36,7 @@ public final class IronPetClient: @unchecked Sendable {
     public let endpoint: ServerEndpoint
     public let token: String?
     let session: URLSession
-    private let decoder = WireJSON.makeDecoder()
+    let decoder = WireJSON.makeDecoder()
     private let encoder = WireJSON.makeEncoder()
 
     public init(endpoint: ServerEndpoint, token: String? = nil) {
@@ -74,7 +74,7 @@ public final class IronPetClient: @unchecked Sendable {
         return request
     }
 
-    private func perform(_ request: URLRequest) async throws -> Data {
+    func perform(_ request: URLRequest) async throws -> Data {
         let data: Data, response: URLResponse
         do { (data, response) = try await session.data(for: request) } catch {
             throw ClientError.transport(error.localizedDescription)
@@ -88,11 +88,11 @@ public final class IronPetClient: @unchecked Sendable {
         return data
     }
 
-    private func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
+    func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
         do { return try decoder.decode(type, from: data) } catch { throw ClientError.invalidResponse }
     }
 
-    private func get<T: Decodable>(_ type: T.Type, _ path: String, query: [URLQueryItem] = []) async throws -> T {
+    func get<T: Decodable>(_ type: T.Type, _ path: String, query: [URLQueryItem] = []) async throws -> T {
         try decode(type, from: try await perform(request("GET", path, query: query)))
     }
 
@@ -187,12 +187,12 @@ public final class IronPetClient: @unchecked Sendable {
 
     // MARK: Chat
 
-    private func post<T: Decodable>(_ type: T.Type, _ path: String, json: [String: Any] = [:]) async throws -> T {
+    func post<T: Decodable>(_ type: T.Type, _ path: String, json: [String: Any] = [:]) async throws -> T {
         let data = try JSONSerialization.data(withJSONObject: json)
         return try decode(type, from: try await perform(request("POST", path, body: data)))
     }
 
-    private func post(_ path: String, json: [String: Any] = [:]) async throws {
+    func post(_ path: String, json: [String: Any] = [:]) async throws {
         _ = try await perform(request("POST", path, body: try JSONSerialization.data(withJSONObject: json)))
     }
 

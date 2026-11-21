@@ -89,7 +89,7 @@ final class IronPetRemoteUITests: XCTestCase {
         XCTAssertTrue(alertRow.exists, "Today lists the brief")
         attach("today")
         alertRow.tap()
-        XCTAssertTrue(app.buttons["dismiss-al-ci"].waitForExistence(timeout: 10), "an alert item opens the Alerts tab")
+        XCTAssertTrue(app.buttons["dismiss-al-ci"].waitForExistence(timeout: 10), "an alert item opens Alerts behind More")
         attach("alerts")
         app.buttons["dismiss-al-ci"].tap()
         let gone = NSPredicate { _, _ in self.server.alerts.map(\.id) == ["al-pr"] }
@@ -168,7 +168,8 @@ final class IronPetRemoteUITests: XCTestCase {
         attach("real-pet")
         app.buttons["trick-Wave"].tap()
         sleep(3)
-        openTab("Alerts")
+        openTab("More")
+        app.buttons["more-alerts"].tap()
         let dismiss = app.buttons["dismiss-s10-alert"]
         XCTAssertTrue(dismiss.waitForExistence(timeout: 30), "the alert made on the Mac is listed")
         attach("real-alerts")

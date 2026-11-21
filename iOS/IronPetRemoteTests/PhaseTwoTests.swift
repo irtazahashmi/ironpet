@@ -219,8 +219,11 @@ final class AgentsAlertsTodayTests: XCTestCase {
     func testTodayTargetsOpenTheRightTabAndTheKindSwitchesTheList() async throws {
         XCTAssertEqual(AppTab.tab(for: TodayTarget(type: .task, id: "t")), .tasks)
         XCTAssertEqual(AppTab.tab(for: TodayTarget(type: .session, id: "s")), .agents)
-        XCTAssertEqual(AppTab.tab(for: TodayTarget(type: .alert, id: "a")), .alerts)
-        XCTAssertNil(AppTab.tab(for: TodayTarget(type: .meeting, id: "m")), "transcripts stay on the Mac")
+        XCTAssertEqual(AppTab.tab(for: TodayTarget(type: .alert, id: "a")), .more)
+        XCTAssertEqual(AppTab.tab(for: TodayTarget(type: .meeting, id: "m")), .more)
+        XCTAssertEqual(MoreDestination.destination(for: TodayTarget(type: .alert, id: "a")), .alerts)
+        XCTAssertEqual(MoreDestination.destination(for: TodayTarget(type: .meeting, id: "m")), .meetings)
+        XCTAssertNil(MoreDestination.destination(for: TodayTarget(type: .task, id: "t")))
         let client = client()
         let model = TodayModel(client: client, events: events(client), onUnauthorized: {})
         await model.reload()

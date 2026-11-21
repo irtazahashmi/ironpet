@@ -49,10 +49,14 @@ final class RemoteServerHarness {
 
     /// `interfaces` is what the controller sees as the Mac's addresses. Empty by default, so a controller test binds loopback only.
     init(eventCapacity: Int = 500, interfaces: [InterfaceAddress] = [], sessions: SessionStore? = nil, signals: SignalStore? = nil,
-         chat: ChatSession? = nil, petAssets: PetAssets? = nil, uploads: URL? = nil) {
+         chat: ChatSession? = nil, petAssets: PetAssets? = nil, uploads: URL? = nil, automations: [Automation] = [],
+         meeting: MeetingRecorder? = nil, meetingLibrary: MeetingLibrary? = nil, config: ConfigStore? = nil, usage: UsageStore? = nil,
+         configureAutomations: ((AutomationService) -> Void)? = nil) {
         events = APIEventBus(capacity: eventCapacity)
         database = APITestSupport.memoryDatabase()
-        api = APITestSupport.makeAPI(events: events, signals: signals, bubbles: bubbles, sessions: sessions, chat: chat, petAssets: petAssets)
+        api = APITestSupport.makeAPI(events: events, automations: automations, signals: signals, bubbles: bubbles, sessions: sessions, chat: chat,
+                                     meeting: meeting, meetingLibrary: meetingLibrary, config: config, petAssets: petAssets, usage: usage,
+                                     configureAutomations: configureAutomations)
         let clock = clock
         controller = RemoteController(api: api, settings: api.settings, database: database, bubbles: bubbles, activity: nil,
                                       storage: MemoryKeyStorage(), now: { clock.now },

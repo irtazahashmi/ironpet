@@ -73,17 +73,29 @@ class SocketModel {
     }
 }
 
-/// The tabs of the app, and where a Today item opens.
+/// The tabs of the app. Alerts, Automations, Meetings and Settings sit behind More.
 enum AppTab: Hashable {
-    case pet, chat, tasks, agents, alerts
+    case pet, chat, tasks, agents, more
 
-    /// A task opens Tasks, a session Agents, an alert Alerts. A meeting opens the Mac's transcripts, which the phone has no screen for yet.
+    /// A task opens Tasks, a session Agents. An alert or a meeting opens More, on `MoreDestination.destination(for:)`.
     static func tab(for target: TodayTarget) -> AppTab? {
         switch target.type {
         case .task: return .tasks
         case .session: return .agents
+        case .alert, .meeting: return .more
+        }
+    }
+}
+
+/// The screens behind the More tab.
+enum MoreDestination: Hashable {
+    case alerts, automations, meetings, settings
+
+    static func destination(for target: TodayTarget) -> MoreDestination? {
+        switch target.type {
         case .alert: return .alerts
-        case .meeting: return nil
+        case .meeting: return .meetings
+        case .task, .session: return nil
         }
     }
 }

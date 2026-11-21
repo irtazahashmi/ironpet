@@ -42,4 +42,27 @@ public enum APIPath {
     public static func chatFormSubmit(_ id: String) -> String { "/v1/chat/forms/\(id)/submit" }
     public static func chatFormSkip(_ id: String) -> String { "/v1/chat/forms/\(id)/skip" }
     public static let uploads = "/v1/uploads"
+
+    public static let automations = "/v1/automations"
+    public static func automation(_ id: String) -> String { "/v1/automations/\(id)" }
+    public static func automationHistory(_ id: String) -> String { "/v1/automations/\(id)/history" }
+    public static func automationLog(_ id: String) -> String { "/v1/automations/\(id)/log" }
+    public static func pauseAutomation(_ id: String) -> String { "/v1/automations/\(id)/pause" }
+    public static func resumeAutomation(_ id: String) -> String { "/v1/automations/\(id)/resume" }
+    public static func runAutomation(_ id: String) -> String { "/v1/automations/\(id)/run-now" }
+    public static let requestAutomation = "/v1/automations/request"
+
+    public static let meetings = "/v1/meetings"
+    public static let meetingState = "/v1/meetings/state"
+    public static let stopMeeting = "/v1/meetings/stop"
+    public static func meeting(_ id: String) -> String { "/v1/meetings/\(id)" }
+    public static func meetingSummary(_ id: String) -> String { "/v1/meetings/\(id)/summary" }
+    public static func meetingTranscript(_ id: String) -> String { "/v1/meetings/\(id)/transcript" }
+    public static func regenerateMeeting(_ id: String) -> String { "/v1/meetings/\(id)/regenerate" }
+    public static func askAboutMeeting(_ id: String) -> String { "/v1/meetings/\(id)/ask" }
+
+    public static let settings = "/v1/settings"
+    public static let settingsPets = "/v1/settings/pets"
+    public static let settingsPet = "/v1/settings/pet"
+    public static let usage = "/v1/usage"
 }
