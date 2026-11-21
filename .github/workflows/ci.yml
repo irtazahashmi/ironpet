@@ -13,7 +13,105 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # Which expensive jobs this change needs. Push to main always runs everything.
+  # Docs-only PRs (README, SPEC, SECURITY, …) skip Mac and iOS runners; `build` still
+  # reports success so branch protection stays green.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mac: ${{ steps.filter.outputs.mac }}
+      ios: ${{ steps.filter.outputs.ios }}
+      scripts: ${{ steps.filter.outputs.scripts }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - id: filter
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "push" ]; then
+            echo "mac=true" >> "$GITHUB_OUTPUT"
+            echo "ios=true" >> "$GITHUB_OUTPUT"
+            echo "scripts=true" >> "$GITHUB_OUTPUT"
+            echo "push to main: run every job"
+            exit 0
+          fi
+
+          base="${{ github.event.pull_request.base.sha }}"
+          head="${{ github.event.pull_request.head.sha }}"
+          mapfile -t files < <(git diff --name-only --diff-filter=ACDMR "$base...$head")
+          printf 'changed (%d):\n' "${#files[@]}"
+          printf '  %s\n' "${files[@]}"
+
+          mac=false
+          ios=false
+          scripts=false
+          unknown=false
+
+          is_docs() {
+            case "$1" in
+              *.md|LICENSE|docs|docs/*|.agents|.agents/*|.cursor|.cursor/*) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+
+          is_mac() {
+            case "$1" in
+              Sources/*|Tests/*|Package.swift|Package.resolved|Resources/*|tools/*|sidecar/*|Vendor/*) return 0 ;;
+              scripts/bundle.sh|scripts/check_adapters.sh|scripts/gen_agent_catalog.py|scripts/gen_skills.py|scripts/screenshots.sh|scripts/make_signing_identity.sh) return 0 ;;
+              skills|skills/*) return 0 ;; # compiled into the app
+              .github/*) return 0 ;;       # workflow changes must re-run Mac gates
+              *) return 1 ;;
+            esac
+          }
+
+          is_ios() {
+            case "$1" in
+              iOS/*|Sources/IronPetKit/*|Tests/IronPetKitTests/*) return 0 ;;
+              Package.swift|Package.resolved|.github/*) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+
+          is_scripts() {
+            case "$1" in
+              scripts/*|.github/*) return 0 ;;
+              *) return 1 ;;
+            esac
+          }
+
+          for f in "${files[@]}"; do
+            if is_mac "$f"; then mac=true; fi
+            if is_ios "$f"; then ios=true; fi
+            if is_scripts "$f"; then scripts=true; fi
+            if ! is_docs "$f" && ! is_mac "$f" && ! is_ios "$f" && ! is_scripts "$f"; then
+              unknown=true
+            fi
+          done
+
+          # Unclassified paths (e.g. a new top-level file): run everything rather than skip.
+          if [ "$unknown" = true ]; then
+            mac=true
+            ios=true
+            scripts=true
+            echo "unclassified path present: run every job"
+          fi
+
+          # Mac bundle already runs the script syntax checks.
+          if [ "$mac" = true ]; then
+            scripts=false
+          fi
+
+          echo "mac=$mac" >> "$GITHUB_OUTPUT"
+          echo "ios=$ios" >> "$GITHUB_OUTPUT"
+          echo "scripts=$scripts" >> "$GITHUB_OUTPUT"
+          echo "filter: mac=$mac ios=$ios scripts=$scripts"
+
   test:
+    needs: changes
+    if: needs.changes.outputs.mac == 'true'
     runs-on: macos-15
     timeout-minutes: 20
     steps:
@@ -59,6 +157,8 @@ jobs:
           done
 
   bundle:
+    needs: changes
+    if: needs.changes.outputs.mac == 'true'
     runs-on: macos-15
     timeout-minutes: 20
     steps:
@@ -97,8 +197,23 @@ jobs:
           for script in scripts/*.sh; do bash -n "$script"; done
           python3 -m py_compile scripts/e2e.py scripts/gen_agent_catalog.py
 
+  # Script syntax only, when scripts/ changed without a Mac rebuild (e.g. e2e.py).
+  scripts:
+    needs: changes
+    if: needs.changes.outputs.scripts == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Check scripts
+        run: |
+          for script in scripts/*.sh; do bash -n "$script"; done
+          python3 -m py_compile scripts/e2e.py scripts/gen_agent_catalog.py
+
   # IronPet Remote for iOS, on a simulator. It is not part of the "build" gate below until it has run green on a GitHub runner.
   ios:
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
     runs-on: macos-15
     timeout-minutes: 30
     steps:
@@ -123,14 +238,37 @@ jobs:
             -destination "platform=iOS Simulator,id=$device" -derivedDataPath "$RUNNER_TEMP/dd" \
             CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= CODE_SIGN_IDENTITY=-
 
-  # Branch protection requires a check named "build"; it passes only when both jobs above do.
+  # Branch protection requires a check named "build". Skipped Mac jobs count as OK for docs-only PRs.
   build:
-    needs: [test, bundle]
+    needs: [changes, test, bundle, scripts]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
-      - name: Tests and bundle passed
+      - name: Required gates passed or correctly skipped
         run: |
-          echo "test: ${{ needs.test.result }}, bundle: ${{ needs.bundle.result }}"
-          test "${{ needs.test.result }}" = success && test "${{ needs.bundle.result }}" = success
+          set -euo pipefail
+          changes_r="${{ needs.changes.result }}"
+          mac="${{ needs.changes.outputs.mac }}"
+          scripts="${{ needs.changes.outputs.scripts }}"
+          test_r="${{ needs.test.result }}"
+          bundle_r="${{ needs.bundle.result }}"
+          scripts_r="${{ needs.scripts.result }}"
+          echo "changes=$changes_r mac=$mac scripts=$scripts"
+          echo "test=$test_r bundle=$bundle_r scripts_job=$scripts_r"
+
+          [ "$changes_r" = success ]
+
+          ok() { [ "$1" = success ] || [ "$1" = skipped ]; }
+
+          if [ "$mac" = true ]; then
+            [ "$test_r" = success ] && [ "$bundle_r" = success ]
+          else
+            ok "$test_r" && ok "$bundle_r"
+          fi
+
+          if [ "$scripts" = true ]; then
+            [ "$scripts_r" = success ]
+          else
+            ok "$scripts_r"
+          fi
