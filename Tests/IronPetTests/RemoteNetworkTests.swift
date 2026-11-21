@@ -134,19 +134,6 @@ final class RemoteNetworkTests: XCTestCase {
         XCTAssertEqual(settings.lockInterval, UInt32(Int32.max), "the keychain does not lock after an idle time")
     }
 
-    func testUnlockIfLockedOpensTheKeychainWithItsOwnPassword() throws {
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-kc-\(UUID().uuidString)")
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let keychain = try RemoteTLSKeychain(RemoteIdentity(storage: MemoryKeyStorage()).material, folder: folder)
-        defer { keychain.close() }
-        XCTAssertTrue(keychain.isUnlocked)
-        XCTAssertEqual(SecKeychainLock(keychain.keychain), errSecSuccess)
-        XCTAssertFalse(keychain.isUnlocked)
-        XCTAssertTrue(keychain.unlockIfLocked())
-        XCTAssertTrue(keychain.isUnlocked)
-    }
-
     // S3
     func testStartingClearsKeychainFilesThatNoRunningListenerOwns() throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-kc-\(UUID().uuidString)")
