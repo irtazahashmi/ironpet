@@ -6,13 +6,14 @@ import XCTest
 final class PasteUITests: XCTestCase {
     var server: MockIronPetServer!
     var app: XCUIApplication!
+    /// Launch in dark mode. Set before `pair()`.
+    var dark = false
 
     override func setUpWithError() throws {
         continueAfterFailure = false
         server = MockIronPetServer()
         try server.start()
         app = XCUIApplication()
-        app.launchArguments = ["--reset-credentials"]
         // The system asks before an app reads a clipboard another app wrote. Allow it if it shows.
         addUIInterruptionMonitor(withDescription: "Allow Paste") { alert in
             for label in ["Allow Paste", "Allow"] where alert.buttons[label].exists { alert.buttons[label].tap(); return true }
@@ -22,11 +23,11 @@ final class PasteUITests: XCTestCase {
 
     override func tearDown() {
         UIPasteboard.general.items = []
-        XCUIDevice.shared.appearance = .light
         server.stop()
     }
 
     private func pair() {
+        app.launchArguments = ["--reset-credentials"] + (dark ? ["--force-dark"] : [])
         app.launch()
         let field = app.textFields["pairing-link-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 10))
@@ -52,10 +53,10 @@ final class PasteUITests: XCTestCase {
         add(shot)
     }
 
-    /// Switches the simulator to light or dark and waits until the app's screenshot is as bright or as dark as that needs, so a shot
-    /// is never taken mid-transition and a switch that does not take effect fails the test.
-    private func setAppearance(_ dark: Bool, file: StaticString = #filePath, line: UInt = #line) {
-        XCUIDevice.shared.appearance = dark ? .dark : .light
+    /// Waits until the app's screenshot is as bright or as dark as the launch appearance needs, so a shot is never taken
+    /// mid-transition and an appearance that did not apply fails the test. The app is launched in dark mode with `--force-dark`,
+    /// because `XCUIDevice.appearance` and the system launch arguments have no effect on every simulator.
+    private func assertAppearance(file: StaticString = #filePath, line: UInt = #line) {
         let end = Date().addingTimeInterval(10)
         var level = Self.brightness(app.screenshot().image)
         while Date() < end, dark ? level > 0.45 : level < 0.55 {
@@ -173,27 +174,25 @@ final class PasteUITests: XCTestCase {
     }
 
     // S9, S13
-    func testComposerStatesInLightAndDark() {
+    func testComposerStatesInLight() { composerStates() }
+    func testComposerStatesInDark() { dark = true; composerStates() }
+
+    private func composerStates() {
+        let name = dark ? "dark" : "light"
         pair()
         openChat()
-        for (style, name) in [(UIUserInterfaceStyle.light, "light"), (.dark, "dark")] {
-            setAppearance(style == .dark)
-            XCTAssertTrue(any("attach-button").waitForExistence(timeout: 10))
-            XCTAssertFalse(app.buttons["send-button"].exists, "send is hidden on an empty draft")
-            XCTAssertFalse(app.buttons["stop-button"].exists)
-            attach("composer-empty-\(name)")
-        }
-        setAppearance(false)
+        assertAppearance()
+        XCTAssertTrue(any("attach-button").waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["send-button"].exists, "send is hidden on an empty draft")
+        XCTAssertFalse(app.buttons["stop-button"].exists)
+        attach("composer-empty-\(name)")
         input.tap()
         input.typeText("a draft")
         XCTAssertTrue(app.buttons["send-button"].waitForExistence(timeout: 5))
         copyImage()
         pasteFromMenu()
         XCTAssertTrue(any("attachment-thumbnail-0").waitForExistence(timeout: 10))
-        attach("composer-draft-thumbnail-light")
-        setAppearance(true)
-        attach("composer-draft-thumbnail-dark")
-        setAppearance(false)
+        attach("composer-draft-thumbnail-\(name)")
         // A turn the Mac started shows the red Stop circle, and it goes when the turn ends.
         var snapshot = server.chat
         snapshot.running = true
@@ -202,10 +201,7 @@ final class PasteUITests: XCTestCase {
         server.publish(RemoteEvent.chatState)
         let stop = app.buttons["stop-button"]
         XCTAssertTrue(stop.waitForExistence(timeout: 10))
-        attach("composer-running-light")
-        setAppearance(true)
-        attach("composer-running-dark")
-        setAppearance(false)
+        attach("composer-running-\(name)")
         stop.tap()
         let stopped = NSPredicate { _, _ in self.server.requests.contains { $0.line == "POST /v1/chat/current/stop" } }
         wait(for: [XCTNSPredicateExpectation(predicate: stopped, object: nil)], timeout: 10)
@@ -213,15 +209,15 @@ final class PasteUITests: XCTestCase {
     }
 
     // S8
-    func testTheChatDrawsTheMacBackgroundInLightAndDark() {
+    func testTheChatDrawsTheMacBackgroundInLight() { chatBackground() }
+    func testTheChatDrawsTheMacBackgroundInDark() { dark = true; chatBackground() }
+
+    private func chatBackground() {
         server.pet = RemotePet(name: "Ghost", mood: "idle", badge: 0, tricks: [], background: "paws")
         pair()
         openChat()
         XCTAssertTrue(any("chat-background-paws").waitForExistence(timeout: 20), "the chat follows the pet resource's background")
-        setAppearance(false)
-        attach("background-paws-light")
-        setAppearance(true)
-        attach("background-paws-dark")
-        setAppearance(false)
+        assertAppearance()
+        attach("background-paws-\(dark ? "dark" : "light")")
     }
 }

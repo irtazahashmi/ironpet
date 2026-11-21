@@ -14,8 +14,17 @@ struct IronPetRemoteApp: App {
         _model = State(initialValue: AppModel(store: store))
     }
 
+    /// UI tests launch in dark mode with `--force-dark`, because the simulator's own appearance switch does not apply on every runner.
+    private static var forcedScheme: ColorScheme? {
+        #if DEBUG
+        ProcessInfo.processInfo.arguments.contains("--force-dark") ? .dark : nil
+        #else
+        nil
+        #endif
+    }
+
     var body: some Scene {
-        WindowGroup { RootView(model: model) }
+        WindowGroup { RootView(model: model).preferredColorScheme(Self.forcedScheme) }
     }
 }
 
