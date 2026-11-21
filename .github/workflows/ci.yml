@@ -92,6 +92,16 @@ jobs:
           codesign --verify --verbose build/IronPet.app
           ./scripts/check_adapters.sh build/IronPet.app
 
+      - name: TEMP size diagnostic (remove before merge)
+        if: always()
+        run: |
+          show() { ls -l "$1" | awk '{print "bytes:", $5}'; size -m "$1" | grep -E "^Segment|Section __text"; }
+          echo "== branch"; show build/IronPet.app/Contents/MacOS/IronPet
+          git fetch --depth=1 origin main
+          git worktree add ../main-wt FETCH_HEAD
+          cd ../main-wt && git log --oneline -1 && swift build -c release
+          echo "== main"; show "$(swift build -c release --show-bin-path)/IronPet"
+
       - name: Check scripts
         run: |
           for script in scripts/*.sh; do bash -n "$script"; done
