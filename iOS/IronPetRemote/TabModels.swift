@@ -162,6 +162,15 @@ final class PetModel: SocketModel {
         guard let fresh = await run({ try await self.client.pet() }) else { return }
         pet = fresh
         if applyMood { setMood(fresh.mood) }
+        publishPresence()
+    }
+
+    /// Keeps the Home Screen widget and Live Activity in sync with the Mac's pet.
+    func publishPresence() {
+        guard let pet else { return }
+        let snapshot = PetSnapshot(name: pet.name, mood: mood, badge: pet.badge)
+        PetSnapshotStore.save(snapshot)
+        PetPresence.update(snapshot)
     }
 
     func reloadBubbles() async {
