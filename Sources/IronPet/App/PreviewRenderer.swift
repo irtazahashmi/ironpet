@@ -403,11 +403,23 @@ enum PreviewRenderer {
                 }
             }
         }
+        // One day with every feature, so the tooltip is rendered at its tallest.
+        for (index, feature) in UsageFeature.allCases.enumerated() where !features.contains(where: { $0.0 == feature }) && feature != .voiceTranscription {
+            store.record(UsageEvent(at: min(now, start.addingTimeInterval(Double(2 + index) * 3600)), feature: feature, model: "demo-model", duration: 5,
+                                    inputTokens: 500, outputTokens: 100, cost: 0.05 * Double(index + 1), currency: "USD"))
+        }
         store.record(UsageEvent(at: now.addingTimeInterval(-60), feature: .voiceTranscription, model: "whisper-1", audioSeconds: 12))
         for (name, days, hourly, cost) in [("usage-cost", 7, false, true), ("usage-requests", 30, false, false), ("usage-today", 1, true, true)] {
             let summary = store.summary(days: days, hourly: hourly, now: now, calendar: calendar)
             render(UsageSettings(range: days, sample: summary, showCost: cost).frame(width: 560, height: 700).panel(),
                    to: dir, name)
+            // Hovering the newest column (rightmost, so the tooltip flips left) and the oldest (leftmost).
+            if !hourly, let newest = summary.days.last?.day, let oldest = summary.days.first?.day {
+                for (suffix, hovered) in [("hover-last", newest), ("hover-first", oldest)] {
+                    render(UsageSettings(range: days, sample: summary, showCost: cost, hoveredDay: hovered).frame(width: 560, height: 700).panel(),
+                           to: dir, "\(name)-\(suffix)")
+                }
+            }
         }
     }
 
