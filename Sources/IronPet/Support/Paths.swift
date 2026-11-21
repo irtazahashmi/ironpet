@@ -15,6 +15,9 @@ enum Paths {
     static let meetings = root.appendingPathComponent("meetings")
     /// Files sent to the Telegram bot, one folder per Telegram chat.
     static let telegramFiles = root.appendingPathComponent("telegram/files")
+    /// Screenshots and attachments the agent may read. Chat passes it to the agent as an extra folder.
+    static let screenshots = root.appendingPathComponent("screenshots")
+    static let attachments = screenshots.appendingPathComponent("attachments")
     static let petDir = root.appendingPathComponent("pet")
     static let cursorHooks = home.appendingPathComponent(".cursor/hooks.json")
     static let claudeSettings = home.appendingPathComponent(".claude/settings.json")

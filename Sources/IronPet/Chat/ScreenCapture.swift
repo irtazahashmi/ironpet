@@ -3,7 +3,7 @@ import AppKit
 /// Screenshots for screen-aware help, via the system `screencapture` tool.
 /// Requires Screen Recording permission; without it macOS returns only the wallpaper.
 enum ScreenCapture {
-    static let directory = Paths.root.appendingPathComponent("screenshots")
+    static let directory = Paths.screenshots
     static let keep = 30
 
     static var hasPermission: Bool { CGPreflightScreenCaptureAccess() }

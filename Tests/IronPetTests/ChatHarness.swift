@@ -13,7 +13,7 @@ final class ChatHarness {
     init(session: ChatSession? = nil, voice: VoiceController? = nil, draftDirectory: URL? = nil) {
         // A turn builds its memory preamble from the memory folder, which a test must never read or write for real.
         TestMemory.isolate()
-        let session = session ?? ChatSession(restore: false)
+        let session = session ?? ChatSession(restore: false, speech: SpeechPlayer())
         self.session = session
         session.events = events
         api = ChatAPI(session: session)
@@ -27,4 +27,9 @@ final class ChatHarness {
         await model.sendNow()
         await model.settle()
     }
+}
+
+extension ChatSession {
+    /// The Mac speech player the test built the session with.
+    var player: SpeechPlayer { speech as! SpeechPlayer }
 }

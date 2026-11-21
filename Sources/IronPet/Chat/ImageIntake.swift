@@ -15,7 +15,7 @@ enum ImageIntake {
     }
 
     static let maxSide = 4096
-    static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "heic", "heif", "gif", "webp", "tiff", "tif", "bmp"]
+    static let imageExtensions = FolderFileIntake.imageExtensions
 
     /// Image files win over their file name (Finder also puts the name on the pasteboard as text).
     /// Any other text wins over image data, so rich text copied from a browser still pastes as text.
@@ -33,7 +33,7 @@ enum ImageIntake {
     }
 
     static func isImageFile(_ url: URL) -> Bool {
-        imageExtensions.contains(url.pathExtension.lowercased())
+        FolderFileIntake.isImageFile(url)
     }
 
     /// Saves what the pasteboard holds as PNG copies. Originals are untouched.
