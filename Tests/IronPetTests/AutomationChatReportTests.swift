@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// Shell and script automations that report to the main chat, and automations that delete themselves (`until`, `done`).
 @MainActor

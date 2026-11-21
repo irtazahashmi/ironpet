@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import UserNotifications
 
 final class Notifier: NSObject, UNUserNotificationCenterDelegate {

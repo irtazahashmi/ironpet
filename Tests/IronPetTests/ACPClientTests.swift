@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// A transport that records what the client writes and lets a test feed it agent output.
 final class FakeTransport: ACPTransport {

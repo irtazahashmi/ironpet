@@ -1,5 +1,6 @@
 import Foundation
 @testable import IronPet
+@testable import IronPetCore
 
 /// A source with a window the test sets, so no capture test touches the real screen.
 final class FakeCaptureSource: CaptureSource {

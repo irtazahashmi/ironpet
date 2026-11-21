@@ -1,4 +1,5 @@
 import Foundation
+import IronPetCore
 
 /// Files attached with the + button or dropped on the chat. Images become PNG copies like a screenshot, through `ImageIntake`;
 /// any other file is copied under `screenshots/attachments/`, which the agent can already read (that folder is passed with

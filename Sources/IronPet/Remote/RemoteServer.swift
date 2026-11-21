@@ -3,6 +3,7 @@ import HTTPTypes
 import Hummingbird
 import HummingbirdCore
 import HummingbirdWebSocket
+import IronPetCore
 import Logging
 import NIOCore
 import NIOTransportServices

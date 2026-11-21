@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class TaskCLIParsingTests: XCTestCase {
     private func request(_ arguments: [String]) throws -> (op: String, args: NSDictionary) {

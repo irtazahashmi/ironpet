@@ -2,6 +2,7 @@ import CoreGraphics
 import XCTest
 import AppKit
 @testable import IronPet
+@testable import IronPetCore
 
 final class CapturePipelineTests: XCTestCase {
     private var store: CaptureStore!

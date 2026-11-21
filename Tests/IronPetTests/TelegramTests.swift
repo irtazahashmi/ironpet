@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// A Bot API stand-in that records what the bridge sends and returns scripted updates.
 final class FakeTelegram: TelegramClient, @unchecked Sendable {

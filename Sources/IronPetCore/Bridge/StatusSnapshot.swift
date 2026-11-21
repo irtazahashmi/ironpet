@@ -1,0 +1,23 @@
+import Foundation
+
+/// Thread-safe copy of the pet's state for the server's `GET /status` debug endpoint.
+package final class StatusSnapshot: @unchecked Sendable {
+    package init() {}
+
+    private let lock = NSLock()
+    private var current = Data("{}".utf8)
+
+    package var data: Data { lock.withLock { current } }
+
+    @MainActor
+    package func update(store: SessionStore, mood: PetMood, automations: [[String: Any]] = []) {
+        let sessions = store.sessions.values.map { s in
+            ["id": s.id, "source": s.source.rawValue, "status": s.status.label, "workspace": s.workspaceName,
+             "prompt": s.prompt ?? "", "detail": s.detail ?? "", "iterm": s.origin.itermSessionID ?? "",
+             "summary": s.summary ?? ""]
+        }
+        let object: [String: Any] = ["mood": mood.rawValue, "sessions": sessions, "automations": automations]
+        let encoded = (try? JSONSerialization.data(withJSONObject: object, options: [.prettyPrinted, .sortedKeys])) ?? Data()
+        lock.withLock { current = encoded }
+    }
+}

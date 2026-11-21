@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// Records every service and account that is read or written, so a test can pin the strings stored items are found by.
 final class RecordingSecretStore: SecretStore, @unchecked Sendable {
@@ -178,16 +179,20 @@ final class PlatformTests: XCTestCase {
 
 /// Until the import allow-list test of PR 8 exists, these scans keep the files that moved off a platform API from reaching for it again.
 final class AdapterBoundaryTests: XCTestCase {
-    private static let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-        .deletingLastPathComponent().appendingPathComponent("Sources/IronPet")
+    private static let roots: [URL] = {
+        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        return ["Sources/IronPet", "Sources/IronPetCore"].map { repo.appendingPathComponent($0) }
+    }()
 
     private static func files() -> [(path: String, code: String)] {
-        guard let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else { return [] }
-        return walker.compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }.compactMap { url in
-            guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
-            let code = text.split(separator: "\n", omittingEmptySubsequences: false)
-                .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }.joined(separator: "\n")
-            return (String(url.path.dropFirst(root.path.count + 1)), code)
+        roots.flatMap { root -> [(path: String, code: String)] in
+            guard let walker = FileManager.default.enumerator(at: root, includingPropertiesForKeys: nil) else { return [] }
+            return walker.compactMap { $0 as? URL }.filter { $0.pathExtension == "swift" }.compactMap { url in
+                guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
+                let code = text.split(separator: "\n", omittingEmptySubsequences: false)
+                    .filter { !$0.trimmingCharacters(in: .whitespaces).hasPrefix("//") }.joined(separator: "\n")
+                return (String(url.path.dropFirst(root.path.count + 1)), code)
+            }
         }
     }
 
@@ -199,8 +204,8 @@ final class AdapterBoundaryTests: XCTestCase {
     private func isMacAdapter(_ path: String) -> Bool { path.hasPrefix("Platform/Mac/") }
 
     func testSecItemCallsStayInTheKeychainAdapter() {
-        // RemoteIdentity builds the TLS identity (SecItemImport, SecItemAdd for the certificate). That is Mac code, not secret storage.
-        XCTAssertEqual(offenders(#"\bSecItem\w*\("#) { isMacAdapter($0) || $0 == "Remote/RemoteIdentity.swift" }, [])
+        // RemoteTLSKeychain builds the TLS identity (SecItemImport, SecItemAdd for the certificate). That is Mac code, not secret storage.
+        XCTAssertEqual(offenders(#"\bSecItem\w*\("#) { isMacAdapter($0) || $0 == "Remote/RemoteTLSKeychain.swift" }, [])
     }
 
     func testSecretConsumersDoNotImportSecurityOrDarwin() {

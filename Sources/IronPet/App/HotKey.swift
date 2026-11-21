@@ -1,5 +1,6 @@
 import Carbon
 import Foundation
+import IronPetCore
 
 /// System-wide shortcut via Carbon's RegisterEventHotKey (needs no Accessibility permission).
 final class HotKey {

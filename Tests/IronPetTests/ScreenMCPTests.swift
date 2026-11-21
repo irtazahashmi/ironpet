@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// S5: an agent searches and reads stored captures through the MCP tools, against a temp database.
 @MainActor

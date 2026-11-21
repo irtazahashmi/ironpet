@@ -1,4 +1,5 @@
 import Charts
+import IronPetCore
 import SwiftUI
 
 /// Text for the Usage tab. A nil number prints as a dash, because "not reported" is different from zero.

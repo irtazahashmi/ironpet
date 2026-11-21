@@ -37,7 +37,12 @@ let package = Package(
         // SQLite for Linux and Windows. Apple platforms use the SQLite3 module from the SDK, so nothing links this there.
         .systemLibrary(name: "CSQLite", path: "Sources/CSQLite", pkgConfig: "sqlite3", providers: [.apt(["libsqlite3-dev"])]),
         .target(name: "IronPetObjC", path: "Sources/IronPetObjC"),
-        .executableTarget(name: "IronPet", dependencies: ["IronPetKit", "IronPetObjC", .product(name: "JMESPath", package: "jmespath.swift"), .product(name: "QuickJS", package: "QuickJS-Swift"), .product(name: "FluidAudio", package: "FluidAudio"), .product(name: "Hummingbird", package: "hummingbird"), .product(name: "HummingbirdWebSocket", package: "hummingbird-websocket"), .product(name: "NIOTransportServices", package: "swift-nio-transport-services"), .target(name: "CSQLite", condition: .when(platforms: [.linux, .windows]))], path: "Sources/IronPet"),
-        .testTarget(name: "IronPetTests", dependencies: ["IronPet"], path: "Tests/IronPetTests", resources: [.copy("Fixtures")]),
+        // The half of ironpet that needs no UI and no Mac framework: stores, the agent client, automations, tasks, the API layer
+        // and the platform protocols. Tests/IronPetCoreTests/ImportAllowListTests.swift fails when a file here imports a framework
+        // outside its allow list. A feature with no UI lands here, and UI code calls only IronPetAPI.
+        .target(name: "IronPetCore", dependencies: ["IronPetKit", .product(name: "JMESPath", package: "jmespath.swift"), .product(name: "QuickJS", package: "QuickJS-Swift"), .product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux, .windows])), .target(name: "CSQLite", condition: .when(platforms: [.linux, .windows]))], path: "Sources/IronPetCore"),
+        .testTarget(name: "IronPetCoreTests", dependencies: ["IronPetCore"], path: "Tests/IronPetCoreTests", resources: [.copy("Fixtures")]),
+        .executableTarget(name: "IronPet", dependencies: ["IronPetCore", "IronPetKit", "IronPetObjC", .product(name: "JMESPath", package: "jmespath.swift"), .product(name: "QuickJS", package: "QuickJS-Swift"), .product(name: "FluidAudio", package: "FluidAudio"), .product(name: "Hummingbird", package: "hummingbird"), .product(name: "HummingbirdWebSocket", package: "hummingbird-websocket"), .product(name: "NIOTransportServices", package: "swift-nio-transport-services")], path: "Sources/IronPet"),
+        .testTarget(name: "IronPetTests", dependencies: ["IronPet", "IronPetCore"], path: "Tests/IronPetTests"),
     ]
 )

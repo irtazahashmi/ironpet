@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import IronPetCore
 
 /// The state machine behind voice notes: idle, recording, transcribing. The chat UI, the hotkey and the test
 /// endpoints all drive this one object, so they show the same states.

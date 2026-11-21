@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// The notification store: every bubble kept with its full text and links.
 @MainActor

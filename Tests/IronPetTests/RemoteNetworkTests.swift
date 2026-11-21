@@ -2,6 +2,7 @@ import CryptoKit
 import Security
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class RemoteNetworkTests: XCTestCase {
     private let sample: [InterfaceAddress] = [

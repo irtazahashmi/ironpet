@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 
 /// Guesses the folder the user is working in from the frontmost Cursor window or iTerm session.
 enum WorkspaceDetector {

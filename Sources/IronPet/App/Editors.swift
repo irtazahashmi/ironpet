@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 
 /// An app the "Open" button can take the user to.
 struct OpenTarget: Equatable {

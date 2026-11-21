@@ -1,0 +1,720 @@
+import Foundation
+
+/// One reminder, watcher or scheduled job. `~/.ironpet/automations.json` holds a list of these.
+///
+/// Trigger and action are flat records with a `type` field, so an agent can write them by hand and the validator
+/// can name the exact field that is wrong.
+package struct Automation: Codable, Equatable, Identifiable {
+    package struct Trigger: Codable, Equatable {
+        package init(
+            type: String,
+            minutes: Double? = nil,
+            clock: String? = nil,
+            times: [String]? = nil,
+            weekdays: [String]? = nil,
+            at: String? = nil,
+            source: PollSource? = nil,
+            mode: String? = nil,
+            items: String? = nil,
+            id: String? = nil,
+            version: String? = nil,
+            script: String? = nil,
+            cooldownMinutes: Double? = nil,
+            command: String? = nil,
+            when: String? = nil,
+            debounceSeconds: Double? = nil,
+            throttleSeconds: Double? = nil,
+            catchUpMinutes: Double? = nil
+        ) {
+            self.type = type
+            self.minutes = minutes
+            self.clock = clock
+            self.times = times
+            self.weekdays = weekdays
+            self.at = at
+            self.source = source
+            self.mode = mode
+            self.items = items
+            self.id = id
+            self.version = version
+            self.script = script
+            self.cooldownMinutes = cooldownMinutes
+            self.command = command
+            self.when = when
+            self.debounceSeconds = debounceSeconds
+            self.throttleSeconds = throttleSeconds
+            self.catchUpMinutes = catchUpMinutes
+        }
+
+        /// `interval`, `daily`, `once`, `poll`, `script` or `stream`.
+        package var type: String
+        /// `interval`: minutes between runs. `poll`: minutes between polls.
+        package var minutes: Double?
+        /// `interval`: `active` counts keyboard time only, `wall` counts clock time.
+        package var clock: String?
+        /// `daily`: times of day as `HH:mm`.
+        package var times: [String]?
+        /// `daily`: `mon` … `sun`. Missing means every day.
+        package var weekdays: [String]?
+        /// `once`: an ISO 8601 date and time.
+        package var at: String?
+        /// `poll`
+        package var source: PollSource?
+        /// `poll`: how to read the output: `json` (default), `lines`, `text` or `exit_code`.
+        package var mode: String?
+        /// `poll`, json mode: a JMESPath expression that yields the items, such as `data.runs[?conclusion=='failure']`.
+        /// Default `@`. A result that is an array is the list of items.
+        package var items: String?
+        /// `poll`, json mode: a JMESPath expression on one item that yields its id, such as `number`.
+        package var id: String?
+        /// `poll`, json mode: a JMESPath expression on one item. A new value for a known id fires again.
+        package var version: String?
+        /// `script`: JavaScript that defines `poll(state)`. It gets the state it returned last time and returns
+        /// `{state, fire, dismiss}`. See `AutomationScript`.
+        package var script: String?
+        /// `poll`: after a run fires, this many minutes pass before the next one can.
+        package var cooldownMinutes: Double?
+        /// `stream`: a shell command that keeps running. Each line it prints is an event.
+        package var command: String?
+        /// `stream`: a JMESPath expression on one item. The item fires only when the result is truthy.
+        package var when: String?
+        /// `stream`: fire once after this many seconds without a new event, with the latest one.
+        package var debounceSeconds: Double?
+        /// `stream`: fire at most once in this many seconds.
+        package var throttleSeconds: Double?
+        /// `daily`: a slot missed while the Mac slept or ironpet was not running still fires when it is at most this many
+        /// minutes late. Only the latest missed slot fires. Without it, a slot missed during sleep fires once on wake and
+        /// one missed before launch never does.
+        package var catchUpMinutes: Double?
+
+        /// An `interval` on the `active` clock (the default): time counts only while the user is at the keyboard.
+        package var countsKeyboardTime: Bool { type == "interval" && clock != "wall" }
+    }
+
+    package struct PollSource: Codable, Equatable {
+        package init(
+            type: String,
+            command: String? = nil,
+            timeoutSeconds: Double? = nil,
+            url: String? = nil,
+            headers: [String: String]? = nil
+        ) {
+            self.type = type
+            self.command = command
+            self.timeoutSeconds = timeoutSeconds
+            self.url = url
+            self.headers = headers
+        }
+
+        /// `shell` or `http`.
+        package var type: String
+        package var command: String?
+        package var timeoutSeconds: Double?
+        package var url: String?
+        /// Header values may only be `${ENV_VAR}` references.
+        package var headers: [String: String]?
+    }
+
+    package struct Action: Codable, Equatable {
+        package init(
+            type: String,
+            title: String? = nil,
+            body: String? = nil,
+            prompt: String? = nil,
+            agent: String? = nil,
+            model: String? = nil,
+            command: String? = nil,
+            timeoutSeconds: Double? = nil,
+            digest: String? = nil,
+            quiet: QuietReplies? = nil,
+            session: String? = nil,
+            report: String? = nil,
+            allowedTools: [String]? = nil,
+            disallowedTools: [String]? = nil
+        ) {
+            self.type = type
+            self.title = title
+            self.body = body
+            self.prompt = prompt
+            self.agent = agent
+            self.model = model
+            self.command = command
+            self.timeoutSeconds = timeoutSeconds
+            self.digest = digest
+            self.quiet = quiet
+            self.session = session
+            self.report = report
+            self.allowedTools = allowedTools
+            self.disallowedTools = disallowedTools
+        }
+
+        /// `bubble`, `prompt`, `shell` or `digest`.
+        package var type: String
+        package var title: String?
+        package var body: String?
+        /// `prompt`: what to ask. `{{item.*}}` is filled in first.
+        package var prompt: String?
+        /// `prompt`: an ACP agent id. Default is the agent the chat uses.
+        package var agent: String?
+        package var model: String?
+        /// `shell`: runs with `/bin/sh -c`.
+        package var command: String?
+        package var timeoutSeconds: Double?
+        /// `digest`: `brief` (what needs you today) or `recap` (what happened today), built from data on this Mac.
+        package var digest: String?
+        /// `prompt`, and `shell` with `report` chat: a reply that means nothing happened. A run whose final reply is exactly this text is hidden from the
+        /// chat and recorded as "no changes".
+        /// A list of replies is allowed too. With `report` chat and no `quiet`, `NOTHING` and `NOTHING_NEW` mean nothing happened.
+        package var quiet: QuietReplies?
+        /// `prompt`: where it runs. `main` (alias `chat`, and the default) posts into the open chat. `new` starts a fresh agent
+        /// session every run. `own` keeps one thread for this automation and resumes it each run, starting a fresh one after
+        /// `AutomationSession.ownRunLimit` runs. `fork` starts from a copy of the main chat's agent session. `new`, `own` and
+        /// `fork` have the agent's full tools minus `disallowedTools`.
+        package var session: String?
+        /// `prompt` with a background session: `bubble` shows the answer as a bubble, `chat` posts it to the main chat as a
+        /// system notice that the chat's agent reads. Default `bubble`, and `chat` for `fork`. Ignored for `main`.
+        /// `shell`: the same two values, default `bubble`. `chat` posts the command, exit code and the tail of the output.
+        package var report: String?
+        /// `prompt` with `session` new or own: tools the agent may use without asking, for example `Bash(gh pr list:*)`.
+        package var allowedTools: [String]?
+        /// `prompt` with `session` new or own: tools the agent may not use.
+        package var disallowedTools: [String]?
+
+        /// The session after defaults: `main`, `new`, `own` or `fork`. `report: chat` without a session means `new`.
+        package var effectiveSession: String {
+            switch session {
+            case nil: return report == "chat" ? "new" : "main"
+            case "chat": return "main"
+            default: return session ?? "main"
+            }
+        }
+
+        /// Where a background run's answer goes, `bubble` or `chat`. Nil for a run in the main chat.
+        package var effectiveReport: String? {
+            guard effectiveSession != "main" else { return nil }
+            return report ?? (effectiveSession == "fork" ? "chat" : "bubble")
+        }
+
+        /// The replies that mean nothing happened. Defaults apply only when the answer goes to the chat.
+        package var quietReplies: [String] {
+            if let quiet { return quiet.values.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty } }
+            return type == "prompt" && effectiveReport == "chat" ? ["NOTHING", "NOTHING_NEW"] : []
+        }
+
+        /// True when a shell action posts its result to the main chat.
+        package var shellReportsToChat: Bool { type == "shell" && report == "chat" }
+
+        /// True when the prompt runs in its own agent session instead of the open chat.
+        package var runsInOwnSession: Bool { type == "prompt" && effectiveSession != "main" }
+    }
+
+    /// `quiet` as written: one reply or a list of them.
+    package struct QuietReplies: Codable, Equatable, ExpressibleByStringLiteral {
+        package var values: [String]
+        package init(_ values: [String]) { self.values = values }
+        package init(stringLiteral value: String) { values = [value] }
+        package init(from decoder: Decoder) throws {
+            let c = try decoder.singleValueContainer()
+            if let one = try? c.decode(String.self) { values = [one] } else { values = try c.decode([String].self) }
+        }
+        package func encode(to encoder: Encoder) throws {
+            var c = encoder.singleValueContainer()
+            if values.count == 1 { try c.encode(values[0]) } else { try c.encode(values) }
+        }
+    }
+
+    package struct Presentation: Codable, Equatable {
+        package init(
+            mood: String? = nil,
+            symbol: String? = nil,
+            buttons: [String]? = nil,
+            notification: Bool? = nil,
+            expiresSeconds: Double? = nil
+        ) {
+            self.mood = mood
+            self.symbol = symbol
+            self.buttons = buttons
+            self.notification = notification
+            self.expiresSeconds = expiresSeconds
+        }
+
+        /// What Ghost does: a `PetMood` name. Default `listening`.
+        package var mood: String?
+        /// An SF Symbol name.
+        package var symbol: String?
+        /// `done`, `snooze`. Default both.
+        package var buttons: [String]?
+        /// Also send a macOS notification.
+        package var notification: Bool?
+        package var expiresSeconds: Double?
+    }
+
+    package var id: String
+    package var name: String
+    package var enabled = true
+    package var trigger: Trigger
+    package var action: Action
+    package var presentation = Presentation()
+    /// `user` or the name of whatever created it, such as `agent:ghost`.
+    package var createdBy = "user"
+    package var note: String?
+    /// Deletes the automation after a run: `success` after the first run whose action succeeded, `once` after the first
+    /// completed run whatever the outcome. Missing means it stays. Not for script triggers, which return `done: true`.
+    package var until: String?
+
+    package var isByUser: Bool { createdBy == "user" }
+
+    /// A break reminder such as drink water: a bubble on keyboard time. A watcher, shell job or prompt on keyboard time is not one.
+    package var isBreakReminder: Bool { trigger.countsKeyboardTime && action.type == "bubble" }
+
+    package init(id: String, name: String, enabled: Bool = true, trigger: Trigger, action: Action, presentation: Presentation = Presentation(),
+         createdBy: String = "user", note: String? = nil, until: String? = nil) {
+        self.id = id
+        self.name = name
+        self.enabled = enabled
+        self.trigger = trigger
+        self.action = action
+        self.presentation = presentation
+        self.createdBy = createdBy
+        self.note = note
+        self.until = until
+    }
+
+    private enum CodingKeys: String, CodingKey { case id, name, enabled, trigger, action, presentation, createdBy, note, until }
+
+    /// A script automation has no `action`: the script returns its own actions.
+    package func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(id, forKey: .id)
+        try c.encode(name, forKey: .name)
+        try c.encode(enabled, forKey: .enabled)
+        try c.encode(trigger, forKey: .trigger)
+        if action.type != "none" { try c.encode(action, forKey: .action) }
+        try c.encode(presentation, forKey: .presentation)
+        try c.encode(createdBy, forKey: .createdBy)
+        try c.encodeIfPresent(note, forKey: .note)
+        try c.encodeIfPresent(until, forKey: .until)
+    }
+
+    /// `enabled`, `presentation` and `createdBy` may be left out of the file.
+    package init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        trigger = try c.decode(Trigger.self, forKey: .trigger)
+        action = try c.decodeIfPresent(Action.self, forKey: .action) ?? Action(type: "none")
+        presentation = try c.decodeIfPresent(Presentation.self, forKey: .presentation) ?? Presentation()
+        createdBy = try c.decodeIfPresent(String.self, forKey: .createdBy) ?? "user"
+        note = try c.decodeIfPresent(String.self, forKey: .note)
+        until = try c.decodeIfPresent(String.self, forKey: .until)
+    }
+
+    /// The session settings of a prompt, which decide what it may do. Empty for the default, so an automation written before
+    /// `session` existed keeps its approval.
+    private var sessionRisk: String {
+        let session = action.effectiveSession
+        guard session != "main" else { return "" }
+        // Written the old way for `new` and `own` without a report, so an approval given earlier stays valid.
+        let report = action.report.map { "|report:\($0)" } ?? ""
+        return "|session:\(session)\(report)|allow:\((action.allowedTools ?? []).joined(separator: ","))|deny:\((action.disallowedTools ?? []).joined(separator: ","))"
+    }
+
+    /// Text whose change needs a new approval: the commands and prompts that can run on this Mac.
+    package var riskText: String? {
+        var parts: [String] = []
+        if action.type == "shell" { parts.append("shell:" + (action.command ?? "") + (action.shellReportsToChat ? "\nreport:chat" : "")) }
+        if action.type == "prompt" { parts.append("prompt:" + (action.prompt ?? "") + "|" + (action.agent ?? "") + "|" + (action.model ?? "") + sessionRisk) }
+        if trigger.type == "script" { parts.append("script:" + (trigger.script ?? "")) }
+        if trigger.type == "stream" { parts.append("stream:" + (trigger.command ?? "")) }
+        if trigger.type == "poll", trigger.source?.type == "shell" { parts.append("poll:" + (trigger.source?.command ?? "")) }
+        if trigger.type == "poll", trigger.source?.type == "http" {
+            parts.append("http:" + (trigger.source?.url ?? "") + "|" + (trigger.source?.headers ?? [:]).sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: ","))
+        }
+        return parts.isEmpty ? nil : parts.joined(separator: "\n")
+    }
+}
+
+/// The full file: `{"automations": [...]}`.
+package struct AutomationFile: Codable {
+    package init(automations: [Automation]) {
+        self.automations = automations
+    }
+
+    package var automations: [Automation]
+}
+
+package enum AutomationValidator {
+    package static let weekdays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
+    package static let triggerTypes = ["interval", "daily", "once", "poll", "script", "stream"]
+    package static let actionTypes = ["bubble", "prompt", "shell", "digest"]
+    package static let sessions = ["main", "chat", "new", "own", "fork"]
+    package static let reports = ["bubble", "chat"]
+    package static let untilValues = ["success", "once"]
+    package static let digestKinds = ["brief", "recap"]
+    package static let pollModes = ["json", "lines", "text", "exit_code"]
+    package static let streamModes = ["lines", "json"]
+    package static let buttons = ["done", "snooze"]
+
+    private static let keys: [String: Set<String>] = [
+        "automation": ["id", "name", "enabled", "trigger", "action", "presentation", "createdBy", "note", "until"],
+        "trigger": ["type", "minutes", "clock", "times", "weekdays", "at", "source", "mode", "items", "id", "version", "script", "cooldownMinutes", "catchUpMinutes", "command", "when", "debounceSeconds", "throttleSeconds"],
+        "source": ["type", "command", "timeoutSeconds", "url", "headers"],
+        "action": ["type", "title", "body", "prompt", "agent", "model", "command", "timeoutSeconds", "digest", "quiet", "session", "report", "allowedTools", "disallowedTools"],
+        "presentation": ["mood", "symbol", "buttons", "notification", "expiresSeconds"],
+    ]
+
+    /// Reads the file text. Returns the automations, or every problem found.
+    package static func parse(_ data: Data) -> (automations: [Automation], errors: [String]) {
+        guard let object = try? JSONSerialization.jsonObject(with: data) else {
+            return ([], ["automations.json is not valid JSON"])
+        }
+        let raw: [Any]
+        if let list = object as? [Any] { raw = list }
+        else if let dict = object as? [String: Any], let list = dict["automations"] as? [Any] { raw = list }
+        else { return ([], ["automations.json must be an object with an \"automations\" list"]) }
+        var errors: [String] = []
+        var result: [Automation] = []
+        for (index, entry) in raw.enumerated() {
+            let label = "automations[\(index)]" + ((entry as? [String: Any])?["id"] as? String).map { " (\($0))" }.orEmpty
+            guard let dict = entry as? [String: Any] else { errors.append("\(label) must be an object"); continue }
+            errors += unknownKeys(dict, label: label)
+            do {
+                let bytes = try JSONSerialization.data(withJSONObject: dict)
+                result.append(try JSONDecoder().decode(Automation.self, from: bytes))
+            } catch {
+                errors.append("\(label): \(describe(error))")
+            }
+        }
+        if errors.isEmpty { errors = validate(result) }
+        return (result, errors)
+    }
+
+    /// Parses one automation given as a JSON object, for `automations_create`.
+    package static func parseOne(_ dict: [String: Any], label: String = "automation") -> (Automation?, [String]) {
+        var errors = unknownKeys(dict, label: label)
+        var dict = dict
+        // Agents fill a required-looking `action` with null or {} when the trigger needs none.
+        if dict["action"] is NSNull || (dict["action"] as? [String: Any])?.isEmpty == true { dict["action"] = nil }
+        do {
+            let value = try JSONDecoder().decode(Automation.self, from: JSONSerialization.data(withJSONObject: dict))
+            return (value, errors)
+        } catch {
+            errors.append("\(label): \(describe(error))")
+            return (nil, errors)
+        }
+    }
+
+    private static func unknownKeys(_ dict: [String: Any], label: String) -> [String] {
+        var errors: [String] = []
+        for key in dict.keys.sorted() where !keys["automation"]!.contains(key) { errors.append("\(label): unknown key \"\(key)\"") }
+        for (name, path) in [("trigger", "trigger"), ("action", "action"), ("presentation", "presentation")] {
+            if let inner = dict[name] as? [String: Any] {
+                for key in inner.keys.sorted() where !keys[path]!.contains(key) {
+                    let hint = name == "trigger" && ["where", "match"].contains(key) ? ". Filter with JMESPath in items instead, such as [?state=='open']" : ""
+                    errors.append("\(label).\(name): unknown key \"\(key)\"\(hint)")
+                }
+                if name == "trigger", let source = inner["source"] as? [String: Any] {
+                    for key in source.keys.sorted() where !keys["source"]!.contains(key) { errors.append("\(label).trigger.source: unknown key \"\(key)\"") }
+                }
+            }
+        }
+        return errors
+    }
+
+    /// Problems across the whole list, each prefixed with where it is.
+    package static func validate(_ list: [Automation]) -> [String] {
+        var errors: [String] = []
+        var ids = Set<String>()
+        for (index, item) in list.enumerated() {
+            let label = "automations[\(index)] (\(item.id))"
+            if !ids.insert(item.id).inserted { errors.append("\(label): duplicate id") }
+            errors += validate(item).map { "\(label): \($0)" }
+        }
+        return errors
+    }
+
+    /// Problems with one automation.
+    package static func validate(_ a: Automation, now: Date = Date(), isNew: Bool = false) -> [String] {
+        var errors: [String] = []
+        if a.id.range(of: #"^[a-z0-9][a-z0-9-]{0,63}$"#, options: .regularExpression) == nil {
+            errors.append("id must be lowercase letters, digits and dashes, up to 64 characters")
+        }
+        if a.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { errors.append("name is empty") }
+        errors += validate(trigger: a.trigger, now: now, isNew: isNew)
+        errors += validate(action: a.action, trigger: a.trigger)
+        errors += validate(presentation: a.presentation)
+        if let until = a.until {
+            if !untilValues.contains(until) { errors.append("until must be one of \(untilValues.joined(separator: ", "))") }
+            else if a.trigger.type == "script" { errors.append("until does not apply to a script trigger. Return done: true from the script to delete the automation") }
+        }
+        let text = [a.name, a.action.title, a.action.body, a.riskText].compactMap { $0 }.joined(separator: "\n")
+        if let leak = secretLike(in: text) {
+            errors.append("looks like it holds a secret (\(leak)). Use an environment variable reference such as $NAME instead")
+        }
+        return errors
+    }
+
+    private static func validate(trigger t: Automation.Trigger, now: Date, isNew: Bool) -> [String] {
+        var errors: [String] = []
+        guard triggerTypes.contains(t.type) else { return ["trigger.type must be one of \(triggerTypes.joined(separator: ", "))"] }
+        if t.catchUpMinutes != nil, t.type != "daily" { errors.append("trigger.catchUpMinutes only applies to daily triggers") }
+        if t.type != "stream" {
+            for (field, present) in [("command", t.command != nil), ("when", t.when != nil),
+                                     ("debounceSeconds", t.debounceSeconds != nil), ("throttleSeconds", t.throttleSeconds != nil)] where present {
+                errors.append("trigger.\(field) only applies to stream triggers")
+            }
+        }
+        switch t.type {
+        case "interval":
+            if let m = t.minutes, m >= 1, m <= 525_600 {} else { errors.append("trigger.minutes must be a number from 1 to 525600") }
+            if let clock = t.clock, !["active", "wall"].contains(clock) { errors.append("trigger.clock must be \"active\" or \"wall\"") }
+        case "daily":
+            let times = t.times ?? []
+            if times.isEmpty { errors.append("trigger.times needs at least one HH:mm time") }
+            for time in times where AutomationClock.minutes(of: time) == nil { errors.append("trigger.times: \"\(time)\" is not HH:mm") }
+            for day in t.weekdays ?? [] where !weekdays.contains(day) { errors.append("trigger.weekdays: \"\(day)\" is not one of \(weekdays.joined(separator: ", "))") }
+            if let c = t.catchUpMinutes, c < 0 || c > 720 { errors.append("trigger.catchUpMinutes must be a number from 0 to 720") }
+        case "once":
+            if let at = t.at, let date = AutomationClock.parse(at) {
+                if isNew, date <= now { errors.append("trigger.at is in the past") }
+            } else { errors.append("trigger.at must be an ISO 8601 date and time, such as 2026-11-20T15:30:00+01:00") }
+        case "stream":
+            errors += validate(stream: t)
+        case "script":
+            if let m = t.minutes, m >= 1, m <= 525_600 {} else { errors.append("trigger.minutes must be a number from 1 to 525600") }
+            if (t.script ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { errors.append("trigger.script is empty") }
+            else if let problem = AutomationScript.check(t.script ?? "") { errors.append("trigger.script: \(problem)") }
+        default:
+            if let m = t.minutes, m >= 1, m <= 525_600 {} else { errors.append("trigger.minutes must be a number from 1 to 525600") }
+            if let mode = t.mode, !pollModes.contains(mode) { errors.append("trigger.mode must be one of \(pollModes.joined(separator: ", "))") }
+            if let c = t.cooldownMinutes, c < 0 { errors.append("trigger.cooldownMinutes cannot be negative") }
+            for (field, expression) in [("items", t.items), ("id", t.id), ("version", t.version)] {
+                if let expression, let problem = JMES.check(expression) { errors.append("trigger.\(field) is not valid JMESPath: \(problem)") }
+            }
+            guard let source = t.source else { errors.append("trigger.source is required for poll"); break }
+            switch source.type {
+            case "shell":
+                if (source.command ?? "").trimmingCharacters(in: .whitespaces).isEmpty { errors.append("trigger.source.command is empty") }
+                if let t = source.timeoutSeconds, t < 1 || t > 600 { errors.append("trigger.source.timeoutSeconds must be between 1 and 600") }
+            case "http":
+                if let t = source.timeoutSeconds, t < 1 || t > 600 { errors.append("trigger.source.timeoutSeconds must be between 1 and 600") }
+                if let url = source.url.flatMap(URL.init(string:)), ["http", "https"].contains(url.scheme ?? ""), url.host != nil {} else {
+                    errors.append("trigger.source.url must be an http or https URL")
+                }
+                for (name, value) in source.headers ?? [:] where value.range(of: #"^\$\{[A-Za-z_][A-Za-z0-9_]*\}$"#, options: .regularExpression) == nil {
+                    errors.append("trigger.source.headers.\(name) must be an environment variable reference like ${TOKEN}, not a literal value")
+                }
+                if let url = source.url, url.range(of: #"[?&](token|key|api_key|apikey|access_token|secret)="#, options: [.regularExpression, .caseInsensitive]) != nil {
+                    errors.append("trigger.source.url puts a secret in the query string. Send it in a header with an environment variable reference instead")
+                }
+            default:
+                errors.append("trigger.source.type must be shell or http")
+            }
+        }
+        return errors
+    }
+
+    private static func validate(stream t: Automation.Trigger) -> [String] {
+        var errors: [String] = []
+        guard let command = t.command else { return ["trigger.command is required for stream"] }
+        if command.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { errors.append("trigger.command is empty") }
+        if let mode = t.mode, !streamModes.contains(mode) { errors.append("trigger.mode must be one of \(streamModes.joined(separator: ", ")) for stream") }
+        for (field, value) in [("debounceSeconds", t.debounceSeconds), ("throttleSeconds", t.throttleSeconds)] {
+            if let value, value < 0 || value > 3600 || value.isNaN {
+                errors.append(value < 0 ? "trigger.\(field) cannot be negative" : "trigger.\(field) must be a number from 0 to 3600")
+            }
+        }
+        if let c = t.cooldownMinutes, c < 0 { errors.append("trigger.cooldownMinutes cannot be negative") }
+        for (field, expression) in [("items", t.items), ("id", t.id), ("version", t.version), ("when", t.when)] {
+            if let expression, let problem = JMES.check(expression) { errors.append("trigger.\(field) is not valid JMESPath: \(problem)") }
+        }
+        if t.source != nil { errors.append("trigger.source does not apply to stream. Put the command in trigger.command") }
+        if t.script != nil { errors.append("trigger.script does not apply to stream") }
+        if (t.mode ?? "lines") == "lines" {
+            for (field, value) in [("items", t.items), ("id", t.id), ("version", t.version)] where value != nil {
+                errors.append("trigger.\(field) needs \"mode\": \"json\"")
+            }
+        }
+        return errors
+    }
+
+    /// True when a `{{` sits inside single or double quotes, where the automatic quoting of item values would not hold.
+    package static func placeholderInQuotes(_ command: String) -> Bool {
+        var quote: Character?
+        var escaped = false
+        let chars = Array(command)
+        for (i, c) in chars.enumerated() {
+            if escaped { escaped = false; continue }
+            if c == "\\", quote != "'" { escaped = true; continue }
+            if let q = quote { if c == q { quote = nil } } else if c == "'" || c == "\"" { quote = c }
+            if quote != nil, c == "{", i + 1 < chars.count, chars[i + 1] == "{" { return true }
+        }
+        return false
+    }
+
+    private static func validate(action a: Automation.Action, trigger: Automation.Trigger) -> [String] {
+        if trigger.type == "script" {
+            return a.type == "none" ? [] : ["a script returns its own actions, so leave action out"]
+        }
+        guard actionTypes.contains(a.type) else {
+            return [a.type == "none" ? "action is required" : "action.type must be one of \(actionTypes.joined(separator: ", "))"]
+        }
+        var errors: [String] = []
+        if a.report != nil, !["prompt", "shell"].contains(a.type) {
+            errors.append("action.report only applies to prompt and shell actions, not \(a.type)")
+        }
+        switch a.type {
+        case "bubble":
+            if (a.title ?? "").isEmpty, (a.body ?? "").isEmpty { errors.append("action needs a title or a body") }
+        case "prompt":
+            if (a.prompt ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { errors.append("action.prompt is empty") }
+            if let agent = a.agent, AgentCatalog.agent(id: agent) == nil { errors.append("action.agent \"\(agent)\" is not a known agent") }
+            if let quiet = a.quiet, quiet.values.isEmpty || quiet.values.contains(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) { errors.append("action.quiet is empty") }
+            if let report = a.report, !reports.contains(report) { errors.append("action.report must be one of \(reports.joined(separator: ", "))") }
+            if let session = a.session, !sessions.contains(session) { errors.append("action.session must be one of \(sessions.joined(separator: ", "))") }
+            for (field, list) in [("allowedTools", a.allowedTools), ("disallowedTools", a.disallowedTools)] {
+                guard let list else { continue }
+                if !a.runsInOwnSession { errors.append("action.\(field) only applies when action.session is new, own or fork") }
+                if list.contains(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) { errors.append("action.\(field) has an empty entry") }
+            }
+        case "digest":
+            if !digestKinds.contains(a.digest ?? "") { errors.append("action.digest must be one of \(digestKinds.joined(separator: ", "))") }
+            if trigger.type == "poll" || trigger.type == "stream" { errors.append("a digest action runs on an interval, daily or once trigger, not a \(trigger.type)") }
+        default:
+            if (a.command ?? "").trimmingCharacters(in: .whitespaces).isEmpty { errors.append("action.command is empty") }
+            if let report = a.report, !reports.contains(report) { errors.append("action.report must be one of \(reports.joined(separator: ", "))") }
+            if let quiet = a.quiet {
+                if a.report != "chat" { errors.append("action.quiet on a shell action needs \"report\": \"chat\"") }
+                if quiet.values.isEmpty || quiet.values.contains(where: { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }) { errors.append("action.quiet is empty") }
+            }
+            if placeholderInQuotes(a.command ?? "") {
+                errors.append("action.command has a {{...}} placeholder inside quotes. Write it outside quotes: values are quoted for the shell automatically")
+            }
+        }
+        if let t = a.timeoutSeconds, t < 1 || t > 600 { errors.append("action.timeoutSeconds must be between 1 and 600") }
+        return errors
+    }
+
+    private static func validate(presentation p: Automation.Presentation) -> [String] {
+        var errors: [String] = []
+        if let mood = p.mood, PetMood(rawValue: mood) == nil { errors.append("presentation.mood must be one of \(PetMood.allCases.map(\.rawValue).joined(separator: ", "))") }
+        for button in p.buttons ?? [] where !buttons.contains(button) { errors.append("presentation.buttons: \"\(button)\" is not done or snooze") }
+        if let e = p.expiresSeconds, e < 3 { errors.append("presentation.expiresSeconds must be at least 3") }
+        return errors
+    }
+
+    /// The first thing in `text` that looks like a pasted credential, or nil.
+    package static func secretLike(in text: String) -> String? {
+        let patterns: [(String, String)] = [
+            ("API key", #"\bsk-[A-Za-z0-9_\-]{16,}"#),
+            ("GitHub token", #"\bgh[pousr]_[A-Za-z0-9]{20,}"#),
+            ("Slack token", #"\bxox[abprs]-[A-Za-z0-9\-]{10,}"#),
+            ("AWS key", #"\bAKIA[0-9A-Z]{16}\b"#),
+            ("bearer token", #"(?i)\bbearer\s+[A-Za-z0-9._\-]{20,}"#),
+            ("password", #"(?i)(password|passwd|secret|api[_-]?key|token)\s*[=:]\s*['"]?[A-Za-z0-9/+_\-]{12,}"#),
+        ]
+        for (label, pattern) in patterns where text.range(of: pattern, options: .regularExpression) != nil { return label }
+        return nil
+    }
+
+    private static func describe(_ error: Error) -> String {
+        switch error {
+        case DecodingError.keyNotFound(let key, let context):
+            let path = (context.codingPath.map(\.stringValue) + [key.stringValue]).joined(separator: ".")
+            return "\(path) is missing"
+        case DecodingError.typeMismatch(_, let context), DecodingError.valueNotFound(_, let context), DecodingError.dataCorrupted(let context):
+            let path = context.codingPath.map(\.stringValue).joined(separator: ".")
+            return path.isEmpty ? context.debugDescription : "\(path): \(context.debugDescription)"
+        default:
+            return error.localizedDescription
+        }
+    }
+
+    /// `"Drink water"` becomes `drink-water`, made unique among `taken`.
+    package static func slug(_ name: String, taken: Set<String>) -> String {
+        var base = name.lowercased().map { $0.isLetter || $0.isNumber ? String($0) : "-" }.joined()
+        while base.contains("--") { base = base.replacingOccurrences(of: "--", with: "-") }
+        base = String(base.trimmingCharacters(in: CharacterSet(charactersIn: "-")).prefix(48))
+        if base.isEmpty || !(base.first!.isLetter || base.first!.isNumber) { base = "automation" }
+        var candidate = base
+        var n = 2
+        while taken.contains(candidate) { candidate = "\(base)-\(n)"; n += 1 }
+        return candidate
+    }
+}
+
+extension Optional where Wrapped == String {
+    package var orEmpty: String { self ?? "" }
+}
+
+/// Date and time-of-day helpers.
+package enum AutomationClock {
+    package static func parse(_ text: String) -> Date? {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        if let d = f.date(from: text) { return d }
+        f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        if let d = f.date(from: text) { return d }
+        // No zone given: local time.
+        let local = DateFormatter()
+        local.locale = Locale(identifier: "en_US_POSIX")
+        for format in ["yyyy-MM-dd'T'HH:mm:ss", "yyyy-MM-dd'T'HH:mm", "yyyy-MM-dd HH:mm"] {
+            local.dateFormat = format
+            if let d = local.date(from: text) { return d }
+        }
+        return nil
+    }
+
+    package static func format(_ date: Date) -> String {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        f.timeZone = .current
+        return f.string(from: date)
+    }
+
+    /// Minutes after midnight for `HH:mm`.
+    package static func minutes(of time: String) -> Int? {
+        let parts = time.split(separator: ":")
+        guard parts.count == 2, let h = Int(parts[0]), let m = Int(parts[1]), (0..<24).contains(h), (0..<60).contains(m) else { return nil }
+        return h * 60 + m
+    }
+}
+
+/// `{{item.title}}`, `{{name}}` and `{{now}}` in action text.
+package enum AutomationTemplate {
+    package static func render(_ text: String, values: [String: Any]) -> String {
+        guard text.contains("{{") else { return text }
+        var out = ""
+        var rest = Substring(text)
+        while let open = rest.range(of: "{{") {
+            out += rest[..<open.lowerBound]
+            guard let close = rest.range(of: "}}", range: open.upperBound..<rest.endIndex) else { out += rest[open.lowerBound...]; return out }
+            let key = rest[open.upperBound..<close.lowerBound].trimmingCharacters(in: .whitespaces)
+            out += lookup(key, in: values)
+            rest = rest[close.upperBound...]
+        }
+        return out + rest
+    }
+
+    private static func lookup(_ path: String, in values: [String: Any]) -> String {
+        var current: Any? = values
+        for part in path.split(separator: ".") {
+            if let dict = current as? [String: Any] { current = dict[String(part)] }
+            else if let list = current as? [Any], let i = Int(part), list.indices.contains(i) { current = list[i] }
+            else { return "" }
+        }
+        switch current {
+        case nil, is NSNull: return ""
+        case let s as String: return s
+        case let n as NSNumber:
+            if CFGetTypeID(n) == CFBooleanGetTypeID() { return n.boolValue ? "true" : "false" }
+            return n.doubleValue == n.doubleValue.rounded() ? String(n.int64Value) : String(n.doubleValue)
+        case let value?:
+            if JSONSerialization.isValidJSONObject(value), let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) {
+                return String(decoding: data, as: UTF8.self)
+            }
+            return "\(value)"
+        }
+    }
+}

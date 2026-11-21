@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 import UniformTypeIdentifiers
 

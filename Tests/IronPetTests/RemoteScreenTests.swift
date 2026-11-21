@@ -1,6 +1,7 @@
 import IronPetKit
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// The screen routes of the remote API over a real listener, a real capture store and the real `ScreenMCP` tools.
 @MainActor

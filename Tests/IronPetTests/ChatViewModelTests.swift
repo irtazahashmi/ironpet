@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// The Mac window's side of the chat, on top of `ChatAPI`: the draft, and a copy of the shared chat kept current by events.
 @MainActor

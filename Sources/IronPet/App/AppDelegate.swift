@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 import Carbon
 import Combine
@@ -668,6 +669,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }, dismiss: { [weak self] request in self?.announcer.bubbles.dismiss(Self.desktopApprovalID(request)) })
         desktopApprovals = approvals
         var dependencies = DesktopService.Dependencies(privacy: capture.privacy)
+        dependencies.ax = LiveDesktopAX()
+        dependencies.opener = LiveDesktopOpener()
         // An automated run must not read or operate the real screen.
         if TestControl.isEnabled {
             dependencies.ax = IdleDesktopAX()

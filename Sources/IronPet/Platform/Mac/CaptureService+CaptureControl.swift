@@ -1,4 +1,5 @@
 import Foundation
+import IronPetCore
 
 /// The Mac adapter for `CaptureControl` is the capture service. Each member does what `ScreenAPI` did itself before, in the same order.
 extension CaptureService: CaptureControl {

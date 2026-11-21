@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// Which rows lie in the scroll view's visible area, as a function of geometry alone. The live-window tests below read
 /// the same rule from a real panel. This is the rule they are guarding, and it can be tested without a window.

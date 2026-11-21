@@ -1,5 +1,6 @@
 import AppKit
 import Combine
+import IronPetCore
 import SwiftUI
 
 /// Owns the floating panel and maps session state to the pet's mood.

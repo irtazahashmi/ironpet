@@ -2,6 +2,7 @@ import CoreGraphics
 import ImageIO
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// The chat routes of the remote API over a real listener, with a scripted agent in place of the turn runner.
 @MainActor

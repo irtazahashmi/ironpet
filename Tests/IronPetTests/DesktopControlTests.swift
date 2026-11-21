@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// A synthetic app: elements with settable fields and a log of what the service did to them.
 final class FakeEl {
@@ -545,20 +546,22 @@ final class DesktopControlTests: XCTestCase {
     // MARK: S6
 
     func testDesktopCodeNamesNoApp() throws {
-        let directory = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
-            .appendingPathComponent("Sources/IronPet/Desktop")
+        let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
+        let directories = ["Sources/IronPet/Desktop", "Sources/IronPetCore/Desktop"].map { repo.appendingPathComponent($0) }
         let names = try NSRegularExpression(pattern: #"\b(slack|discord|gmail|whatsapp|telegram|safari|chrome|firefox|zoom|outlook|notion|github|cursor|xcode|iterm|vscode|mail\.app)\b"#, options: .caseInsensitive)
         let bundle = try NSRegularExpression(pattern: #"\b(com|org|net|io)\.[a-z0-9_-]+\.[a-z0-9_.-]+"#)
         var found: [String] = []
-        let files = try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0.hasSuffix(".swift") }
+        let files = try directories.flatMap { directory in
+            try FileManager.default.contentsOfDirectory(atPath: directory.path).filter { $0.hasSuffix(".swift") }.map { directory.appendingPathComponent($0) }
+        }
         XCTAssertGreaterThanOrEqual(files.count, 4)
         for file in files {
-            let text = try String(contentsOf: directory.appendingPathComponent(file), encoding: .utf8)
+            let text = try String(contentsOf: file, encoding: .utf8)
             for (number, line) in text.split(separator: "\n", omittingEmptySubsequences: false).enumerated() {
                 let range = NSRange(line.startIndex..., in: line)
                 if names.firstMatch(in: String(line), range: range) != nil
                     || (bundle.firstMatch(in: String(line), range: range) != nil && !line.contains("com.ironpet")) {
-                    found.append("\(file):\(number + 1): \(line.trimmingCharacters(in: .whitespaces))")
+                    found.append("\(file.lastPathComponent):\(number + 1): \(line.trimmingCharacters(in: .whitespaces))")
                 }
             }
         }

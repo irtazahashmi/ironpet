@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 // MARK: Test doubles for the Mac-only services
 
@@ -362,7 +363,7 @@ final class PlatformServicesConformanceTests: XCTestCase {
 
 final class FacadeBoundaryTests: XCTestCase {
     private static let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent()
-        .deletingLastPathComponent().appendingPathComponent("Sources/IronPet")
+        .deletingLastPathComponent().appendingPathComponent("Sources/IronPetCore")
 
     private func code(_ path: String) throws -> String {
         let text = try String(contentsOf: Self.root.appendingPathComponent(path), encoding: .utf8)
@@ -382,10 +383,10 @@ final class FacadeBoundaryTests: XCTestCase {
     }
 
     func testChatAPIIntakeGoesThroughFileIntake() throws {
-        // ChatAPI takes the Mac's intake as a default argument only. Nothing else in the file names it.
+        // ChatAPI defaults to the folder intake, so the file names no Mac intake.
         let source = try code("API/ChatAPI.swift")
         XCTAssertNil(source.range(of: #"\b(PetLibrary|CaptureService|SpeechPlayer|MeetingController)\b"#, options: .regularExpression))
-        XCTAssertEqual(source.components(separatedBy: "MacFileIntake").count - 1, 1)
+        XCTAssertEqual(source.components(separatedBy: "MacFileIntake").count - 1, 0)
         XCTAssertNil(source.range(of: #"FileManager\.default\.createDirectory"#, options: .regularExpression), "uploads are written through FileIntake")
     }
 

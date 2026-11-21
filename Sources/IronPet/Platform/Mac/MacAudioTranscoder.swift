@@ -1,4 +1,5 @@
 import AVFoundation
+import IronPetCore
 
 /// The Mac adapter for `AudioTranscoder`. AVFoundation decodes WAV, MP3, M4A and MP4 audio. On macOS it does not read OGG/Opus,
 /// which is what Telegram voice messages are, so those return nil and go to the server as they are.

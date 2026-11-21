@@ -82,7 +82,7 @@ Stop and ask if any of these are staged:
 - Anything from `~/.ironpet` (`token`, `port`, `config.json`, `threads/`, `memory/`, `screenshots/`, `meetings/`), chat transcripts, meeting audio, or screenshots of private screens.
 - Tokens and keys: GitHub or Sentry tokens, transcription API keys, `.env` files, signing identities or certificates (`*.p12`, `*.pem`, `*.cer`).
 - Build output: `.build/`, `build/`, `.swiftpm/`, `sidecar/out/`, `sidecar/node_modules/`, `__pycache__/`.
-- A hand-edited `Sources/IronPet/Chat/ACP/AgentCatalogData.swift` (regenerate with `python3 scripts/gen_agent_catalog.py`).
+- A hand-edited `Sources/IronPetCore/Chat/ACP/AgentCatalogData.swift` (regenerate with `python3 scripts/gen_agent_catalog.py`).
 
 Do not `git add -f` anything `.gitignore` excludes. `docs/screenshots/` changes only when a README screenshot changed on purpose (render with `./scripts/screenshots.sh`, which uses sample data only).
 

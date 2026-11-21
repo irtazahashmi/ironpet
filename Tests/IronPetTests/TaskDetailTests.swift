@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class TaskDetailTests: XCTestCase {
     private let now = Date(timeIntervalSince1970: 1_800_000_000)

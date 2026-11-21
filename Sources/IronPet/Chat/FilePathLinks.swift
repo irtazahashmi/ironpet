@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 
 /// Turns file paths in chat text into links that open the file. Detection is pure string work. Whether a

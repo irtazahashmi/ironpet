@@ -1,3 +1,4 @@
+import IronPetCore
 import SwiftUI
 
 /// The Telegram accordion of Settings → Integrations.

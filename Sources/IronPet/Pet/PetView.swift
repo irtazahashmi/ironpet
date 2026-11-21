@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 
 final class PetView: NSView {
     var onClick: (() -> Void)?

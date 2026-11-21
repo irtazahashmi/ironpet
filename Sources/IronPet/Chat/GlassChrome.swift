@@ -1,3 +1,4 @@
+import IronPetCore
 import SwiftUI
 
 /// Liquid Glass on macOS 26, blur materials on macOS 14 and 15.

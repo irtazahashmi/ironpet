@@ -1,4 +1,5 @@
 import Foundation
+import IronPetCore
 import SwiftUI
 
 /// Runs the remote API for the Mac app: starts and stops the server when the settings change, shows the pairing bubble, and holds what the

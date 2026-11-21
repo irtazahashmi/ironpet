@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 
 /// The Tasks section of the ironpet window. The agent owns the list; here the user can only mark a task done, delete it,
@@ -467,63 +468,4 @@ private struct DueLabelStyle: LabelStyle {
             configuration.title
         }
     }
-}
-
-extension TaskLink {
-    var symbol: String {
-        switch kind {
-        case .url: return "safari"
-        case .file: return "folder"
-        case .thread: return "bubble.left.and.bubble.right"
-        case .session: return "arrow.up.forward.app"
-        }
-    }
-
-    /// The tooltip, accessibility label and menu title for the link's button.
-    var help: String {
-        let name = label?.trimmingCharacters(in: .whitespaces).nilIfEmpty
-        switch kind {
-        case .url: return "Open \(name ?? URL(string: ref)?.host ?? "link")"
-        case .file: return "Show \(name ?? (ref as NSString).lastPathComponent) in Finder"
-        case .thread: return "Open \(name ?? "chat thread")"
-        case .session: return "Open \(name ?? "agent session")"
-        }
-    }
-}
-
-extension TaskItem {
-    func isOverdue(now: Date, calendar: Calendar = .current) -> Bool {
-        guard let due, status != .done else { return false }
-        return TaskDue.isAllDay(due, calendar: calendar) ? due < calendar.startOfDay(for: now) : due < now
-    }
-
-    /// "Due tomorrow", "Due Nov 20 at 15:30", "Overdue since yesterday". Nil without a due date.
-    func dueLabel(now: Date, calendar: Calendar = .current) -> String? {
-        guard let due else { return nil }
-        var dayFormat = Date.FormatStyle.dateTime.month(.abbreviated).day()
-        if !calendar.isDate(due, equalTo: now, toGranularity: .year) { dayFormat = dayFormat.year() }
-        dayFormat.calendar = calendar
-        dayFormat.timeZone = calendar.timeZone
-        let today = calendar.startOfDay(for: now)
-        let day: String
-        switch calendar.dateComponents([.day], from: today, to: calendar.startOfDay(for: due)).day {
-        case 0: day = "today"
-        case 1: day = "tomorrow"
-        case -1: day = "yesterday"
-        default: day = due.formatted(dayFormat)
-        }
-        var timeFormat = Date.FormatStyle.dateTime.hour().minute()
-        timeFormat.calendar = calendar
-        timeFormat.timeZone = calendar.timeZone
-        let time = TaskDue.isAllDay(due, calendar: calendar) ? nil : due.formatted(timeFormat)
-        if isOverdue(now: now, calendar: calendar) {
-            if day == "today", let time { return "Overdue since \(time)" }
-            return "Overdue since \(day)" + (time.map { " \($0)" } ?? "")
-        }
-        return "Due \(day)" + (time.map { " at \($0)" } ?? "")
-    }
-}
-
-private extension String {
-    var nilIfEmpty: String? { isEmpty ? nil : self }
 }

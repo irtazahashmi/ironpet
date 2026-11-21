@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class ConfigTests: XCTestCase {
     private var file: URL!

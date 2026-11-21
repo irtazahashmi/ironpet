@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 
 /// Reads the text selected in a transcript message. SwiftUI's selectable `Text` does not expose its selection, so the
 /// probe sends the responder chain the same `copy:` that Cmd-C sends, reads what it put on the pasteboard, and puts the

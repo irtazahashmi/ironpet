@@ -1,5 +1,6 @@
 import Combine
 import Foundation
+import IronPetCore
 
 /// The Mac chat window's side of the chat: the state that belongs to this window and no other client (the draft being typed, the
 /// attachments waiting to go, the message being replied to, the slash popup, the find bar, a file drag, the microphone), plus a copy of

@@ -1,4 +1,5 @@
 import Foundation
+import IronPetCore
 import SQLite3
 
 /// Wispr Flow cannot find ironpet's text field through Accessibility, so it shows

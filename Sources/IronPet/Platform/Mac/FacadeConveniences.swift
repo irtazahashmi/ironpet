@@ -1,4 +1,5 @@
 import Foundation
+import IronPetCore
 
 // Convenience initialisers for code that builds a facade over the Mac's own service: Settings and previews rendered without the
 // app, and tests. The facades take protocols, so these keep the concrete types out of their files.

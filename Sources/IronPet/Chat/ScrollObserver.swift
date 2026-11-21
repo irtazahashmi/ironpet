@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 
 /// What the transcript's scroll view reports for following and the jump button.

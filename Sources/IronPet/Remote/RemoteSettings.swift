@@ -1,5 +1,6 @@
 import AppKit
 import CoreImage.CIFilterBuiltins
+import IronPetCore
 import SwiftUI
 
 /// Settings → Devices: the switch for the remote API, the pairing code and the paired devices.

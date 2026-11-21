@@ -1,4 +1,5 @@
 import Foundation
+import IronPetCore
 import os
 
 /// Writes to `os.Logger`, at the notice level and public, like `Log` always did.

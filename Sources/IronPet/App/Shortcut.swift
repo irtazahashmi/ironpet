@@ -1,5 +1,6 @@
 import AppKit
 import Carbon
+import IronPetCore
 
 /// A global shortcut written as `"cmd+opt+shift+g"`.
 struct Shortcut: Equatable {

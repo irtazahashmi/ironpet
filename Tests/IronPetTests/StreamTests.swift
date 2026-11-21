@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 private let testEnvironment = ["PATH": "/usr/bin:/bin:/usr/sbin:/sbin"]
 

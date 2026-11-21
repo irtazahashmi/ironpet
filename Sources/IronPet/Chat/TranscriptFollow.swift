@@ -1,4 +1,5 @@
 import CoreGraphics
+import IronPetCore
 
 /// Whether the transcript follows new content, and whether to offer a jump to the latest.
 ///

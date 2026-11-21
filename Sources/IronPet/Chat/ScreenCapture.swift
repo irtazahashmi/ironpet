@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 
 /// Screenshots for screen-aware help, via the system `screencapture` tool.
 /// Requires Screen Recording permission; without it macOS returns only the wallpaper.

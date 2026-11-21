@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// A clock and idle signal the tests move by hand.
 final class AutomationTestClock {

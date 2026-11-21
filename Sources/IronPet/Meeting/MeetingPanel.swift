@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 
 /// The floating panel that is on screen for the whole time ironpet records a meeting. It does not take focus, so the

@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 
 /// The text blocks of a reply (headings, paragraphs, lists and quotes) as one attributed string. One string

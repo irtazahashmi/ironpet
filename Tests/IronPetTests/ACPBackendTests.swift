@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// Runs ACPBackend against a scripted agent (a small Python program speaking ACP on stdio).
 @MainActor

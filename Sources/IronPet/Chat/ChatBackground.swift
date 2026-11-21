@@ -1,25 +1,13 @@
 import AppKit
 import ImageIO
+import IronPetCore
 import IronPetKit
 import SwiftUI
 
 /// The picture behind the chat transcript: a built-in gradient with an optional tiled doodle pattern, or an image the
 /// user picked. The built-in table and its drawing live in IronPetKit (`ChatBackgrounds`), so the iPhone app draws the same
 /// ones. This type keeps what only the Mac does: importing an image and caching the decoded custom image.
-enum ChatBackground {
-    static let defaultID = ChatBackgrounds.defaultID
-    static let customID = ChatBackgrounds.customID
-
-    typealias Doodle = ChatBackgrounds.Doodle
-    typealias BuiltIn = ChatBackgrounds.BuiltIn
-
-    static var builtIns: [BuiltIn] { ChatBackgrounds.builtIns }
-
-    static func builtIn(_ id: String) -> BuiltIn? { ChatBackgrounds.builtIn(id) }
-
-    /// Where imported images live, inside ironpet's own data folder.
-    static let folder = Paths.root.appendingPathComponent("backgrounds")
-
+extension ChatBackground {
     enum ImportError: LocalizedError {
         case notAnImage
         var errorDescription: String? { "That file is not an image ironpet can read." }

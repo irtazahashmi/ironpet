@@ -1,6 +1,7 @@
 import AppKit
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class ImageIntakeTests: XCTestCase {
     private var dir: URL!

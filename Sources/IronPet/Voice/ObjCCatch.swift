@@ -1,3 +1,4 @@
+import IronPetCore
 import IronPetObjC
 
 /// Runs `body` and turns an Objective-C exception raised inside it into a thrown Swift error.

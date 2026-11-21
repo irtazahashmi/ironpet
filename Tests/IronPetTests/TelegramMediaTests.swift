@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 private final class VoiceServer: URLProtocol, @unchecked Sendable {
     nonisolated(unsafe) static var requests: [(contentType: String, body: Data)] = []

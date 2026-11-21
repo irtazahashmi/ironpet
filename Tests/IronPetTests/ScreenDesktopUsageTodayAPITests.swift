@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// Screen captures, desktop control, usage and the Today brief, each driven only through `IronPetAPI`.
 @MainActor

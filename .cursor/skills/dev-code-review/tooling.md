@@ -15,7 +15,7 @@ Everything that builds, installs, tests, or packages the app. These files run on
 | `scripts/make_signing_identity.sh` | The local self-signed `ironpet-dev` identity | Hand |
 | `scripts/check_adapters.sh` | Starts each bundled adapter with stubbed CLIs and checks it answers `initialize` | Hand |
 | `scripts/e2e.py` | End-to-end scenarios against the installed app in `--test-mode` | Hand |
-| `scripts/gen_agent_catalog.py` | Writes `Sources/IronPet/Chat/ACP/AgentCatalogData.swift` from the ACP registry | Hand |
+| `scripts/gen_agent_catalog.py` | Writes `Sources/IronPetCore/Chat/ACP/AgentCatalogData.swift` from the ACP registry | Hand |
 | `scripts/screenshots.sh` | Renders the README screenshots from sample data (`--render-previews`) | Hand |
 | `scripts/configure_sentry.sh` | Sentry host, org, projects and token (to the Keychain) | Hand |
 | `tools/make_wolf.swift`, `make_icon.swift`, `preview_cells.swift` | Ghost's sprite sheet and the app icon, drawn in code | Hand |

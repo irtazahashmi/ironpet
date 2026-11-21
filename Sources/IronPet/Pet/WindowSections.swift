@@ -1,4 +1,5 @@
 import AppKit
+import IronPetCore
 import SwiftUI
 
 /// The Actions section: tricks Ghost does on request. It is a grid of buttons, not a list, so it has no search or detail

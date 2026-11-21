@@ -1,6 +1,7 @@
 import AppKit
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// Runs after the other suites (XCTest orders classes by name) and fails when any of them wrote to the real `~/.ironpet/memory`.
 /// A suite that starts a chat turn or an agent session must call `TestMemory.isolate()` in its setUp.

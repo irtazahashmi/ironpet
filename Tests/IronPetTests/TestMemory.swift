@@ -1,5 +1,6 @@
 import Foundation
 @testable import IronPet
+@testable import IronPetCore
 
 /// Points Ghost's memory at one temp folder for the rest of the test run, so no test reads or writes `~/.ironpet/memory`. Every
 /// suite that starts a chat turn or an agent session calls it in setUp; `ZMemoryIsolationTests` fails when one is missed.

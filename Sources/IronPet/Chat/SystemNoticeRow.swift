@@ -1,3 +1,4 @@
+import IronPetCore
 import SwiftUI
 
 /// A system notice in the transcript: one muted line naming its source. A click shows the rest of the text as markdown.

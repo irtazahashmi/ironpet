@@ -1,3 +1,4 @@
+import IronPetCore
 import SwiftUI
 
 /// Replaces the whole composer while a voice note is recording or being transcribed: cancel, a live waveform across

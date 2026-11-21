@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// A `prompt` action with `session` new or own runs in its own thread instead of the open chat.
 @MainActor

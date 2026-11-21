@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class CaptureServiceTests: XCTestCase {
     private var store: CaptureStore!

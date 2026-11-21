@@ -3,6 +3,7 @@ import IronPetKit
 import SwiftUI
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class ChatBackgroundTests: XCTestCase {
     private var dir: URL!

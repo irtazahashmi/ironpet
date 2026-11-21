@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class FilePathLinksTests: XCTestCase {
     private func paths(_ text: String) -> [String] { FilePathLinks.detect(in: text).map(\.path) }

@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// The same checks run against every adapter of a protocol that can run in `swift test`.
 enum SecretStoreSuite {

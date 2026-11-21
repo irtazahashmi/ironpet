@@ -1,0 +1,129 @@
+import Foundation
+
+/// Reads the `## Action items` checklist that `MeetingController.summaryPrompt` asks for:
+/// `- [ ] <task> (owner: <Me, Them, or a name>, due: <date>, waiting: yes)`. Items owned by "Me" become task suggestions.
+/// An item owned by someone else becomes a suggestion the user waits on only when it carries `waiting: yes`, which the model
+/// adds when the work is for the user or blocks the user. Other items, and items without an owner, are not suggested.
+package enum ActionItems {
+    package struct Item: Equatable {
+        package init(title: String, owner: String? = nil, due: String? = nil, waiting: Bool = false) {
+            self.title = title
+            self.owner = owner
+            self.due = due
+            self.waiting = waiting
+        }
+
+        package var title: String
+        package var owner: String?
+        package var due: String?
+        /// `waiting: yes`: the user depends on this item, which someone else owns.
+        package var waiting = false
+    }
+
+    /// Every checklist item in the section, in order. "None." and a missing section give an empty list.
+    package static func parse(_ markdown: String) -> [Item] {
+        entries(markdown).map(\.item)
+    }
+
+    /// The unticked items that are the user's: owner "Me" or no owner. Someone else's items are tasks the user waits on.
+    package static func openItems(_ markdown: String) -> [Item] {
+        entries(markdown).filter { entry in
+            !entry.checked && (entry.item.owner.map { $0.caseInsensitiveCompare("me") == .orderedSame } ?? true)
+        }.map(\.item)
+    }
+
+    /// One checklist line of the section, with its position in the text and whether it is ticked.
+    private struct Entry {
+        var line: Int
+        var checked: Bool
+        var item: Item
+    }
+
+    private static func entries(_ markdown: String) -> [Entry] {
+        var inSection = false
+        var found: [Entry] = []
+        for (number, raw) in markdown.components(separatedBy: "\n").enumerated() {
+            let line = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if line.hasPrefix("#") {
+                let heading = line.drop(while: { $0 == "#" }).trimmingCharacters(in: .whitespaces).lowercased()
+                inSection = heading == "action items"
+                continue
+            }
+            guard inSection, let (checked, body) = checklistBody(line) else { continue }
+            found.append(Entry(line: number, checked: checked, item: item(body)))
+        }
+        return found
+    }
+
+    /// The text of an item for comparing two summaries: case, runs of spaces and a closing full stop do not count.
+    package static func normalized(_ title: String) -> String {
+        var text = title.lowercased().split(whereSeparator: \.isWhitespace).joined(separator: " ")
+        while let last = text.last, ".,;:!".contains(last) { text.removeLast() }
+        return text
+    }
+
+    /// Ticks the items of a regenerated summary that were ticked in the one it replaces, matched by their text.
+    /// An item the model worded differently comes back unticked.
+    package static func carryChecked(from old: String, into new: String) -> String {
+        let ticked = Set(entries(old).filter(\.checked).map { normalized($0.item.title) })
+        guard !ticked.isEmpty else { return new }
+        var lines = new.components(separatedBy: "\n")
+        for entry in entries(new) where !entry.checked && ticked.contains(normalized(entry.item.title)) {
+            guard let box = lines[entry.line].range(of: "[ ]") else { continue }
+            lines[entry.line].replaceSubrange(box, with: "[x]")
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    /// The suggestions for `TaskStore.suggest`: the user's own items, and other people's items marked `waiting: yes`, with
+    /// the owner as the person the user waits on.
+    package static func suggestions(_ markdown: String) -> [(title: String, due: String?, waitingOn: String?)] {
+        parse(markdown).compactMap { item in
+            guard let owner = item.owner else { return nil }
+            if owner.caseInsensitiveCompare("me") == .orderedSame { return (item.title, item.due, nil) }
+            return item.waiting ? (item.title, item.due, owner) : nil
+        }
+    }
+
+    /// The suggestions of a regenerated summary that the summary it replaces did not have. The ones it had were already
+    /// offered, and the user may have skipped them.
+    package static func newSuggestions(old: String?, new: String) -> [(title: String, due: String?, waitingOn: String?)] {
+        let known = Set((old.map(parse) ?? []).map { normalized($0.title) })
+        return suggestions(new).filter { !known.contains(normalized($0.title)) }
+    }
+
+    /// `- [ ] text` or `* [ ] text`, also already ticked ones, which are still open work from the meeting's view.
+    private static func checklistBody(_ line: String) -> (checked: Bool, body: String)? {
+        for prefix in ["- [ ]", "* [ ]", "- [x]", "- [X]", "* [x]", "* [X]"] where line.hasPrefix(prefix) {
+            let body = line.dropFirst(prefix.count).trimmingCharacters(in: .whitespaces)
+            return body.isEmpty ? nil : (!prefix.hasSuffix("[ ]"), body)
+        }
+        return nil
+    }
+
+    /// Splits a trailing `(owner: …, due: …)` off the text. Text without it has no owner.
+    private static func item(_ body: String) -> Item {
+        guard body.hasSuffix(")"), let open = body.range(of: "(", options: .backwards) else { return Item(title: body) }
+        let inside = body[open.upperBound..<body.index(before: body.endIndex)]
+        var owner: String?
+        var due: String?
+        var waiting = false
+        var inDue = false
+        for part in inside.split(separator: ",") {
+            let pair = part.split(separator: ":", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            switch pair.count == 2 ? pair[0].lowercased() : nil {
+            case "owner": owner = pair[1]; inDue = false
+            case "due": due = pair[1]; inDue = true
+            case "waiting": waiting = ["yes", "true"].contains(pair[1].lowercased()); inDue = false
+            default:
+                // A date with a comma, as in `due: Nov 20, 2026`. An owner list keeps its first name only.
+                if inDue, let start = due { due = start + ", " + part.trimmingCharacters(in: .whitespaces) }
+            }
+        }
+        owner = owner.flatMap { $0.isEmpty ? nil : $0 }
+        due = due.flatMap { $0.isEmpty ? nil : $0 }
+        guard owner != nil || due != nil else { return Item(title: body) }
+        let title = body[..<open.lowerBound].trimmingCharacters(in: .whitespaces)
+        return Item(title: title.isEmpty ? body : title, owner: owner, due: due, waiting: waiting)
+    }
+}

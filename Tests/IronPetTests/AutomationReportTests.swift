@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// `session` main/new/own/fork and `report` bubble/chat (S1 to S4, S8, S9).
 @MainActor

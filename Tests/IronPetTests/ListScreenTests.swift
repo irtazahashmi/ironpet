@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 @MainActor
 final class ListScreenTests: XCTestCase {

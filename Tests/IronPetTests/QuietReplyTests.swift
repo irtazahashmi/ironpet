@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// The generic `quiet` reply of a `prompt` automation.
 @MainActor

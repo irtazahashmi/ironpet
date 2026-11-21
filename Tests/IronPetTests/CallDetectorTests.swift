@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class CallDetectorTests: XCTestCase {
     private var clients: [MicClient] = []

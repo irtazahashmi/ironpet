@@ -2,6 +2,7 @@ import AppKit
 import SwiftUI
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// Pure rules for when the transcript follows new content.
 final class TranscriptFollowLogicTests: XCTestCase {

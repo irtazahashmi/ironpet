@@ -1,6 +1,7 @@
 import ApplicationServices
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 /// desktop_key, desktop_open_url, desktop_select, desktop_check and desktop_expand, driven with the synthetic app from
 /// `DesktopControlTests`.
@@ -88,7 +89,7 @@ final class DesktopKeysAndActionsTests: XCTestCase {
     // MARK: Key names
 
     func testKeyNamesMapToKeyCodesAndFlags() throws {
-        let cases: [(String, CGKeyCode, CGEventFlags, String)] = [
+        let cases: [(String, CGKeyCode, DesktopKeyFlags, String)] = [
             ("return", 36, [], "return"), ("Enter", 36, [], "return"), ("tab", 48, [], "tab"), ("escape", 53, [], "escape"), ("esc", 53, [], "escape"),
             ("space", 49, [], "space"), ("delete", 51, [], "delete"), ("backspace", 51, [], "delete"), ("forwarddelete", 117, [], "forwarddelete"),
             ("left", 123, [], "left"), ("right", 124, [], "right"), ("down", 125, [], "down"), ("up", 126, [], "up"),

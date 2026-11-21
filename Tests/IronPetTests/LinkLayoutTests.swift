@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPet
+@testable import IronPetCore
 
 final class LinkLayoutTests: XCTestCase {
     private func text(_ markdown: String) throws -> AttributedString {
