@@ -1,14 +1,18 @@
 // Renders the ironpet app icon (1024x1024 PNG): the pet on a wintry rounded tile.
-// Run: swift tools/make_pet.swift ghost --single /tmp/pet.png && swift tools/make_icon.swift /tmp/pet.png <output.png>
+// Run: swift tools/make_pet.swift ghost --single /tmp/pet.png && swift tools/make_icon.swift /tmp/pet.png <output.png> [--ios]
 // The input is one high-resolution 192x208-proportioned pet frame.
+// `--ios` draws the tile full-bleed and opaque, with no corners, shadow or stroke: iOS masks the icon itself and
+// App Store Connect rejects iOS icons with an alpha channel.
 import AppKit
 
 let args = CommandLine.arguments
 let pet = NSImage(contentsOfFile: args[1])!.cgImage(forProposedRect: nil, context: nil, hints: nil)!
+let ios = args.dropFirst(3).contains("--ios")
 
 let size = 1024
 let ctx = CGContext(data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
-                    space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+                    space: CGColorSpace(name: CGColorSpace.sRGB)!,
+                    bitmapInfo: (ios ? CGImageAlphaInfo.noneSkipLast : CGImageAlphaInfo.premultipliedLast).rawValue)!
 
 func rgb(_ hex: UInt32, _ a: CGFloat = 1) -> CGColor {
     CGColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: a)
@@ -16,14 +20,20 @@ func rgb(_ hex: UInt32, _ a: CGFloat = 1) -> CGColor {
 
 // macOS icon grid: 824pt tile centered in the 1024 canvas.
 let tile = CGRect(x: 100, y: 100, width: 824, height: 824)
-let tilePath = CGPath(roundedRect: tile, cornerWidth: 185, cornerHeight: 185, transform: nil)
+let tilePath = ios ? CGPath(rect: tile, transform: nil)
+                   : CGPath(roundedRect: tile, cornerWidth: 185, cornerHeight: 185, transform: nil)
 
-ctx.saveGState()
-ctx.setShadow(offset: CGSize(width: 0, height: -12), blur: 28, color: rgb(0x000000, 0.35))
-ctx.addPath(tilePath)
-ctx.setFillColor(rgb(0x1C2A3A))
-ctx.fillPath()
-ctx.restoreGState()
+if ios {
+    ctx.scaleBy(x: CGFloat(size) / tile.width, y: CGFloat(size) / tile.height)
+    ctx.translateBy(x: -tile.minX, y: -tile.minY)
+} else {
+    ctx.saveGState()
+    ctx.setShadow(offset: CGSize(width: 0, height: -12), blur: 28, color: rgb(0x000000, 0.35))
+    ctx.addPath(tilePath)
+    ctx.setFillColor(rgb(0x1C2A3A))
+    ctx.fillPath()
+    ctx.restoreGState()
+}
 
 ctx.saveGState()
 ctx.addPath(tilePath)
@@ -47,10 +57,12 @@ let petRect = CGRect(x: 512 - 96 * scale, y: 128, width: 192 * scale, height: 20
 ctx.draw(pet, in: petRect)
 ctx.restoreGState()
 
-ctx.addPath(tilePath)
-ctx.setStrokeColor(rgb(0xFFFFFF, 0.12))
-ctx.setLineWidth(4)
-ctx.strokePath()
+if !ios {
+    ctx.addPath(tilePath)
+    ctx.setStrokeColor(rgb(0xFFFFFF, 0.12))
+    ctx.setLineWidth(4)
+    ctx.strokePath()
+}
 
 try! NSBitmapImageRep(cgImage: ctx.makeImage()!).representation(using: .png, properties: [:])!
     .write(to: URL(fileURLWithPath: args[2]))

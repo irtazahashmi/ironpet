@@ -120,7 +120,8 @@ jobs:
         run: |
           device=$(xcrun simctl list devices available iPhone | grep -m1 -oE '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}')
           xcodebuild test -project iOS/IronPetRemote.xcodeproj -scheme IronPetRemote \
-            -destination "platform=iOS Simulator,id=$device" -derivedDataPath "$RUNNER_TEMP/dd"
+            -destination "platform=iOS Simulator,id=$device" -derivedDataPath "$RUNNER_TEMP/dd" \
+            CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= CODE_SIGN_IDENTITY=-
 
   # Branch protection requires a check named "build"; it passes only when both jobs above do.
   build:
