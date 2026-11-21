@@ -11,6 +11,16 @@ struct RemoteDevice: Equatable, Identifiable {
     var origin: String?
     /// The device's own public key (base64), when it sent one at pairing. Kept for a later push step; nothing uses it yet.
     var publicKey: String?
+    /// What the user allowed this device beyond the basics, set on the Mac only. See `RemoteScope`.
+    var scopes: Set<String> = []
+
+    func has(_ scope: String) -> Bool { scopes.contains(scope) }
+}
+
+/// Extra access a device gets only when the user grants it on the Mac (Settings → Devices). Every scope is off for a new device.
+enum RemoteScope {
+    /// Redacted screen capture text: the `/v1/screen/*` routes.
+    static let screen = "screen"
 }
 
 /// One row of the access log.
@@ -72,6 +82,9 @@ final class RemoteStore: @unchecked Sendable {
                                            route TEXT NOT NULL, status INTEGER NOT NULL, bytes INTEGER NOT NULL, duration_ms INTEGER NOT NULL);
             CREATE INDEX remote_access_log_by_time ON remote_access_log(at);
             """),
+        .init(543, "remote: device scopes", sql: """
+            ALTER TABLE remote_devices ADD COLUMN scopes TEXT NOT NULL DEFAULT '';
+            """),
     ]
 
     private let database: Database
@@ -81,16 +94,16 @@ final class RemoteStore: @unchecked Sendable {
     // MARK: Devices
 
     func devices() -> [RemoteDevice] {
-        let rows = (try? database.read { try $0.rows("SELECT id, name, created, last_seen, origin, public_key FROM remote_devices ORDER BY created, id") }) ?? []
+        let rows = (try? database.read { try $0.rows("SELECT id, name, created, last_seen, origin, public_key, scopes FROM remote_devices ORDER BY created, id") }) ?? []
         return rows.compactMap(Self.device)
     }
 
     /// The device whose token hashes to `hash`. Every row is compared, so the time does not tell how much of a hash matched.
     func device(tokenHash hash: String) -> RemoteDevice? {
-        let rows = (try? database.read { try $0.rows("SELECT id, name, created, last_seen, origin, public_key, token_hash FROM remote_devices") }) ?? []
+        let rows = (try? database.read { try $0.rows("SELECT id, name, created, last_seen, origin, public_key, scopes, token_hash FROM remote_devices") }) ?? []
         var found: RemoteDevice?
         for row in rows {
-            if let stored = row[6] as? String, RemoteHash.equal(stored, hash) { found = Self.device(row) }
+            if let stored = row[7] as? String, RemoteHash.equal(stored, hash) { found = Self.device(row) }
         }
         return found
     }
@@ -118,7 +131,18 @@ final class RemoteStore: @unchecked Sendable {
     private static func device(_ row: [Database.Value]) -> RemoteDevice? {
         guard let id = row[0] as? String, let name = row[1] as? String, let created = row[2] as? Double else { return nil }
         return RemoteDevice(id: id, name: name, created: Date(timeIntervalSince1970: created),
-                            lastSeen: (row[3] as? Double).map { Date(timeIntervalSince1970: $0) }, origin: row[4] as? String, publicKey: row[5] as? String)
+                            lastSeen: (row[3] as? Double).map { Date(timeIntervalSince1970: $0) }, origin: row[4] as? String, publicKey: row[5] as? String,
+                            scopes: Set((row[6] as? String ?? "").split(separator: ",").map(String.init)))
+    }
+
+    /// Grants or takes back one scope of a device. Returns false when the device is gone.
+    @discardableResult
+    func setScope(_ scope: String, granted: Bool, device id: String) -> Bool {
+        guard let current = devices().first(where: { $0.id == id }) else { return false }
+        var scopes = current.scopes
+        if granted { scopes.insert(scope) } else { scopes.remove(scope) }
+        try? database.write { try $0.execute("UPDATE remote_devices SET scopes = ? WHERE id = ?", [scopes.sorted().joined(separator: ","), id]) }
+        return true
     }
 
     // MARK: Pairing codes
@@ -171,6 +195,15 @@ final class RemoteStore: @unchecked Sendable {
             return RemoteAccessRow(at: Date(timeIntervalSince1970: at), deviceID: row[1] as? String, method: method, route: route,
                                    status: Int(status), bytes: Int(bytes), durationMs: Int(ms))
         }
+    }
+
+    /// How many successful `GET`s on routes under `prefix` the device made since `since`. The rows hold the route template, never a query.
+    func reads(device id: String, routePrefix prefix: String, since: Date) -> Int {
+        let rows = (try? database.read {
+            try $0.rows("SELECT COUNT(*) FROM remote_access_log WHERE device_id = ? AND method = 'GET' AND status >= 200 AND status < 300 AND route LIKE ? AND at >= ?",
+                        [id, prefix + "%", since.timeIntervalSince1970])
+        }) ?? []
+        return Int((rows.first?[0] as? Int64) ?? 0)
     }
 
     func pruneLog(now: Date) {

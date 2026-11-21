@@ -61,6 +61,12 @@ public enum APIPath {
     public static func regenerateMeeting(_ id: String) -> String { "/v1/meetings/\(id)/regenerate" }
     public static func askAboutMeeting(_ id: String) -> String { "/v1/meetings/\(id)/ask" }
 
+    public static let screenStatus = "/v1/screen/status"
+    public static let screenChanges = "/v1/screen/changes"
+    public static func screenCapture(_ id: Int) -> String { "/v1/screen/captures/\(id)" }
+    public static let screenSearch = "/v1/screen/search"
+    public static let screenPause = "/v1/screen/pause"
+
     public static let settings = "/v1/settings"
     public static let settingsPets = "/v1/settings/pets"
     public static let settingsPet = "/v1/settings/pet"

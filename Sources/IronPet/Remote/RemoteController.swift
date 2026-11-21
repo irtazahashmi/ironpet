@@ -240,6 +240,14 @@ final class RemoteController: ObservableObject {
         refreshDevices()
     }
 
+    /// Allows or stops redacted screen text for one device. Only this switch on the Mac grants it.
+    func setScreenAccess(_ id: String, granted: Bool) {
+        service.setScreenAccess(id, granted: granted)
+        refreshDevices()
+    }
+
+    func screenReadsToday(_ id: String) -> Int { service.screenReadsToday(id) }
+
     func revokeAllAndRotate() {
         service.revokeAllAndRotate()
         pairing = nil

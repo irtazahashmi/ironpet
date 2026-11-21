@@ -45,6 +45,9 @@ public final class IronPetClient: @unchecked Sendable {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 15
         configuration.waitsForConnectivity = false
+        // Nothing the Mac answers is kept, not even in memory: screen text must not sit in a cache.
+        configuration.urlCache = nil
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
         if endpoint.pinsCertificate, let pin = endpoint.pin {
             session = URLSession(configuration: configuration, delegate: PinnedSessionDelegate(pin: pin), delegateQueue: nil)
         } else {

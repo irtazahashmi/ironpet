@@ -152,10 +152,22 @@ private struct RemoteSettingsBody: View {
                     VStack(alignment: .leading) {
                         Text(device.name)
                         Text(Self.detail(device)).font(.caption).foregroundStyle(.secondary)
+                        if device.has(RemoteScope.screen) {
+                            let reads = remote.screenReadsToday(device.id)
+                            Text("Screen read \(reads) time\(reads == 1 ? "" : "s") today").font(.caption).foregroundStyle(.secondary)
+                                .accessibilityIdentifier("screen-reads-\(device.id)")
+                        }
                     }
                     Spacer()
+                    Toggle("Screen text", isOn: Binding(get: { device.has(RemoteScope.screen) }, set: { remote.setScreenAccess(device.id, granted: $0) }))
+                        .toggleStyle(.switch).controlSize(.small)
+                        .help("Lets this device read redacted screen capture text and pause capture. Off until you turn it on here.")
                     Button("Revoke", role: .destructive) { remote.revoke(device.id) }
                 }
+            }
+            if remote.devices.contains(where: { $0.has(RemoteScope.screen) }) {
+                Text("A device with Screen text on can read what screen capture stored, with secrets redacted as agents see it, and can pause capture. It makes at most 200 requests an hour.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
             if !remote.devices.isEmpty {
                 Button("Revoke all and rotate", role: .destructive) { confirmRotate = true }

@@ -6,6 +6,7 @@ struct MoreView: View {
     let alerts: AlertsModel
     let automations: AutomationsModel
     let meetings: MeetingsModel
+    let screen: ScreenModel
     let settings: PhoneSettingsModel
     @Binding var path: [MoreDestination]
 
@@ -31,6 +32,8 @@ struct MoreView: View {
                 .accessibilityIdentifier("more-automations")
                 NavigationLink(value: MoreDestination.meetings) { Label("Meetings", systemImage: "person.2") }
                     .accessibilityIdentifier("more-meetings")
+                NavigationLink(value: MoreDestination.screen) { Label("Screen", systemImage: "rectangle.dashed.badge.record") }
+                    .accessibilityIdentifier("more-screen")
                 NavigationLink(value: MoreDestination.settings) { Label("Settings", systemImage: "slider.horizontal.3") }
                     .accessibilityIdentifier("more-settings")
             }
@@ -40,6 +43,7 @@ struct MoreView: View {
                 case .alerts: AlertsView(model: alerts)
                 case .automations: AutomationsView(model: automations)
                 case .meetings: MeetingsView(model: meetings)
+                case .screen: ScreenView(model: screen)
                 case .settings: PhoneSettingsView(model: settings)
                 }
             }

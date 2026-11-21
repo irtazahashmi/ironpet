@@ -40,6 +40,14 @@ enum RemotePollResult: Equatable {
     case limited(retryAfter: Int)
 }
 
+/// Whether a device may make a screen request now.
+enum RemoteScreenGate: Equatable {
+    case allowed
+    /// The device lacks the `screen` scope.
+    case forbidden
+    case limited(retryAfter: Int)
+}
+
 enum RemoteAuthResult: Equatable {
     case device(RemoteDevice)
     case unauthorized
@@ -59,11 +67,16 @@ final class RemoteService: @unchecked Sendable {
     static let sustained = 5.0
     /// Written to `last_seen` at most this often per device, so a chatty client does not write on every request.
     static let touchInterval: TimeInterval = 30
+    /// Screen requests one device may make in an hour. The next one gets 429.
+    static let screenPerHour = 200
 
     let store: RemoteStore
     let identity: RemoteIdentity
     private let now: () -> Date
     private let lock = NSLock()
+
+    /// The service's clock, which the access log uses too, so a test that moves the clock moves the log with it.
+    var currentTime: Date { now() }
 
     /// A valid code arrived. The Mac shows Allow and Deny and calls `decide`.
     var onPairingRequest: (@Sendable (RemotePairingRequest) -> Void)?
@@ -110,6 +123,7 @@ final class RemoteService: @unchecked Sendable {
     private var lockedUntil: Date?
     private var buckets: [String: Bucket] = [:]
     private var touched: [String: Date] = [:]
+    private var screenWindows: [String: Window] = [:]
     private var sockets: [UUID: (device: String, close: @Sendable () -> Void)] = [:]
     private var lastPrune = Date.distantPast
 
@@ -291,6 +305,7 @@ final class RemoteService: @unchecked Sendable {
         lock.lock()
         buckets[id] = nil
         touched[id] = nil
+        screenWindows[id] = nil
         lock.unlock()
         activity?(ActivityEvent(at: now(), kind: ActivityEvent.Kind("remote.revoked"), ref: id, title: "Revoked \(name ?? "a device")"))
         onDevicesChanged?()
@@ -308,9 +323,44 @@ final class RemoteService: @unchecked Sendable {
         pending = [:]
         buckets = [:]
         touched = [:]
+        screenWindows = [:]
         lock.unlock()
         activity?(ActivityEvent(at: now(), kind: ActivityEvent.Kind("remote.revoked_all"), ref: "all", title: "Revoked \(count) device\(count == 1 ? "" : "s") and made a new certificate"))
         onDevicesChanged?()
+    }
+
+    // MARK: Screen scope
+
+    /// Checks the scope first, then counts the request against the hourly limit. A refused request does not count.
+    func authorizeScreen(_ device: RemoteDevice) -> RemoteScreenGate {
+        guard device.has(RemoteScope.screen) else { return .forbidden }
+        let at = now()
+        lock.lock()
+        defer { lock.unlock() }
+        var window = screenWindows[device.id] ?? Window()
+        let allowed = window.hit(at: at, limit: Self.screenPerHour, span: 3600)
+        let wait = window.hits.first.map { max(1, Int((3600 - at.timeIntervalSince($0)).rounded(.up))) } ?? 1
+        screenWindows[device.id] = window
+        return allowed ? .allowed : .limited(retryAfter: wait)
+    }
+
+    /// Grants or takes back the screen scope of a device on the Mac.
+    @discardableResult
+    func setScreenAccess(_ id: String, granted: Bool) -> Bool {
+        let name = store.devices().first { $0.id == id }?.name
+        guard store.setScope(RemoteScope.screen, granted: granted, device: id) else { return false }
+        lock.lock()
+        screenWindows[id] = nil
+        lock.unlock()
+        activity?(ActivityEvent(at: now(), kind: ActivityEvent.Kind(granted ? "remote.screen_granted" : "remote.screen_revoked"), ref: id,
+                                title: "\(granted ? "Allowed" : "Stopped") screen text for \(name ?? "a device")"))
+        onDevicesChanged?()
+        return true
+    }
+
+    /// Successful screen reads by the device since the start of the local day.
+    func screenReadsToday(_ id: String) -> Int {
+        store.reads(device: id, routePrefix: "/v1/screen/", since: Calendar.current.startOfDay(for: now()))
     }
 
     // MARK: Sockets

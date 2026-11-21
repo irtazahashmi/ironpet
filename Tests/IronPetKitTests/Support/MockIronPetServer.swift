@@ -615,6 +615,11 @@ struct MockPhaseFour {
     var meetingState = RemoteMeetingState()
     var config = RemoteConfig(pet: .init(name: "Ghost"), speech: .init(enabled: false, voice: "am_puck"), meetings: .init(enabled: true))
     var pets = [RemotePetChoice(id: "p-ghost", name: "Ghost", builtIn: true, selected: true), RemotePetChoice(id: "p-fox", name: "Fox", builtIn: false)]
+    /// The screen scope. False answers every screen route with 403, like a Mac that has not granted it.
+    var screenAllowed = true
+    var screenStatus = RemoteScreenStatus(running: true, captureCount: 42, lastCapture: Date(timeIntervalSince1970: 1_700_000_000))
+    var screenWindows: [RemoteScreenWindow] = MockIronPetServer.sampleScreenWindows
+    var screenHits: [RemoteScreenHit] = MockIronPetServer.sampleScreenHits
     var usage = RemoteUsage(days: 7, rows: [.init(feature: "chat", model: "claude", requests: 12, totalTokens: 3400, cost: 0.42)], todayCost: 0.1, rangeCost: 0.42, hasCost: true)
 }
 
@@ -631,6 +636,21 @@ extension MockIronPetServer {
         RemoteMeeting(id: "2026-11-14-1400", date: Date(timeIntervalSince1970: 1_700_000_000), preview: "Planned the launch.", hasSummary: true, hasTranscript: true, hasAudio: true),
     ]
 
+    static let sampleScreenWindows: [RemoteScreenWindow] = [
+        RemoteScreenWindow(app: "Slack", window: "Ana (DM) - Acme", container: "Ana",
+                           changes: ["2026-11-21T09:58+01:00 message | Can you review PR 4649? | c12 #a1b", "2026-11-21T10:02+01:00 message | Sure, after lunch | c13 #a1c"]),
+        RemoteScreenWindow(app: "Safari", window: "Release notes", changes: ["2026-11-21T09:30+01:00 page | Release notes | c9"], url: "https://example.com/notes", more: 3),
+    ]
+
+    static let sampleScreenHits: [RemoteScreenHit] = [
+        RemoteScreenHit(id: 12, time: Date(timeIntervalSince1970: 1_700_000_000), app: "Slack", bundleID: "com.tinyspeck.slackmacgap", window: "Ana (DM) - Acme",
+                        snippet: "ship the release with key [redacted:openai-key] before standup"),
+    ]
+
+    var screenAllowed: Bool { get { lock.lock(); defer { lock.unlock() }; return _p4.screenAllowed } set { lock.lock(); _p4.screenAllowed = newValue; lock.unlock() } }
+    var screenStatus: RemoteScreenStatus { get { lock.lock(); defer { lock.unlock() }; return _p4.screenStatus } set { lock.lock(); _p4.screenStatus = newValue; lock.unlock() } }
+    var screenWindows: [RemoteScreenWindow] { get { lock.lock(); defer { lock.unlock() }; return _p4.screenWindows } set { lock.lock(); _p4.screenWindows = newValue; lock.unlock() } }
+
     var automations: [RemoteAutomation] { get { lock.lock(); defer { lock.unlock() }; return _p4.automations } set { lock.lock(); _p4.automations = newValue; lock.unlock() } }
     var meetings: [RemoteMeeting] { get { lock.lock(); defer { lock.unlock() }; return _p4.meetings } set { lock.lock(); _p4.meetings = newValue; lock.unlock() } }
     var meetingState: RemoteMeetingState { get { lock.lock(); defer { lock.unlock() }; return _p4.meetingState } set { lock.lock(); _p4.meetingState = newValue; lock.unlock() } }
@@ -642,6 +662,7 @@ extension MockIronPetServer {
         case "automations": routeAutomations(request, parts, connection)
         case "meetings": routeMeetings(request, parts, connection)
         case "settings": routeSettings(request, parts, connection)
+        case "screen": routeScreen(request, parts, connection)
         case "usage": lock.lock(); let usage = _p4.usage; lock.unlock(); respond(connection, 200, usage)
         default: return false
         }
@@ -737,6 +758,32 @@ extension MockIronPetServer {
             respond(connection, 200, RemoteMeetingText(id: id, text: text))
         case ("POST", "regenerate"): respond(connection, 202, Data(#"{"started":"\#(id)"}"#.utf8))
         case ("POST", "ask"): respond(connection, 200, Data(#"{"asked":"\#(id)"}"#.utf8))
+        default: fail(connection, 404, "not_found", "not found")
+        }
+    }
+
+    private func routeScreen(_ request: Recorded, _ parts: [String], _ connection: NWConnection) {
+        lock.lock(); let state = _p4; lock.unlock()
+        guard state.screenAllowed else { return fail(connection, 403, "forbidden", "This device may not read the screen. Turn on Screen text for it in Settings → Devices on the Mac.") }
+        switch (request.method, parts.count > 2 ? parts[2] : "") {
+        case ("GET", "status"): respond(connection, 200, state.screenStatus)
+        case ("GET", "changes"): respond(connection, 200, RemoteScreenChanges(changes: state.screenWindows))
+        case ("GET", "search"):
+            // The mock has one hit and returns it for any non-empty query.
+            let hits = request.query.contains("q=") ? state.screenHits : []
+            respond(connection, 200, RemoteScreenSearch(count: hits.count, hits: hits))
+        case ("GET", "captures") where parts.count == 4:
+            guard let id = Int(parts[3]), id == 12 || id == 13 else { return fail(connection, 404, "not_found", "no capture \(parts[3]).") }
+            respond(connection, 200, RemoteScreenCaptureResponse(capture: RemoteScreenCapture(
+                id: id, time: Date(timeIntervalSince1970: 1_700_000_000), app: "Slack", window: "Ana (DM) - Acme", trigger: "click",
+                outline: "Window\n  List (2)\n    Group [#a1b]: Can you review PR 4649?")))
+        case ("POST", "pause"):
+            lock.lock()
+            _p4.screenStatus.paused = true
+            _p4.screenStatus.pausedUntil = Date(timeIntervalSince1970: 1_700_000_900)
+            let status = _p4.screenStatus
+            lock.unlock()
+            respond(connection, 200, status)
         default: fail(connection, 404, "not_found", "not found")
         }
     }

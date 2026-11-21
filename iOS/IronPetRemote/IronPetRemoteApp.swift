@@ -54,6 +54,7 @@ struct MainTabs: View {
     @State private var alerts: AlertsModel
     @State private var automations: AutomationsModel
     @State private var meetings: MeetingsModel
+    @State private var screen: ScreenModel
     @State private var phoneSettings: PhoneSettingsModel
     @State private var morePath: [MoreDestination] = []
     private let client: IronPetClient
@@ -73,6 +74,8 @@ struct MainTabs: View {
         _alerts = State(initialValue: AlertsModel(client: client, events: events, onUnauthorized: unauthorized))
         _automations = State(initialValue: AutomationsModel(client: client, events: events, onUnauthorized: unauthorized))
         _meetings = State(initialValue: MeetingsModel(client: client, events: events, gate: TranscriptGate(authenticator: Self.authenticator), onUnauthorized: unauthorized))
+        _screen = State(initialValue: ScreenModel(client: client, events: events, gate: TranscriptGate(authenticator: Self.authenticator, reason: "Show screen text"),
+                                                  onUnauthorized: unauthorized))
         _phoneSettings = State(initialValue: PhoneSettingsModel(client: client, events: events, onUnauthorized: unauthorized))
     }
 
@@ -101,7 +104,7 @@ struct MainTabs: View {
                 .tabItem { Label("Tasks", systemImage: "checklist") }.tag(AppTab.tasks)
             AgentsView(model: agents)
                 .tabItem { Label("Agents", systemImage: "terminal") }.tag(AppTab.agents)
-            MoreView(alerts: alerts, automations: automations, meetings: meetings, settings: phoneSettings, path: $morePath)
+            MoreView(alerts: alerts, automations: automations, meetings: meetings, screen: screen, settings: phoneSettings, path: $morePath)
                 .tabItem { Label("More", systemImage: "ellipsis.circle") }.badge(alerts.alerts.count + automations.automations.filter(\.waitsForApproval).count)
                 .tag(AppTab.more)
         }
@@ -111,13 +114,15 @@ struct MainTabs: View {
         // screen would leave the text unlocked after the person left it and then left the app.
         .onChange(of: scenePhase) { _, phase in
             meetings.gate.scenePhaseChanged(phase)
+            screen.gate.scenePhaseChanged(phase)
         }
         // A background changed on the Mac shows when the Chat tab opens.
         .onChange(of: tab) { _, next in if next == .chat { Task { await pet.reloadPet(applyMood: false) } } }
         // Leaving the tabs (unpair or a 401) must close the socket, which otherwise keeps reconnecting with the old token.
-        .onDisappear { [tasks, pet, chat, today, agents, alerts, automations, meetings, phoneSettings] in
-            tasks.stop(); pet.stop(); chat.stop(); today.stop(); agents.stop(); alerts.stop(); automations.stop(); meetings.stop(); phoneSettings.stop()
+        .onDisappear { [tasks, pet, chat, today, agents, alerts, automations, meetings, screen, phoneSettings] in
+            tasks.stop(); pet.stop(); chat.stop(); today.stop(); agents.stop(); alerts.stop(); automations.stop(); meetings.stop(); screen.stop(); phoneSettings.stop()
             meetings.gate.lock()
+            screen.gate.lock()
         }
     }
 
