@@ -20,8 +20,11 @@ enum AutomationMCP {
             {"type":"alert","id","title","subtitle"?,"label"?,"severity"?:"warn|bad|good|info","url"?,"ask"?,"version"?,"resolved"?}: an open item in the alerts list. A new or changed one also gets a bubble (the first run is quiet). Listed again unchanged, it is left alone even if the user dismissed it. "resolved": true removes it.
             {"type":"prompt","prompt","title"?,"agent"?,"model"?}: asks an agent in a background session and shows the answer.
             {"type":"suggest_task","id","title","due"?:"YYYY-MM-DD","notes"?,"url"?}: proposes a task (from an email, a message, an issue) as a suggestion the user adds or skips, never as a task. id is stable for the thing it is about; an id this automation suggested before is ignored, also after it was added or skipped. Title up to 200 characters, notes up to 2000, at most 10 per run. The first run is quiet; later runs show one bubble.
+            {"type":"chat","text","title"?}: posts a system notice to the main chat, the same notice as a prompt with report "chat". text (up to 64 KiB) goes to the chat's agent once, inside a data-marked block, and starts a turn. A newer notice from this automation replaces one the agent has not read yet, so send one chat action per run.
+          A script may also return {state, actions, done: true}: the automation deletes itself after its actions ran.
           It stops after 60 seconds or 32 MiB. No fetch, files, modules or timers.
-        For the other triggers, action.type is one of: bubble {"title","body"}, prompt {"prompt","quiet"? (a string or a list),"session"? ("main" or "chat", "new", "own", "fork"),"report"? ("bubble" or "chat"),"allowedTools"?,"disallowedTools"?,"model"?} (by default, session "chat", sends the prompt into the user's open chat, where the chat's agent runs it with its full tools, memory and context; agent and model are ignored. session "new" runs it in a fresh agent session each time, session "own" resumes one thread for this automation (fresh after 50 runs), and session "fork" starts from a copy of the main chat's agent session; all three have full tools minus disallowedTools (allowedTools lists tools that need no asking, model overrides the model), the prompt may be a slash skill such as "/am-check-emails 1", the run is listed in the thread list as an automation run, and a reply equal to quiet shows no bubble; report "chat" (the default for fork, and it makes session default to "new") posts the answer to the main chat as a system notice that the chat's agent reads and may act on, and an empty answer, NOTHING or NOTHING_NEW (or quiet) posts nothing; with an interval trigger it is a recurring loop; a prompt that uses {{item.*}} instead runs in a read-only background session and shows the answer in a bubble), shell {"command","timeoutSeconds"?}, digest {"digest":"brief"|"recap"} (a bubble with what needs the user today, or what happened today: tasks, alerts, agents, meetings; built from data on this Mac with no agent and no approval; not for poll or stream triggers). The built-in morning-brief and day-recap automations use it and are off until the user turns them on.
+        For the other triggers, action.type is one of: bubble {"title","body"}, prompt {"prompt","quiet"? (a string or a list),"session"? ("main" or "chat", "new", "own", "fork"),"report"? ("bubble" or "chat"),"allowedTools"?,"disallowedTools"?,"model"?} (by default, session "chat", sends the prompt into the user's open chat, where the chat's agent runs it with its full tools, memory and context; agent and model are ignored. session "new" runs it in a fresh agent session each time, session "own" resumes one thread for this automation (fresh after 50 runs), and session "fork" starts from a copy of the main chat's agent session; all three have full tools minus disallowedTools (allowedTools lists tools that need no asking, model overrides the model), the prompt may be a slash skill such as "/am-check-emails 1", the run is listed in the thread list as an automation run, and a reply equal to quiet shows no bubble; report "chat" (the default for fork, and it makes session default to "new") posts the answer to the main chat as a system notice that the chat's agent reads and may act on, and an empty answer, NOTHING or NOTHING_NEW (or quiet) posts nothing; with an interval trigger it is a recurring loop; a prompt that uses {{item.*}} instead runs in a read-only background session and shows the answer in a bubble), shell {"command","timeoutSeconds"?,"report"? ("bubble" or "chat"),"quiet"?} (report "chat" posts the command, exit code and the last 4 KB of output to the main chat as a system notice that the chat's agent reads; a run that exits 0 starts a turn, a failure posts a notice without starting one, and exact output equal to quiet posts nothing), digest {"digest":"brief"|"recap"} (a bubble with what needs the user today, or what happened today: tasks, alerts, agents, meetings; built from data on this Mac with no agent and no approval; not for poll or stream triggers). The built-in morning-brief and day-recap automations use it and are off until the user turns them on.
+        until (top-level, optional, not for script triggers): "success" deletes the automation after the first run whose action succeeded (a shell command that exits 0, a prompt that finished), after its report was posted. "once" deletes it after the first completed run, success or not. The run history stays readable through automations_history. Use it for a job that runs until something is true, such as a shell poll every few minutes with report "chat" and until "success" that exits 0 once a PR merged. A job that survives app and chat restarts.
         Text may use {{item.field}} (poll, stream), {{count}} (stream), {{name}} and {{now}}.
         presentation (optional): mood, symbol (SF Symbol), buttons (["done","snooze"]), notification (also a macOS notification).
         Shell commands, prompts, scripts, stream commands and poll shell sources that an agent creates or changes wait for the user to press Approve in a bubble before they run. Never put secrets in an automation: use $ENV_VAR references.
@@ -35,10 +38,12 @@ enum AutomationMCP {
         let id: [String: Any] = ["id": ["type": "string", "description": "Automation id"]]
         return [
             tool("automations_list", "List every ironpet automation with its trigger, next run, last result and approval state.\n\n" + guide),
-            tool("automations_get", "Get one automation in full, with its recent runs.", id, required: ["id"]),
+            tool("automations_get", "Get one automation in full (trigger, action with report and quiet, until), with its recent runs.", id, required: ["id"]),
             tool("automations_create", "Create an automation. Pass the fields at the top level (name, trigger, action, presentation). id is made from the name when missing.\n\n" + guide,
                  ["name": ["type": "string"], "id": ["type": "string"], "enabled": ["type": "boolean"], "trigger": ["type": "object"],
-                  "action": ["type": "object"], "presentation": ["type": "object"], "note": ["type": "string"]],
+                  "action": ["type": "object"], "presentation": ["type": "object"], "note": ["type": "string"],
+                  "until": ["type": "string", "enum": AutomationValidator.untilValues,
+                            "description": "Delete the automation after a run: success (the action succeeded, such as exit 0) or once (the first completed run). Not for script triggers."]],
                  required: ["name", "trigger", "action"]),
             tool("automations_update", "Change an automation. changes is merged into it; set a key to null to remove it.",
                  id.merging(["changes": ["type": "object"]]) { a, _ in a }, required: ["id", "changes"]),
@@ -71,8 +76,12 @@ enum AutomationCLI {
           get <id>                      one automation in full
           add --name N --every MIN [--clock active|wall] [--title T] [--body B]
                                         a bubble reminder every MIN minutes
+          add --name N --command CMD --every MIN [--report chat] [--until success|once]
+                                        a shell job every MIN minutes (wall clock). --report chat posts the result to
+                                        the main chat. --until deletes the automation after a run.
           add --json '<automation JSON>' | --file path.json
           update <id> --json '<changes JSON>'
+          update <id> [--report bubble|chat] [--until success|once|none]
           pause <id> | resume <id> | delete <id> | run <id>
           history <id> [--limit N]
         The app must be running. Output is JSON.
@@ -135,9 +144,19 @@ enum AutomationCLI {
             op = "run_now"
             payload["id"] = id
         case "update":
-            guard let id = positional, let json = option("--json"), let changes = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any] else {
-                return fail("update needs an id and --json '{...}'")
+            guard let id = positional else { return fail("update needs an id and --json '{...}', --report or --until") }
+            var changes: [String: Any] = [:]
+            if let json = option("--json") {
+                guard let object = (try? JSONSerialization.jsonObject(with: Data(json.utf8))) as? [String: Any] else { return fail("that is not a JSON object") }
+                changes = object
             }
+            if let report = option("--report") {
+                var action = changes["action"] as? [String: Any] ?? [:]
+                action["report"] = report
+                changes["action"] = action
+            }
+            if let until = option("--until") { changes["until"] = until == "none" ? NSNull() : until }
+            guard !changes.isEmpty else { return fail("update needs an id and --json '{...}', --report or --until") }
             payload = ["id": id, "changes": changes]
         case "add", "create":
             op = "create"
@@ -146,9 +165,18 @@ enum AutomationCLI {
                 payload = object
             } else {
                 guard let name = option("--name"), let every = option("--every").flatMap(Double.init) else { return fail("add needs --name and --every, or --json") }
-                payload = ["name": name,
-                           "trigger": ["type": "interval", "minutes": every, "clock": option("--clock") ?? "active"],
-                           "action": ["type": "bubble", "title": option("--title") ?? name, "body": option("--body") ?? ""]]
+                if let command = option("--command") {
+                    // A job, not a reminder: it runs on the clock, not on keyboard time.
+                    var action: [String: Any] = ["type": "shell", "command": command]
+                    if let report = option("--report") { action["report"] = report }
+                    payload = ["name": name, "trigger": ["type": "interval", "minutes": every, "clock": option("--clock") ?? "wall"], "action": action]
+                } else {
+                    if option("--report") != nil { return fail("--report needs --command. A bubble reminder has no result to report") }
+                    payload = ["name": name,
+                               "trigger": ["type": "interval", "minutes": every, "clock": option("--clock") ?? "active"],
+                               "action": ["type": "bubble", "title": option("--title") ?? name, "body": option("--body") ?? ""]]
+                }
+                if let until = option("--until") { payload["until"] = until }
             }
         default:
             return fail("unknown command \"\(command)\"")
