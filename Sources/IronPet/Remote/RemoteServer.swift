@@ -4,6 +4,7 @@ import Hummingbird
 import HummingbirdCore
 import HummingbirdWebSocket
 import IronPetCore
+import enum IronPetKit.VoiceWire
 import Logging
 import NIOCore
 import NIOTransportServices
@@ -239,6 +240,7 @@ final class RemoteServer {
         addRoutes(to: router)
         let upgrades = Router(context: RemoteContext.self)
         addEventSocket(to: upgrades)
+        addVoiceSocket(to: upgrades)
         // TLS options apply only on a Network.framework event loop group.
         var configuration = tls.map { ApplicationConfiguration(address: .hostname(host, port: port), tlsOptions: $0) }
             ?? ApplicationConfiguration(address: .hostname(host, port: port))
@@ -294,6 +296,11 @@ final class RemoteServer {
         router.get("/v1/events") { _, context -> Response in
             guard let device = context.device else { return Self.error(401, "unauthorized", "unauthorized") }
             if service.socketCount(device: device.id) >= RemoteService.socketsPerDevice { return Self.limited(5) }
+            return Self.error(426, "upgrade_required", "this route is a WebSocket")
+        }
+        router.get("/v1/voice") { _, context -> Response in
+            guard let device = context.device else { return Self.error(401, "unauthorized", "unauthorized") }
+            if service.socketCount(device: device.id, kind: RemoteService.voiceSocket) >= RemoteService.socketsPerDevice { return Self.limited(5) }
             return Self.error(426, "upgrade_required", "this route is a WebSocket")
         }
 
@@ -661,6 +668,54 @@ final class RemoteServer {
                 group.addTask {
                     for await frame in frames {
                         do { try await outbound.write(.text(frame)) } catch { break }
+                    }
+                }
+                await group.next()
+                group.cancelAll()
+            }
+        }
+    }
+
+    // MARK: Voice socket
+
+    /// `/v1/voice`: audio frames from the phone, transcripts and spoken replies from the Mac. `RemoteVoice` holds the rules.
+    private func addVoiceSocket(to router: Router<RemoteContext>) {
+        let service = service
+        let api = api
+        router.ws("/v1/voice", shouldUpgrade: { request, _ in
+            let header = request.headers[.authorization]
+            guard case .device(let device) = service.authenticate(authorization: header, origin: nil, count: false),
+                  service.socketCount(device: device.id, kind: RemoteService.voiceSocket) < RemoteService.socketsPerDevice,
+                  case .device = service.authenticate(authorization: header, origin: request.headers[.xForwardedFor]) else { return .dontUpgrade }
+            service.log(RemoteAccessRow(at: Date(), deviceID: device.id, method: "GET", route: "/v1/voice", status: 101, bytes: 0, durationMs: 0))
+            return .upgrade([:])
+        }) { inbound, outbound, context in
+            guard case .device(let device) = service.authenticate(authorization: context.request.headers[.authorization], origin: nil, count: false) else { return }
+            let (frames, send) = AsyncStream<RemoteVoice.Output>.makeStream(bufferingPolicy: .unbounded)
+            guard let socket = service.openSocket(device: device.id, kind: RemoteService.voiceSocket, close: { send.finish() }) else { return }
+            defer { service.socketClosed(socket) }
+            let voice = await MainActor.run { RemoteVoice(api: api, device: device.id) { send.yield($0) } }
+            defer { Task { @MainActor in voice.close() } }
+            await withTaskGroup(of: Void.self) { group in
+                group.addTask {
+                    do {
+                        for try await message in inbound.messages(maxSize: VoiceWire.frameBytes + 64) {
+                            switch message {
+                            case .text(let text): await MainActor.run { voice.receive(text: text) }
+                            case .binary(let buffer): let data = Data(buffer.readableBytesView); await MainActor.run { voice.receive(binary: data) }
+                            }
+                        }
+                    } catch {}
+                    send.finish()
+                }
+                group.addTask {
+                    for await frame in frames {
+                        do {
+                            switch frame {
+                            case .text(let text): try await outbound.write(.text(text))
+                            case .binary(let data): try await outbound.write(.binary(ByteBuffer(data: data)))
+                            }
+                        } catch { break }
                     }
                 }
                 await group.next()
