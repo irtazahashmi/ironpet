@@ -75,6 +75,9 @@ if [ -n "$IDENTITY" ]; then
   fi
 fi
 
+# What the binary really runs on, for the notes. GitHub's macOS runners are Apple Silicon, so this is usually arm64 only.
+ARCHS=$(lipo -archs "$APP/Contents/MacOS/IronPet")
+
 rm -rf dist build/dmg-staging
 mkdir -p dist build/dmg-staging
 ditto "$APP" build/dmg-staging/IronPet.app
@@ -122,6 +125,12 @@ hdiutil verify "$DMG" >/dev/null
     echo "Open the DMG and drag IronPet to Applications. It is signed with a Developer ID but **not notarized**, so macOS asks you to confirm the first launch."
   else
     echo "**Unsigned build.** Open the DMG and drag IronPet to Applications. macOS blocks the first launch of an app that is not signed by a developer. On macOS 15 or later, open System Settings → Privacy & Security and click **Open Anyway** after the first attempt; on macOS 14, right-click IronPet and choose Open. Or run \`xattr -dr com.apple.quarantine /Applications/IronPet.app\`."
+  fi
+  echo
+  if [ "$ARCHS" = "arm64" ]; then
+    echo "This build runs on **Apple Silicon Macs only**. On an Intel Mac, build from source with \`./scripts/install.sh\`."
+  else
+    echo "This build runs on: $ARCHS."
   fi
   echo
   echo "Check the download against \`$NAME.dmg.sha256\`: \`shasum -a 256 -c $NAME.dmg.sha256\`."
