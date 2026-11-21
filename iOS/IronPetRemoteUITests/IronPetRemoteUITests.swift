@@ -17,7 +17,7 @@ final class IronPetRemoteUITests: XCTestCase {
     override func tearDown() { server.stop() }
 
     private func paste(_ link: String) {
-        let field = app.textFields["pairing-link-field"]
+        let field = app.descendants(matching: .any)["pairing-link-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 10))
         field.tap()
         field.typeText(link)
@@ -85,8 +85,9 @@ final class IronPetRemoteUITests: XCTestCase {
         app.buttons["bubble-action-act-open"].tap()
         XCTAssertTrue(app.buttons["bubble-action-act-open"].waitForNonExistence(timeout: 10), "pressing a button closes its bubble")
         let alertRow = app.buttons["today-item-i-alert"]
-        for _ in 0..<5 where !alertRow.exists { app.swipeUp() }
-        XCTAssertTrue(alertRow.exists, "Today lists the brief")
+        // The pet hero (backdrop + sprite) is tall, so Today needs more swipes than a plain list.
+        for _ in 0..<12 where !alertRow.exists || !alertRow.isHittable { app.swipeUp() }
+        XCTAssertTrue(alertRow.waitForExistence(timeout: 5), "Today lists the brief")
         attach("today")
         alertRow.tap()
         XCTAssertTrue(app.buttons["dismiss-al-ci"].waitForExistence(timeout: 10), "an alert item opens Alerts behind More")

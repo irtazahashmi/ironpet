@@ -38,6 +38,7 @@ final class AppModel {
     func handleUnauthorized() {
         guard device != nil else { return }
         store.delete()
+        forgetPresence()
         notice = "The Mac no longer accepts this device. Pair it again."
         phase = .unpaired
     }
@@ -48,7 +49,14 @@ final class AppModel {
             try? await IronPetClient(endpoint: device.endpoint, token: device.token).revokeSelf()
         }
         store.delete()
+        forgetPresence()
         notice = nil
         phase = .unpaired
+    }
+
+    /// Drops the Home Screen widget snapshot and any Live Activity so an unpaired phone shows nothing private.
+    private func forgetPresence() {
+        PetSnapshotStore.clear()
+        PetPresence.endAll()
     }
 }

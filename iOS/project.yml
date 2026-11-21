@@ -25,6 +25,10 @@ targets:
     dependencies:
       - package: IronPetKit
         product: IronPetKit
+      - target: IronPetWidget
+        embed: true
+    entitlements:
+      path: IronPetRemote/IronPetRemote.entitlements
     info:
       path: IronPetRemote/Info.plist
       properties:
@@ -36,6 +40,7 @@ targets:
         NSCameraUsageDescription: IronPet scans the pairing QR code that your Mac shows.
         NSMicrophoneUsageDescription: IronPet records what you say and sends it to your Mac, which turns it into text.
         NSLocalNetworkUsageDescription: IronPet talks to the IronPet app on your Mac over your local network.
+        NSSupportsLiveActivities: true
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         # Only the system's TLS and SHA-256 hashes, which are exempt, so TestFlight doesn't ask about export compliance on every build.
@@ -46,6 +51,32 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: NO
         TARGETED_DEVICE_FAMILY: "1"
+  IronPetWidget:
+    type: app-extension
+    platform: iOS
+    sources:
+      - IronPetWidget
+      # Same ActivityAttributes type the app uses to start Live Activities.
+      - IronPetRemote/PetActivityAttributes.swift
+    dependencies:
+      - package: IronPetKit
+        product: IronPetKit
+    entitlements:
+      path: IronPetWidget/IronPetWidget.entitlements
+    info:
+      path: IronPetWidget/Info.plist
+      properties:
+        CFBundleDisplayName: IronPet
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.widgetkit-extension
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ironpet.app.widget
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: "1"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
   IronPetRemoteTests:
     type: bundle.unit-test
     platform: iOS
@@ -81,6 +112,7 @@ schemes:
     build:
       targets:
         IronPetRemote: all
+        IronPetWidget: all
     test:
       targets:
         - IronPetRemoteTests

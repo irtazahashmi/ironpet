@@ -1,5 +1,6 @@
 import IronPetKit
 import SwiftUI
+import UIKit
 
 /// The Pet tab: the animated pet with its mood and badge, the bubbles on the Mac's screen with their buttons, the tricks and, below,
 /// today's brief and recap. Today sits here because a five-tab bar is full, and the pet's mood, bubbles and today's list answer the
@@ -11,6 +12,7 @@ struct PetView: View {
     let client: IronPetClient
     let open: (TodayTarget) -> Void
     @State private var showDevice = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         NavigationStack {
@@ -19,7 +21,7 @@ struct PetView: View {
                     if let message = model.errorMessage {
                         Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).accessibilityIdentifier("pet-error")
                     }
-                    header
+                    hero
                     ForEach(model.bubbles) { BubbleCard(bubble: $0, model: model) }
                     tricks
                     TodayList(model: today, open: open)
@@ -39,33 +41,70 @@ struct PetView: View {
         .task { model.start(); today.start() }
     }
 
-    private var header: some View {
-        VStack(spacing: 8) {
-            SpriteView(atlas: model.atlas, row: model.row, followUp: model.followUp, started: model.moodStarted)
-                .frame(height: 220)
+    /// The signature of the tab: the Mac's chat backdrop behind the sprite, mood on glass, tap for a trick.
+    private var hero: some View {
+        ZStack(alignment: .bottom) {
+            ChatBackgroundPicture(id: model.backgroundID, customImage: model.backgroundImage.map(Image.init(uiImage:)),
+                                  fallback: Color(.secondarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 24, style: .continuous)
+                        .strokeBorder(Color.primary.opacity(0.08))
+                }
+                .accessibilityHidden(true)
+
+            VStack(spacing: 12) {
+                Button { Task { await nudge() } } label: {
+                    SpriteView(atlas: model.atlas, row: model.row, followUp: model.followUp, started: model.moodStarted)
+                        .frame(height: 220)
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.plain)
                 .accessibilityElement(children: .ignore)
                 .accessibilityIdentifier("pet-sprite")
-                .accessibilityLabel("Pet")
-                .accessibilityValue("row \(model.row.index)")
-            HStack(spacing: 8) {
-                Text(Self.label(model.mood)).font(.headline).accessibilityIdentifier("pet-mood")
-                if model.badge > 0 {
-                    Text("\(model.badge)").font(.caption.bold()).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 2)
-                        .background(.red, in: Capsule()).accessibilityIdentifier("pet-badge")
-                }
+                .accessibilityLabel(model.pet?.name ?? "Pet")
+                .accessibilityValue(PetMoodLabel.text(model.mood))
+                .accessibilityHint(model.pet?.tricks.isEmpty == false ? "Performs a trick" : "")
+                .accessibilityAddTraits(.isButton)
+
+                moodChip
+            }
+            .padding(.vertical, 16)
+            .padding(.horizontal, 12)
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("pet-hero")
+    }
+
+    private var moodChip: some View {
+        HStack(spacing: 8) {
+            Text(PetMoodLabel.text(model.mood)).font(.headline).accessibilityIdentifier("pet-mood")
+            if model.badge > 0 {
+                Text("\(model.badge)").font(.caption.bold()).foregroundStyle(.white).padding(.horizontal, 8).padding(.vertical, 2)
+                    .background(.red, in: Capsule()).accessibilityIdentifier("pet-badge")
+                    .accessibilityLabel("\(model.badge) needing attention")
             }
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .chromeGlass(in: Capsule())
     }
 
     private var tricks: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Tricks").font(.headline)
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack {
-                    ForEach(model.pet?.tricks ?? [], id: \.self) { trick in
-                        Button(trick) { Task { await model.perform(trick: trick) } }
-                            .buttonStyle(.bordered)
-                            .accessibilityIdentifier("trick-\(trick)")
+            GlassGroup {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 10) {
+                        ForEach(model.pet?.tricks ?? [], id: \.self) { trick in
+                            Button(trick) { Task { await play(trick) } }
+                                .font(.subheadline.weight(.medium))
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .interactiveGlass(in: Capsule())
+                                .accessibilityIdentifier("trick-\(trick)")
+                        }
                     }
                 }
             }
@@ -73,19 +112,16 @@ struct PetView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
     }
 
-    static func label(_ mood: String) -> String {
-        switch mood {
-        case "needsInput": return "Needs you"
-        case "working": return "Working"
-        case "done": return "Done"
-        case "failed": return "Failed"
-        case "listening": return "Listening"
-        case "sleeping": return "Sleeping"
-        case "drinking": return "Drinking"
-        case "stretching": return "Stretching"
-        case "attentive": return "Watching"
-        default: return "Idle"
+    private func nudge() async {
+        guard let trick = model.pet?.tricks.first else { return }
+        await play(trick)
+    }
+
+    private func play(_ trick: String) async {
+        if !reduceMotion {
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
         }
+        await model.perform(trick: trick)
     }
 }
 
@@ -115,7 +151,7 @@ struct BubbleCard: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .chromeGlass(in: RoundedRectangle(cornerRadius: 16, style: .continuous))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("bubble-\(bubble.id)")
     }
@@ -147,6 +183,7 @@ struct TodayList: View {
 
     @ViewBuilder private func row(_ item: TodayItem) -> some View {
         let tab = AppTab.tab(for: item.target)
+        // Glass sits on the Button, not inside the label — glassEffect on label content can swallow taps on iOS 26.
         Button { open(item.target) } label: {
             HStack(spacing: 12) {
                 Image(systemName: item.symbol).frame(width: 28)
@@ -159,9 +196,11 @@ struct TodayList: View {
                 if tab != nil { Image(systemName: "chevron.right").foregroundStyle(.tertiary) }
             }
             .padding(10)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+        .chromeGlass(in: RoundedRectangle(cornerRadius: 12, style: .continuous))
         .disabled(tab == nil)
         .accessibilityIdentifier("today-item-\(item.id)")
     }
