@@ -142,42 +142,36 @@ final class ACPClient {
 }
 
 /// Runs the agent as a child process and talks to its stdin and stdout.
-final class ACPProcessTransport: ACPTransport {
+final class ACPProcessTransport: ACPTransport, @unchecked Sendable {
     private let executable: URL
     private let arguments: [String]
     private let environment: [String: String]
     private let directory: URL?
-    private var process: Process?
+    private let spawner: ProcessSpawner
+    private var process: RunningProcess?
     private var input: FileHandle?
     private var stderr = Data()
 
-    var processID: Int32? { process?.processIdentifier }
+    var processID: Int32? { process?.pid }
 
-    init(executable: URL, arguments: [String], environment: [String: String], directory: URL?) {
+    init(executable: URL, arguments: [String], environment: [String: String], directory: URL?, spawner: ProcessSpawner) {
         self.executable = executable
         self.arguments = arguments
         self.environment = environment
         self.directory = directory
+        self.spawner = spawner
     }
 
     func start(onData: @escaping (Data) -> Void, onClose: @escaping (String?) -> Void) throws {
-        // Writing to an agent that already exited raises SIGPIPE, which would end the app. The write then fails with EPIPE instead.
-        signal(SIGPIPE, SIG_IGN)
-        let process = Process()
-        process.executableURL = executable
-        process.arguments = arguments
-        process.environment = environment
-        process.currentDirectoryURL = directory
-        let out = Pipe(), err = Pipe(), stdin = Pipe()
-        process.standardOutput = out
-        process.standardError = err
-        process.standardInput = stdin
-        out.fileHandleForReading.readabilityHandler = { handle in
+        let process = try spawner.spawn(ProcessSpec(executable: executable.path, arguments: arguments, environment: environment,
+                                                    directory: directory?.path, input: .pipe))
+        let out = process.output, err = process.error
+        out?.readabilityHandler = { handle in
             let data = handle.availableData
             guard !data.isEmpty else { return handle.readabilityHandler = nil }
             DispatchQueue.main.async { onData(data) }
         }
-        err.fileHandleForReading.readabilityHandler = { [weak self] handle in
+        err?.readabilityHandler = { [weak self] handle in
             let data = handle.availableData
             guard !data.isEmpty else { return handle.readabilityHandler = nil }
             DispatchQueue.main.async {
@@ -186,17 +180,16 @@ final class ACPProcessTransport: ACPTransport {
                 if self.stderr.count > 8_192 { self.stderr = Data(self.stderr.suffix(8_192)) }
             }
         }
-        process.terminationHandler = { [weak self] proc in
-            let status = proc.terminationStatus
+        process.whenExited { [weak self] exit in
+            let status = exit.status
             // Let the readers drain what the agent printed before it exited.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
                 let tail = self.map { String(decoding: $0.stderr, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines) } ?? ""
                 onClose(tail.isEmpty ? "The agent exited with status \(status)" : tail)
             }
         }
-        try process.run()
         self.process = process
-        input = stdin.fileHandleForWriting
+        input = process.input
     }
 
     func send(_ data: Data) {

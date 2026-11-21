@@ -45,13 +45,19 @@ final class VoiceAPI {
     private let settings: SettingsAPI
 
     /// Text to audio. Tests replace it; the default asks the voice server.
-    var synthesize: (String) async throws -> Data = { try await SpeechPlayer.synthesizer().speak($0) }
+    lazy var synthesize: (String) async throws -> Data = { [weak self] in try await SpeechPlayer.synthesizer(voiceKey: self?.voiceKey ?? .unsupported).speak($0) }
     /// Audio to text. Tests replace it; the default posts to the voice server.
-    var transcribeAudio: @Sendable (Data, String, String) async throws -> String = { audio, name, mime in
+    lazy var transcribeAudio: @Sendable (Data, String, String) async throws -> String = { [weak self] audio, name, mime in
         let voice = await MainActor.run { SettingsAPI.live.config.voice }
-        let transcriber = Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: VoiceKey.load(), usageFeature: .voiceTranscription)
+        let key = await MainActor.run { self?.voiceKey ?? .unsupported }
+        let transcriber = Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: key.load(), usageFeature: .voiceTranscription)
         // Decodes formats the server may not read (Telegram's Opus voice notes) when macOS can, and sends the rest as they are.
         return try await TelegramVoice.transcribe(audio, name: name, with: transcriber)
+    }
+
+    /// The voice server's key, which the speaker uses too. `AppDelegate` sets the Mac one.
+    var voiceKey = VoiceKey.unsupported {
+        didSet { speech.voiceKey = voiceKey }
     }
 
     private var forwarding: [ChangeToken] = []
@@ -91,12 +97,12 @@ final class VoiceAPI {
     func stop() { speech.stop() }
 
     /// The voice names the server offers for the saved speech model. Empty when it has no list.
-    func voices() async -> [String] { await SpeechPlayer.synthesizer().voices() }
+    func voices() async -> [String] { await SpeechPlayer.synthesizer(voiceKey: voiceKey).voices() }
 
     /// Speaks one line with the saved settings even with spoken replies off, so Settings can test the server. Throws what the
     /// server answered, or `CancellationError` when `stop()` or a reply cut it short.
     func preview(_ text: String) async throws {
-        try await speech.preview(text, using: SpeechPlayer.synthesizer())
+        try await speech.preview(text, using: SpeechPlayer.synthesizer(voiceKey: voiceKey))
     }
 
     /// The audio for a reply, one chunk at a time, without playing anything here. The first chunk is one sentence, so a client

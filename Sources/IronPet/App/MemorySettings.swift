@@ -5,6 +5,8 @@ import SwiftUI
 /// undo, history) live in `FileMemoryStore`; this only calls them and keeps the page's state.
 @MainActor
 final class MemorySettingsModel: ObservableObject {
+    /// Probes for installed agents. `AppDelegate` sets the Mac one.
+    var spawner: ProcessSpawner = UnsupportedProcessSpawner()
     let store: FileMemoryStore
     let index: MemoryIndex?
     private weak var reflector: MemoryReflector?
@@ -141,7 +143,7 @@ struct MemorySettingsBody: View {
             }
             .formStyle(.grouped)
         }
-        .task { if listsAgents { installedAgents = await ACPProbe.installed() } }
+        .task { if listsAgents { installedAgents = await ACPProbe.installed(spawner: memory.spawner) } }
         .onAppear { memory.reload() }
     }
 

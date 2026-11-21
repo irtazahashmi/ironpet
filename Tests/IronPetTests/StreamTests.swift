@@ -33,6 +33,7 @@ final class StreamEngineTests: XCTestCase {
         dir = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-stream-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         engine = StreamEngine()
+        engine.spawner = POSIXProcessSpawner()
         engine.enabled = true
         engine.environment = { testEnvironment }
         engine.limits.grace = 0.3

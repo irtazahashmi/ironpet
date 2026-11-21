@@ -13,6 +13,10 @@ final class SettingsModel: ObservableObject {
     }
 
     let actions: Actions
+    /// The adapters the settings pages use: the voice key's secret store and the process spawner that probes for agents.
+    /// `AppDelegate` sets the Mac one before the window can open.
+    var platform: Platform = .unsupported
+    var voiceKey: VoiceKey { VoiceKey(store: platform.secrets) }
     /// Set once the app has built it, before the window can open.
     var automations: AutomationsAPI?
     /// The meeting controller, for labelling the voices of the last meeting.
@@ -434,7 +438,7 @@ struct VoiceSettings: View {
     @State private var modelName = SettingsAPI.live.config.voice.model
     @State private var speechModel = SettingsAPI.live.config.speech.model
     @State private var key = ""
-    @State private var keySaved = VoiceKey.isSet
+    @State private var keySaved = false
     @State private var keyError = false
     @State private var testing = false
     @State private var testResult: (ok: Bool, text: String)?
@@ -478,7 +482,7 @@ struct VoiceSettings: View {
                         if !key.isEmpty { Button("Save", action: saveKey) }
                         if keySaved && key.isEmpty {
                             Button("Remove") {
-                                VoiceKey.delete()
+                                model.voiceKey.delete()
                                 keySaved = false
                             }
                         }
@@ -508,6 +512,7 @@ struct VoiceSettings: View {
             }
         }
         .formStyle(.grouped)
+        .onAppear { keySaved = model.voiceKey.isSet }
     }
 
     private func saveServer() {
@@ -519,8 +524,8 @@ struct VoiceSettings: View {
     }
 
     private func saveKey() {
-        keyError = !VoiceKey.save(key)
-        keySaved = VoiceKey.isSet
+        keyError = !model.voiceKey.save(key)
+        keySaved = model.voiceKey.isSet
         if !keyError { key = "" }
     }
 
@@ -530,7 +535,7 @@ struct VoiceSettings: View {
         if !key.isEmpty { saveKey() }
         testing = true
         testResult = nil
-        let transcriber = Transcriber(baseURL: baseUrl, model: modelName, apiKey: VoiceKey.load(), timeout: 30)
+        let transcriber = Transcriber(baseURL: baseUrl, model: modelName, apiKey: model.voiceKey.load(), timeout: 30)
         Task {
             do {
                 let text = try await transcriber.transcribe(wav: Self.testClip)
@@ -719,6 +724,7 @@ private struct VoiceModeSettings: View {
         checking = true
         Task {
             defer { checking = false }
+            player.voiceKey = model.voiceKey
             switch await VoiceModeController.enable(using: player) {
             case .on: result = (true, "Voice mode is on.")
             case .cancelled: break
@@ -814,7 +820,7 @@ private struct MeetingSettings: View {
             }
         }
         .formStyle(.grouped)
-        .task { installedAgents = await ACPProbe.installed() }
+        .task { installedAgents = await ACPProbe.installed(spawner: model.platform.processes) }
     }
 
     /// The model list plus the saved id, so a model that left the list still shows.
@@ -841,7 +847,7 @@ private struct MeetingSettings: View {
             return
         }
         let voice = store.config.voice
-        let transcriber = Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: VoiceKey.load(), timeout: 30)
+        let transcriber = Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: model.voiceKey.load(), timeout: 30)
         testing = true
         enableError = nil
         Task {

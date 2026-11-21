@@ -28,7 +28,7 @@ final class AutomationTestClock {
 
     var environment: AutomationEngine.Environment {
         AutomationEngine.Environment(now: { self.now }, idleSeconds: { self.idle }, isAgentWorking: { self.working },
-                                     isBusy: { self.busy }, calendar: calendar)
+                                     isBusy: { self.busy }, calendar: calendar, spawner: POSIXProcessSpawner())
     }
 }
 
@@ -695,12 +695,12 @@ final class AutomationActionTests: AutomationTestCase {
     }
 
     func testRealShellRunsWithATimeoutAndOutputCap() async {
-        let slow = await CommandRunner.run(shell: "sleep 5", timeout: 0.3)
+        let slow = await CommandRunner.run(shell: "sleep 5", spawner: POSIXProcessSpawner(), timeout: 0.3)
         XCTAssertTrue(slow.timedOut)
-        let big = await CommandRunner.run(shell: "yes | head -c 5000000", timeout: 10, maxBytes: 10_000)
+        let big = await CommandRunner.run(shell: "yes | head -c 5000000", spawner: POSIXProcessSpawner(), timeout: 10, maxBytes: 10_000)
         XCTAssertTrue(big.truncated)
         XCTAssertLessThanOrEqual(big.stdout.utf8.count, 10_000)
-        let ok = await CommandRunner.run(shell: "echo hello", timeout: 5)
+        let ok = await CommandRunner.run(shell: "echo hello", spawner: POSIXProcessSpawner(), timeout: 5)
         XCTAssertEqual(ok.stdout, "hello\n")
         XCTAssertTrue(ok.ok)
     }

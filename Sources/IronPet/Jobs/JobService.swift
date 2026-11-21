@@ -55,8 +55,10 @@ final class JobService: ObservableObject {
     var turnTimeout: TimeInterval = 3_600
     /// True while the chat runs a turn of its own on this session (a thread id). A job must not start a second process on it.
     var sessionBusy: (String) -> Bool = { _ in false }
-    var makeAgent: (ACPAgent, Job) -> JobAgent = { agent, job in
-        let backend = ACPBackend(agent: agent)
+    /// Starts the agent's process. `AppDelegate` sets the Mac one.
+    var spawner: ProcessSpawner = UnsupportedProcessSpawner()
+    lazy var makeAgent: (ACPAgent, Job) -> JobAgent = { [weak self] agent, job in
+        let backend = ACPBackend(agent: agent, spawner: self?.spawner ?? UnsupportedProcessSpawner())
         backend.usageFeature = .jobs
         backend.mcpServers = MCPEndpoint.jobScoped(ACPBackend.defaultMCPServers())
         // Memory notes the job saves name the job and default to its folder.

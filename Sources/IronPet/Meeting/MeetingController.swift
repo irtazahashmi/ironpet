@@ -61,30 +61,37 @@ final class MeetingController: ObservableObject {
     /// True once the diarization models are on disk. A meeting never downloads them.
     var speakerModelsReady: () -> Bool = { MainActor.assumeIsolated { SpeakerModels.shared.isReady } }
     var diarizer: SpeakerDiarizing = FluidDiarizer()
-    var voiceStore: VoiceStore = .shared
+    var voiceStore: VoiceStore = .unwired
+    /// Starts the summary agent. `AppDelegate` sets the Mac one.
+    var spawner: ProcessSpawner = UnsupportedProcessSpawner()
+    /// The voice server's key, read once per meeting. `AppDelegate` sets the one the regenerator shares.
+    var keyCache = KeyCache(voiceKey: .unsupported)
     /// Where meeting folders go. Tests point it at a temporary directory.
     var meetingsRoot: URL = Paths.meetings
-    var makeTranscriber: () -> Transcriber = {
+    lazy var makeTranscriber: () -> Transcriber = { [weak self] in
         let voice = ConfigStore.shared.config.voice
-        return Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: KeyCache.key(), usageFeature: .meetingTranscription)
+        return Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: self?.keyCache.key(), usageFeature: .meetingTranscription)
     }
 
     /// Reads the Keychain once per meeting, off the main thread. A Keychain approval dialog would otherwise
     /// freeze the app, and would reappear for every chunk.
-    enum KeyCache {
-        private static let lock = NSLock()
-        nonisolated(unsafe) private static var loaded: String??
+    final class KeyCache: @unchecked Sendable {
+        private let lock = NSLock()
+        private var loaded: String??
+        private let voiceKey: VoiceKey
 
-        static func key() -> String? {
+        init(voiceKey: VoiceKey) { self.voiceKey = voiceKey }
+
+        func key() -> String? {
             lock.lock()
             defer { lock.unlock() }
             if let loaded { return loaded }
-            let key = VoiceKey.load()
+            let key = voiceKey.load()
             loaded = .some(key)
             return key
         }
 
-        static func forget() {
+        func forget() {
             lock.lock()
             loaded = nil
             lock.unlock()
@@ -668,7 +675,7 @@ final class MeetingController: ObservableObject {
         guard let agent = AgentCatalog.agent(id: config.summaryAgent) else {
             return summaryFinished("", error: "The summary agent \"\(config.summaryAgent)\" is not available. Pick another in Settings → Meetings.")
         }
-        let runner = Self.makeSummaryRunner(agent)
+        let runner = Self.makeSummaryRunner(agent, spawner: spawner)
         summaryRunner = runner
         let turn = ACPTurn(prompt: Self.summaryPrompt(transcript: text), preamble: nil, workspace: folder, resume: nil,
                            model: config.summaryModel, images: [], files: [])
@@ -693,8 +700,8 @@ final class MeetingController: ObservableObject {
 
     /// Only the meeting folder is shared, and every permission request is refused, so the agent can read and answer
     /// but not change files or run commands. ironpet writes summary.md itself. Its turns count as meeting summaries in the Usage tab.
-    static func makeSummaryRunner(_ agent: ACPAgent) -> ACPBackend {
-        let runner = ACPBackend(agent: agent)
+    static func makeSummaryRunner(_ agent: ACPAgent, spawner: ProcessSpawner) -> ACPBackend {
+        let runner = ACPBackend(agent: agent, spawner: spawner)
         runner.restricted = true
         runner.usageFeature = .meetingSummary
         runner.onPermission = { _, respond in respond(summaryDecision) }
@@ -799,7 +806,7 @@ final class MeetingController: ObservableObject {
 
     private func reset() {
         generation += 1
-        KeyCache.forget()
+        keyCache.forget()
         inFlight?.cancel()
         timer?.invalidate()
         timer = nil

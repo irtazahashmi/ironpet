@@ -439,7 +439,7 @@ enum PreviewRenderer {
         let store = AutomationStore(paths: paths, defaults: { AutomationMigration.defaults(from: config, sentryConfigured: false) },
                                     builtIns: AutomationDefaults.builtIns, watch: false)
         let telegram = TelegramBridge(
-            client: TelegramAPI(token: { nil }), host: ChatAPI(session: chat), tokens: TelegramToken.shared,
+            client: TelegramAPI(token: { nil }), host: ChatAPI(session: chat), tokens: MemoryTokenStore(),
             storage: .init(users: { [] }, add: { _ in }, remove: { _ in }, offset: { 0 }, setOffset: { _ in }))
         let model = SettingsModel(actions: .init(suspendHotKeys: { _ in }, buildPet: { _ in }),
                                   announcer: Announcer(notifier: Notifier()), telegram: telegram)

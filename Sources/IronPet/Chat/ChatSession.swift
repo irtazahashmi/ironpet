@@ -293,6 +293,9 @@ final class ChatSession: ObservableObject {
     /// `restore` reopens the chat that was open when the app last quit: its thread, folder and backend,
     /// plus the unsent draft and attachments. Auto mode comes back only for that same chat; a new chat or
     /// one opened from history still starts with Auto off.
+    /// Starts the agent's process and the probes. `AppDelegate` sets the Mac one right after creating the session.
+    var spawner: ProcessSpawner = UnsupportedProcessSpawner()
+
     init(restore: Bool = true) {
         persists = restore
         recents = (UserDefaults.standard.stringArray(forKey: "recentWorkspaces") ?? [])
@@ -399,7 +402,7 @@ final class ChatSession: ObservableObject {
 
     /// Lists the installed agents that speak ACP. The first launch switches to an installed one if the saved choice is missing.
     func refreshAgents() async {
-        let found = await ACPProbe.installed()
+        let found = await ACPProbe.installed(spawner: spawner)
         guard !found.isEmpty else { return }
         agents = found
         if !found.contains(agent), items.isEmpty, !isRunning, let first = found.first { select(first) }
@@ -907,7 +910,7 @@ final class ChatSession: ObservableObject {
     private func makeBackend() -> ACPBackend {
         if acp != nil { ChatLog.note("agent backend replaced: \(agent.id), thread \(threadID ?? "none") kept") }
         acp?.shutdown()
-        let backend = ACPBackend(agent: agent)
+        let backend = ACPBackend(agent: agent, spawner: spawner)
         backend.usageFeature = .chat
         backend.onPermission = { [weak self] call, respond in self?.handlePermission(call, respond: respond) }
         backend.onElicitation = { [weak self] form, respond in self?.handleElicitation(form, respond: respond) }
@@ -1032,7 +1035,7 @@ final class ChatSession: ObservableObject {
         Task {
             defer { installingRuntime = false }
             do {
-                try await BunRuntime.install()
+                try await BunRuntime.install(spawner: spawner)
                 runtimeOffer = nil
                 retryAfterFix()
             } catch {
@@ -1051,7 +1054,7 @@ final class ChatSession: ObservableObject {
 
     func signIn(_ method: AuthMethod) {
         if method.type == "terminal" {
-            TerminalLauncher.open(agent: agent, method: method)
+            TerminalLauncher.open(agent: agent, method: method, spawner: spawner)
             return
         }
         Task {

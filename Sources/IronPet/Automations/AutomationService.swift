@@ -84,8 +84,9 @@ final class AutomationService {
     var digest: (_ kind: Brief.Kind, _ automation: Automation, _ slot: Date?) -> Brief? = { _, _, _ in nil }
     /// Shows a brief. `manual` is true for Run now, which shows an empty brief too.
     var showDigest: (_ brief: Brief, _ automation: Automation, _ manual: Bool) -> Void = { _, _, _ in }
-    var runShell: (_ command: String, _ timeout: TimeInterval) async -> CommandResult = { command, timeout in
-        await CommandRunner.run(shell: command, timeout: timeout, environment: CommandRunner.defaultEnvironment())
+    lazy var runShell: (_ command: String, _ timeout: TimeInterval) async -> CommandResult = { [weak self] command, timeout in
+        await CommandRunner.run(shell: command, spawner: self?.engine.env.spawner ?? UnsupportedProcessSpawner(), timeout: timeout,
+                                environment: CommandRunner.defaultEnvironment())
     }
 
     private var pending: [String: AutomationEngine.Fire] = [:]

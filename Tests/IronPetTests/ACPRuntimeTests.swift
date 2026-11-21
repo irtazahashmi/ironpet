@@ -40,7 +40,7 @@ final class ACPRuntimeTests: XCTestCase {
         let archive = try makeArchive(asset: asset)
         let shasums = "\(String(repeating: "0", count: 64))  other.zip\n\(BunRuntime.sha256(archive))  \(asset)\n"
         let target = dir.appendingPathComponent("runtime")
-        try await BunRuntime.install(directory: target, asset: asset, fetch: fetcher(archive: archive, shasums: shasums))
+        try await BunRuntime.install(spawner: POSIXProcessSpawner(), directory: target, asset: asset, fetch: fetcher(archive: archive, shasums: shasums))
         XCTAssertTrue(FileManager.default.isExecutableFile(atPath: target.appendingPathComponent("bun").path))
     }
 
@@ -52,7 +52,7 @@ final class ACPRuntimeTests: XCTestCase {
         tampered.append(0x00)
         let target = dir.appendingPathComponent("runtime")
         do {
-            try await BunRuntime.install(directory: target, asset: asset, fetch: fetcher(archive: tampered, shasums: shasums))
+            try await BunRuntime.install(spawner: POSIXProcessSpawner(), directory: target, asset: asset, fetch: fetcher(archive: tampered, shasums: shasums))
             XCTFail("a tampered archive must not install")
         } catch BunRuntime.Failure.checksumMismatch {
         }
@@ -63,7 +63,7 @@ final class ACPRuntimeTests: XCTestCase {
         let asset = "bun-darwin-aarch64.zip"
         let archive = try makeArchive(asset: asset)
         do {
-            try await BunRuntime.install(directory: dir.appendingPathComponent("runtime"), asset: asset,
+            try await BunRuntime.install(spawner: POSIXProcessSpawner(), directory: dir.appendingPathComponent("runtime"), asset: asset,
                                          fetch: fetcher(archive: archive, shasums: "\(BunRuntime.sha256(archive))  something-else.zip\n"))
             XCTFail("an unlisted file must not install")
         } catch BunRuntime.Failure.checksumMissing {
@@ -74,7 +74,7 @@ final class ACPRuntimeTests: XCTestCase {
         struct Offline: Error {}
         let target = dir.appendingPathComponent("runtime")
         do {
-            try await BunRuntime.install(directory: target, asset: "bun-darwin-aarch64.zip", fetch: { _ in throw Offline() })
+            try await BunRuntime.install(spawner: POSIXProcessSpawner(), directory: target, asset: "bun-darwin-aarch64.zip", fetch: { _ in throw Offline() })
             XCTFail("expected a failure")
         } catch is Offline {
         } catch {
@@ -108,18 +108,18 @@ final class ACPRuntimeTests: XCTestCase {
 
     func testUsesTheUsersNodeWhenItIsNewEnough() throws {
         let path = try fakeNode(version: "v22.21.1", in: "n22")
-        let runtime = ACPRuntime.resolve(adapter: "claude", path: path, bun: dir.appendingPathComponent("no-bun"))
+        let runtime = ACPRuntime.resolve(adapter: "claude", path: path, bun: dir.appendingPathComponent("no-bun"), spawner: POSIXProcessSpawner())
         XCTAssertEqual(runtime?.kind, .node)
     }
 
     func testOldNodeFallsBackToDownloadedBunThenToNothing() throws {
         let path = try fakeNode(version: "v20.11.0", in: "n20")
         let bun = dir.appendingPathComponent("bun")
-        XCTAssertNil(ACPRuntime.resolve(adapter: "claude", path: path, bun: bun), "Node 20 is too old for the Claude adapter")
-        XCTAssertEqual(ACPRuntime.resolve(adapter: "pi", path: path, bun: bun)?.kind, .node, "pi-acp accepts Node 20")
+        XCTAssertNil(ACPRuntime.resolve(adapter: "claude", path: path, bun: bun, spawner: POSIXProcessSpawner()), "Node 20 is too old for the Claude adapter")
+        XCTAssertEqual(ACPRuntime.resolve(adapter: "pi", path: path, bun: bun, spawner: POSIXProcessSpawner())?.kind, .node, "pi-acp accepts Node 20")
         try "#!/bin/sh\n".write(to: bun, atomically: true, encoding: .utf8)
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: bun.path)
-        XCTAssertEqual(ACPRuntime.resolve(adapter: "claude", path: path, bun: bun)?.kind, .bun)
+        XCTAssertEqual(ACPRuntime.resolve(adapter: "claude", path: path, bun: bun, spawner: POSIXProcessSpawner())?.kind, .bun)
     }
 
     func testNodeVersionParsing() {

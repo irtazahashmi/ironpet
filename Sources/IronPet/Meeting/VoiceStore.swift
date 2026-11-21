@@ -1,6 +1,5 @@
 import CryptoKit
 import Foundation
-import Security
 
 /// One person ironpet can recognise by voice. Biometric data: it stays in the encrypted store on this Mac.
 struct StoredVoice: Codable, Equatable, Identifiable {
@@ -27,7 +26,8 @@ final class VoiceStore {
         return folder.appendingPathComponent("voices.enc")
     }()
 
-    static let shared = VoiceStore(url: defaultURL, key: { VoiceStoreKey.load() })
+    /// A store whose key never loads, for owners `AppDelegate` has not wired yet and for tests that do not teach voices.
+    static var unwired: VoiceStore { VoiceStore(url: defaultURL, key: { nil }) }
 
     private let url: URL
     private let key: () -> SymmetricKey?
@@ -141,30 +141,25 @@ private extension JSONDecoder {
     static var iso: JSONDecoder { let d = JSONDecoder(); d.dateDecodingStrategy = .iso8601; return d }
 }
 
-/// The store's AES key, created on first use and kept in the Keychain (service `ironpet.voiceprints`).
-enum VoiceStoreKey {
+/// The store's AES key, created on first use and kept in the secret store (service `ironpet.voiceprints`).
+struct VoiceStoreKey: Sendable {
     static let service = "ironpet.voiceprints"
     static let account = "store-key"
     /// An automated run must never wait on a Keychain dialog, so `--test-mode` keeps a key for the process only.
     nonisolated(unsafe) private static var processKey: SymmetricKey?
 
-    static func load() -> SymmetricKey? {
+    var store: SecretStore
+
+    func load() -> SymmetricKey? {
         if CommandLine.arguments.contains("--test-mode") {
-            if processKey == nil { processKey = SymmetricKey(size: .bits256) }
-            return processKey
+            if Self.processKey == nil { Self.processKey = SymmetricKey(size: .bits256) }
+            return Self.processKey
         }
-        let match: [String: Any] = [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service,
-                                    kSecAttrAccount as String: account]
-        var query = match
-        query[kSecReturnData as String] = true
-        var result: AnyObject?
-        if SecItemCopyMatching(query as CFDictionary, &result) == errSecSuccess, let data = result as? Data, data.count == 32 {
+        if let data = try? store.get(service: Self.service, account: Self.account), data.count == 32 {
             return SymmetricKey(data: data)
         }
         let fresh = SymmetricKey(size: .bits256)
-        var item = match
-        item[kSecValueData as String] = fresh.withUnsafeBytes { Data($0) }
-        guard SecItemAdd(item as CFDictionary, nil) == errSecSuccess else { return nil }
+        guard (try? store.set(fresh.withUnsafeBytes { Data($0) }, service: Self.service, account: Self.account)) != nil else { return nil }
         return fresh
     }
 }

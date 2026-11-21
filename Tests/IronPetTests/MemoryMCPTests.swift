@@ -120,7 +120,7 @@ final class MemoryMCPTests: XCTestCase {
         let saved = ACPBackend.defaultMCPServers
         defer { ACPBackend.defaultMCPServers = saved }
         ACPBackend.defaultMCPServers = { [["name": "ironpet", "command": "/x", "args": ["mcp"], "env": [JSON]()], ["name": "other", "command": "/y"]] }
-        let backend = ACPBackend(agent: AgentCatalog.agent(id: "claude")!)
+        let backend = ACPBackend(agent: AgentCatalog.agent(id: "claude")!, spawner: POSIXProcessSpawner())
         XCTAssertNil((backend.sessionMCPServers.first?["env"] as? [JSON])?.first)
         backend.mcpCaller = "automation:mail"
         let env = backend.sessionMCPServers.first?["env"] as? [JSON]

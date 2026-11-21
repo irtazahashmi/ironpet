@@ -67,7 +67,9 @@ final class SpeechPlayer: ObservableObject {
     var onFailure: ((String) -> Void)?
 
     var isEnabled: () -> Bool = { ConfigStore.shared.config.speech.enabled }
-    var synthesize: (String) async throws -> Data = { try await SpeechPlayer.synthesizer().speak($0) }
+    /// The voice server's key. `AppDelegate` sets the Mac one.
+    var voiceKey = VoiceKey.unsupported
+    lazy var synthesize: (String) async throws -> Data = { [weak self] in try await SpeechPlayer.synthesizer(voiceKey: self?.voiceKey ?? .unsupported).speak($0) }
     private let player: ClipPlaying
     private var reading: Task<Void, Never>?
     private var previewing: Task<Void, Error>?
@@ -79,10 +81,10 @@ final class SpeechPlayer: ObservableObject {
     }
 
     /// The synthesizer for the saved settings: the voice server's URL and key with the speech model and voice.
-    static func synthesizer(model: String? = nil, voice: String? = nil) -> Synthesizer {
+    static func synthesizer(voiceKey: VoiceKey, model: String? = nil, voice: String? = nil) -> Synthesizer {
         let config = ConfigStore.shared.config
         return Synthesizer(baseURL: config.voice.baseUrl, model: model ?? config.speech.model,
-                           voice: voice ?? config.speech.voice, speed: config.speech.speed, apiKey: VoiceKey.load())
+                           voice: voice ?? config.speech.voice, speed: config.speech.speed, apiKey: voiceKey.load())
     }
 
     var isSpeaking: Bool { speakingID != nil }

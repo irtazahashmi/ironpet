@@ -48,7 +48,7 @@ final class AutomationSessionTests: AutomationTestCase {
     }
 
     private func run(_ a: Automation, now: Date = Date()) async -> Result<String, AutomationError> {
-        await AutomationSession.run(a, prompt: a.action.prompt ?? "", workspace: dir.appendingPathComponent("ws"), turnRunner: scripted, now: now)
+        await AutomationSession.run(a, prompt: a.action.prompt ?? "", workspace: dir.appendingPathComponent("ws"), spawner: UnsupportedProcessSpawner(), turnRunner: scripted, now: now)
     }
 
     // S1
@@ -70,7 +70,7 @@ final class AutomationSessionTests: AutomationTestCase {
         let rig = makeRig([job()])
         var chatMessages: [String] = []
         rig.service.sendToChat = { _, message in chatMessages.append(message); return true }
-        rig.service.runSession = { [unowned self] a, prompt, _ in await AutomationSession.run(a, prompt: prompt, workspace: dir, turnRunner: scripted) }
+        rig.service.runSession = { [unowned self] a, prompt, _ in await AutomationSession.run(a, prompt: prompt, workspace: dir, spawner: UnsupportedProcessSpawner(), turnRunner: scripted) }
         run(rig, minutes: 60)
         await until("first run") { ThreadStore.recent().count == 1 }
         run(rig, minutes: 60)
@@ -125,7 +125,7 @@ final class AutomationSessionTests: AutomationTestCase {
     func testQuietReplyShowsNothingButStaysInHistoryAndThread() async {
         reply = "NOTHING_NEW"
         let rig = makeRig([job(quiet: "NOTHING_NEW")])
-        rig.service.runSession = { [unowned self] a, prompt, _ in await AutomationSession.run(a, prompt: prompt, workspace: dir, turnRunner: scripted) }
+        rig.service.runSession = { [unowned self] a, prompt, _ in await AutomationSession.run(a, prompt: prompt, workspace: dir, spawner: UnsupportedProcessSpawner(), turnRunner: scripted) }
         run(rig, minutes: 60)
         await until("the quiet run") { rig.service.history("mail", limit: 5).first?["output"] as? String == "no changes" }
         XCTAssertNil(rig.notices.last("automation:mail"))
@@ -139,7 +139,7 @@ final class AutomationSessionTests: AutomationTestCase {
 
     func testFailureIsRecordedInTheThread() async {
         let failing: AutomationSession.TurnRunner = { _, emit in emit(.session("bad")); emit(.finished(error: "boom")) }
-        let result = await AutomationSession.run(job(), prompt: "x", workspace: dir, turnRunner: failing)
+        let result = await AutomationSession.run(job(), prompt: "x", workspace: dir, spawner: UnsupportedProcessSpawner(), turnRunner: failing)
         guard case .failure(let error) = result else { return XCTFail("expected a failure") }
         XCTAssertEqual(error.message, "boom")
         if case .error(let text)? = ThreadStore.load("bad")?.items.last?.kind { XCTAssertEqual(text, "boom") } else { XCTFail("no error row") }

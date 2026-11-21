@@ -1,8 +1,21 @@
 import Darwin
 import Foundation
 
-/// Finds the app that started an agent by walking its parent processes.
-enum ProcessTree {
+/// Finds the app that started an agent by walking its parent processes with `sysctl` and `proc_pidpath`.
+struct MacAppInfo: AppInfo {
+    init() {}
+
+    func owningBundleID(pid: Int32) throws -> String? {
+        Self.owningBundleID(pid: pid)
+    }
+
+    func displayName(bundleID: String) throws -> String? {
+        guard let url = Self.appURL(bundleID: bundleID), let bundle = Bundle(url: url) else { return nil }
+        return (bundle.object(forInfoDictionaryKey: "CFBundleDisplayName") as? String)
+            ?? (bundle.object(forInfoDictionaryKey: "CFBundleName") as? String)
+            ?? url.deletingPathExtension().lastPathComponent
+    }
+
     /// Bundle id of the first ancestor (the process itself included) whose executable lives inside a `.app`.
     /// The lookups are injectable so tests don't need real processes.
     static func owningBundleID(
@@ -45,5 +58,25 @@ enum ProcessTree {
 
     static func realBundleID(_ appPath: String) -> String? {
         Bundle(path: appPath)?.bundleIdentifier
+    }
+
+    private static func appURL(bundleID: String) -> URL? {
+        // The apps folders cover what ironpet needs a name for. Launch Services is AppKit's, and this file stays Foundation-only.
+        for folder in ["/Applications", "/System/Applications", "\(NSHomeDirectory())/Applications"] {
+            guard let names = try? FileManager.default.contentsOfDirectory(atPath: folder) else { continue }
+            for name in names where name.hasSuffix(".app") {
+                let url = URL(fileURLWithPath: folder).appendingPathComponent(name)
+                if Bundle(url: url)?.bundleIdentifier == bundleID { return url }
+            }
+        }
+        return nil
+    }
+}
+
+extension Platform {
+    /// The platform on a Mac, with every adapter real. `AppDelegate` builds it once.
+    static func mac() -> Platform {
+        Platform(secrets: KeychainSecretStore(), processes: POSIXProcessSpawner(), log: OSLogLog(),
+                 appInfo: MacAppInfo(), clock: SystemClock())
     }
 }

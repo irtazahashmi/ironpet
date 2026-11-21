@@ -45,6 +45,8 @@ final class StreamEngine {
     var limits = Limits()
     var now: () -> Date = { Date() }
     var environment: () -> [String: String] = { CommandRunner.defaultEnvironment() }
+    /// Starts the commands. `AutomationEngine` sets it from its environment.
+    var spawner: ProcessSpawner = UnsupportedProcessSpawner()
     /// Runs the action for one event. `done` must be called when the action has finished.
     var fire: (_ automation: Automation, _ item: [String: Any], _ count: Int, _ done: @escaping () -> Void) -> Void = { _, _, _, done in done() }
     /// A line for the history: automation id, outcome, text.
@@ -201,7 +203,7 @@ final class StreamEngine {
         let id = slot.id
         do {
             let process = try StreamProcess(
-                command: automation.trigger.command ?? "", environment: environment(), maxLine: limits.maxLine, grace: limits.grace,
+                command: automation.trigger.command ?? "", spawner: spawner, environment: environment(), maxLine: limits.maxLine, grace: limits.grace,
                 onLine: { [weak self, weak slot] line in
                     guard let self, let slot, slot.generation == generation else { return }
                     handle(line: line, slot)
