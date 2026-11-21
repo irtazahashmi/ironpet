@@ -1,0 +1,138 @@
+name: Release
+
+# Builds the downloadable Mac app and attaches it to a DRAFT GitHub Release for you to review and publish.
+# Run it by pushing a tag (git tag v0.1.0 && git push origin v0.1.0) or from the Actions tab.
+#
+# Signing is optional. With these repository secrets the DMG is signed with a Developer ID and notarized by Apple:
+#   MACOS_CERT_P12      base64 of the "Developer ID Application" certificate exported as .p12
+#   MACOS_CERT_PASSWORD the password you gave that .p12
+#   NOTARY_KEY_P8       base64 of an App Store Connect API key (.p8)
+#   NOTARY_KEY_ID       that key's ID
+#   NOTARY_ISSUER_ID    the issuer ID shown above the keys in App Store Connect
+# Without them the workflow still runs and produces IronPet-<version>-unsigned.dmg. See CONTRIBUTING.md > Releasing.
+# It never runs for pull requests, so a fork cannot reach the secrets.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to build, without the v (for example 0.1.0)
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  mac:
+    runs-on: macos-15
+    timeout-minutes: 45
+    permissions:
+      contents: write # create the draft release; nothing else in this workflow can write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Work out the version
+        id: version
+        env:
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then version="$INPUT_VERSION"; else version="${REF_NAME#v}"; fi
+          if ! printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.]+)?$'; then
+            echo "error: '$version' is not a version like 0.1.0 or 0.1.0-beta.1" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.4
+
+      - name: Import the Developer ID certificate
+        env:
+          CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$CERT_P12" ]; then
+            echo "No MACOS_CERT_P12 secret: the build will be unsigned"
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          keychain_password=$(uuidgen)
+          echo "::add-mask::$keychain_password"
+          printf '%s' "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$keychain_password" "$keychain"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$CERT_PASSWORD" -T /usr/bin/codesign -T /usr/bin/security
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+          # Put the new keychain first on the search list, keeping the runner's own.
+          existing=$(security list-keychains -d user | tr -d '"')
+          # shellcheck disable=SC2086
+          security list-keychains -d user -s "$keychain" $existing
+          echo "KEYCHAIN_PATH=$keychain" >> "$GITHUB_ENV"
+          security find-identity -p codesigning -v "$keychain" | sed 's/^ *[0-9]*) [0-9A-F]* //'
+
+      - name: Build, sign, notarize and package
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          NOTARY_KEY_B64: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          if [ -n "$NOTARY_KEY_B64" ]; then
+            export NOTARY_KEY_FILE="$RUNNER_TEMP/notary.p8"
+            ( umask 077; printf '%s' "$NOTARY_KEY_B64" | base64 --decode > "$NOTARY_KEY_FILE" )
+          fi
+          ./scripts/release_mac.sh "$VERSION" "$GITHUB_RUN_NUMBER"
+
+      # The same checks CI runs on the bundle.
+      - name: Check the bundle
+        run: |
+          test -f build/IronPet.app/Contents/Resources/spritesheet.png
+          codesign --verify --strict --verbose=2 build/IronPet.app
+          ./scripts/check_adapters.sh build/IronPet.app
+
+      - name: Remove the temporary keychain and key
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/cert.p12"
+          if [ -n "${KEYCHAIN_PATH:-}" ]; then security delete-keychain "$KEYCHAIN_PATH" || true; fi
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: v${{ steps.version.outputs.version }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            # A rerun may replace a draft's files. A published release is never touched.
+            if [ "$(gh release view "$TAG" --json isDraft -q .isDraft)" != "true" ]; then
+              echo "error: release $TAG is already published; bump the version instead of rebuilding it" >&2
+              exit 1
+            fi
+            for asset in $(gh release view "$TAG" --json assets -q '.assets[].name'); do
+              gh release delete-asset "$TAG" "$asset" --yes
+            done
+            gh release upload "$TAG" dist/IronPet-*.dmg dist/IronPet-*.dmg.sha256
+            gh release edit "$TAG" --title "IronPet $VERSION" --notes-file dist/notes.md
+          else
+            gh release create "$TAG" dist/IronPet-*.dmg dist/IronPet-*.dmg.sha256 \
+              --draft --target "$GITHUB_SHA" --title "IronPet $VERSION" --notes-file dist/notes.md --generate-notes
+          fi
+          echo "Draft release: $(gh release view "$TAG" --json url -q .url)" | tee -a "$GITHUB_STEP_SUMMARY"

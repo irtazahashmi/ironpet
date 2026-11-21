@@ -33,6 +33,17 @@ Check your change in the installed app, not just with `swift build`. Things like
 
 `./scripts/ios_testflight.sh` archives the app and uploads it to TestFlight. It signs with the Apple account signed in to Xcode, which must be on the team in `project.yml`, and needs the `dev.ironpet.app` app to exist in App Store Connect. The App Group `group.dev.ironpet.app` must be enabled for the app and the widget extension on that team so the Home Screen widget can read the pet snapshot. Each upload needs a higher build number; the script uses the UTC time unless you pass one. The app icon comes from `swift tools/make_icon.swift <pet.png> iOS/IronPetRemote/Assets.xcassets/AppIcon.appiconset/icon-1024.png --ios`.
 
+### Releasing the Mac app
+
+`.github/workflows/release.yml` builds the Mac app and attaches a `.dmg` and its `.sha256` to a **draft** GitHub Release. Push a tag (`git tag v0.1.0 && git push origin v0.1.0`), or run the workflow from the Actions tab with a version. Then review the draft on the Releases page and publish it. The repository is public, so a published release is a public download. The version comes from the tag and the build number is the run number. A published release is never rebuilt: bump the version instead.
+
+Without secrets the build is signed ad hoc and named `IronPet-<version>-unsigned.dmg`. To sign and notarize it, the account holder adds five repository secrets, each from a file with `base64 -i <file> | gh secret set <NAME>` (or `gh secret set <NAME>` for the plain ones):
+
+- `MACOS_CERT_P12` and `MACOS_CERT_PASSWORD`: a **Developer ID Application** certificate. Create it in Xcode → Settings → Accounts → Manage Certificates → + → Developer ID Application, then export it from Keychain Access as a `.p12` with a password.
+- `NOTARY_KEY_P8`, `NOTARY_KEY_ID` and `NOTARY_ISSUER_ID`: an App Store Connect API key with the Developer role or higher (App Store Connect → Users and Access → Integrations). The `.p8` downloads only once.
+
+`./scripts/release_mac.sh <version> [build]` does the same on your Mac and writes to `dist/`, using the certificate in your login keychain and either `NOTARY_PROFILE` (saved with `xcrun notarytool store-credentials`) or the three `NOTARY_*` variables. Hardened runtime needs the entitlements in `Resources/IronPet.entitlements`; add one there when a new feature needs a protected resource such as the camera or calendars, or a notarized build loses it silently.
+
 ### End-to-end tests
 
 `python3 scripts/e2e.py [scenario ...]` relaunches the installed app with `--test-mode` and drives it through test-only endpoints and the real windows. Most scenarios run real `cursor-agent` and Claude Code turns, so they use your agent quota and need both signed in, with both agents turned on under Settings → General. The `setup` and `settings` scenarios click through the native windows using accessibility, so your terminal needs Accessibility permission and you shouldn't type while they run. Scenarios that change `config.json` or the hook files restore your copies afterwards.
