@@ -76,7 +76,12 @@ final class PhaseFourUITests: XCTestCase {
         let paused = NSPredicate { _, _ in self.server.count("POST /v1/automations/water/pause") == 1 }
         wait(for: [XCTNSPredicateExpectation(predicate: paused, object: nil)], timeout: 10)
         app.navigationBars.buttons.element(boundBy: 0).tap()
-        app.buttons["new-automation-menu"].tap()
+        // The back transition is still running on a slow runner; tap the menu once the list is back and the button can be hit.
+        let menu = app.buttons["new-automation-menu"]
+        XCTAssertTrue(menu.waitForExistence(timeout: 10))
+        let hittable = NSPredicate(format: "isHittable == true")
+        wait(for: [XCTNSPredicateExpectation(predicate: hittable, object: menu)], timeout: 10)
+        menu.tap()
         app.buttons["new-automation-request"].tap()
         let field = app.textFields["automation-request-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 10))
