@@ -164,9 +164,33 @@ package enum Markdown {
     }
 
     package static func parseInline(_ text: String) -> AttributedString {
+        #if canImport(Darwin)
         (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace)))
             ?? AttributedString(text)
+        #else
+        // swift-foundation on Linux cannot parse Markdown, so the common inline markers are stripped and the text carries no styling.
+        AttributedString(stripInlineMarkers(text))
+        #endif
     }
+
+    #if !canImport(Darwin)
+    private static let inlineMarkers: [(pattern: String, template: String)] = [
+        (#"\[([^\]]*)\]\([^)]*\)"#, "$1"),
+        (#"`([^`]+)`"#, "$1"),
+        (#"(\*\*|__)(?=\S)(.+?)(?<=\S)\1"#, "$2"),
+        (#"~~(?=\S)(.+?)(?<=\S)~~"#, "$1"),
+        (#"\*(?=\S)([^*]+?)(?<=\S)\*"#, "$1"),
+    ]
+
+    private static func stripInlineMarkers(_ text: String) -> String {
+        var result = text
+        for (pattern, template) in inlineMarkers {
+            guard let expression = try? NSRegularExpression(pattern: pattern) else { continue }
+            result = expression.stringByReplacingMatches(in: result, range: NSRange(result.startIndex..., in: result), withTemplate: template)
+        }
+        return result
+    }
+    #endif
 
     private static func fence(_ trimmed: String) -> String? {
         for marker in ["```", "~~~"] where trimmed.hasPrefix(marker) {

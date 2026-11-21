@@ -1,3 +1,4 @@
+#if canImport(Darwin)
 import Foundation
 
 /// What the event socket tells its reader.
@@ -107,3 +108,4 @@ public final class EventConnection: @unchecked Sendable {
         continuation.finish()
     }
 }
+#endif

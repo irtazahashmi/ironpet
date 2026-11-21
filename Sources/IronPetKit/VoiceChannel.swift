@@ -15,6 +15,8 @@ public protocol VoiceChannel: AnyObject, Sendable {
     func close()
 }
 
+// URLSessionWebSocketTask does not exist on Linux, so the socket and the client call that opens it are Darwin-only.
+#if canImport(Darwin)
 /// `GET /v1/voice` as a WebSocket over the client's own session, so the certificate pin applies.
 public final class URLSessionVoiceChannel: VoiceChannel, @unchecked Sendable {
     /// A reply's audio is one WAV per chunk, which is larger than the 1 MiB default.
@@ -62,3 +64,4 @@ extension IronPetClient {
     /// Opens the voice socket. It connects at once and fails on first use when the Mac refuses.
     public func openVoiceChannel() -> any VoiceChannel { URLSessionVoiceChannel(client: self) }
 }
+#endif

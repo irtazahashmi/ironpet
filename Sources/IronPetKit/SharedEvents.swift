@@ -1,3 +1,4 @@
+#if canImport(Darwin)
 import Foundation
 
 /// Anything that yields the event socket's signals. `EventConnection` is the real one.
@@ -68,3 +69,4 @@ public final class SharedEventSource: EventSignalSource, @unchecked Sendable {
         task?.cancel()
     }
 }
+#endif

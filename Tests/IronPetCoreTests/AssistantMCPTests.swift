@@ -67,7 +67,7 @@ final class AssistantMCPTests: XCTestCase {
         XCTAssertTrue(refused.text.contains("not available inside a background job"))
     }
 
-    func testReadOnlyAssistantToolsSkipApprovalButStartingAJobAsks() {
+    func testReadOnlyAssistantToolsSkipApprovalButStartingAJobAsks() async {
         for tool in ["status_overview", "jobs_list", "memory_remember", "memory_search", "projects_resolve"] {
             XCTAssertTrue(ApprovalRules.isOwnTaskTool(server: "ironpet", tool: tool), tool)
         }
@@ -76,7 +76,7 @@ final class AssistantMCPTests: XCTestCase {
         }
     }
 
-    func testJobScopeAddsTheVariableOnlyToIronpetsServer() {
+    func testJobScopeAddsTheVariableOnlyToIronpetsServer() async {
         let servers: [JSON] = [["name": "ironpet", "command": "/x", "args": ["mcp"], "env": [] as [JSON]], ["name": "other", "command": "/y"]]
         let scoped = MCPEndpoint.jobScoped(servers)
         XCTAssertEqual((scoped[0]["env"] as? [JSON])?.first?["value"] as? String, "job")
@@ -183,26 +183,26 @@ final class ProjectResolverTests: XCTestCase {
                                    scratch: scratch, exists: { _ in true })
     }
 
-    func testCandidatesMergeSourcesAndEndWithNoProject() {
+    func testCandidatesMergeSourcesAndEndWithNoProject() async {
         let list = candidates()
         XCTAssertEqual(list.map(\.name), ["ironpet", "kokous-app", "avaus", "avaus-web", "No project"])
         XCTAssertEqual(list[0].sources, [.chat, .cursor])
     }
 
-    func testMissingFoldersAreDropped() {
+    func testMissingFoldersAreDropped() async {
         let list = ProjectResolver.candidates(frontmost: nil, chat: URL(fileURLWithPath: "/gone"), cursor: [], recents: [],
                                               scratch: scratch, exists: { _ in false })
         XCTAssertEqual(list.map(\.name), ["No project"])
     }
 
-    func testSpokenNamesMatch() {
+    func testSpokenNamesMatch() async {
         XCTAssertEqual(ProjectResolver.resolve("the Iron Pet repo", in: candidates()).best?.name, "ironpet")
         XCTAssertEqual(ProjectResolver.resolve("kokous", in: candidates()).best?.name, "kokous-app")
         XCTAssertEqual(ProjectResolver.resolve("avaus", in: candidates()).best?.name, "avaus", "an exact name beats a longer one")
         XCTAssertEqual(ProjectResolver.resolve("no project", in: candidates()).best?.name, "No project")
     }
 
-    func testAmbiguousAndUnknownNamesHaveNoBest() {
+    func testAmbiguousAndUnknownNamesHaveNoBest() async {
         let ambiguous = ProjectResolver.resolve("ava", in: candidates())
         XCTAssertNil(ambiguous.best)
         XCTAssertTrue(ambiguous.ambiguous)
@@ -212,7 +212,7 @@ final class ProjectResolverTests: XCTestCase {
         XCTAssertFalse(unknown.ambiguous)
     }
 
-    func testCursorURLsAndPathsOfTheSameFolderAreOneCandidate() throws {
+    func testCursorURLsAndPathsOfTheSameFolderAreOneCandidate() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("resolver-\(UUID().uuidString)/ironpet")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: folder.deletingLastPathComponent()) }
@@ -227,14 +227,14 @@ final class ProjectResolverTests: XCTestCase {
         XCTAssertNil(ProjectResolver.candidate(at: folder.path + "-other", in: list))
     }
 
-    func testAShortFolderNameInsideALongerRequestIsNotAMatch() {
+    func testAShortFolderNameInsideALongerRequestIsNotAMatch() async {
         let list = ProjectResolver.candidates(frontmost: nil, chat: URL(fileURLWithPath: "/Users/me/api"), cursor: [], recents: [],
                                               scratch: scratch, exists: { _ in true })
         XCTAssertNil(ProjectResolver.resolve("the kokous api", in: list).best)
         XCTAssertEqual(ProjectResolver.resolve("api", in: list).best?.name, "api")
     }
 
-    func testNoNamePrefersTheFrontmostProject() {
+    func testNoNamePrefersTheFrontmostProject() async {
         XCTAssertEqual(ProjectResolver.resolve(nil, in: candidates()).best?.name, "ironpet")
         XCTAssertEqual(ProjectResolver.resolve("", in: candidates(frontmost: URL(fileURLWithPath: "/Users/me/avaus-web"))).best?.name, "avaus-web")
     }

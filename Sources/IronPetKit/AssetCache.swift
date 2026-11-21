@@ -1,4 +1,8 @@
+#if canImport(CryptoKit)
 import CryptoKit
+#else
+import Crypto
+#endif
 import Foundation
 
 /// Files from `GET /v1/assets/<sha256>`, kept on disk under their hash. A hash never changes meaning, so a file is downloaded once.

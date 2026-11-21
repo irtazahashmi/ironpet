@@ -12,7 +12,7 @@ final class SessionMappingTests: XCTestCase {
         store.sessions["\(source.rawValue):\(id)"]
     }
 
-    func testCodexUsesClaudeEventNames() {
+    func testCodexUsesClaudeEventNames() async {
         let store = SessionStore()
         store.apply(event(.codex, "UserPromptSubmit", ["session_id": "c1", "cwd": "/work/app", "prompt": "fix the test"]))
         XCTAssertEqual(session(store, .codex, "c1")?.status, .running)
@@ -24,7 +24,7 @@ final class SessionMappingTests: XCTestCase {
         XCTAssertEqual(session(store, .codex, "c1")?.lastResponse, "Done.")
     }
 
-    func testGeminiTurnToolsAndPermission() {
+    func testGeminiTurnToolsAndPermission() async {
         let store = SessionStore()
         store.apply(event(.gemini, "BeforeAgent", ["session_id": "g1", "cwd": "/work/g", "prompt": "add a test"]))
         XCTAssertEqual(session(store, .gemini, "g1")?.status, .running)
@@ -39,7 +39,7 @@ final class SessionMappingTests: XCTestCase {
         XCTAssertEqual(session(store, .gemini, "g1")?.ended, true)
     }
 
-    func testCopilotCamelCasePayloads() {
+    func testCopilotCamelCasePayloads() async {
         let store = SessionStore()
         store.apply(event(.copilot, "userPromptSubmitted", ["sessionId": "p1", "cwd": "/work/c", "prompt": "refactor"]))
         XCTAssertEqual(session(store, .copilot, "p1")?.status, .running)
@@ -51,7 +51,7 @@ final class SessionMappingTests: XCTestCase {
         XCTAssertEqual(session(store, .copilot, "p1")?.detail, "boom")
     }
 
-    func testPiExtensionEvents() {
+    func testPiExtensionEvents() async {
         let store = SessionStore()
         store.apply(event(.pi, "agent_start", ["session_id": "i1", "cwd": "/work/pi", "prompt": "explain"]))
         XCTAssertEqual(session(store, .pi, "i1")?.status, .running)
@@ -61,13 +61,13 @@ final class SessionMappingTests: XCTestCase {
         XCTAssertEqual(session(store, .pi, "i1")?.status, .done)
     }
 
-    func testEventsWithoutASessionIdAreIgnored() {
+    func testEventsWithoutASessionIdAreIgnored() async {
         let store = SessionStore()
         store.apply(event(.codex, "Stop", [:]))
         XCTAssertTrue(store.sessions.isEmpty)
     }
 
-    func testWatchSwitchesPerAgent() {
+    func testWatchSwitchesPerAgent() async {
         var integrations = Config.Integrations()
         XCTAssertFalse(integrations.watches(.codex))
         integrations.setWatches(true, .codex)

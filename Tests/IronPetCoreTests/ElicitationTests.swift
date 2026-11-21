@@ -16,7 +16,7 @@ final class ElicitationTests: XCTestCase {
         ]],
     ]
 
-    func testAskUserQuestionFormHasRadiosCheckboxesAndTwoOtherFields() throws {
+    func testAskUserQuestionFormHasRadiosCheckboxesAndTwoOtherFields() async throws {
         let form = try XCTUnwrap(ElicitationForm.parse(askParams))
         XCTAssertEqual(form.fields.map(\.id), ["question_0", "question_0_custom", "question_1", "question_1_custom"])
         guard case .single(let radios) = form.fields[0].kind, case .multi(let boxes) = form.fields[2].kind else { return XCTFail("kinds") }
@@ -27,14 +27,14 @@ final class ElicitationTests: XCTestCase {
         XCTAssertEqual(form.fields[3].kind, .text)
     }
 
-    func testFieldsKeepNumericOrderPastNine() throws {
+    func testFieldsKeepNumericOrderPastNine() async throws {
         var properties: JSON = [:]
         for index in [0, 2, 10, 9] { properties["question_\(index)"] = ["type": "string"] as JSON }
         let form = try XCTUnwrap(ElicitationForm.parse(["mode": "form", "message": "m", "requestedSchema": ["type": "object", "properties": properties]]))
         XCTAssertEqual(form.fields.map(\.id), ["question_0", "question_2", "question_9", "question_10"])
     }
 
-    func testAcceptContentHasLabelsAndListsAndCustomOnlyWhenFilled() throws {
+    func testAcceptContentHasLabelsAndListsAndCustomOnlyWhenFilled() async throws {
         let form = try XCTUnwrap(ElicitationForm.parse(askParams))
         let answers: ElicitationAnswers = ["question_0": .one("B"), "question_1": .many(["test", "lint"]), "question_1_custom": .text(" Both ")]
         let reply = ElicitationReply.accept(form.content(answers)).json
@@ -46,12 +46,12 @@ final class ElicitationTests: XCTestCase {
         XCTAssertNil(content["question_0_custom"])
     }
 
-    func testSkipAndCancelRepliesCarryOnlyTheAction() {
+    func testSkipAndCancelRepliesCarryOnlyTheAction() async {
         XCTAssertEqual(ElicitationReply.decline.json as NSDictionary, ["action": "decline"])
         XCTAssertEqual(ElicitationReply.cancel.json as NSDictionary, ["action": "cancel"])
     }
 
-    func testUnsupportedSchemasAreNotParsed() {
+    func testUnsupportedSchemasAreNotParsed() async {
         let nested: JSON = ["mode": "form", "message": "m", "requestedSchema": ["type": "object", "properties": ["x": ["type": "object"]]]]
         XCTAssertNil(ElicitationForm.parse(nested))
         XCTAssertNil(ElicitationForm.parse(["mode": "url", "message": "m", "url": "https://example.com"]))
@@ -59,7 +59,7 @@ final class ElicitationTests: XCTestCase {
         XCTAssertNil(ElicitationForm.parse(objects))
     }
 
-    func testGenericFieldsAndRequiredFieldsGateSubmit() throws {
+    func testGenericFieldsAndRequiredFieldsGateSubmit() async throws {
         let params: JSON = ["mode": "form", "message": "Server settings", "requestedSchema": [
             "type": "object", "required": ["name"],
             "properties": ["name": ["type": "string"], "count": ["type": "integer"], "on": ["type": "boolean"],
@@ -77,7 +77,7 @@ final class ElicitationTests: XCTestCase {
 
     // MARK: Chat session
 
-    func testSubmittingTheCardRepliesAndLeavesAReadOnlyRecord() throws {
+    func testSubmittingTheCardRepliesAndLeavesAReadOnlyRecord() async throws {
         let session = ChatSession(restore: false)
         let form = try XCTUnwrap(ElicitationForm.parse(askParams))
         var reply: ElicitationReply?
@@ -92,7 +92,7 @@ final class ElicitationTests: XCTestCase {
         XCTAssertEqual(record.lines.map(\.answer), ["A"])
     }
 
-    func testSkippingTheCardDeclines() throws {
+    func testSkippingTheCardDeclines() async throws {
         let session = ChatSession(restore: false)
         var reply: ElicitationReply?
         session.handleElicitation(try XCTUnwrap(ElicitationForm.parse(askParams))) { reply = $0 }
@@ -102,7 +102,7 @@ final class ElicitationTests: XCTestCase {
         XCTAssertTrue(record.skipped)
     }
 
-    func testStopCancelsOpenForms() throws {
+    func testStopCancelsOpenForms() async throws {
         let session = ChatSession(restore: false)
         var reply: ElicitationReply?
         session.handleElicitation(try XCTUnwrap(ElicitationForm.parse(askParams))) { reply = $0 }
@@ -111,7 +111,7 @@ final class ElicitationTests: XCTestCase {
         XCTAssertTrue(session.forms.isEmpty)
     }
 
-    func testAHiddenChatAnnouncesTheQuestion() throws {
+    func testAHiddenChatAnnouncesTheQuestion() async throws {
         let session = ChatSession(restore: false)
         var announced: String?
         session.onFormNeeded = { _, detail in announced = detail }
@@ -133,13 +133,13 @@ final class ElicitationPagerTests: XCTestCase {
         return try XCTUnwrap(ElicitationForm.parse(["mode": "form", "message": "m", "requestedSchema": schema]))
     }
 
-    func testEachQuestionIsOnePageWithItsOtherField() throws {
+    func testEachQuestionIsOnePageWithItsOtherField() async throws {
         let pages = try form(questions: 4).pages
         XCTAssertEqual(pages.count, 4)
         XCTAssertEqual(pages[1].map(\.id), ["question_1", "question_1_custom"])
     }
 
-    func testFirstPageStartsWithBackDisabled() throws {
+    func testFirstPageStartsWithBackDisabled() async throws {
         let pager = ElicitationPager(pageCount: try form(questions: 4).pages.count)
         XCTAssertEqual(pager.label, "1 of 4")
         XCTAssertTrue(pager.isPaged)
@@ -147,7 +147,7 @@ final class ElicitationPagerTests: XCTestCase {
         XCTAssertTrue(pager.canGoForward)
     }
 
-    func testMovingKeepsAnswersAndStopsAtTheEnds() throws {
+    func testMovingKeepsAnswersAndStopsAtTheEnds() async throws {
         let form = try form(questions: 3)
         var pager = ElicitationPager(pageCount: form.pages.count)
         let answers: ElicitationAnswers = ["question_0": .one("A"), "question_1_custom": .text("mine")]
@@ -162,7 +162,7 @@ final class ElicitationPagerTests: XCTestCase {
         XCTAssertEqual(form.content(answers)["question_1_custom"] as? String, "mine")
     }
 
-    func testFormsThatAreNotQuestionsStayOnOnePage() throws {
+    func testFormsThatAreNotQuestionsStayOnOnePage() async throws {
         let properties: JSON = ["name": ["type": "string"] as JSON, "age": ["type": "integer"] as JSON, "ok": ["type": "boolean"] as JSON]
         let form = try XCTUnwrap(ElicitationForm.parse(["mode": "form", "message": "m", "requestedSchema": ["type": "object", "properties": properties]]))
         XCTAssertEqual(form.pages.count, 1)
@@ -174,11 +174,11 @@ final class ElicitationPagerTests: XCTestCase {
         XCTAssertEqual(mixedForm.pages.count, 1)
     }
 
-    func testSingleQuestionIsNotPaged() throws {
+    func testSingleQuestionIsNotPaged() async throws {
         XCTAssertFalse(ElicitationPager(pageCount: try form(questions: 1).pages.count).isPaged)
     }
 
-    func testSubmitPayloadIsTheSameAsForTheWholeForm() throws {
+    func testSubmitPayloadIsTheSameAsForTheWholeForm() async throws {
         let form = try form(questions: 4)
         let answers: ElicitationAnswers = ["question_0": .one("A"), "question_3": .one("B"), "question_2_custom": .text("x")]
         let content = form.content(answers)
@@ -187,7 +187,7 @@ final class ElicitationPagerTests: XCTestCase {
         XCTAssertNil(form.firstIncompletePage(answers))
     }
 
-    func testSubmitJumpsToTheFirstUnansweredRequiredQuestion() throws {
+    func testSubmitJumpsToTheFirstUnansweredRequiredQuestion() async throws {
         let form = try form(questions: 4, required: ["question_1", "question_3"])
         XCTAssertEqual(form.firstIncompletePage(["question_3": .one("A")]), 1)
         XCTAssertEqual(form.firstIncompletePage(["question_1": .one("A")]), 3)

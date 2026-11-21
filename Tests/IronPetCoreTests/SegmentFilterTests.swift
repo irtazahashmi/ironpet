@@ -1,3 +1,6 @@
+#if canImport(FoundationNetworking)
+import FoundationNetworking
+#endif
 import XCTest
 @testable import IronPetCore
 
@@ -86,6 +89,9 @@ final class SegmentFilterTests: XCTestCase {
     }
 
     func testVoiceNoteFallsBackToPlainJSONWhenVerboseIsRejected() async throws {
+        #if !canImport(Darwin)
+        throw XCTSkip("swift-corelibs-foundation does not hand an upload's body to a URLProtocol stub as httpBodyStream")
+        #endif
         var formats: [String] = []
         StubProtocol.respond = { request in
             let body = String(decoding: request.httpBodyStream.map { stream -> Data in

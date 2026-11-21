@@ -130,7 +130,7 @@ final class FrontDeskTests: XCTestCase {
         XCTAssertEqual(decision?.allow, false, "no reply is on the agent")
     }
 
-    func testTheFrontDeskHandsWorkOffInsteadOfRunningIt() {
+    func testTheFrontDeskHandsWorkOffInsteadOfRunningIt() async {
         XCTAssertTrue(FrontDesk.decision(for: ACPToolCall(title: "mcp__ironpet__jobs_start", kind: "other", rawInput: ["title": "x"])).allow)
         XCTAssertTrue(FrontDesk.decision(for: ACPToolCall(title: "mcp__ironpet__status_overview", kind: "other")).allow)
         XCTAssertTrue(FrontDesk.decision(for: ACPToolCall(title: "Read", kind: "read")).allow)
@@ -152,7 +152,7 @@ final class FrontDeskTests: XCTestCase {
         XCTAssertTrue(preamble.contains("Ghost: Done, two files changed."))
     }
 
-    func testRecentChatSkipsVoiceThreadsAndStaysInBudget() {
+    func testRecentChatSkipsVoiceThreadsAndStaysInBudget() async {
         let voice = ChatThread(id: "voice-9", title: "Voice", workspace: "/tmp", updatedAt: Date(),
                                items: [ChatSession.Item(kind: .user("said out loud"))], agent: "claude", voice: true)
         let typed = ChatThread(id: "typed-2", title: "Typed", workspace: "/tmp", updatedAt: Date(), items: [
@@ -169,21 +169,21 @@ final class FrontDeskTests: XCTestCase {
         XCTAssertEqual(FrontDesk.recentChat(from: [typed], bytes: 60), "User: newest", "the budget keeps the newest messages that fit")
     }
 
-    func testTheDenialSaysWhatToDoNext() {
+    func testTheDenialSaysWhatToDoNext() async {
         let decision = FrontDesk.decision(for: ACPToolCall(title: "Edit", kind: "edit", rawInput: ["file_path": "/work/a.swift"]))
         XCTAssertFalse(decision.allow)
         XCTAssertTrue(decision.message.contains("cannot run this itself"), "the model should not say it has no tools")
         XCTAssertTrue(decision.message.contains("jobs_start"))
     }
 
-    func testVoiceModeNoteIsAddedOnlyWhileVoiceModeIsOn() {
+    func testVoiceModeNoteIsAddedOnlyWhileVoiceModeIsOn() async {
         XCTAssertEqual(ChatSession.withVoiceMode("hi", on: false), "hi", "chat is unchanged when voice mode is off")
         let on = ChatSession.withVoiceMode("hi", on: true)
         XCTAssertTrue(on.hasPrefix("hi\n\n"), "the note goes at the end, so the cached prefix stays the same")
         XCTAssertTrue(on.contains("read aloud"))
     }
 
-    func testFastestModel() {
+    func testFastestModel() async {
         let models = [ChatModel(id: "opus", name: "Claude Opus 4.8"), ChatModel(id: "gemini-pro", name: "Gemini 3 Pro"),
                       ChatModel(id: "haiku", name: "Claude Haiku 4.5")]
         XCTAssertEqual(FrontDesk.fastestModel(in: models), "haiku")
@@ -191,7 +191,7 @@ final class FrontDeskTests: XCTestCase {
         XCTAssertEqual(FrontDesk.fastestModel(in: [ChatModel(id: "gpt-5.6-mini", name: "GPT-5.6 mini")]), "gpt-5.6-mini")
     }
 
-    func testVoiceScopeMarksIronpetsServerOnly() {
+    func testVoiceScopeMarksIronpetsServerOnly() async {
         let servers: [JSON] = [["name": "ironpet", "command": "/bin/ironpet", "env": []], ["name": "other", "command": "x"]]
         let scoped = MCPEndpoint.voiceScoped(servers)
         XCTAssertEqual((scoped[0]["env"] as? [JSON])?.first?["value"] as? String, "voice")

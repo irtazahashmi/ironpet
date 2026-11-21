@@ -1,4 +1,4 @@
-import SwiftUI
+import Foundation
 
 /// The chat backgrounds the Mac offers in Settings, as data and as a drawing. The Mac and the iPhone app both draw from this one
 /// definition, so a background looks the same on both. Built-ins are drawn in code, so neither app carries image files for them. The
@@ -45,6 +45,9 @@ public enum ChatBackgrounds {
 
     public static func builtIn(_ id: String) -> BuiltIn? { builtIns.first { $0.id == id } }
 }
+
+#if canImport(SwiftUI)
+import SwiftUI
 
 /// The picture behind a chat transcript. A built-in is drawn in code, `custom` shows `customImage` aspect-filled so it covers the
 /// area and the overflow is cropped, and anything else, or a custom background whose image is missing, shows `fallback`. The caller
@@ -163,3 +166,4 @@ public struct BuiltInBackgroundView: View, Equatable {
         return p
     }
 }
+#endif

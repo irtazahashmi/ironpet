@@ -147,7 +147,12 @@ public enum ChatMarkdown {
 
     /// The inline markdown of one block: bold, italic, code spans, strikethrough and links.
     public static func inline(_ text: String) -> AttributedString {
+        #if canImport(Darwin)
         (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
+        #else
+        // swift-foundation on Linux cannot parse Markdown, so the text shows as it is.
+        AttributedString(text)
+        #endif
     }
 
     /// True for blocks that draw as running text. The Mac draws a run of them as one text view.

@@ -53,7 +53,7 @@ package struct RemotePhoneSettings {
                     throw RemoteFailure.forbidden("\"pet.sprite\" can only be a pet of the gallery; pick one with POST /v1/settings/pet")
                 }
             } else if Self.offOnly.contains(path) {
-                guard value is NSNull || (value as? NSNumber).map({ CFGetTypeID($0) == CFBooleanGetTypeID() && !$0.boolValue }) == true else {
+                guard value is NSNull || (value as? NSNumber).map({ $0.isJSONBoolean && !$0.boolValue }) == true else {
                     throw RemoteFailure.forbidden("\"\(path)\" can only be turned off from the phone")
                 }
             } else {

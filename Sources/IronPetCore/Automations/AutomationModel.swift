@@ -708,7 +708,7 @@ package enum AutomationTemplate {
         case nil, is NSNull: return ""
         case let s as String: return s
         case let n as NSNumber:
-            if CFGetTypeID(n) == CFBooleanGetTypeID() { return n.boolValue ? "true" : "false" }
+            if n.isJSONBoolean { return n.boolValue ? "true" : "false" }
             return n.doubleValue == n.doubleValue.rounded() ? String(n.int64Value) : String(n.doubleValue)
         case let value?:
             if JSONSerialization.isValidJSONObject(value), let data = try? JSONSerialization.data(withJSONObject: value, options: [.sortedKeys]) {
