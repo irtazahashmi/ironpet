@@ -1,28 +1,6 @@
 import FluidAudio
 import Foundation
 
-/// One speaker found inside a single chunk. The ids are local to the chunk: "1" in one chunk and "1" in the next
-/// are unrelated until `MeetingSpeakerTable` links them by voice.
-struct ChunkSpeaker: Equatable {
-    var localId: String
-    /// One embedding for the whole speaker, the duration-weighted mean over their segments.
-    var embedding: [Float]
-    /// Seconds from the start of the chunk.
-    var turns: [ClosedRange<TimeInterval>]
-
-    var seconds: TimeInterval { turns.reduce(0) { $0 + ($1.upperBound - $1.lowerBound) } }
-    var longestTurn: ClosedRange<TimeInterval>? { turns.max { $0.upperBound - $0.lowerBound < $1.upperBound - $1.lowerBound } }
-}
-
-struct ChunkDiarization: Equatable {
-    var speakers: [ChunkSpeaker]
-}
-
-protocol SpeakerDiarizing: Sendable {
-    /// Splits a chunk's WAV into speakers. Throws when the models are missing or the audio cannot be read.
-    func diarize(wav: URL) async throws -> ChunkDiarization
-}
-
 /// FluidAudio's offline pipeline (a Core ML port of pyannote community-1 with WeSpeaker embeddings). The manager is
 /// created on first use and kept, because loading the models costs more than diarizing a chunk.
 actor FluidDiarizer: SpeakerDiarizing {

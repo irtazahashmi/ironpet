@@ -13,6 +13,9 @@ struct Platform: @unchecked Sendable { // The main-actor adapters are used only 
     var speech: SpeechOutput
     var pets: PetAssets
     var files: FileIntake
+    var presence: PresenceSource
+    var opener: URLOpener
+    var audio: AudioTranscoder
 
     struct Capability: Equatable, Sendable {
         let name: String
@@ -32,6 +35,9 @@ struct Platform: @unchecked Sendable { // The main-actor adapters are used only 
             Capability(name: "SpeechOutput", supported: speech.isSupported),
             Capability(name: "PetAssets", supported: pets.isSupported),
             Capability(name: "FileIntake", supported: files.isSupported),
+            Capability(name: "PresenceSource", supported: presence.isSupported),
+            Capability(name: "URLOpener", supported: opener.isSupported),
+            Capability(name: "AudioTranscoder", supported: audio.isSupported),
         ]
     }
 
@@ -41,6 +47,7 @@ struct Platform: @unchecked Sendable { // The main-actor adapters are used only 
         Platform(secrets: UnsupportedSecretStore(), processes: UnsupportedProcessSpawner(), log: UnsupportedLogSink(),
                  appInfo: UnsupportedAppInfo(), clock: UnsupportedClock(), meetings: UnsupportedMeetingRecorder(),
                  capture: UnsupportedCaptureControl(), speech: UnsupportedSpeechOutput(), pets: UnsupportedPetAssets(),
-                 files: UnsupportedFileIntake())
+                 files: UnsupportedFileIntake(), presence: UnsupportedPresenceSource(),
+                 opener: UnsupportedURLOpener(), audio: UnsupportedAudioTranscoder())
     }
 }

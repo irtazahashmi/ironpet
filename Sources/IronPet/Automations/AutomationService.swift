@@ -1,4 +1,3 @@
-import AppKit
 import Foundation
 
 /// What an automation shows: one bubble, plus optionally a macOS notification.
@@ -10,6 +9,8 @@ struct AutomationNotice {
         var destructive = false
         /// Pressing it marks the stored notification read (Done).
         var marksRead = false
+        /// The address the button opens. The client that shows the bubble opens it, as the `open-url` action.
+        var openURL: URL?
         var run: () -> Void
     }
 
@@ -722,7 +723,7 @@ final class AutomationService {
         let key = text(action, "id") ?? (title + "\n" + (text(action, "body") ?? ""))
         let url = text(action, "url").flatMap(URL.init(string:))
         var buttons: [AutomationNotice.Button] = []
-        if let url { buttons.append(.init(title: "Open", primary: true) { NSWorkspace.shared.open(url) }) }
+        if let url { buttons.append(.init(title: "Open", primary: true, openURL: url) {}) }
         let extras = Self.notificationFields(action)
         if let problem = extras.problem { record(a.id, "ok", "bubble: " + problem) }
         let tint: AutomationNotice.Tint = level == "bad" ? .bad : level == "warn" ? .warn : level == "good" ? .good : .info

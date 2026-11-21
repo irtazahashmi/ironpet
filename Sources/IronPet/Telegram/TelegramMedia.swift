@@ -1,4 +1,3 @@
-import AVFoundation
 import Foundation
 
 /// A file in a Telegram message, with the name it gets on disk.
@@ -91,39 +90,12 @@ enum TelegramMediaStore {
 
 /// Turns a downloaded voice or audio file into text with the voice server from Settings → Voice.
 enum TelegramVoice {
-    /// AVFoundation decodes WAV, MP3, M4A and MP4 audio. On macOS it does not read OGG/Opus, which is what Telegram
-    /// voice messages are, so those go to the server as they are; OpenAI-compatible servers accept OGG.
-    static func wav(from file: URL, maxSeconds: Double = 600) -> Data? {
-        guard let input = try? AVAudioFile(forReading: file), input.length > 0 else { return nil }
-        let format = input.processingFormat
-        guard Double(input.length) / format.sampleRate <= maxSeconds,
-              let target = AVAudioFormat(commonFormat: .pcmFormatInt16, sampleRate: Double(WAV.sampleRate), channels: 1, interleaved: true),
-              let converter = AVAudioConverter(from: format, to: target),
-              let buffer = AVAudioPCMBuffer(pcmFormat: format, frameCapacity: AVAudioFrameCount(input.length)),
-              (try? input.read(into: buffer)) != nil else { return nil }
-        let capacity = AVAudioFrameCount(Double(input.length) * target.sampleRate / format.sampleRate) + 1024
-        guard let output = AVAudioPCMBuffer(pcmFormat: target, frameCapacity: capacity) else { return nil }
-        var supplied = false
-        var error: NSError?
-        converter.convert(to: output, error: &error) { _, status in
-            if supplied {
-                status.pointee = .endOfStream
-                return nil
-            }
-            supplied = true
-            status.pointee = .haveData
-            return buffer
-        }
-        guard error == nil, output.frameLength > 0, let channel = output.int16ChannelData?[0] else { return nil }
-        return WAV.encode(Array(UnsafeBufferPointer(start: channel, count: Int(output.frameLength))))
-    }
-
     /// Uses the server in Settings → Voice. The Keychain read happens here, off the main thread.
-    static func configuredTranscribe(voiceKey: VoiceKey) -> @Sendable (Data, String) async throws -> String {
+    static func configuredTranscribe(voiceKey: VoiceKey, transcoder: AudioTranscoder = UnsupportedAudioTranscoder()) -> @Sendable (Data, String) async throws -> String {
         { audio, name in
             let voice = await MainActor.run { ConfigStore.shared.config.voice }
             let transcriber = Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: voiceKey.load(), usageFeature: .voiceTranscription)
-            return try await transcribe(audio, name: name, with: transcriber)
+            return try await transcribe(audio, name: name, with: transcriber, transcoder: transcoder)
         }
     }
 
@@ -138,12 +110,13 @@ enum TelegramVoice {
         }
     }
 
-    /// Decodes when AVFoundation can, otherwise sends the file as it is.
-    static func transcribe(_ audio: Data, name: String, with transcriber: Transcriber) async throws -> String {
+    /// Decodes when the transcoder can, otherwise sends the file as it is.
+    static func transcribe(_ audio: Data, name: String, with transcriber: Transcriber,
+                           transcoder: AudioTranscoder = UnsupportedAudioTranscoder()) async throws -> String {
         let temp = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-tg-\(UUID().uuidString)-\(safeExtension(name))")
         defer { try? FileManager.default.removeItem(at: temp) }
         try audio.write(to: temp)
-        if let wav = wav(from: temp) {
+        if let wav = (try? transcoder.wav(from: temp, maxSeconds: 600)) ?? nil {
             return try await transcriber.transcribe(wav: wav)
         }
         return try await transcriber.transcribe(audio: audio, filename: name, mime: mime(for: name))

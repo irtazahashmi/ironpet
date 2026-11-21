@@ -52,8 +52,12 @@ final class VoiceAPI {
         let key = await MainActor.run { [weak self] in self?.voiceKey ?? .unsupported }
         let transcriber = Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: key.load(), usageFeature: .voiceTranscription)
         // Decodes formats the server may not read (Telegram's Opus voice notes) when macOS can, and sends the rest as they are.
-        return try await TelegramVoice.transcribe(audio, name: name, with: transcriber)
+        let transcoder = await MainActor.run { [weak self] in self?.transcoder ?? UnsupportedAudioTranscoder() }
+        return try await TelegramVoice.transcribe(audio, name: name, with: transcriber, transcoder: transcoder)
     }
+
+    /// Decodes audio before it is sent. `AppDelegate` sets the Mac one.
+    var transcoder: AudioTranscoder = UnsupportedAudioTranscoder()
 
     /// The voice server's key, which the speaker uses too. `AppDelegate` sets the Mac one.
     var voiceKey = VoiceKey.unsupported {

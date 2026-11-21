@@ -115,17 +115,19 @@ final class MeetingRegenerator {
     private(set) var completed = 0 { willSet { changes.send() } }
 
     /// The voice server's key. `AppDelegate` shares the meeting controller's.
-    var keyCache = MeetingController.KeyCache(voiceKey: .unsupported)
+    var keyCache = MeetingKeyCache(voiceKey: .unsupported)
     lazy var makeTranscriber: () -> Transcriber = { [weak self] in
         let voice = ConfigStore.shared.config.voice
         return Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: self?.keyCache.key(), usageFeature: .meetingTranscription)
     }
-    var diarizer: SpeakerDiarizing = FluidDiarizer()
+    /// Splits speakers inside a chunk. `AppDelegate` sets the Mac one; without it the transcript stays by track.
+    var diarizer: SpeakerDiarizing = UnsupportedDiarizer()
     var voiceStore: VoiceStore = .unwired
     /// Starts the summary agent. `AppDelegate` sets the Mac one.
     var spawner: ProcessSpawner = UnsupportedProcessSpawner()
     var recogniseSpeakers: () -> Bool = { ConfigStore.shared.config.meetings.recogniseSpeakers }
-    var speakerModelsReady: () -> Bool = { MainActor.assumeIsolated { SpeakerModels.shared.isReady } }
+    /// True once the diarization models are on disk. `AppDelegate` sets the Mac check.
+    var speakerModelsReady: () -> Bool = { false }
     var meetingConfig: () -> Config.Meetings = { ConfigStore.shared.config.meetings }
     /// Runs the summary agent on a transcript and returns its answer. Tests replace it.
     lazy var summarize: @MainActor (_ transcript: String, _ config: Config.Meetings, _ folder: URL) async throws -> String = { [weak self] transcript, config, folder in
@@ -297,15 +299,15 @@ final class MeetingRegenerator {
     }
 }
 
-/// Runs the summary agent once, the way `MeetingController.summarize` does: read-only, every permission refused.
+/// Runs the summary agent once, the way the live recorder does: read-only, every permission refused.
 @MainActor
 enum MeetingSummaryRun {
     static func run(transcript: String, config: Config.Meetings, folder: URL, spawner: ProcessSpawner) async throws -> String {
         guard let agent = AgentCatalog.agent(id: config.summaryAgent) else {
             throw RegenerationError(message: "The summary agent \"\(config.summaryAgent)\" is not available. Pick another in Settings → Meetings.")
         }
-        let runner = MeetingController.makeSummaryRunner(agent, spawner: spawner)
-        let turn = ACPTurn(prompt: MeetingController.summaryPrompt(transcript: transcript), preamble: nil, workspace: folder,
+        let runner = MeetingSummary.makeRunner(agent, spawner: spawner)
+        let turn = ACPTurn(prompt: MeetingSummary.prompt(transcript: transcript), preamble: nil, workspace: folder,
                            resume: nil, model: config.summaryModel, images: [], files: [])
         var tasks: [Task<Void, Never>] = []
         defer {
