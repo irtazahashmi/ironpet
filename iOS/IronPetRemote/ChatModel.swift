@@ -33,6 +33,8 @@ final class ChatModel: SocketModel {
     private(set) var sending = false
     /// The Mac's reason for refusing to open a thread or start a chat, shown as an alert.
     var conflictMessage: String?
+    /// True while a saved thread is open on top of the thread list, so only that screen presents `conflictMessage`.
+    var readerOpen = false
     private(set) var threads: [RemoteChatThread] = []
     /// Photos this phone sent, by the name the Mac saved them under, so the transcript shows a thumbnail instead of a chip.
     private(set) var sentPhotos: [String: Data] = [:]

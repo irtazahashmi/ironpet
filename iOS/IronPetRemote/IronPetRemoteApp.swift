@@ -103,7 +103,7 @@ struct MainTabs: View {
         TabView(selection: $tab) {
             PetView(model: pet, today: today, app: model, client: client, open: open)
                 .tabItem { Label("Pet", systemImage: "pawprint.fill") }.tag(AppTab.pet)
-            ChatView(model: chat, backgroundID: pet.backgroundID, backgroundImage: pet.backgroundImage)
+            ChatView(model: chat, backgroundID: pet.backgroundID, backgroundImage: pet.backgroundImage, avatar: PetAvatar.face(of: pet.atlas))
                 .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }.badge(chat.approvals.count + chat.forms.count).tag(AppTab.chat)
             TasksView(model: tasks)
                 .tabItem { Label("Tasks", systemImage: "checklist") }.tag(AppTab.tasks)
