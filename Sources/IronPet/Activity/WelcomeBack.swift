@@ -1,4 +1,3 @@
-import CoreGraphics
 import Foundation
 
 /// When the user comes back after being away, sums up what happened meanwhile in one bubble and folds away the short-lived
@@ -7,20 +6,13 @@ import Foundation
 final class WelcomeBack {
     struct Environment {
         var now: () -> Date = { Date() }
-        /// Seconds since the last keyboard or mouse event, the same source as the automation clock.
-        var idleSeconds: () -> TimeInterval = {
-            CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
-        }
-        var isScreenLocked: () -> Bool = {
-            (CGSessionCopyCurrentDictionary() as? [String: Any])?["CGSSessionScreenIsLocked"] as? Bool == true
-        }
+        /// Idle time, screen lock and wake, the same source as the automation clock.
+        var presence: PresenceSource = UnsupportedPresenceSource()
         /// A meeting is being recorded or a call is on: the user is at the Mac even without typing. Asked only once the
         /// user would otherwise count as away, so a costly check does not run while they type.
         var isPresent: () -> Bool = { false }
         /// Called on ticks where presence does not matter, so a background check can stop.
         var presenceNotNeeded: () -> Void = {}
-        /// Whether the Mac woke from sleep after the given time.
-        var wokeSince: @MainActor (Date) -> Bool = { WakeMonitor.shared.woke(since: $0) }
         var isEnabled: () -> Bool = { true }
         /// How long without input counts as away. The app passes `reminders.idleResetMinutes`.
         var threshold: () -> TimeInterval = { 5 * 60 }
@@ -53,14 +45,14 @@ final class WelcomeBack {
     /// Call every couple of seconds.
     func tick() {
         let now = env.now()
-        let idle = env.idleSeconds(), threshold = env.threshold()
-        let woke = tracker.lastSample.map(env.wokeSince) ?? false
+        let idle = env.presence.idleOrZero(), threshold = env.threshold()
+        let woke = tracker.lastSample.map(env.presence.wokeSince) ?? false
         let needsPresence = idle >= threshold || woke || tracker.awaySince != nil
         if !needsPresence { env.presenceNotNeeded() }
         let present = needsPresence && env.isPresent()
         let transition = tracker.sample(now: now, idleSeconds: idle, threshold: threshold, present: present, woke: woke)
         if case .returned(let since, _) = transition { pendingSince = min(pendingSince ?? since, since) }
-        guard let since = pendingSince, !env.isScreenLocked() else { return }
+        guard let since = pendingSince, !env.presence.isScreenLocked() else { return }
         pendingSince = nil
         summarize(DateInterval(start: since, end: max(since, now)))
     }

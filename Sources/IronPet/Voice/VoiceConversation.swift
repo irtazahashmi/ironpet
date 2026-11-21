@@ -1,15 +1,5 @@
 import Foundation
 
-/// Speaks a line and returns when it has been heard. `SpeechPlayer` is the real one.
-@MainActor
-protocol ConversationSpeaker: AnyObject {
-    /// Throws `CancellationError` when `stop()` cut it short, or what the speech server answered.
-    func say(_ text: String) async throws
-    func stop()
-}
-
-extension SpeechPlayer: ConversationSpeaker {}
-
 /// Voice mode: a spoken back-and-forth with the pet. Listening, then transcribing what was said, thinking (the front
 /// desk's turn), speaking the reply, and listening again, until the user says goodbye, presses the shortcut or Esc,
 /// or says nothing for `silenceSeconds`. Talking over the pet cuts it off. With Wispr Flow, its dictation arrives as
@@ -34,8 +24,9 @@ final class VoiceConversation: ObservableObject {
     var silenceSleep: (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }
     /// Why the pet must not listen right now ("a call", "a meeting recording"), or nil.
     var quietReason: () -> String? = { nil }
-    var microphoneAllowed: () async -> Bool = { await VoiceController.microphoneAllowed() }
-    var makeMic: () -> ConversationListening = { ConversationMic() }
+    /// Whether the microphone may be used. `VoiceModeController` sets the Mac one.
+    var microphoneAllowed: () async -> Bool = { false }
+    var makeMic: () -> ConversationListening = { UnsupportedConversationMic() }
     /// The voice server's key. `VoiceModeController` passes the one `AppDelegate` gave it.
     var voiceKey = VoiceKey.unsupported
     lazy var transcribe: (Data) async throws -> String = { [weak self] wav in
@@ -44,11 +35,7 @@ final class VoiceConversation: ObservableObject {
                                      usageFeature: .voiceTranscription).transcribe(wav: wav)
     }
     /// The voice for the conversation: through the microphone's engine when there is one, so echo cancellation can hear it.
-    var makeSpeaker: (ConversationListening?) -> ConversationSpeaker = { mic in
-        let player = SpeechPlayer(player: mic?.player)
-        player.isEnabled = { true }
-        return player
-    }
+    var makeSpeaker: (ConversationListening?) -> ConversationSpeaker = { _ in UnsupportedConversationSpeaker() }
     /// Stops the voice job still waiting out its hold, for "cancel that".
     var cancelHeldJob: () -> Job? = { nil }
     /// The pet has finished saying its reply, or the conversation ended: held voice jobs may count down.
@@ -140,10 +127,7 @@ final class VoiceConversation: ObservableObject {
             guard !endRequested else { mic?.stop(); return }
             self.mic = mic
             self.mode = mode
-            let made = makeSpeaker(mic)
-            // The default speaker is a `SpeechPlayer`, which needs the key the conversation was given.
-            (made as? SpeechPlayer)?.voiceKey = voiceKey
-            speaker = made
+            speaker = makeSpeaker(mic)
             heard = nil
             reply = nil
             frontDesk.prepare()
@@ -219,7 +203,7 @@ final class VoiceConversation: ObservableObject {
 
     // MARK: Listening
 
-    private func micEvent(_ event: ConversationMic.Event) {
+    private func micEvent(_ event: ConversationMicEvent) {
         guard state != .idle else { return }
         switch event {
         case .speechStarted:

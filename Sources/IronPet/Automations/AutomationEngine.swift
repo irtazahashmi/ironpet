@@ -1,4 +1,3 @@
-import CoreGraphics
 import Foundation
 
 /// Decides when each automation is due. It knows nothing about bubbles, agents or shells: it calls `onFire`, and the
@@ -11,10 +10,8 @@ import Foundation
 final class AutomationEngine {
     struct Environment {
         var now: () -> Date = { Date() }
-        /// Seconds since the last keyboard or mouse event.
-        var idleSeconds: () -> TimeInterval = {
-            CGEventSource.secondsSinceLastEventType(.combinedSessionState, eventType: CGEventType(rawValue: ~0)!)
-        }
+        /// Where the idle time comes from.
+        var presence: PresenceSource = UnsupportedPresenceSource()
         /// An agent or a Ghost chat is running, a good moment to step away.
         var isAgentWorking: () -> Bool = { false }
         /// The user is mid-conversation with Ghost or an agent is waiting on them.
@@ -198,7 +195,7 @@ final class AutomationEngine {
         let elapsed = max(0, now.timeIntervalSince(previous))
         let timing = timing()
         let breakReset = timing.idleResetMinutes * 60
-        let away = env.idleSeconds() >= breakReset || elapsed >= breakReset
+        let away = env.presence.idleOrZero() >= breakReset || elapsed >= breakReset
         let working = env.isAgentWorking()
         let enabled = automations.filter(\.enabled)
 

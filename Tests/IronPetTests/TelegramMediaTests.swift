@@ -252,9 +252,26 @@ final class TelegramMediaTests: XCTestCase {
         let source = directory.appendingPathComponent("tone.wav")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try WAV.encode(samples).write(to: source)
-        let wav = try XCTUnwrap(TelegramVoice.wav(from: source))
+        let transcoder = MacAudioTranscoder()
+        let wav = try XCTUnwrap(try transcoder.wav(from: source, maxSeconds: 600))
         XCTAssertEqual(WAV.duration(of: wav) ?? 0, 1, accuracy: 0.05)
-        XCTAssertNil(TelegramVoice.wav(from: directory.appendingPathComponent("missing.ogg")))
+        XCTAssertNil(try transcoder.wav(from: directory.appendingPathComponent("missing.ogg"), maxSeconds: 600))
+    }
+
+    func testTranscriberDecidesWhetherAudioIsConverted() async throws {
+        VoiceServer.requests = []
+        VoiceServer.status = 200
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [VoiceServer.self]
+        let transcriber = Transcriber(baseURL: "http://voice.test/v1", model: "m", apiKey: "k", session: URLSession(configuration: configuration))
+        let wav = WAV.encode([1, 2, 3])
+        _ = try await TelegramVoice.transcribe(Data("x".utf8), name: "a.m4a", with: transcriber, transcoder: FakeAudioTranscoder(result: wav))
+        let body = try XCTUnwrap(VoiceServer.requests.first).body
+        XCTAssertNotNil(body.range(of: Data("RIFF".utf8)), "the decoded WAV is what the server gets")
+        VoiceServer.requests = []
+        _ = try await TelegramVoice.transcribe(Data("x".utf8), name: "a.oga", with: transcriber, transcoder: UnsupportedAudioTranscoder())
+        XCTAssertTrue(String(decoding: try XCTUnwrap(VoiceServer.requests.first).body, as: UTF8.self).contains("filename=\"a.oga\""),
+                      "a transcoder that cannot decode sends the file as it is")
     }
 
     // MARK: S12

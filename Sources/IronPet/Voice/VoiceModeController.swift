@@ -47,6 +47,7 @@ final class VoiceModeController {
     init(frontDesk: FrontDesk) {
         self.frontDesk = frontDesk
         conversation = VoiceConversation(frontDesk: frontDesk)
+        conversation.useMacAudio()
         conversation.quietReason = { [weak self] in self?.quietReason() }
         conversation.onStarted = { [weak self] mode in self?.started(mode) }
         conversation.onEnded = { [weak self] in self?.ended() }

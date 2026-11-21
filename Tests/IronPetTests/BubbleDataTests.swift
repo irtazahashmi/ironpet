@@ -102,6 +102,20 @@ final class BubbleDataTests: XCTestCase {
         XCTAssertTrue(store.bubbles.isEmpty)
     }
 
+    func testTheOpenButtonIsTheOpenURLActionAndOpensThroughTheOpener() throws {
+        let store = BubbleStore()
+        let opener = FakeURLOpener()
+        let url = URL(string: "https://example.com/pr/1")!
+        let notice = AutomationNotice(id: "automation:gh:1", symbol: "bell.fill", tint: .info, title: "PR ready",
+                                      buttons: [.init(title: "Open", primary: true, openURL: url) {}])
+        store.show(Announcer.automationBubble(notice, dismiss: { store.dismiss(notice.id) }, open: nil, opener: opener))
+        XCTAssertEqual(store.bubbles.first?.actions.map(\.id), [Bubble.Action.openURLID])
+        XCTAssertEqual(Bubble.Action.openURLID, "open-url")
+        try store.actions.runAction(bubble: notice.id, action: "open-url")
+        XCTAssertEqual(opener.opened, [url])
+        XCTAssertTrue(store.bubbles.isEmpty)
+    }
+
     // S4
 
     func testAnOlderClientStillDecodesEveryRemoteBubbleField() throws {

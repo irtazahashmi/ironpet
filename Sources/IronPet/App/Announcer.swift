@@ -9,6 +9,8 @@ final class Announcer {
     let bubbles = BubbleStore()
     let notifier: Notifier
 
+    /// Opens the address of a bubble's `open-url` action. `AppDelegate` sets the platform's.
+    var urlOpener: URLOpener = UnsupportedURLOpener()
     var openSession: (String) -> Void = { _ in }
     var openChat: () -> Void = {}
     var ask: (String) -> Void = { _ in }
@@ -137,12 +139,13 @@ final class Announcer {
     /// A bubble from an automation: a reminder, a poll result, a shell or prompt answer, or an approval question.
     func automation(_ notice: AutomationNotice) {
         let open: (() -> Void)? = notice.notificationID.map { id in { [weak self] in self?.openNotification(id) } }
-        bubbles.show(Self.automationBubble(notice, dismiss: { [weak self] in self?.bubbles.dismiss(notice.id) }, open: open))
+        bubbles.show(Self.automationBubble(notice, dismiss: { [weak self] in self?.bubbles.dismiss(notice.id) }, open: open, opener: urlOpener))
         chime()
         if alsoSystemNotifications || notice.systemNotification { notifier.announceAutomation(notice) }
     }
 
-    static func automationBubble(_ notice: AutomationNotice, dismiss: @escaping () -> Void, open: (() -> Void)?) -> BubbleDraft {
+    static func automationBubble(_ notice: AutomationNotice, dismiss: @escaping () -> Void, open: (() -> Void)?,
+                                 opener: URLOpener = UnsupportedURLOpener()) -> BubbleDraft {
         let tint: BubbleTint
         switch notice.tint {
         case .info: tint = .cyan
@@ -151,8 +154,10 @@ final class Announcer {
         case .warn: tint = .orange
         }
         let actions = notice.buttons.enumerated().map { index, button in
-            BubbleDraft.Button("button:\(index)", button.title, style: button.primary ? .primary : button.destructive ? .destructive : .normal) {
+            BubbleDraft.Button(button.openURL == nil ? "button:\(index)" : Bubble.Action.openURLID, button.title,
+                               style: button.primary ? .primary : button.destructive ? .destructive : .normal) {
                 dismiss()
+                if let url = button.openURL { try? opener.open(url) }
                 button.run()
             }
         }

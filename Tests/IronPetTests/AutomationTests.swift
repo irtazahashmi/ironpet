@@ -27,7 +27,7 @@ final class AutomationTestClock {
     }
 
     var environment: AutomationEngine.Environment {
-        AutomationEngine.Environment(now: { self.now }, idleSeconds: { self.idle }, isAgentWorking: { self.working },
+        AutomationEngine.Environment(now: { self.now }, presence: FakePresenceSource(idleProvider: { self.idle }), isAgentWorking: { self.working },
                                      isBusy: { self.busy }, calendar: calendar, spawner: POSIXProcessSpawner())
     }
 }
