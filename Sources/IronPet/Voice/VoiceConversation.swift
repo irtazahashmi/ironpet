@@ -30,6 +30,8 @@ final class VoiceConversation: ObservableObject {
         ConfigStore.shared.config.voiceMode.listenWith == Config.VoiceMode.wispr ? .wispr : .microphone
     }
     var silenceSeconds: () -> TimeInterval = { TimeInterval(ConfigStore.shared.config.voiceMode.silenceSeconds) }
+    /// Waits out the silence. Tests replace it so the end of a conversation does not depend on the wall clock.
+    var silenceSleep: (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }
     /// Why the pet must not listen right now ("a call", "a meeting recording"), or nil.
     var quietReason: () -> String? = { nil }
     var microphoneAllowed: () async -> Bool = { await VoiceController.microphoneAllowed() }
@@ -376,8 +378,9 @@ final class VoiceConversation: ObservableObject {
     private func armSilence() {
         silence?.cancel()
         let seconds = silenceSeconds()
+        let sleep = silenceSleep
         silence = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(seconds))
+            try? await sleep(seconds)
             guard let self, !Task.isCancelled, state == .listening, work == nil, !userSpeaking else { return }
             end()
         }
