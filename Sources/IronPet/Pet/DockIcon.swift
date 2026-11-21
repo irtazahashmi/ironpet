@@ -5,18 +5,24 @@ import IronPetCore
 /// The app bundle and the Finder icon stay as they are.
 enum DockIcon {
     static let pixels = 1024
-    /// Share of each edge left empty so the pet does not touch the icon border.
-    static let padding = 0.10
+    /// Apple's icon grid: the icon shape is a rounded rectangle of this side, centred in the 1024 canvas. macOS draws every
+    /// app icon at that size, so art that fills the whole canvas looks larger than its neighbours.
+    static let gridSide = 824.0
+    /// Corner radius of that rounded rectangle (about 22.5% of its side).
+    static let gridCornerRadius = gridSide * 0.225
+    /// The largest square that stays inside the grid's rounded corners. The pet's bounding box fits here, so no corner of
+    /// the pet crosses the plate macOS draws behind an icon that does not follow the grid.
+    static let petSide = gridSide - 2 * gridCornerRadius * (1 - 1 / 2.0.squareRoot())
 
-    /// The idle frame (row 0, column 0) scaled to fit a square canvas with padding, on a transparent background.
-    /// The fit uses the pet's visible pixels, not the transparent margin of its sheet cell, so the pet fills the canvas.
+    /// The idle frame (row 0, column 0) scaled to fit `petSide` square, centred on a transparent 1024 canvas.
+    /// The fit uses the pet's visible pixels, not the transparent margin of its sheet cell, and keeps the aspect ratio.
     /// Nil when the sheet has no idle frame or the frame is fully transparent.
     static func render(_ atlas: Atlas) -> NSImage? {
         guard let frame = atlas.frame(.idle, 0), let visible = opaqueBounds(of: frame),
               let context = CGContext(data: nil, width: pixels, height: pixels, bitsPerComponent: 8, bytesPerRow: 0,
                                       space: CGColorSpaceCreateDeviceRGB(),
                                       bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
-        let side = Double(pixels) * (1 - 2 * padding)
+        let side = petSide
         let scale = min(side / Double(visible.width), side / Double(visible.height))
         let center = Double(pixels) / 2
         context.interpolationQuality = .high
@@ -46,7 +52,8 @@ enum DockIcon {
             }
         }
         guard maxX >= minX, maxY >= minY else { return nil }
-        return CGRect(x: minX, y: minY, width: maxX - minX + 1, height: maxY - minY + 1)
+        // Memory row 0 is the top of the image, while `draw(_:in:)` counts y from the bottom.
+        return CGRect(x: minX, y: height - 1 - maxY, width: maxX - minX + 1, height: maxY - minY + 1)
     }
 
     /// The icon for `pet.sprite`. An explicit path must load as an atlas. Unset means the default pet, as in `Atlas.loadDefault`.
