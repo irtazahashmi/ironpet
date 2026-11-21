@@ -3,7 +3,8 @@ name: Release
 # Builds the downloadable Mac app and attaches it to a DRAFT GitHub Release for you to review and publish.
 # Run it by pushing a tag on main (git tag v0.1.0 && git push origin v0.1.0) or from the Actions tab on main.
 #
-# Signing is optional. With these repository secrets the DMG is signed with a Developer ID and notarized by Apple:
+# Signing is optional. With these secrets, stored in the `release` environment and NOT as repository secrets (see the
+# environment note below), the DMG is signed with a Developer ID and notarized by Apple:
 #   MACOS_CERT_P12      base64 of the "Developer ID Application" certificate exported as .p12
 #   MACOS_CERT_PASSWORD the password you gave that .p12
 #   NOTARY_KEY_P8       base64 of an App Store Connect API key (.p8)
@@ -13,10 +14,13 @@ name: Release
 # notary secrets (or with a certificate that does not validate) it fails, rather than ship a weaker file.
 # See CONTRIBUTING.md > Releasing the Mac app.
 #
-# Two jobs, so that nothing which runs repository or third-party code can write to the repository:
-#   mac      builds, signs and notarizes with contents: read. It starts the bundled adapters (third-party npm code) to check
-#            them, after the signing key is gone and after the DMG is already uploaded as an artifact.
-#   publish  has contents: write, checks out nothing and runs no repository code. It only turns the artifact into a draft.
+# Three jobs, so that no job that runs third-party code holds the signing secrets or can write to the repository:
+#   mac      builds, signs and notarizes with contents: read, in the `release` environment. The keychain and key files are
+#            deleted and the DMG is uploaded as an artifact before the job ends.
+#   check    has no secrets and no environment. It opens the uploaded DMG and runs the CI bundle checks on the app inside,
+#            which starts the bundled adapters (third-party npm code), on a runner that never held a signing secret.
+#   publish  has contents: write, checks out nothing and runs no repository code. It only turns the artifact into a draft,
+#            and only after mac and check both passed.
 # It never runs for pull requests, so a fork cannot reach the secrets. The actions are pinned to commits, because these jobs
 # hold the secrets and the write token; ci.yml, which holds neither, uses tags.
 
@@ -43,9 +47,11 @@ jobs:
     if: ${{ !github.event.deleted }}
     runs-on: macos-15
     timeout-minutes: 60
-    # The signing secrets belong to this environment, not to the repository, and the environment only admits main and v*
-    # tags (CONTRIBUTING.md > Releasing the Mac app). A repository secret would reach any workflow a writer pushes on
-    # any branch, whatever this file checks.
+    # The signing secrets belong to this environment, not to the repository. A repository secret would reach any workflow
+    # a writer pushes on any branch, whatever this file checks. The environment admits only main and v* tags, but a writer
+    # can still push a v* tag on a commit with an edited copy of this file (the checks in here would be the edited ones),
+    # so it is only a gate together with the two protections CONTRIBUTING.md > Releasing the Mac app requires before the
+    # first secret is added: a tag ruleset that limits who may create v* tags, and a required reviewer on the environment.
     environment: release
     permissions:
       contents: read
@@ -56,7 +62,7 @@ jobs:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0 # to tell whether a tag is on main
-          persist-credentials: false # later steps run adapter code and must not find a token in .git/config
+          persist-credentials: false # nothing later needs the token, so it must not sit in .git/config
 
       - name: Work out the version
         id: version
@@ -102,8 +108,18 @@ jobs:
             exit 1
           fi
 
+          # One lookup, and only "release not found" counts as no release. A failure inside `[ ]` would otherwise read as
+          # "published" and quietly skip a tag build.
+          published=false
+          if state=$(gh release view "$tag" --json isDraft -q .isDraft 2>&1); then
+            if [ "$state" != "true" ]; then published=true; fi
+          elif [[ $state != *"release not found"* ]]; then
+            echo "error: could not look up release $tag: $state" >&2
+            exit 1
+          fi
+
           skip=false
-          if gh release view "$tag" >/dev/null 2>&1 && [ "$(gh release view "$tag" --json isDraft -q .isDraft)" != "true" ]; then
+          if [ "$published" = "true" ]; then
             if [ "$GITHUB_EVENT_NAME" = "push" ]; then
               # Publishing a draft that a manual run made creates its tag, which lands here.
               echo "::notice::$tag is already published; nothing to build"
@@ -116,7 +132,8 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
 
-      # The same toolchain as CI. A newer one links the app to Swift libraries that macOS 14 and 15 do not have.
+      # The toolchain CI's image defaults to today. A newer one links the app to Swift libraries that macOS 14 and 15 do not
+      # have, and release_mac.sh stops when it sees that.
       - name: Select Xcode 16.4
         if: steps.version.outputs.skip != 'true'
         run: |
@@ -181,14 +198,13 @@ jobs:
           if [ -n "${KEYCHAIN_PATH:-}" ]; then export IRONPET_REQUIRE_NOTARIZED=1; fi
           ./scripts/release_mac.sh "$VERSION" "$GITHUB_RUN_NUMBER"
 
-      # Straight after packaging, so nothing that runs later has a signing key or a notary key to find.
+      # Straight after packaging, so the key files and the keychain are gone before the artifact is uploaded.
       - name: Remove the temporary keychain and key
         if: always()
         run: |
           rm -f "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/cert.p12"
           if [ -n "${KEYCHAIN_PATH:-}" ]; then security delete-keychain "$KEYCHAIN_PATH" || true; fi
 
-      # Uploaded before the adapters start, so third-party code cannot swap the files the publish job will attach.
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: steps.version.outputs.skip != 'true'
         with:
@@ -197,16 +213,47 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-      # The same checks CI runs on the bundle. If one fails, the job fails and nothing is published.
-      - name: Check the bundle
-        if: steps.version.outputs.skip != 'true'
+  # The CI bundle checks, on the file that will ship, in a job that never held a signing or notary secret. The bundled
+  # adapters are third-party code and get started here, so this must not be the job that had the secrets in memory.
+  check:
+    needs: mac
+    if: needs.mac.outputs.skip != 'true'
+    runs-on: macos-15
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-dist
+          path: dist
+
+      - name: Check the app inside the DMG
         run: |
-          test -f build/IronPet.app/Contents/Resources/spritesheet.png
-          codesign --verify --strict --verbose=2 build/IronPet.app
-          ./scripts/check_adapters.sh build/IronPet.app
+          set -euo pipefail
+          (cd dist && shasum -a 256 -c IronPet-*.dmg.sha256)
+          mount="$RUNNER_TEMP/dmg"
+          mkdir -p "$mount"
+          hdiutil attach dist/IronPet-*.dmg -nobrowse -readonly -mountpoint "$mount" >/dev/null
+          trap 'hdiutil detach "$mount" -quiet || true' EXIT
+          # A writable copy, because the adapter check starts the adapters from the app's own folder.
+          mkdir "$RUNNER_TEMP/app"
+          ditto "$mount/IronPet.app" "$RUNNER_TEMP/app/IronPet.app"
+          app="$RUNNER_TEMP/app/IronPet.app"
+          test -f "$app/Contents/Resources/spritesheet.png"
+          codesign --verify --strict --verbose=2 "$app"
+          ./scripts/check_adapters.sh "$app"
 
   publish:
-    needs: mac
+    needs: [mac, check]
     if: needs.mac.outputs.skip != 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 10

@@ -80,7 +80,8 @@ fi
 # A newer Swift toolchain can link the executable to a back-deployment library through @rpath and leave the library out of
 # the bundle (libswiftCompatibilitySpan from Swift 6.2 on). It runs on the Mac that built it and on macOS 26 and later,
 # and fails to launch on the macOS 14 and 15 that Info.plist promises, so a download must not carry it.
-LOOSE=$(otool -L "$APP/Contents/MacOS/IronPet" | awk 'NR > 1 {print $1}' | grep '^@rpath/' || true)
+DEPS=$(otool -L "$APP/Contents/MacOS/IronPet")   # outside the pipe below, so an otool failure stops the script
+LOOSE=$(printf '%s\n' "$DEPS" | awk 'NR > 1 {print $1}' | grep '^@rpath/' || true)
 NEEDS_NEW_MACOS=no
 if [ -n "$LOOSE" ]; then
   echo "The executable needs libraries that are not in the app:" >&2
