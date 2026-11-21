@@ -48,9 +48,11 @@ public enum PetSnapshotStore {
 
     /// The group container when App Groups are available, otherwise Application Support for the host process.
     public static func fileURL() -> URL? {
+        #if canImport(Darwin)
         if let group = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroupID) {
             return group.appendingPathComponent(fileName)
         }
+        #endif
         guard let support = try? FileManager.default.url(for: .applicationSupportDirectory, in: .userDomainMask,
                                                           appropriateFor: nil, create: true) else { return nil }
         return support.appendingPathComponent(fileName)
