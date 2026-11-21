@@ -4,6 +4,7 @@ import SwiftUI
 /// The settings the Mac lets the phone change. Where data goes (voice server, Telegram, hooks) and the approval rules stay on the Mac.
 struct PhoneSettingsView: View {
     let model: PhoneSettingsModel
+    @Environment(VoiceModel.self) private var voice: VoiceModel?
 
     var body: some View {
         Form {
@@ -19,6 +20,7 @@ struct PhoneSettingsView: View {
                     Toggle("Remind me when a task is due", isOn: binding(config.tasks.dueReminders) { ["tasks": ["dueReminders": $0]] })
                     Toggle("Suggest tasks after meetings", isOn: binding(config.tasks.meetingSuggestions) { ["tasks": ["meetingSuggestions": $0]] })
                 }
+                if let voice { VoiceSettingsSection(voice: voice) }
                 Section("Ghost") {
                     Toggle("Welcome-back summary", isOn: binding(config.welcomeBack.enabled) { ["welcomeBack": ["enabled": $0]] })
                     Toggle("Read replies aloud", isOn: binding(config.speech.enabled) { ["speech": ["enabled": $0]] })

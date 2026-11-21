@@ -59,6 +59,7 @@ struct MainTabs: View {
     @State private var meetings: MeetingsModel
     @State private var screen: ScreenModel
     @State private var phoneSettings: PhoneSettingsModel
+    @State private var voice: VoiceModel
     @State private var morePath: [MoreDestination] = []
     private let client: IronPetClient
 
@@ -80,6 +81,7 @@ struct MainTabs: View {
         _screen = State(initialValue: ScreenModel(client: client, events: events, gate: TranscriptGate(authenticator: Self.authenticator, reason: "Show screen text"),
                                                   onUnauthorized: unauthorized))
         _phoneSettings = State(initialValue: PhoneSettingsModel(client: client, events: events, onUnauthorized: unauthorized))
+        _voice = State(initialValue: VoiceModel(player: ReplyPlayer(engine: AudioPlayerEngine()), openChannel: { client.openVoiceChannel() }, makeMic: { EngineMicSource() }))
     }
 
     /// Face ID or the passcode. UI tests launch with `--auto-unlock`, because a simulator cannot answer the system prompt.
@@ -111,8 +113,9 @@ struct MainTabs: View {
                 .tabItem { Label("More", systemImage: "ellipsis.circle") }.badge(alerts.alerts.count + automations.automations.filter(\.waitsForApproval).count)
                 .tag(AppTab.more)
         }
+        .environment(voice)
         // The alert count and the waiting approvals are on their tabs before the user opens it.
-        .task { alerts.start(); chat.start(); pet.start(); automations.start() }
+        .task { alerts.start(); chat.start(); pet.start(); automations.start(); voice.onTranscript = { [chat] text, mode in if mode == .draft { chat.insertDictation(text) } }; voice.start() }
         // The five minutes count from the app going to the background, whichever screen is open. Watching only inside the Meetings
         // screen would leave the text unlocked after the person left it and then left the app.
         .onChange(of: scenePhase) { _, phase in
@@ -122,7 +125,8 @@ struct MainTabs: View {
         // A background changed on the Mac shows when the Chat tab opens.
         .onChange(of: tab) { _, next in if next == .chat { Task { await pet.reloadPet(applyMood: false) } } }
         // Leaving the tabs (unpair or a 401) must close the socket, which otherwise keeps reconnecting with the old token.
-        .onDisappear { [tasks, pet, chat, today, agents, alerts, automations, meetings, screen, phoneSettings] in
+        .onDisappear { [tasks, pet, chat, today, agents, alerts, automations, meetings, screen, phoneSettings, voice] in
+            voice.stop()
             tasks.stop(); pet.stop(); chat.stop(); today.stop(); agents.stop(); alerts.stop(); automations.stop(); meetings.stop(); screen.stop(); phoneSettings.stop()
             meetings.gate.lock()
             screen.gate.lock()
