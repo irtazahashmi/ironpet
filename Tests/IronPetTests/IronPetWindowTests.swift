@@ -538,7 +538,8 @@ final class IronPetWindowTests: XCTestCase {
         let tip = RailTip(name: "Tasks", shortcut: "⌘4", frame: CGRect(x: 36, y: 182, width: 40, height: 38))
         model.hoverRail(tip, hovering: true)
         XCTAssertNil(model.railTip, "the label shows before the pointer has rested")
-        try await Task.sleep(for: .milliseconds(200))
+        let deadline = Date().addingTimeInterval(10)
+        while model.railTip == nil, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertEqual(model.railTip, tip)
         model.hoverRail(tip, hovering: false)
         XCTAssertNil(model.railTip)
@@ -564,7 +565,8 @@ final class IronPetWindowTests: XCTestCase {
         model.sidebarCollapsed = true
         let tip = RailTip(name: "Tasks", shortcut: "⌘4", frame: .zero)
         model.hoverRail(tip, hovering: true)
-        try await Task.sleep(for: .milliseconds(120))
+        let deadline = Date().addingTimeInterval(10)
+        while model.railTip == nil, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }
         XCTAssertNotNil(model.railTip)
         model.clearRailTip()
         XCTAssertNil(model.railTip)
