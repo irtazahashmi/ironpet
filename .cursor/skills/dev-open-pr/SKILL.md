@@ -12,7 +12,7 @@ metadata:
 
 # Open Pull Request
 
-Create merge-ready pull requests for ironpet: the SwiftPM app in `Sources/IronPet` with its XCTest suite, and the tooling in `sidecar/`, `scripts/` and `tools/`. CI (`.github/workflows/ci.yml`) runs on every PR, but run the gates locally before opening it rather than waiting for CI.
+Create merge-ready pull requests for ironpet: the SwiftPM app in `Sources/IronPet` with its XCTest suite, and the tooling in `sidecar/`, `scripts/` and `tools/`. CI (`.github/workflows/ci.yml`) selects Mac / iOS / scripts jobs from the paths you touch (docs-only PRs skip the heavy runners); run the gates that apply locally before opening the PR rather than waiting for CI.
 
 ## Use this skill when
 
