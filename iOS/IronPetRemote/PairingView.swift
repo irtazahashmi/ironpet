@@ -41,7 +41,7 @@ struct PairingView: View {
                 }
                 Section { status }
             }
-            .navigationTitle("IronPet Remote")
+            .navigationTitle("IronPet")
             .sheet(isPresented: $scanning) {
                 ScannerSheet { code in
                     scanning = false

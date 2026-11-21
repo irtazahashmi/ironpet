@@ -29,7 +29,9 @@ Check your change in the installed app, not just with `swift build`. Things like
 
 ### iOS app
 
-`iOS/project.yml` describes the Xcode project. `xcodegen generate` in `iOS/` writes it, and `xcodebuild test -project iOS/IronPetRemote.xcodeproj -scheme IronPetRemote -destination 'platform=iOS Simulator,name=iPhone 17'` runs the tests. The app is simulator-only until it has a signing team. The Mac side is tested by `swift test`, which also runs the IronPetKit tests.
+`iOS/project.yml` describes the Xcode project. `xcodegen generate` in `iOS/` writes it, and `xcodebuild test -project iOS/IronPetRemote.xcodeproj -scheme IronPetRemote -destination 'platform=iOS Simulator,name=iPhone 17'` runs the tests. The Mac side is tested by `swift test`, which also runs the IronPetKit tests.
+
+`./scripts/ios_testflight.sh` archives the app and uploads it to TestFlight. It signs with the Apple account signed in to Xcode, which must be on the team in `project.yml`, and needs the `dev.ironpet.app` app to exist in App Store Connect. Each upload needs a higher build number; the script uses the UTC time unless you pass one. The app icon comes from `swift tools/make_icon.swift <pet.png> iOS/IronPetRemote/Assets.xcassets/AppIcon.appiconset/icon-1024.png --ios`.
 
 ### End-to-end tests
 
