@@ -96,13 +96,13 @@ struct POSIXProcessSpawner: ProcessSpawner {
         var child: pid_t = 0
         let status = posix_spawn(&child, spec.executable, &actions, &attr, argv, envp)
         // The child has its own copies of the ends it uses. The parent keeps the other ends.
-        inPipe.map { close($0.read) }
-        outPipe.map { close($0.write) }
-        errPipe.map { close($0.write) }
+        if let inPipe { close(inPipe.read) }
+        if let outPipe { close(outPipe.write) }
+        if let errPipe { close(errPipe.write) }
         guard status == 0 else {
-            inPipe.map { close($0.write) }
-            outPipe.map { close($0.read) }
-            errPipe.map { close($0.read) }
+            if let inPipe { close(inPipe.write) }
+            if let outPipe { close(outPipe.read) }
+            if let errPipe { close(errPipe.read) }
             throw SpawnError(message: "cannot run \(spec.executable): \(String(cString: strerror(status)))")
         }
         return POSIXProcess(
