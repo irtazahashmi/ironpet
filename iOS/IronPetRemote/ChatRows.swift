@@ -237,13 +237,17 @@ struct UserBubble: View {
         .padding(.leading, 44)
     }
 
+    private static let linkDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+
     /// Links in a message are tappable. A plain message has no markdown, so it is not parsed as markdown.
     static func linked(_ text: String) -> AttributedString {
         var result = AttributedString(text)
-        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
-        for match in detector?.matches(in: text, range: NSRange(text.startIndex..., in: text)) ?? [] {
-            guard let url = match.url, let range = Range(match.range, in: text), let target = result.range(of: text[range]) else { continue }
-            result[target].link = url
+        for match in linkDetector?.matches(in: text, range: NSRange(text.startIndex..., in: text)) ?? [] {
+            // Map the match by position, so a URL that appears twice links both times.
+            guard let url = match.url, let range = Range(match.range, in: text),
+                  let lower = AttributedString.Index(range.lowerBound, within: result),
+                  let upper = AttributedString.Index(range.upperBound, within: result) else { continue }
+            result[lower..<upper].link = url
         }
         return result
     }
@@ -311,7 +315,7 @@ struct ToolStepsRow: View {
             Button { withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() } } label: {
                 HStack(spacing: 6) {
                     headerIcon
-                    Text(ChatToolSteps.header(steps, expanded: expanded)).lineLimit(1).truncationMode(.middle)
+                    Text(ChatMarkdown.inline(ChatToolSteps.header(steps, expanded: expanded))).lineLimit(1).truncationMode(.middle)
                     Image(systemName: "chevron.right").font(.system(size: 9 * scale, weight: .semibold)).rotationEffect(.degrees(expanded ? 90 : 0)).opacity(expanded ? 1 : 0.6)
                     Spacer(minLength: 0)
                 }

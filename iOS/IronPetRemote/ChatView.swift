@@ -616,5 +616,11 @@ private struct ThreadReader: View {
             }
         }
         .task { items = await model.thread(thread.id)?.items ?? [] }
+        // The sheet's own alert sits under this pushed screen, so a refusal from "Open on Mac" shows here.
+        .alert("Cannot do that now", isPresented: Binding(get: { model.conflictMessage != nil }, set: { if !$0 { model.conflictMessage = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: {
+            Text(model.conflictMessage ?? "")
+        }
     }
 }
