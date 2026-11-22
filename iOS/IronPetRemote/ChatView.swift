@@ -483,8 +483,12 @@ private struct Composer: View {
     @Binding var photos: [PhotosPickerItem]
     @Binding var focused: Bool
 
-    /// Width the inline send button takes at the field's trailing edge, so text wraps before it.
-    private static let inlineSendWidth: CGFloat = 28
+    /// Gap between the send capsule and the field's top, bottom and trailing edges.
+    private static let capsuleInset: CGFloat = 6
+    private static let capsuleHeight: CGFloat = GlassCircleButtonStyle.size - 2 * capsuleInset
+    private static let capsuleWidth: CGFloat = (capsuleHeight * 1.375).rounded()
+    /// Width the capsule takes at the field's trailing edge, so text wraps before it.
+    private static let inlineSendWidth: CGFloat = capsuleWidth + capsuleInset
 
     var body: some View {
         GlassGroup {
@@ -496,16 +500,6 @@ private struct Composer: View {
                     .accessibilityLabel("Attach").accessibilityIdentifier("attach-button")
                 field
                 if let voice { MicButton(voice: voice) }
-                if model.running {
-                    Button { Task { await model.stopTurn() } } label: {
-                        Image(systemName: "stop.fill")
-                            .font(.system(size: 15, weight: .medium)).foregroundStyle(.white)
-                            .frame(width: GlassCircleButtonStyle.size, height: GlassCircleButtonStyle.size)
-                            .tintedCircle(.red)
-                    }
-                    .buttonStyle(.plain).accessibilityLabel("Stop").accessibilityIdentifier("stop-button")
-                    .transition(.scale.combined(with: .opacity))
-                }
             }
         }
         .animation(.easeOut(duration: 0.12), value: model.running)
@@ -538,31 +532,47 @@ private struct Composer: View {
             }
             ZStack(alignment: .topLeading) {
                 if model.draft.isEmpty {
-                    Text("Message").foregroundStyle(.placeholder).padding(.leading, 6).padding(.vertical, 8).allowsHitTesting(false).accessibilityHidden(true)
+                    Text("Message").foregroundStyle(.placeholder).padding(.leading, 6).padding(.vertical, ComposerTextView.verticalInset).allowsHitTesting(false).accessibilityHidden(true)
                 }
                 ComposerTextView(text: Bindable(model).draft, isFocused: $focused) { data in Task { await model.attachPastedImage(data) } }
-                    .padding(.trailing, model.canSend ? Self.inlineSendWidth : 0)
+                    .padding(.trailing, Self.inlineSendWidth - 4)
             }
         }
-        .padding(4)
+        .padding(.horizontal, 4)
         .frame(minHeight: GlassCircleButtonStyle.size)
         .overlay(alignment: .bottomTrailing) {
-            if model.canSend {
-                Button { Task { await model.send() } } label: {
-                    Image(systemName: "arrow.up")
-                        .font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
-                        .frame(width: Self.inlineSendWidth - 4, height: Self.inlineSendWidth - 4)
-                        .tintedCircle(macAccent)
-                }
-                .buttonStyle(.plain).accessibilityLabel("Send").accessibilityIdentifier("send-button")
-                .padding(4)
-                .transition(.scale.combined(with: .opacity))
-            }
+            capsuleButton.padding(Self.capsuleInset)
         }
         .animation(.easeOut(duration: 0.12), value: model.canSend)
-        .chromeGlass(in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .animation(.easeOut(duration: 0.12), value: model.running)
+        .chromeGlass(in: RoundedRectangle(cornerRadius: GlassCircleButtonStyle.size / 2, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture { focused = true }
+    }
+
+    /// Stop while a turn runs and nothing is typed, otherwise Send (grey when empty).
+    @ViewBuilder
+    private var capsuleButton: some View {
+        if model.running, !model.canSend {
+            capsule("stop.fill", fill: .red, foreground: .white) { Task { await model.stopTurn() } }
+                .accessibilityLabel("Stop").accessibilityIdentifier("stop-button")
+        } else {
+            capsule("arrow.up", fill: model.canSend ? macAccent : Color(.tertiarySystemFill),
+                    foreground: model.canSend ? .white : Color.secondary) { Task { await model.send() } }
+                .disabled(!model.canSend)
+                .accessibilityLabel("Send").accessibilityIdentifier("send-button")
+        }
+    }
+
+    private func capsule(_ symbol: String, fill: Color, foreground: Color, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold)).foregroundStyle(foreground)
+                .frame(width: Self.capsuleWidth, height: Self.capsuleHeight)
+                .background(fill, in: Capsule())
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
     }
 
     /// A pasted image: 48 pt high, with its remove button at the top trailing corner, like the Mac's thumbnail.

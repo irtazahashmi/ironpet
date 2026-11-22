@@ -183,7 +183,8 @@ final class PasteUITests: XCTestCase {
         openChat()
         assertAppearance()
         XCTAssertTrue(any("attach-button").waitForExistence(timeout: 10))
-        XCTAssertFalse(app.buttons["send-button"].exists, "send is hidden on an empty draft")
+        XCTAssertTrue(app.buttons["send-button"].exists, "the send capsule is always shown")
+        XCTAssertFalse(app.buttons["send-button"].isEnabled, "and is disabled on an empty draft")
         XCTAssertFalse(app.buttons["stop-button"].exists)
         attach("composer-empty-\(name)")
         input.tap()
@@ -193,7 +194,10 @@ final class PasteUITests: XCTestCase {
         pasteFromMenu()
         XCTAssertTrue(any("attachment-thumbnail-0").waitForExistence(timeout: 10))
         attach("composer-draft-thumbnail-\(name)")
-        // A turn the Mac started shows the red Stop circle, and it goes when the turn ends.
+        // Stop replaces Send while a turn runs and nothing is typed, so empty the draft first.
+        any("attachment-remove-0").tap()
+        input.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 7))
+        // A turn the Mac started shows the red Stop capsule, and it goes when the turn ends.
         var snapshot = server.chat
         snapshot.running = true
         snapshot.state = "running"
