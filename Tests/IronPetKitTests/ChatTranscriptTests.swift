@@ -1,7 +1,7 @@
 import XCTest
 @testable import IronPetKit
 
-/// The phone's transcript logic. The markdown and collapse cases are the Mac's own tests (`MarkdownTests`, `MessageCollapseTests`)
+/// The phone's transcript logic. The markdown and collapse cases are the Mac's own tests (`ChatMarkdownBlockTests`, `ChatMessageCollapseTests`)
 /// run against the phone's copy, so the two cannot drift apart without a test noticing.
 final class ChatTranscriptTests: XCTestCase {
     // MARK: Markdown

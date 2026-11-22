@@ -1,8 +1,7 @@
 import Foundation
 
-// What the phone's chat needs to draw a transcript the way the Mac does. These mirror the Mac's `Markdown.parse`, `MessageCollapse`,
-// `TranscriptGroup`, `ToolSteps` and `TranscriptFollow`, which live in the Mac target and cannot be imported here. Keep the numbers and
-// rules the same as the Mac's; a change there needs the same change here.
+// The chat logic the Mac and the phone share: block markdown, long-message collapse, tool steps, notices and the follow state.
+// The Mac target imports these, so a change here changes both chats.
 
 // MARK: Markdown blocks
 
@@ -150,10 +149,50 @@ public enum ChatMarkdown {
         #if canImport(Darwin)
         (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
         #else
-        // swift-foundation on Linux cannot parse Markdown, so the text shows as it is.
-        AttributedString(text)
+        // swift-foundation on Linux cannot parse Markdown, so the common inline markers are stripped and the text carries no styling.
+        AttributedString(stripInlineMarkers(text))
         #endif
     }
+
+    /// The text each block draws, in order, for search. Closed mermaid diagrams render as an image and have none.
+    public static func segments(of block: Block) -> [String] {
+        func shown(_ markdown: String) -> String { String(inline(markdown).characters) }
+        switch block {
+        case .heading(_, let text), .paragraph(let text), .quote(let text):
+            return [shown(text)]
+        case .list(_, let items):
+            return items.map { shown($0.task?.text ?? $0.text) }
+        case .code(let language, let text, let closed):
+            return language?.lowercased() == "mermaid" && closed ? [] : [text]
+        case .table(let header, let rows):
+            return (header + rows.flatMap { $0 }).map(shown)
+        case .rule:
+            return []
+        }
+    }
+
+    public static func segments(of text: String) -> [String] {
+        parse(text).flatMap { segments(of: $0) }
+    }
+
+    #if !canImport(Darwin)
+    private static let inlineMarkers: [(pattern: String, template: String)] = [
+        (#"\[([^\]]*)\]\([^)]*\)"#, "$1"),
+        (#"`([^`]+)`"#, "$1"),
+        (#"(\*\*|__)(?=\S)(.+?)(?<=\S)\1"#, "$2"),
+        (#"~~(?=\S)(.+?)(?<=\S)~~"#, "$1"),
+        (#"\*(?=\S)([^*]+?)(?<=\S)\*"#, "$1"),
+    ]
+
+    private static func stripInlineMarkers(_ text: String) -> String {
+        var result = text
+        for (pattern, template) in inlineMarkers {
+            guard let expression = try? NSRegularExpression(pattern: pattern) else { continue }
+            result = expression.stringByReplacingMatches(in: result, range: NSRange(result.startIndex..., in: result), withTemplate: template)
+        }
+        return result
+    }
+    #endif
 
     /// True for blocks that draw as running text. The Mac draws a run of them as one text view.
     public static func isTextBlock(_ block: Block) -> Bool {
@@ -234,8 +273,13 @@ public enum ChatMessageCollapse {
     public static let previewLines = 12
 
     public struct Preview: Equatable, Sendable {
+        public init(text: String, hiddenCharacters: Int) {
+            self.text = text
+            self.hiddenCharacters = hiddenCharacters
+        }
+
         public let text: String
-        /// Counted in UTF-16 units, as the Mac counts them.
+        /// Counted in UTF-16 units, which is O(1) for the text length. It matches the character count for plain text.
         public let hiddenCharacters: Int
     }
 
@@ -289,18 +333,35 @@ public enum RemoteTranscriptGroup: Identifiable, Equatable, Sendable {
     }
 
     public static func make(_ items: [RemoteChatItem]) -> [RemoteTranscriptGroup] {
-        var groups: [RemoteTranscriptGroup] = []
-        var run: [RemoteChatItem] = []
-        for item in items {
-            if item.kind == "tool" {
-                run.append(item)
+        ChatToolRuns.split(items, isTool: { $0.kind == "tool" }).map { run in
+            run.isTool ? .tools(run.items) : .item(run.items[0])
+        }
+    }
+}
+
+/// The one rule for folding consecutive tool steps into a run. The Mac's `TranscriptGroup` and the phone's
+/// `RemoteTranscriptGroup` both build on it, over their own item types.
+public enum ChatToolRuns {
+    public struct Run<Item> {
+        public let isTool: Bool
+        public let items: [Item]
+    }
+
+    /// Consecutive items where `isTool` holds become one run. Every other item is a run of one. `skip` drops items that draw nothing.
+    public static func split<Items: Sequence>(_ items: Items, isTool: (Items.Element) -> Bool,
+                                              skip: (Items.Element) -> Bool = { _ in false }) -> [Run<Items.Element>] {
+        var runs: [Run<Items.Element>] = []
+        var tools: [Items.Element] = []
+        for item in items where !skip(item) {
+            if isTool(item) {
+                tools.append(item)
             } else {
-                if !run.isEmpty { groups.append(.tools(run)); run = [] }
-                groups.append(.item(item))
+                if !tools.isEmpty { runs.append(Run(isTool: true, items: tools)); tools = [] }
+                runs.append(Run(isTool: false, items: [item]))
             }
         }
-        if !run.isEmpty { groups.append(.tools(run)) }
-        return groups
+        if !tools.isEmpty { runs.append(Run(isTool: true, items: tools)) }
+        return runs
     }
 }
 
@@ -364,9 +425,9 @@ public struct ChatNotice: Equatable, Sendable {
 
 // MARK: Following the end
 
-/// Whether the transcript follows new content, and whether to offer "Jump to latest". Same rule as the Mac's `TranscriptFollow`:
-/// only the reader's own scrolling unpins. Content that grows, or a viewport that shrinks for the keyboard, moves the distance from
-/// the bottom without the reader scrolling.
+/// Whether the transcript follows new content, and whether to offer "Jump to latest". Only the reader's own scrolling unpins.
+/// Content that grows, a window resize or a viewport that shrinks for the keyboard moves the distance from the bottom without the
+/// reader scrolling. The Mac reports `userDriven` itself through `geometryChanged`; the phone has no such signal and uses `measure`.
 public struct TranscriptFollowState: Equatable, Sendable {
     public private(set) var pinned = true
     /// New content arrived below the viewport while the reader was scrolled up.
@@ -393,6 +454,20 @@ public struct TranscriptFollowState: Equatable, Sendable {
         if pinned { newBelow = false }
     }
 
+    /// The Mac's form of `measure`: the scroll view says whether the reader is driving it (drag, wheel, trackpad or coasting).
+    public mutating func geometryChanged(distanceFromBottom: Double, userDriven: Bool) {
+        let atBottom = distanceFromBottom <= Self.bottomTolerance
+        if userDriven {
+            pinned = atBottom
+        } else if atBottom {
+            pinned = true
+        }
+        if pinned { newBelow = false }
+    }
+
+    /// The app scrolled the reader to a place in the history, such as a find match.
+    public mutating func leftTheEnd() { pinned = false }
+
     /// Sending a message jumps to the end and follows from there.
     public mutating func sent() {
         pinned = true
@@ -402,8 +477,9 @@ public struct TranscriptFollowState: Equatable, Sendable {
     public mutating func jumpedToLatest() { sent() }
 
     /// New items or streamed text arrived. `readerSent`: the change is a message the reader just sent from here.
-    public mutating func contentArrived(readerSent: Bool) {
+    /// `newContent` is false for a change that adds nothing to read, such as the agent finishing.
+    public mutating func contentArrived(readerSent: Bool, newContent: Bool = true) {
         if readerSent { sent() }
-        if !pinned { newBelow = true }
+        if !pinned && newContent { newBelow = true }
     }
 }

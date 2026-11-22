@@ -3,48 +3,49 @@ import SwiftUI
 import XCTest
 @testable import IronPet
 @testable import IronPetCore
+@testable import IronPetKit
 
 /// Pure rules for when the transcript follows new content.
 final class TranscriptFollowLogicTests: XCTestCase {
     func testStartsPinned() {
-        XCTAssertTrue(TranscriptFollow().pinned)
+        XCTAssertTrue(TranscriptFollowState().pinned)
     }
 
     func testUserScrollingAwayUnpins() {
-        var f = TranscriptFollow()
+        var f = TranscriptFollowState()
         f.geometryChanged(distanceFromBottom: 400, userDriven: true)
         XCTAssertFalse(f.pinned)
     }
 
     func testContentGrowthWithoutUserInputKeepsUnpinned() {
-        var f = TranscriptFollow()
+        var f = TranscriptFollowState()
         f.geometryChanged(distanceFromBottom: 400, userDriven: true)
         f.geometryChanged(distanceFromBottom: 900, userDriven: false)
         XCTAssertFalse(f.pinned)
     }
 
     func testContentGrowthWhilePinnedDoesNotUnpin() {
-        var f = TranscriptFollow()
+        var f = TranscriptFollowState()
         f.geometryChanged(distanceFromBottom: 300, userDriven: false)
         XCTAssertTrue(f.pinned)
     }
 
     func testUserScrollingBackToBottomPins() {
-        var f = TranscriptFollow()
+        var f = TranscriptFollowState()
         f.geometryChanged(distanceFromBottom: 400, userDriven: true)
         f.geometryChanged(distanceFromBottom: 5, userDriven: true)
         XCTAssertTrue(f.pinned)
     }
 
     func testArrivingAtBottomWithoutInputPins() {
-        var f = TranscriptFollow()
+        var f = TranscriptFollowState()
         f.geometryChanged(distanceFromBottom: 400, userDriven: true)
         f.geometryChanged(distanceFromBottom: 0, userDriven: false)
         XCTAssertTrue(f.pinned)
     }
 
     func testSendingAndJumpingPin() {
-        var f = TranscriptFollow()
+        var f = TranscriptFollowState()
         f.geometryChanged(distanceFromBottom: 400, userDriven: true)
         f.sent()
         XCTAssertTrue(f.pinned)
@@ -54,7 +55,7 @@ final class TranscriptFollowLogicTests: XCTestCase {
     }
 
     func testStatusChangeAfterTheReadersMessageDoesNotDragThemDown() {
-        var f = TranscriptFollow()
+        var f = TranscriptFollowState()
         f.contentArrived(readerSent: true)
         f.geometryChanged(distanceFromBottom: 400, userDriven: true)
         f.contentArrived(readerSent: false) // the agent starts running, an approval arrives
@@ -62,14 +63,14 @@ final class TranscriptFollowLogicTests: XCTestCase {
     }
 
     func testStatusOnlyChangeDoesNotOfferJumpToLatest() {
-        var f = TranscriptFollow()
+        var f = TranscriptFollowState()
         f.geometryChanged(distanceFromBottom: 400, userDriven: true)
         f.contentArrived(readerSent: false, newContent: false)
         XCTAssertFalse(f.newBelow)
     }
 
     func testReaderSendingWhileScrolledUpPins() {
-        var f = TranscriptFollow()
+        var f = TranscriptFollowState()
         f.geometryChanged(distanceFromBottom: 400, userDriven: true)
         f.contentArrived(readerSent: true)
         XCTAssertTrue(f.pinned)
@@ -77,7 +78,7 @@ final class TranscriptFollowLogicTests: XCTestCase {
     }
 
     func testNewContentBelowShowsJumpButtonOnlyWhileUnpinned() {
-        var f = TranscriptFollow()
+        var f = TranscriptFollowState()
         f.contentArrived(readerSent: false)
         XCTAssertFalse(f.newBelow)
         f.geometryChanged(distanceFromBottom: 400, userDriven: true)

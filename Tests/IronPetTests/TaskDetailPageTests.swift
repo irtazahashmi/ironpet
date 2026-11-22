@@ -1,6 +1,7 @@
 import XCTest
 @testable import IronPet
 @testable import IronPetCore
+@testable import IronPetKit
 
 @MainActor
 final class TaskDetailPageTests: XCTestCase {
@@ -40,7 +41,7 @@ final class TaskDetailPageTests: XCTestCase {
 
         Write to team@example.com today.
         """
-        let attributed = MarkdownText.attributed(Markdown.parse(notes), size: 14)
+        let attributed = MarkdownText.attributed(ChatMarkdown.parse(notes), size: 14)
         var links: [String] = []
         attributed.enumerateAttribute(.link, in: NSRange(location: 0, length: attributed.length)) { value, _, _ in
             if let url = value as? URL { links.append(url.absoluteString) }
