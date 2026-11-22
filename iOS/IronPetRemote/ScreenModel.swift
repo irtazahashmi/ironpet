@@ -31,6 +31,9 @@ final class ScreenModel: SocketModel {
     var notice: String?
     let gate: TranscriptGate
 
+    /// "Nothing captured" is true only after a load that worked and found no changes. A failed load shows its error instead.
+    var showsEmptyState: Bool { loaded && windows.isEmpty && errorMessage == nil }
+
     init(client: IronPetClient, events: any EventSignalSource, gate: TranscriptGate? = nil, onUnauthorized: @escaping () -> Void) {
         let gate = gate ?? TranscriptGate(reason: "Show screen text")
         self.gate = gate
@@ -57,9 +60,20 @@ final class ScreenModel: SocketModel {
 
     override func reload() async {
         guard gate.isUnlocked else { return }
-        if let current = await call({ try await self.client.screenStatus() }), gate.isUnlocked { status = current }
+        // `call` clears the error after a success, so a failed status must be kept past the change list that follows it.
+        var failure: String?
+        if let current = await call({ try await self.client.screenStatus() }) {
+            if gate.isUnlocked { status = current }
+        } else {
+            failure = errorMessage
+        }
         guard !forbidden else { return }
-        if let list = await call({ try await self.client.screenChanges(since: self.range.rawValue) }), gate.isUnlocked { windows = list }
+        if let list = await call({ try await self.client.screenChanges(since: self.range.rawValue) }) {
+            if gate.isUnlocked { windows = list }
+        } else {
+            failure = failure ?? errorMessage
+        }
+        errorMessage = failure
     }
 
     /// Runs one request. A 403 means the scope is off, which the screen explains instead of showing an error line.

@@ -153,6 +153,9 @@ final class MeetingsModel: SocketModel {
     var notice: String?
     let gate: TranscriptGate
 
+    /// "No meetings" is true only after a load that worked and found none. A failed load shows its error instead.
+    var showsEmptyState: Bool { loaded && meetings.isEmpty && errorMessage == nil }
+
     init(client: IronPetClient, events: any EventSignalSource, gate: TranscriptGate? = nil, onUnauthorized: @escaping () -> Void) {
         let gate = gate ?? TranscriptGate()
         self.gate = gate
@@ -175,8 +178,19 @@ final class MeetingsModel: SocketModel {
 
     override func reload() async {
         guard gate.isUnlocked else { return }
-        if let list = await run({ try await self.client.meetings() }), gate.isUnlocked { meetings = list }
-        if let current = await run({ try await self.client.meetingState() }), gate.isUnlocked { state = current }
+        // `run` clears the error after a success, so a failed list must be kept past the state call that follows it.
+        var failure: String?
+        if let list = await run({ try await self.client.meetings() }) {
+            if gate.isUnlocked { meetings = list }
+        } else {
+            failure = errorMessage
+        }
+        if let current = await run({ try await self.client.meetingState() }) {
+            if gate.isUnlocked { state = current }
+        } else {
+            failure = failure ?? errorMessage
+        }
+        errorMessage = failure
     }
 
     override func handle(_ event: RemoteEvent) async {

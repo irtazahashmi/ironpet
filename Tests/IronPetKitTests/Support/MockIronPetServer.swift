@@ -50,6 +50,7 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _threadItems: [String: [RemoteChatItem]] = ["th-1": [RemoteChatItem(id: "th-1-u", kind: "user", text: "Old question"), RemoteChatItem(id: "th-1-a", kind: "assistant", text: "Old answer")]]
     private var _openConflict: String?
     private var _uploadFails = false
+    private var _brokenRoutes: [String: Int] = [:]
     private var _uploads: [String: Data] = [:]
     private var _uploadNames: [String: String] = [:]
     private var _uploadDelay: TimeInterval = 0
@@ -153,6 +154,8 @@ final class MockIronPetServer: @unchecked Sendable {
     var chatThreads: [RemoteChatThread] { get { lock.lock(); defer { lock.unlock() }; return _chatThreads } set { lock.lock(); _chatThreads = newValue; lock.unlock() } }
     /// When set, opening a thread or starting a new chat answers 409 with this text, as a Mac with a running turn does.
     var openConflict: String? { get { lock.lock(); defer { lock.unlock() }; return _openConflict } set { lock.lock(); _openConflict = newValue; lock.unlock() } }
+    /// Routes that answer with a fixed status instead of their data, by exact path. Status 200 answers a body the client cannot decode.
+    var brokenRoutes: [String: Int] { get { lock.lock(); defer { lock.unlock() }; return _brokenRoutes } set { lock.lock(); _brokenRoutes = newValue; lock.unlock() } }
     /// True answers every upload with 500.
     var uploadFails: Bool { get { lock.lock(); defer { lock.unlock() }; return _uploadFails } set { lock.lock(); _uploadFails = newValue; lock.unlock() } }
     /// Seconds the mock waits before it answers an upload, to look at the app while a send is in flight.
@@ -290,6 +293,9 @@ final class MockIronPetServer: @unchecked Sendable {
         let open = request.path == APIPath.pair || request.path.hasPrefix("/v1/pair/")
         if !open, !(valid && request.headers["authorization"] == "Bearer \(token)") {
             return fail(connection, 401, "unauthorized", "unauthorized")
+        }
+        if let status = brokenRoutes[request.path] {
+            return status == 200 ? respond(connection, 200, Data(#"{"unexpected":true}"#.utf8)) : fail(connection, status, "failed", "the Mac could not answer")
         }
         let parts = request.path.split(separator: "/").map(String.init)
         if routeResources(request, parts, connection) || routeChat(request, parts, connection) || routePhaseFour(request, parts, connection) { return }

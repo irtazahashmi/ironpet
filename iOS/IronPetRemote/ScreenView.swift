@@ -80,7 +80,10 @@ struct ScreenView: View {
     private var list: some View {
         List {
             if let message = model.errorMessage {
-                Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).accessibilityIdentifier("screen-error")
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).accessibilityIdentifier("screen-error")
+                    Button("Retry") { Task { await model.refresh() } }.accessibilityIdentifier("screen-retry")
+                }
             }
             if let notice = model.notice {
                 Label(notice, systemImage: "info.circle").accessibilityIdentifier("screen-notice")
@@ -145,7 +148,7 @@ struct ScreenView: View {
                 }
             }
         }
-        if model.loaded, model.windows.isEmpty {
+        if model.showsEmptyState {
             ContentUnavailableView("Nothing captured", systemImage: "rectangle.dashed", description: Text("No changes in this range."))
         }
     }
@@ -202,6 +205,9 @@ struct ScreenCaptureView: View {
                         .accessibilityIdentifier("screen-capture-text")
                 } else if loading {
                     ProgressView()
+                } else if let message = model.errorMessage {
+                    Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).accessibilityIdentifier("screen-capture-error")
+                    Button("Retry") { Task { await load() } }.accessibilityIdentifier("screen-capture-retry")
                 } else {
                     Text("This capture is gone or the screen is locked.").foregroundStyle(.secondary)
                 }
@@ -213,12 +219,14 @@ struct ScreenCaptureView: View {
         .navigationBarTitleDisplayMode(.inline)
         .screenPrivacy()
         // Runs again when the screen unlocks, so a capture opened before a lock loads again instead of staying empty.
-        .task(id: model.gate.isUnlocked) {
-            loading = true
-            capture = await model.capture(id)
-            loading = false
-        }
+        .task(id: model.gate.isUnlocked) { await load() }
         // Locking drops the text from the model, so the screen drops its copy too.
         .onChange(of: model.gate.isUnlocked) { _, unlocked in if !unlocked { capture = nil } }
+    }
+
+    private func load() async {
+        loading = true
+        capture = await model.capture(id)
+        loading = false
     }
 }
