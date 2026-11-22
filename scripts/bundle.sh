@@ -1,11 +1,12 @@
 #!/bin/bash
 # Builds build/IronPet.app (release, ad-hoc signed).
-# IRONPET_VERSION and IRONPET_BUILD set the bundle's version and build number (release_mac.sh passes them).
-# IRONPET_HARDENED=1 signs with the hardened runtime and Resources/IronPet.entitlements, which notarization needs.
+# The bundle's version is the VERSION file at the repo root, unless IRONPET_VERSION overrides it (release_mac.sh does).
+# IRONPET_BUILD sets the build number. IRONPET_HARDENED=1 signs with the hardened runtime and Resources/IronPet.entitlements,
+# which notarization needs.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-VERSION="${IRONPET_VERSION:-0.1.0}"
+VERSION="${IRONPET_VERSION:-$(tr -d '[:space:]' < VERSION)}"
 BUILD="${IRONPET_BUILD:-1}"
 # These go into a plist, so keep them to characters that cannot break out of it.
 case "$VERSION$BUILD" in

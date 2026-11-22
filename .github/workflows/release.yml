@@ -129,6 +129,19 @@ jobs:
               exit 1
             fi
           fi
+          # The VERSION file on this commit is the version the app is built and named with. A tag or input that disagrees
+          # would ship a DMG whose name and version differ from the tag, so stop here. A run that skips builds nothing.
+          if [ "$skip" != "true" ]; then
+            if [ ! -f VERSION ]; then
+              echo "error: there is no VERSION file at $GITHUB_SHA; releases need one (add it on main, then tag)" >&2
+              exit 1
+            fi
+            file_version=$(tr -d '[:space:]' < VERSION)
+            if [ "$version" != "$file_version" ]; then
+              echo "error: VERSION says $file_version but this run is for $version; bump VERSION on main first" >&2
+              exit 1
+            fi
+          fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
           echo "skip=$skip" >> "$GITHUB_OUTPUT"
 
