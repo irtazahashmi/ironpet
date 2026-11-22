@@ -206,6 +206,9 @@ public final class IronPetClient: @unchecked Sendable {
 
     public func downloadAsset(sha256: String) async throws -> Data { try await perform(request("GET", APIPath.asset(sha256))) }
 
+    /// The image behind a `screenshot` message of the open chat. It throws the Mac's reason, such as "the file is no longer on the Mac".
+    public func downloadChatImage(messageID: String) async throws -> Data { try await perform(request("GET", APIPath.chatMessageFile(messageID))) }
+
     // MARK: Chat
 
     func post<T: Decodable>(_ type: T.Type, _ path: String, json: [String: Any] = [:]) async throws -> T {

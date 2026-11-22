@@ -493,6 +493,11 @@ final class RemoteServer {
             let id = Self.parameter(context, "id")
             return await self.chat(context) { try await $0.message(id) }
         }
+        // The image of an attachment message, as raw bytes. Per device like every other chat route: no device, no bytes.
+        router.get("/v1/chat/messages/:id/file") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.chatFile(id, context)
+        }
         router.get("/v1/chat/threads") { [self] _, context in await self.chat(context) { await $0.threads() } }
         router.get("/v1/chat/threads/:id") { [self] _, context in
             let id = Self.parameter(context, "id")
@@ -607,6 +612,18 @@ final class RemoteServer {
             var headers: HTTPFields = [.cacheControl: "private, max-age=31536000, immutable", .eTag: etag]
             if request.headers[.ifNoneMatch] == etag { return Response(status: .notModified, headers: headers) }
             headers[.contentType] = found.contentType
+            return Response(status: .ok, headers: headers, body: .init(byteBuffer: ByteBuffer(bytes: found.data)))
+        } catch {
+            return Self.errorResponse(RemoteFailure(error))
+        }
+    }
+
+    /// An attachment image of the open chat. `no-store`, because the chat can be cleared and the file can be deleted on the Mac.
+    private func chatFile(_ id: String, _ context: RemoteContext) async -> Response {
+        guard let device = context.device else { return Self.error(401, "unauthorized", "unauthorized") }
+        do {
+            let found = try await RemoteChat(api: api, device: device.id, uploads: uploads).file(id)
+            let headers: HTTPFields = [.cacheControl: "no-store", .contentType: found.contentType]
             return Response(status: .ok, headers: headers, body: .init(byteBuffer: ByteBuffer(bytes: found.data)))
         } catch {
             return Self.errorResponse(RemoteFailure(error))

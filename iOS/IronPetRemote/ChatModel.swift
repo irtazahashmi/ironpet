@@ -39,6 +39,8 @@ final class ChatModel: SocketModel {
     /// Photos this phone sent, by the name the Mac saved them under, so the transcript shows a thumbnail instead of a chip.
     private(set) var sentPhotos: [String: Data] = [:]
     @ObservationIgnored private var pastedCount = 0
+    /// Screenshots and attached images the Mac holds, fetched by the id of their message.
+    @ObservationIgnored lazy var images = ChatImages(client: client)
 
     var approvals: [RemoteApproval] { snapshot?.approvals ?? [] }
     var forms: [RemoteForm] { snapshot?.forms ?? [] }

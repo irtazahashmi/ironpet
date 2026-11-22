@@ -33,6 +33,8 @@ public enum APIPath {
 
     public static let chat = "/v1/chat/current"
     public static func chatMessage(_ id: String) -> String { "/v1/chat/messages/\(id)" }
+    /// The image of an attachment message, as raw bytes.
+    public static func chatMessageFile(_ id: String) -> String { "/v1/chat/messages/\(id)/file" }
     public static let chatThreads = "/v1/chat/threads"
     public static func chatThread(_ id: String) -> String { "/v1/chat/threads/\(id)" }
     public static let chatSend = "/v1/chat/current/messages"

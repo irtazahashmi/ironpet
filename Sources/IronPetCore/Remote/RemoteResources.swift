@@ -164,7 +164,10 @@ package struct RemoteResources {
         case "png": return "image/png"
         case "webp": return "image/webp"
         case "jpg", "jpeg": return "image/jpeg"
-        case "heic": return "image/heic"
+        case "heic", "heif": return "image/heic"
+        case "gif": return "image/gif"
+        case "tif", "tiff": return "image/tiff"
+        case "bmp": return "image/bmp"
         default: return "application/octet-stream"
         }
     }

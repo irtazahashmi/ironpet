@@ -138,7 +138,7 @@ private struct Transcript: View {
                 VStack(spacing: 0) {
                     LazyVStack(alignment: .leading, spacing: 10) {
                         ForEach(RemoteTranscriptGroup.make(model.items)) { group in
-                            TranscriptGroupView(group: group, photos: model.sentPhotos, avatar: avatar, expanded: expandedMessages,
+                            TranscriptGroupView(group: group, photos: model.sentPhotos, images: model.images, avatar: avatar, expanded: expandedMessages,
                                                 toggleExpand: { id in if !expandedMessages.insert(id).inserted { expandedMessages.remove(id) } },
                                                 onReply: { model.replyTo = $0 },
                                                 readAloud: { item in voice.flatMap { ReadAloud(item: item, voice: $0) } })
@@ -206,6 +206,8 @@ private struct Transcript: View {
 private struct TranscriptGroupView: View {
     let group: RemoteTranscriptGroup
     let photos: [String: Data]
+    /// Fetches the Mac's images. Nil in a saved thread, whose message ids the Mac cannot look up.
+    var images: ChatImages?
     var avatar: CGImage?
     var expanded: Set<String> = []
     var toggleExpand: (String) -> Void = { _ in }
@@ -218,7 +220,7 @@ private struct TranscriptGroupView: View {
         case .tools(let steps):
             ToolStepsRow(steps: steps)
         case .item(let item):
-            MessageRow(item: item, photo: item.fileName.flatMap { photos[$0] }, avatar: avatar, expanded: expanded.contains(item.id),
+            MessageRow(item: item, photo: item.fileName.flatMap { photos[$0] }, images: images, avatar: avatar, expanded: expanded.contains(item.id),
                        onToggleExpand: { toggleExpand(item.id) }, onReply: item.canReply ? { onReply(item) } : nil,
                        readAloud: item.kind == "assistant" ? readAloud(item) : nil)
         }
@@ -246,6 +248,7 @@ private struct QueuedRow: View {
 struct MessageRow: View {
     let item: RemoteChatItem
     var photo: Data?
+    var images: ChatImages?
     var avatar: CGImage?
     var expanded = false
     var onToggleExpand: () -> Void = {}
@@ -261,7 +264,7 @@ struct MessageRow: View {
             case .error(let text): ErrorRow(text: text)
             case .notice(let text): NoticeRow(notice: ChatNotice(text))
             case .attachment(let name, let isImage):
-                Attachment(name: name, isImage: isImage, photo: photo, mine: item.origin == "ios")
+                Attachment(name: name, isImage: isImage, photo: photo, mine: item.origin == "ios", messageID: item.id, images: images)
             case .form(let message, let skipped, let lines):
                 FormRecord(message: message, skipped: skipped, lines: lines)
             case .unsupported(let text):
@@ -297,31 +300,125 @@ private struct Attachment: View {
     let isImage: Bool
     let photo: Data?
     let mine: Bool
+    let messageID: String
+    var images: ChatImages?
+    /// What the Mac sent, once it has arrived. Nil while it loads or when the Mac refused.
+    @State private var loaded: UIImage?
+    @State private var failure: String?
+    @State private var viewing = false
 
     var body: some View {
-        if let photo, let image = UIImage(data: photo) {
-            // The Mac's thumbnail: 110 pt high, rounded, with a hairline edge.
-            Image(uiImage: image).resizable().aspectRatio(contentMode: .fit).frame(height: 110)
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-                .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.15)))
+        Group {
+            if let image = shown {
+                // The Mac's thumbnail: 110 pt high, rounded, with a hairline edge. A tap opens the picture full size.
+                Button { viewing = true } label: {
+                    Image(uiImage: image).resizable().aspectRatio(contentMode: .fit).frame(height: 110)
+                        .clipShape(RoundedRectangle(cornerRadius: 8))
+                        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.15)))
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("Image \(Self.display(name))").accessibilityHint("Opens the image full size")
                 .accessibilityIdentifier("photo-\(name)")
-        } else {
-            // A screenshot the Mac took, or a file whose bytes the phone does not have. The Mac does not offer them for download.
-            HStack(spacing: 6) {
-                Image(systemName: isImage ? "photo" : "doc").foregroundStyle(.secondary)
-                Text(mine ? Self.display(name) : (isImage ? "Screenshot on the Mac" : Self.display(name))).font(.system(size: 11.5)).lineLimit(2).truncationMode(.middle)
+            } else {
+                chip
             }
-            .padding(.horizontal, 8).frame(height: 48)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
-            .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.15)))
-            .accessibilityIdentifier("chip-\(name)")
         }
+        .task(id: messageID) { await load() }
+        .fullScreenCover(isPresented: $viewing) {
+            ImageViewer(name: Self.display(name), local: photo, messageID: messageID, images: images)
+        }
+    }
+
+    /// The bytes this phone already has win over a fetch: a photo it sent shows at once.
+    private var shown: UIImage? {
+        if let photo, let image = UIImage(data: photo) { return image }
+        return loaded
+    }
+
+    private func load() async {
+        guard photo == nil, isImage, let images else { return }
+        switch await images.thumbnail(for: messageID) {
+        case .success(let image): loaded = image; failure = nil
+        case .failure(let error): loaded = nil; failure = error.message
+        }
+    }
+
+    private var chip: some View {
+        // A file the phone does not show, an image still loading, or one the Mac no longer has.
+        HStack(spacing: 6) {
+            if isImage, images != nil, failure == nil, photo == nil { ProgressView().controlSize(.small) } else {
+                Image(systemName: isImage ? "photo" : "doc").foregroundStyle(.secondary)
+            }
+            VStack(alignment: .leading, spacing: 1) {
+                Text(mine ? Self.display(name) : (isImage ? "Screenshot on the Mac" : Self.display(name))).font(.system(size: 11.5)).lineLimit(2).truncationMode(.middle)
+                if let failure { Text(failure).font(.system(size: 10)).foregroundStyle(.secondary).lineLimit(2) }
+            }
+        }
+        .padding(.horizontal, 8).frame(minHeight: 48)
+        .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 8))
+        .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.15)))
+        .accessibilityIdentifier("chip-\(name)")
     }
 
     /// The Mac saves a file as `<8 characters>-<name>`. The phone shows the name.
     static func display(_ stored: String) -> String {
         guard stored.count > 9, stored[stored.index(stored.startIndex, offsetBy: 8)] == "-" else { return stored }
         return String(stored.dropFirst(9))
+    }
+}
+
+/// An attachment picture at full size: pinch or double-tap to zoom, drag to move.
+private struct ImageViewer: View {
+    let name: String
+    let local: Data?
+    let messageID: String
+    var images: ChatImages?
+    @Environment(\.dismiss) private var dismiss
+    @State private var image: UIImage?
+    @State private var failure: String?
+    @State private var zoom: CGFloat = 1
+    @State private var settledZoom: CGFloat = 1
+    @State private var offset = CGSize.zero
+    @State private var settledOffset = CGSize.zero
+
+    var body: some View {
+        NavigationStack {
+            ZStack {
+                Color.black.ignoresSafeArea()
+                if let image {
+                    Image(uiImage: image).resizable().aspectRatio(contentMode: .fit)
+                        .scaleEffect(zoom).offset(offset)
+                        .gesture(MagnifyGesture().onChanged { zoom = max(1, settledZoom * $0.magnification) }
+                            .onEnded { _ in settledZoom = zoom; if zoom == 1 { offset = .zero; settledOffset = .zero } })
+                        .simultaneousGesture(DragGesture().onChanged { if zoom > 1 { offset = CGSize(width: settledOffset.width + $0.translation.width, height: settledOffset.height + $0.translation.height) } }
+                            .onEnded { _ in settledOffset = offset })
+                        .onTapGesture(count: 2) {
+                            withAnimation { zoom = zoom > 1 ? 1 : 2.5; settledZoom = zoom; if zoom == 1 { offset = .zero; settledOffset = .zero } }
+                        }
+                        .accessibilityLabel("Image \(name)").accessibilityIdentifier("image-viewer-picture")
+                } else if let failure {
+                    Label(failure, systemImage: "exclamationmark.triangle").foregroundStyle(.white).padding()
+                        .accessibilityIdentifier("image-viewer-error")
+                } else {
+                    ProgressView().tint(.white)
+                }
+            }
+            .navigationTitle(name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbarBackground(.visible, for: .navigationBar)
+            .toolbarColorScheme(.dark, for: .navigationBar)
+            .toolbar {
+                ToolbarItem(placement: .topBarTrailing) { Button("Done") { dismiss() }.accessibilityIdentifier("image-viewer-done") }
+            }
+        }
+        .task {
+            if let local, let decoded = await ChatImages.decodeFull(local) { image = decoded; return }
+            guard let images else { return }
+            switch await images.full(for: messageID) {
+            case .success(let loaded): image = loaded
+            case .failure(let error): failure = error.message
+            }
+        }
     }
 }
 
