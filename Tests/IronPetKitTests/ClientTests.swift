@@ -82,6 +82,44 @@ final class ClientTests: XCTestCase {
         XCTAssertEqual(server.requests[1].json["note"] as? String, "back to me")
     }
 
+    // MARK: File previews
+
+    func testFilePreviewReadsTextImagesAndTheTruncationHeader() async throws {
+        let client = paired()
+        server.setFilePreview(Data("let a = 1\n".utf8), path: "/Users/dev/demo-app/src/a b+c.swift")
+        server.setFilePreview(Data("start".utf8), path: "/Users/dev/demo-app/big.log", truncated: true)
+        server.setFilePreview(Data([1, 2, 3]), path: "/Users/dev/demo-app/shot.png", contentType: "image/png")
+
+        let text = try await client.filePreview(path: "/Users/dev/demo-app/src/a b+c.swift")
+        XCTAssertEqual(text.text, "let a = 1\n")
+        XCTAssertFalse(text.truncated)
+        XCTAssertEqual(server.previewRequests.last, "/Users/dev/demo-app/src/a b+c.swift", "a space and a plus reach the Mac as typed")
+        let big = try await client.filePreview(path: "/Users/dev/demo-app/big.log")
+        XCTAssertTrue(big.truncated)
+        let image = try await client.filePreview(path: "/Users/dev/demo-app/shot.png")
+        XCTAssertTrue(image.isImage)
+        XCTAssertEqual(image.data, Data([1, 2, 3]))
+    }
+
+    func testFilePreviewThrowsTheMacsReasonForAPathItRefuses() async throws {
+        let client = paired()
+        do {
+            _ = try await client.filePreview(path: "/etc/hosts")
+            XCTFail("expected a refusal")
+        } catch ClientError.api(let status, let code, let message) {
+            XCTAssertEqual(status, 403)
+            XCTAssertEqual(code, "forbidden")
+            XCTAssertEqual(message, "the Mac only previews files inside the folders its chat works in")
+        }
+        do {
+            _ = try await client.filePreview(path: "/Users/dev/demo-app/gone.swift")
+            XCTFail("expected a 404")
+        } catch ClientError.api(let status, _, let message) {
+            XCTAssertEqual(status, 404)
+            XCTAssertEqual(message, "there is no such file on the Mac")
+        }
+    }
+
     func testRevokeSelf() async throws {
         try await paired().revokeSelf()
         XCTAssertEqual(server.requests.last?.line, "DELETE /v1/devices/me")

@@ -54,6 +54,7 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _uploads: [String: Data] = [:]
     private var _chatImages: [String: Data] = [:]
     private var _chatImageHits = 0
+    private var _previews: [String: (data: Data, contentType: String, truncated: Bool)] = [:]
     private var _uploadNames: [String: String] = [:]
     private var _uploadDelay: TimeInterval = 0
     private var _sendFails = false
@@ -167,6 +168,23 @@ final class MockIronPetServer: @unchecked Sendable {
     var uploadDelay: TimeInterval { get { lock.lock(); defer { lock.unlock() }; return _uploadDelay } set { lock.lock(); _uploadDelay = newValue; lock.unlock() } }
     /// The bytes `GET /v1/chat/messages/:id/file` serves for a message id. A message without them gets the Mac's 404 for a missing file.
     func setChatImage(_ data: Data?, for id: String) { lock.lock(); _chatImages[id] = data; lock.unlock() }
+    /// The folder the mock Mac's chat works in. `GET /v1/files/preview` answers for a path inside it, 404 when no file was set for it with
+    /// `setFilePreview`, and 403 for any other path, with the Mac's own wording.
+    static let previewRoot = "/Users/dev/demo-app"
+    /// A file the preview route sends for `path`.
+    func setFilePreview(_ data: Data, path: String, contentType: String = "text/plain; charset=utf-8", truncated: Bool = false) {
+        lock.lock(); _previews[path] = (data, contentType, truncated); lock.unlock()
+    }
+    /// The paths the preview route was asked for, decoded.
+    var previewRequests: [String] {
+        lock.lock(); defer { lock.unlock() }
+        return _requests.filter { $0.path == "/v1/files/preview" }.map { Self.previewPath($0.query) }
+    }
+    fileprivate static func previewPath(_ query: String) -> String {
+        let value = query.split(separator: "&").first { $0.hasPrefix("path=") }.map { String($0.dropFirst(5)) } ?? ""
+        return value.removingPercentEncoding ?? value
+    }
+
     /// How many times the file route was asked for an image, to show that a screenshot is fetched once.
     var chatImageRequests: Int { lock.lock(); defer { lock.unlock() }; return _chatImageHits }
     /// The next sends answer 500 while this is true.
@@ -287,6 +305,13 @@ final class MockIronPetServer: @unchecked Sendable {
         let reason = [200: "OK", 201: "Created", 202: "Accepted", 400: "Bad Request", 401: "Unauthorized", 403: "Forbidden", 404: "Not Found", 409: "Conflict",
                       413: "Content Too Large", 500: "Internal Server Error"][status] ?? "OK"
         var out = Data("HTTP/1.1 \(status) \(reason)\r\nContent-Type: application/json\r\nContent-Length: \(body.count)\r\nConnection: close\r\n\r\n".utf8)
+        out.append(body)
+        connection.send(content: out, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { _ in connection.cancel() })
+    }
+
+    fileprivate func respond(_ connection: NWConnection, _ status: Int, _ body: Data, contentType: String, headers: [String: String] = [:]) {
+        let extra = headers.map { "\($0.key): \($0.value)\r\n" }.joined()
+        var out = Data("HTTP/1.1 \(status) OK\r\nContent-Type: \(contentType)\r\n\(extra)Content-Length: \(body.count)\r\nConnection: close\r\n\r\n".utf8)
         out.append(body)
         connection.send(content: out, contentContext: .finalMessage, isComplete: true, completion: .contentProcessed { _ in connection.cancel() })
     }
@@ -562,6 +587,18 @@ extension MockIronPetServer {
             lock.lock(); _uploads[id] = request.body; _uploadNames[id] = stored; let delay = _uploadDelay; lock.unlock()
             let answer = RemoteUpload(id: id, fileName: name, storedName: stored, bytes: request.body.count)
             if delay > 0 { queue.asyncAfter(deadline: .now() + delay) { [self] in respond(connection, 201, answer) } } else { respond(connection, 201, answer) }
+            return true
+        }
+        if parts.count == 3, parts[1] == "files", parts[2] == "preview", get {
+            let path = Self.previewPath(request.query)
+            lock.lock(); let file = _previews[path]; lock.unlock()
+            if let file {
+                respond(connection, 200, file.data, contentType: file.contentType, headers: file.truncated ? ["X-Ironpet-Truncated": "1"] : [:])
+            } else if path.hasPrefix(Self.previewRoot + "/") {
+                fail(connection, 404, "not_found", "there is no such file on the Mac")
+            } else {
+                fail(connection, 403, "forbidden", "the Mac only previews files inside the folders its chat works in")
+            }
             return true
         }
         guard parts[1] == "chat" else { return false }

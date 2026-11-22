@@ -527,6 +527,162 @@ final class RemoteChatTests: XCTestCase {
         XCTAssertEqual(byPath.status, 404, "a stored file name is not a message id")
     }
 
+    // MARK: File previews
+
+    /// A project folder the chat works in, with an `outside` folder beside it that the chat does not know.
+    private func previewFolders() throws -> (project: URL, outside: URL) {
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-preview-\(UUID().uuidString)")
+        let project = base.appendingPathComponent("project"), outside = base.appendingPathComponent("outside")
+        try FileManager.default.createDirectory(at: project.appendingPathComponent("src"), withIntermediateDirectories: true)
+        try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: base) }
+        // The temporary folder is a symbolic link on macOS, so the chat folder is the resolved path, as a folder picker gives it.
+        chat.workspace = project.resolvingSymlinksInPath()
+        return (project.resolvingSymlinksInPath(), outside.resolvingSymlinksInPath())
+    }
+
+    private func preview(_ path: String, token override: String? = nil) async throws -> RemoteReply {
+        var allowed = CharacterSet.urlQueryAllowed
+        allowed.remove(charactersIn: "&+=#?")
+        let encoded = path.addingPercentEncoding(withAllowedCharacters: allowed) ?? path
+        return try await h.request("GET", "/v1/files/preview?path=\(encoded)", token: override ?? token)
+    }
+
+    private func message(_ reply: RemoteReply) -> String { (reply.json["error"] as? [String: Any])?["message"] as? String ?? "" }
+    private func code(_ reply: RemoteReply) -> String { (reply.json["error"] as? [String: Any])?["code"] as? String ?? "" }
+
+    func testAPathInsideTheChatFolderShowsItsTextAndOneOutsideIsRefusedWithAReason() async throws {
+        let (project, outside) = try previewFolders()
+        let file = project.appendingPathComponent("src/my file.swift")
+        try "let answer = 42\n".write(to: file, atomically: true, encoding: .utf8)
+        let secret = outside.appendingPathComponent("notes.txt")
+        try "not for the phone".write(to: secret, atomically: true, encoding: .utf8)
+
+        let ok = try await preview(file.path)
+        XCTAssertEqual(ok.status, 200)
+        XCTAssertEqual(String(data: ok.data, encoding: .utf8), "let answer = 42\n")
+        XCTAssertTrue(ok.headers["content-type"]?.hasPrefix("text/plain") == true, "\(ok.headers)")
+        XCTAssertEqual(ok.headers["cache-control"], "no-store")
+        XCTAssertNil(ok.headers["x-ironpet-truncated"])
+
+        let refused = try await preview(secret.path)
+        XCTAssertEqual(refused.status, 403)
+        XCTAssertEqual(code(refused), "forbidden")
+        XCTAssertTrue(message(refused).contains("folders its chat works in"), message(refused))
+        XCTAssertFalse(String(data: refused.data, encoding: .utf8)?.contains("not for the phone") == true)
+        // Whether the file exists is not revealed outside the chat's folders.
+        let missingOutside = try await preview(outside.appendingPathComponent("nope.txt").path)
+        XCTAssertEqual(missingOutside.status, 403)
+        XCTAssertEqual(message(missingOutside), message(refused))
+        // The recent folders are not roots, so a folder the user once picked does not open up either.
+        XCTAssertTrue(chat.recents.contains { secret.path.hasPrefix($0.resolvingSymlinksInPath().path + "/") }, "the test needs a recent folder that holds the outside file: \(chat.recents)")
+    }
+
+    func testWithNoFolderOpenNothingIsPreviewed() async throws {
+        let (project, _) = try previewFolders()
+        let file = project.appendingPathComponent("a.txt")
+        try "hi".write(to: file, atomically: true, encoding: .utf8)
+        chat.workspace = nil
+        let reply = try await preview(file.path)
+        XCTAssertEqual(reply.status, 403)
+    }
+
+    func testPreviewFollowsNoWayOutOfTheFolder() async throws {
+        let (project, outside) = try previewFolders()
+        let target = outside.appendingPathComponent("target.txt")
+        try "outside".write(to: target, atomically: true, encoding: .utf8)
+        try FileManager.default.createSymbolicLink(at: project.appendingPathComponent("link.txt"), withDestinationURL: target)
+        let viaLink = try await preview(project.appendingPathComponent("link.txt").path)
+        XCTAssertEqual(viaLink.status, 403, "a link inside the folder does not reach outside it")
+        let traversal = try await preview(project.path + "/src/../../outside/target.txt")
+        XCTAssertEqual(traversal.status, 403)
+        let sibling = try await preview(project.path + "-other/file.txt")
+        XCTAssertEqual(sibling.status, 403, "a folder that only shares the name prefix is not inside")
+        let root = try await preview("/etc/hosts")
+        XCTAssertEqual(root.status, 403)
+    }
+
+    func testPreviewRefusesKeysAndEnvFilesEvenInsideTheFolder() async throws {
+        let (project, _) = try previewFolders()
+        for name in [".env", ".env.local", ".ENV", "server.PEM", "deploy.key", "id_rsa", "ID_RSA", ".netrc"] {
+            try "SECRET=1".write(to: project.appendingPathComponent(name), atomically: true, encoding: .utf8)
+            let reply = try await preview(project.appendingPathComponent(name).path)
+            XCTAssertEqual(reply.status, 403, name)
+            XCTAssertTrue(message(reply).contains("keys or .env"), name)
+        }
+        try FileManager.default.createDirectory(at: project.appendingPathComponent(".ssh"), withIntermediateDirectories: true)
+        try "x".write(to: project.appendingPathComponent(".ssh/config"), atomically: true, encoding: .utf8)
+        let ssh = try await preview(project.appendingPathComponent(".ssh/config").path)
+        XCTAssertEqual(ssh.status, 403)
+    }
+
+    func testPreviewDoesNotOpenAPipe() async throws {
+        let (project, _) = try previewFolders()
+        let pipe = project.appendingPathComponent("pipe.txt")
+        XCTAssertEqual(mkfifo(pipe.path, 0o600), 0)
+        let reply = try await preview(pipe.path)
+        XCTAssertEqual(reply.status, 415)
+    }
+
+    func testPreviewAnswersImagesBinariesFoldersAndMissingFilesWithClearErrors() async throws {
+        let (project, _) = try previewFolders()
+        let image = project.appendingPathComponent("shot.png")
+        try Data([0x89, 0x50, 0x4E, 0x47, 1, 2, 3]).write(to: image)
+        let shown = try await preview(image.path)
+        XCTAssertEqual(shown.status, 200)
+        XCTAssertEqual(shown.headers["content-type"], "image/png")
+        XCTAssertEqual(shown.data, Data([0x89, 0x50, 0x4E, 0x47, 1, 2, 3]))
+
+        let binary = project.appendingPathComponent("blob.bin")
+        try Data([0x50, 0x4B, 0, 3, 4]).write(to: binary)
+        let notText = try await preview(binary.path)
+        XCTAssertEqual(notText.status, 415)
+        XCTAssertTrue(message(notText).contains("text files and images"))
+
+        let folder = try await preview(project.appendingPathComponent("src").path)
+        XCTAssertEqual(folder.status, 400)
+        XCTAssertTrue(message(folder).contains("folder"))
+
+        let gone = try await preview(project.appendingPathComponent("src/gone.swift").path)
+        XCTAssertEqual(gone.status, 404)
+        XCTAssertTrue(message(gone).contains("no such file"))
+
+        let relative = try await preview("src/a.swift")
+        XCTAssertEqual(relative.status, 400)
+        XCTAssertTrue(message(relative).contains("absolute"))
+        let empty = try await preview("")
+        XCTAssertEqual(empty.status, 400)
+    }
+
+    func testPreviewSendsTheStartOfALongFileAndSaysSo() async throws {
+        let (project, _) = try previewFolders()
+        let long = project.appendingPathComponent("long.log")
+        try Data(repeating: UInt8(ascii: "a"), count: RemoteFilePreview.maxTextBytes + 5000).write(to: long)
+        let reply = try await preview(long.path)
+        XCTAssertEqual(reply.status, 200)
+        XCTAssertEqual(reply.data.count, RemoteFilePreview.maxTextBytes)
+        XCTAssertEqual(reply.headers["x-ironpet-truncated"], "1")
+        // A cut in the middle of a multi-byte character is still text.
+        let accents = project.appendingPathComponent("accents.txt")
+        try Data(repeating: 0, count: 0).write(to: accents)
+        try String(repeating: "é", count: RemoteFilePreview.maxTextBytes).write(to: accents, atomically: true, encoding: .utf8)
+        let cut = try await preview(accents.path)
+        XCTAssertEqual(cut.status, 200)
+        XCTAssertNotNil(String(data: cut.data, encoding: .utf8))
+    }
+
+    func testPreviewNeedsAPairedDevice() async throws {
+        let (project, _) = try previewFolders()
+        let file = project.appendingPathComponent("a.txt")
+        try "hi".write(to: file, atomically: true, encoding: .utf8)
+        let anonymous = try await h.request("GET", "/v1/files/preview?path=\(file.path)")
+        XCTAssertEqual(anonymous.status, 401)
+        let forged = try await preview(file.path, token: "forged")
+        XCTAssertEqual(forged.status, 401)
+        let rows = h.service.store.accessLog(limit: 20)
+        for row in rows { XCTAssertFalse(row.route.contains("a.txt"), "the log holds no file path: \(row.route)") }
+    }
+
     func testAnImageThatIsGoneFromTheMacIsA404NotACrash() async throws {
         let shot = try await sentAttachment(Data(repeating: 9, count: 64), name: "gone.png")
         let folder = uploads.appendingPathComponent(deviceID)

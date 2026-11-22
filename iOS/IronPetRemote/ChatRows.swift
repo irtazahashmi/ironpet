@@ -25,6 +25,8 @@ struct MarkdownBody: View {
     let text: String
     /// The highlights of Find in chat. Nil outside a search.
     var find: RemoteChatFind.RowHighlight?
+    @Environment(\.openFilePath) private var openFilePath
+    private var links: Bool { openFilePath != nil }
     @ScaledMetric(relativeTo: .body) private var scale = ChatMetrics.scale
 
     var body: some View {
@@ -45,13 +47,13 @@ struct MarkdownBody: View {
         switch block {
         case .heading(let level, let text):
             let heading: CGFloat = (level == 1 ? 17 : level == 2 ? 15.5 : 14) * scale
-            Text(ChatMarkdown.inline(text).findHighlighted(segment: segment, find: find))
+            Text(ChatMarkdown.inline(text).linkingFilePaths(links).findHighlighted(segment: segment, find: find))
                 .font(.system(size: heading, weight: level <= 2 ? .bold : .semibold))
                 .padding(.top, 2)
         case .paragraph(let text):
-            Text(ChatMarkdown.inline(text).findHighlighted(segment: segment, find: find)).font(.system(size: size)).lineSpacing(2)
+            Text(ChatMarkdown.inline(text).linkingFilePaths(links).findHighlighted(segment: segment, find: find)).font(.system(size: size)).lineSpacing(2)
         case .quote(let text):
-            Text(ChatMarkdown.inline(text).findHighlighted(segment: segment, find: find)).font(.system(size: size)).lineSpacing(2).foregroundStyle(.secondary)
+            Text(ChatMarkdown.inline(text).linkingFilePaths(links).findHighlighted(segment: segment, find: find)).font(.system(size: size)).lineSpacing(2).foregroundStyle(.secondary)
                 .padding(.leading, 11)
                 .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 1.5).fill(Color.secondary.opacity(0.4)).frame(width: 3) }
         case .list(_, let items):
@@ -73,12 +75,14 @@ private struct ListRow: View {
     let size: CGFloat
     var segment = 0
     var find: RemoteChatFind.RowHighlight?
+    @Environment(\.openFilePath) private var openFilePath
+    private var links: Bool { openFilePath != nil }
 
     var body: some View {
         let task = item.task
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             marker(task: task).foregroundStyle(.secondary).frame(minWidth: item.marker.first?.isNumber == true && task == nil ? 18 : 10, alignment: .trailing)
-            Text(ChatMarkdown.inline(task?.text ?? item.text).findHighlighted(segment: segment, find: find)).font(.system(size: size)).lineSpacing(2)
+            Text(ChatMarkdown.inline(task?.text ?? item.text).linkingFilePaths(links).findHighlighted(segment: segment, find: find)).font(.system(size: size)).lineSpacing(2)
         }
         .padding(.leading, CGFloat(item.indent) * 14)
     }
@@ -137,6 +141,8 @@ private struct TableBlock: View {
     let size: CGFloat
     var segment = 0
     var find: RemoteChatFind.RowHighlight?
+    @Environment(\.openFilePath) private var openFilePath
+    private var links: Bool { openFilePath != nil }
 
     var body: some View {
         // The cells number from `segment`: the header first, then each row.
@@ -145,14 +151,14 @@ private struct TableBlock: View {
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
                 GridRow {
                     ForEach(Array(header.enumerated()), id: \.offset) { column, cell in
-                        Text(ChatMarkdown.inline(cell).findHighlighted(segment: segment + column, find: find)).fontWeight(.semibold)
+                        Text(ChatMarkdown.inline(cell).linkingFilePaths(links).findHighlighted(segment: segment + column, find: find)).fontWeight(.semibold)
                     }
                 }
                 Rectangle().fill(Color.primary.opacity(0.12)).frame(height: 1).gridCellColumns(max(header.count, 1))
                 ForEach(Array(rows.enumerated()), id: \.offset) { r, row in
                     GridRow {
                         ForEach(Array(row.enumerated()), id: \.offset) { column, cell in
-                            Text(ChatMarkdown.inline(cell).findHighlighted(segment: rowStarts[r] + column, find: find))
+                            Text(ChatMarkdown.inline(cell).linkingFilePaths(links).findHighlighted(segment: rowStarts[r] + column, find: find))
                         }
                     }
                 }
@@ -221,6 +227,8 @@ struct UserBubble: View {
     var expanded = false
     var onToggleExpand: () -> Void = {}
     var find: RemoteChatFind.RowHighlight?
+    @Environment(\.openFilePath) private var openFilePath
+    private var links: Bool { openFilePath != nil }
     @ScaledMetric(relativeTo: .body) private var scale = ChatMetrics.scale
 
     var body: some View {
@@ -229,7 +237,7 @@ struct UserBubble: View {
         VStack(alignment: .trailing, spacing: 3) {
             VStack(alignment: .leading, spacing: 6) {
                 if let reply = item.reply { ReplyQuote(reply: reply, onUser: true) }
-                Text(Self.linked(shown).findHighlighted(segment: 0, find: find)).font(.system(size: ChatMetrics.macBody * scale)).foregroundStyle(.white).tint(.white)
+                Text(Self.linked(shown).linkingFilePaths(links).findHighlighted(segment: 0, find: find)).font(.system(size: ChatMetrics.macBody * scale)).foregroundStyle(.white).tint(.white)
                     .textSelection(.enabled)
             }
             .padding(.horizontal, 12).padding(.vertical, 8)

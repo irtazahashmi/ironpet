@@ -35,6 +35,8 @@ public enum APIPath {
     public static func chatMessage(_ id: String) -> String { "/v1/chat/messages/\(id)" }
     /// The image of an attachment message, as raw bytes.
     public static func chatMessageFile(_ id: String) -> String { "/v1/chat/messages/\(id)/file" }
+    /// A preview of a file a reply named, by absolute path in the `path` query item.
+    public static let filePreview = "/v1/files/preview"
     public static let chatThreads = "/v1/chat/threads"
     public static func chatThread(_ id: String) -> String { "/v1/chat/threads/\(id)" }
     public static let chatSend = "/v1/chat/current/messages"

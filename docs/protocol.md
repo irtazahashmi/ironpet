@@ -462,6 +462,7 @@ audio, or an area that is not on the wire yet.
 | `GET /v1/chat/current` | `chat.snapshot` |
 | `GET /v1/chat/messages/:id` | none |
 | `GET /v1/chat/messages/:id/file` | none |
+| `GET /v1/files/preview` | none |
 | `GET /v1/chat/threads` | `chat.threads` |
 | `GET /v1/chat/threads/:id` | none |
 | `POST /v1/chat/current/messages` | `chat.send` |

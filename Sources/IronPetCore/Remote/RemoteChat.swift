@@ -193,6 +193,16 @@ package struct RemoteChat {
         return (data, RemoteResources.contentType(url.lastPathComponent), url.lastPathComponent)
     }
 
+    /// The preview of a file a reply named. It may come only from the open chat's folder, where the agent works. The scratch folder of a
+    /// general question is not one, and neither are the recent folders, which can be as wide as a home folder. See `RemoteFilePreview`.
+    package func filePreview(path: String) async throws -> FilePreview {
+        let options = await api.chat.options()
+        var roots: [String] = []
+        if let folder = options.folder, folder != ChatSession.scratchWorkspace.path { roots.append(folder) }
+        let file = try RemoteFilePreview.resolve(path, roots: roots)
+        return try await Task.detached { try RemoteFilePreview.read(file) }.value
+    }
+
     private static var unknownMessage: RemoteFailure { RemoteFailure(status: 404, code: "not_found", message: "no message with this id") }
 
     package func threads() async -> [String: Any] { ["threads": await api.chat.threads().map(Self.json)] }
