@@ -26,7 +26,7 @@ for name in ASC_KEY_FILE ASC_KEY_ID ASC_ISSUER_ID; do
 done
 AUTH=()
 if [ "$SET" -eq 3 ]; then
-  [ -f "$ASC_KEY_FILE" ] || { echo "error: ASC_KEY_FILE '$ASC_KEY_FILE' is not a file" >&2; exit 1; }
+  [ -s "$ASC_KEY_FILE" ] || { echo "error: ASC_KEY_FILE '$ASC_KEY_FILE' is missing or empty" >&2; exit 1; }
   AUTH=(-authenticationKeyPath "$ASC_KEY_FILE" -authenticationKeyID "$ASC_KEY_ID" -authenticationKeyIssuerID "$ASC_ISSUER_ID")
 elif [ "$SET" -ne 0 ]; then
   echo "error: set ASC_KEY_FILE, ASC_KEY_ID and ASC_ISSUER_ID together, or none of them" >&2
