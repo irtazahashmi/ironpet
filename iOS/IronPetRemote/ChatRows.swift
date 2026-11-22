@@ -155,13 +155,14 @@ private struct TableBlock: View {
 
 /// The quoted original: sender and the first two lines. On a user bubble it is white on a lighter fill.
 struct ReplyQuote: View {
+    @Environment(\.macAccent) private var macAccent
     let reply: RemoteChatReply
     var onUser = false
     @ScaledMetric(relativeTo: .caption) private var scale = ChatMetrics.scale
 
     var body: some View {
         HStack(spacing: 6) {
-            RoundedRectangle(cornerRadius: 1.5).fill(onUser ? Color.white.opacity(0.8) : Color.accentColor).frame(width: 3)
+            RoundedRectangle(cornerRadius: 1.5).fill(onUser ? Color.white.opacity(0.8) : macAccent).frame(width: 3)
             VStack(alignment: .leading, spacing: 1) {
                 Text(reply.sender).font(.system(size: 11 * scale, weight: .semibold))
                 // Only the start fits in two lines, and a quoted paste should not be laid out in full.
@@ -198,6 +199,7 @@ struct OriginBadge {
 
 /// Your message: an accent bubble with a small bottom trailing corner, the time and source under it, and "Show more" on a long one.
 struct UserBubble: View {
+    @Environment(\.macAccent) private var macAccent
     let item: RemoteChatItem
     let text: String
     var expanded = false
@@ -214,7 +216,7 @@ struct UserBubble: View {
                     .textSelection(.enabled)
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(Color.accentColor, in: UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: 16, bottomTrailingRadius: 5, topTrailingRadius: 16))
+            .background(macAccent, in: UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: 16, bottomTrailingRadius: 5, topTrailingRadius: 16))
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("bubble-\(item.id)")
             if let preview {
@@ -301,6 +303,7 @@ struct AssistantBubble: View {
 
 /// Reads a reply aloud, or stops it. Shows Stop while its reply is being read.
 private struct SpeakButton: View {
+    @Environment(\.macAccent) private var macAccent
     let readAloud: ReadAloud
     let scale: CGFloat
 
@@ -309,7 +312,7 @@ private struct SpeakButton: View {
         Button(action: readAloud.toggle) {
             Image(systemName: readAloud.active ? "stop.circle.fill" : "speaker.wave.2")
                 .font(.system(size: 12 * scale))
-                .foregroundStyle(readAloud.active ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
+                .foregroundStyle(readAloud.active ? AnyShapeStyle(macAccent) : AnyShapeStyle(.tertiary))
                 .frame(minWidth: 28, minHeight: 28)
                 .contentShape(Rectangle())
         }

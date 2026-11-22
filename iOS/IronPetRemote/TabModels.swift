@@ -1,6 +1,7 @@
 import Foundation
 import IronPetKit
 import Observation
+import SwiftUI
 import UIKit
 
 /// What every tab model does with the event socket: read it until `stop()`, reload when it opens or resyncs, and drop the token on a 401.
@@ -131,6 +132,12 @@ final class PetModel: SocketModel {
     var badge: Int { pet?.badge ?? 0 }
     /// The Mac's chat background: a built-in id, `default` or `custom`.
     var backgroundID: String { pet?.background ?? ChatBackgrounds.defaultID }
+    /// The Mac's accent colour for links and controls, or nil to keep the system blue.
+    var accent: Color? {
+        guard let pair = AccentColour.pair(of: pet) else { return nil }
+        func ui(_ c: AccentColour) -> UIColor { UIColor(red: c.red, green: c.green, blue: c.blue, alpha: 1) }
+        return Color(UIColor { $0.userInterfaceStyle == .dark ? ui(pair.dark) : ui(pair.light) })
+    }
 
     override func reload() async {
         await reloadPet(applyMood: true)

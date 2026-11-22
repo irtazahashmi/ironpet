@@ -14,16 +14,21 @@ public struct RemotePet: Codable, Equatable, Sendable {
     /// `pet.sprite` when the Mac has a sheet to download.
     public var sprite: String?
     public var backgroundAsset: String?
+    /// The Mac's accent colour as `#RRGGBB` in light mode, or nil when the Mac uses the system default (multicolour).
+    public var accent: String?
+    /// The same accent in dark mode. Nil when `accent` is nil.
+    public var accentDark: String?
 
     enum CodingKeys: String, CodingKey {
-        case name, mood, badge, tricks, background, sprite
+        case name, mood, badge, tricks, background, sprite, accent
         case backgroundAsset = "background_asset"
+        case accentDark = "accent_dark"
     }
 
     public init(name: String, mood: String = "idle", badge: Int = 0, tricks: [String] = [], background: String = "default",
-                sprite: String? = "pet.sprite", backgroundAsset: String? = nil) {
+                sprite: String? = "pet.sprite", backgroundAsset: String? = nil, accent: String? = nil, accentDark: String? = nil) {
         self.name = name; self.mood = mood; self.badge = badge; self.tricks = tricks; self.background = background
-        self.sprite = sprite; self.backgroundAsset = backgroundAsset
+        self.sprite = sprite; self.backgroundAsset = backgroundAsset; self.accent = accent; self.accentDark = accentDark
     }
 }
 

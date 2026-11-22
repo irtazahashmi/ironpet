@@ -109,6 +109,22 @@ final class PetModelTests: XCTestCase {
         model.stop()
     }
 
+    /// Step 3 of #190: the Mac's accent reaches the phone's tint, and a Mac that sends none leaves the system blue.
+    func testThePetModelTakesTheMacAccentAndKeepsTheDefaultWithoutOne() async {
+        let client = client()
+        let model = petModel(client, events(client))
+        model.start()
+        await waitUntil { model.pet != nil }
+        XCTAssertNil(model.accent, "no accent from the Mac means the system blue")
+        server.pet = RemotePet(name: "Ghost", accent: "#FF9500", accentDark: "#FF9F0A")
+        await model.reloadPet(applyMood: false)
+        XCTAssertNotNil(model.accent)
+        server.pet = RemotePet(name: "Ghost")
+        await model.reloadPet(applyMood: false)
+        XCTAssertNil(model.accent, "an accent the Mac stops sending goes back to the default")
+        model.stop()
+    }
+
     func testASheetWithoutTheDrinkingRowPlaysWavingAndTheSpriteChangesWithTheAssetsEvent() async {
         let client = client()
         let model = petModel(client, events(client))

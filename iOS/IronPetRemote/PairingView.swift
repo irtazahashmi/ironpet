@@ -3,6 +3,7 @@ import SwiftUI
 import UIKit
 
 struct PairingView: View {
+    @Environment(\.macAccent) private var macAccent
     let app: AppModel
     @State private var pairing: PairingModel
     @State private var scanning = false
@@ -82,8 +83,8 @@ struct PairingView: View {
             Text("\(number)")
                 .font(.caption.bold())
                 .frame(width: 24, height: 24)
-                .background(Color.accentColor.opacity(0.15), in: Circle())
-                .foregroundStyle(Color.accentColor)
+                .background(macAccent.opacity(0.15), in: Circle())
+                .foregroundStyle(macAccent)
             Text(text).font(.subheadline)
         }
     }

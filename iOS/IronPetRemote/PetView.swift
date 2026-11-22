@@ -127,6 +127,7 @@ struct PetView: View {
 
 /// A bubble on the Mac's screen. A bubble whose buttons decide something only the Mac may decide says so instead of showing them.
 struct BubbleCard: View {
+    @Environment(\.macAccent) private var macAccent
     let bubble: RemoteBubble
     let model: PetModel
 
@@ -143,7 +144,7 @@ struct BubbleCard: View {
                     ForEach(bubble.actions) { action in
                         Button(action.title, role: action.style == "destructive" ? .destructive : nil) { Task { await model.press(bubble, action) } }
                             .buttonStyle(.bordered)
-                            .tint(action.style == "primary" ? .accentColor : nil)
+                            .tint(action.style == "primary" ? macAccent : nil)
                             .accessibilityIdentifier("bubble-action-\(action.id)")
                     }
                 }

@@ -341,6 +341,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pet.meetingsAPI = api.meetings
         pet.events = events
         api.pet.stateProvider = { [weak pet] in pet?.state ?? PetState(mood: PetMood.idle.rawValue, badge: 0) }
+        api.pet.accentProvider = { MacAccent.current() }
         api.pet.trickNames = { PetController.Trick.allCases.map(\.rawValue) }
         api.pet.trickHandler = { [weak pet] name in
             guard let trick = PetController.Trick(rawValue: name), let pet else { return false }

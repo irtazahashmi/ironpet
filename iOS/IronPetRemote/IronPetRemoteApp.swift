@@ -114,6 +114,9 @@ struct MainTabs: View {
                 .tag(AppTab.more)
         }
         .environment(voice)
+        // The Mac's accent colour, when it has one. `nil` leaves the app's own tint, the system blue.
+        .tint(pet.accent)
+        .environment(\.macAccent, pet.accent ?? .accentColor)
         // The alert count and the waiting approvals are on their tabs before the user opens it.
         .task { alerts.start(); chat.start(); pet.start(); automations.start(); voice.onTranscript = { [chat] text, mode in if mode == .draft { chat.insertDictation(text) } }; voice.start() }
         // The five minutes count from the app going to the background, whichever screen is open. Watching only inside the Meetings
