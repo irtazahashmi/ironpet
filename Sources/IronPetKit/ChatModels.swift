@@ -217,7 +217,9 @@ public struct RemoteChatOptions: Codable, Equatable, Sendable {
     public struct Choice: Codable, Equatable, Hashable, Identifiable, Sendable {
         public var id: String
         public var name: String
-        public init(id: String, name: String) { self.id = id; self.name = name }
+        /// What the choice does, for a mode. Nil for an agent, model or folder.
+        public var detail: String?
+        public init(id: String, name: String, detail: String? = nil) { self.id = id; self.name = name; self.detail = detail }
     }
 
     public var agents: [Choice]
@@ -226,15 +228,15 @@ public struct RemoteChatOptions: Codable, Equatable, Sendable {
     public var folders: [Choice]
     /// The folder the chat works in, or nil for no project.
     public var folder: String?
-    public var autoMode: Bool
+    /// The permission modes the agent advertises, in the agent's order. Empty when the agent has none, or no session has started.
+    public var modes: [Choice]
+    /// The id of the mode in force, one of `modes`.
+    public var mode: String?
 
-    enum CodingKeys: String, CodingKey {
-        case agents, models, folders, folder
-        case autoMode = "auto_mode"
-    }
+    enum CodingKeys: String, CodingKey { case agents, models, folders, folder, modes, mode }
 
-    public init(agents: [Choice] = [], models: [Choice] = [], folders: [Choice] = [], folder: String? = nil, autoMode: Bool = false) {
-        self.agents = agents; self.models = models; self.folders = folders; self.folder = folder; self.autoMode = autoMode
+    public init(agents: [Choice] = [], models: [Choice] = [], folders: [Choice] = [], folder: String? = nil, modes: [Choice] = [], mode: String? = nil) {
+        self.agents = agents; self.models = models; self.folders = folders; self.folder = folder; self.modes = modes; self.mode = mode
     }
 
     public init(from decoder: Decoder) throws {
@@ -243,7 +245,8 @@ public struct RemoteChatOptions: Codable, Equatable, Sendable {
         models = try c.decodeIfPresent(Lossy<Choice>.self, forKey: .models)?.elements ?? []
         folders = try c.decodeIfPresent(Lossy<Choice>.self, forKey: .folders)?.elements ?? []
         folder = try c.decodeIfPresent(String.self, forKey: .folder)
-        autoMode = try c.decodeIfPresent(Bool.self, forKey: .autoMode) ?? false
+        modes = try c.decodeIfPresent(Lossy<Choice>.self, forKey: .modes)?.elements ?? []
+        mode = try c.decodeIfPresent(String.self, forKey: .mode)
     }
 }
 
@@ -254,10 +257,11 @@ public struct RemoteChatOptionsChange: Equatable, Sendable {
     public var model: String??
     public var folder: String?
     public var noProject = false
-    public var autoMode: Bool?
+    /// The id of one of the agent's modes.
+    public var mode: String?
 
-    public init(agent: String? = nil, model: String?? = nil, folder: String? = nil, noProject: Bool = false, autoMode: Bool? = nil) {
-        self.agent = agent; self.model = model; self.folder = folder; self.noProject = noProject; self.autoMode = autoMode
+    public init(agent: String? = nil, model: String?? = nil, folder: String? = nil, noProject: Bool = false, mode: String? = nil) {
+        self.agent = agent; self.model = model; self.folder = folder; self.noProject = noProject; self.mode = mode
     }
 
     var json: [String: Any] {
@@ -266,7 +270,7 @@ public struct RemoteChatOptionsChange: Equatable, Sendable {
         if let model { body["model"] = model ?? NSNull() }
         if let folder { body["folder"] = folder }
         if noProject { body["no_project"] = true }
-        if let autoMode { body["auto_mode"] = autoMode }
+        if let mode { body["mode"] = mode }
         return body
     }
 }
