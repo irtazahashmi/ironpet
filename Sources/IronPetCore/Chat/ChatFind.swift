@@ -31,22 +31,7 @@ package enum ChatFind {
     }
 
     /// Character ranges of every non-overlapping occurrence of `query` in `text`.
-    package static func ranges(of query: String, in text: String) -> [Range<Int>] {
-        guard !query.isEmpty, !text.isEmpty else { return [] }
-        let options: String.CompareOptions = [.caseInsensitive, .diacriticInsensitive]
-        var result: [Range<Int>] = []
-        var from = text.startIndex
-        var offset = 0
-        while from < text.endIndex, let found = text.range(of: query, options: options, range: from..<text.endIndex) {
-            guard !found.isEmpty else { break }
-            let lower = offset + text.distance(from: from, to: found.lowerBound)
-            let upper = lower + text.distance(from: found.lowerBound, to: found.upperBound)
-            result.append(lower..<upper)
-            offset = upper
-            from = found.upperBound
-        }
-        return result
-    }
+    package static func ranges(of query: String, in text: String) -> [Range<Int>] { ChatFindText.ranges(of: query, in: text) }
 
     /// The text of each piece an item shows, in reading order. These are the strings that are drawn,
     /// so markdown markers are not searchable and a match always has something to highlight.
@@ -87,28 +72,15 @@ package enum ChatFind {
     }
 
     /// The index after stepping `delta` from `current`, wrapping at both ends. Nil when there are no matches.
-    package static func step(from current: Int?, count: Int, by delta: Int) -> Int? {
-        guard count > 0 else { return nil }
-        guard let current, (0..<count).contains(current) else { return delta >= 0 ? 0 : count - 1 }
-        return ((current + delta) % count + count) % count
-    }
+    package static func step(from current: Int?, count: Int, by delta: Int) -> Int? { ChatFindText.step(from: current, count: count, by: delta) }
 
-    /// Where the current match sits after the matches were recomputed. It keeps the same match when it still
-    /// exists, so a streaming reply does not move the reader. Otherwise it falls back to the first match.
-    /// When a streaming reply renumbers the current match away, `previousIndex` keeps the reader's place.
+    /// Where the current match sits after the matches were recomputed, see `ChatFindText.reconcile`.
     package static func reconcile(current: Match?, previousIndex: Int? = nil, in matches: [Match]) -> Int? {
-        guard !matches.isEmpty else { return nil }
-        if let current, let index = matches.firstIndex(of: current) { return index }
-        if current != nil, let previousIndex { return min(max(previousIndex, 0), matches.count - 1) }
-        return 0
+        ChatFindText.reconcile(current: current, previousIndex: previousIndex, in: matches)
     }
 
     /// The label in the find bar.
-    package static func label(query: String, count: Int, index: Int?) -> String {
-        if query.isEmpty { return "" }
-        guard count > 0, let index else { return "No results" }
-        return "\(index + 1) of \(count)"
-    }
+    package static func label(query: String, count: Int, index: Int?) -> String { ChatFindText.label(query: query, count: count, index: index) }
 
     /// Per item highlight info for the rows that hold a match.
     package static func highlights(query: String, matches: [Match], current: Match?) -> [UUID: RowHighlight] {

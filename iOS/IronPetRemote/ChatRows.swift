@@ -23,41 +23,45 @@ enum ChatMetrics {
 /// A reply's markdown as views: headings, paragraphs, lists, quotes, code blocks, tables and rules, with the Mac's sizes and spacing.
 struct MarkdownBody: View {
     let text: String
+    /// The highlights of Find in chat. Nil outside a search.
+    var find: RemoteChatFind.RowHighlight?
     @ScaledMetric(relativeTo: .body) private var scale = ChatMetrics.scale
 
     var body: some View {
         let blocks = ChatMarkdown.parse(text)
+        // Each block draws as many pieces of text as `ChatMarkdown.segments` lists, and a match names its piece by that numbering.
+        let starts = find == nil ? [] : blocks.reduce(into: [0]) { $0.append($0.last! + ChatMarkdown.segments(of: $1).count) }
         VStack(alignment: .leading, spacing: 8) {
-            ForEach(Array(blocks.enumerated()), id: \.offset) { _, block in
-                view(for: block)
+            ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
+                view(for: block, segment: starts.isEmpty ? 0 : starts[index])
             }
         }
         .textSelection(.enabled)
     }
 
     @ViewBuilder
-    private func view(for block: ChatMarkdown.Block) -> some View {
+    private func view(for block: ChatMarkdown.Block, segment: Int) -> some View {
         let size = ChatMetrics.macBody * scale
         switch block {
         case .heading(let level, let text):
             let heading: CGFloat = (level == 1 ? 17 : level == 2 ? 15.5 : 14) * scale
-            Text(ChatMarkdown.inline(text))
+            Text(ChatMarkdown.inline(text).findHighlighted(segment: segment, find: find))
                 .font(.system(size: heading, weight: level <= 2 ? .bold : .semibold))
                 .padding(.top, 2)
         case .paragraph(let text):
-            Text(ChatMarkdown.inline(text)).font(.system(size: size)).lineSpacing(2)
+            Text(ChatMarkdown.inline(text).findHighlighted(segment: segment, find: find)).font(.system(size: size)).lineSpacing(2)
         case .quote(let text):
-            Text(ChatMarkdown.inline(text)).font(.system(size: size)).lineSpacing(2).foregroundStyle(.secondary)
+            Text(ChatMarkdown.inline(text).findHighlighted(segment: segment, find: find)).font(.system(size: size)).lineSpacing(2).foregroundStyle(.secondary)
                 .padding(.leading, 11)
                 .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 1.5).fill(Color.secondary.opacity(0.4)).frame(width: 3) }
         case .list(_, let items):
             VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(items.enumerated()), id: \.offset) { _, item in ListRow(item: item, size: size) }
+                ForEach(Array(items.enumerated()), id: \.offset) { index, item in ListRow(item: item, size: size, segment: segment + index, find: find) }
             }
         case .code(let language, let code, _):
-            CodeBlock(language: language, code: code, size: 12 * scale)
+            CodeBlock(language: language, code: code, size: 12 * scale, segment: segment, find: ChatMarkdown.segments(of: block).isEmpty ? nil : find)
         case .table(let header, let rows):
-            TableBlock(header: header, rows: rows, size: size)
+            TableBlock(header: header, rows: rows, size: size, segment: segment, find: find)
         case .rule:
             Rectangle().fill(Color.primary.opacity(0.12)).frame(height: 1).padding(.vertical, 2)
         }
@@ -67,12 +71,14 @@ struct MarkdownBody: View {
 private struct ListRow: View {
     let item: ChatMarkdown.ListItem
     let size: CGFloat
+    var segment = 0
+    var find: RemoteChatFind.RowHighlight?
 
     var body: some View {
         let task = item.task
         HStack(alignment: .firstTextBaseline, spacing: 6) {
             marker(task: task).foregroundStyle(.secondary).frame(minWidth: item.marker.first?.isNumber == true && task == nil ? 18 : 10, alignment: .trailing)
-            Text(ChatMarkdown.inline(task?.text ?? item.text)).font(.system(size: size)).lineSpacing(2)
+            Text(ChatMarkdown.inline(task?.text ?? item.text).findHighlighted(segment: segment, find: find)).font(.system(size: size)).lineSpacing(2)
         }
         .padding(.leading, CGFloat(item.indent) * 14)
     }
@@ -93,6 +99,8 @@ private struct CodeBlock: View {
     let language: String?
     let code: String
     let size: CGFloat
+    var segment = 0
+    var find: RemoteChatFind.RowHighlight?
     @State private var copied = false
 
     var body: some View {
@@ -112,7 +120,7 @@ private struct CodeBlock: View {
             }
             .padding(.horizontal, 10).padding(.top, 6)
             ScrollView(.horizontal, showsIndicators: false) {
-                Text(code).font(.system(size: size, design: .monospaced)).fixedSize()
+                Text(AttributedString(code).findHighlighted(segment: segment, find: find)).font(.system(size: size, design: .monospaced)).fixedSize()
                     .padding(.horizontal, 10).padding(.top, 4).padding(.bottom, 9)
             }
         }
@@ -127,17 +135,25 @@ private struct TableBlock: View {
     let header: [String]
     let rows: [[String]]
     let size: CGFloat
+    var segment = 0
+    var find: RemoteChatFind.RowHighlight?
 
     var body: some View {
+        // The cells number from `segment`: the header first, then each row.
+        let rowStarts = rows.reduce(into: [segment + header.count]) { $0.append($0.last! + $1.count) }
         ScrollView(.horizontal, showsIndicators: false) {
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
                 GridRow {
-                    ForEach(Array(header.enumerated()), id: \.offset) { _, cell in Text(ChatMarkdown.inline(cell)).fontWeight(.semibold) }
+                    ForEach(Array(header.enumerated()), id: \.offset) { column, cell in
+                        Text(ChatMarkdown.inline(cell).findHighlighted(segment: segment + column, find: find)).fontWeight(.semibold)
+                    }
                 }
                 Rectangle().fill(Color.primary.opacity(0.12)).frame(height: 1).gridCellColumns(max(header.count, 1))
-                ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                ForEach(Array(rows.enumerated()), id: \.offset) { r, row in
                     GridRow {
-                        ForEach(Array(row.enumerated()), id: \.offset) { _, cell in Text(ChatMarkdown.inline(cell)) }
+                        ForEach(Array(row.enumerated()), id: \.offset) { column, cell in
+                            Text(ChatMarkdown.inline(cell).findHighlighted(segment: rowStarts[r] + column, find: find))
+                        }
                     }
                 }
             }
@@ -204,6 +220,7 @@ struct UserBubble: View {
     let text: String
     var expanded = false
     var onToggleExpand: () -> Void = {}
+    var find: RemoteChatFind.RowHighlight?
     @ScaledMetric(relativeTo: .body) private var scale = ChatMetrics.scale
 
     var body: some View {
@@ -212,7 +229,7 @@ struct UserBubble: View {
         VStack(alignment: .trailing, spacing: 3) {
             VStack(alignment: .leading, spacing: 6) {
                 if let reply = item.reply { ReplyQuote(reply: reply, onUser: true) }
-                Text(Self.linked(shown)).font(.system(size: ChatMetrics.macBody * scale)).foregroundStyle(.white).tint(.white)
+                Text(Self.linked(shown).findHighlighted(segment: 0, find: find)).font(.system(size: ChatMetrics.macBody * scale)).foregroundStyle(.white).tint(.white)
                     .textSelection(.enabled)
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
@@ -279,13 +296,14 @@ struct AssistantBubble: View {
     let text: String
     var avatar: CGImage?
     var readAloud: ReadAloud?
+    var find: RemoteChatFind.RowHighlight?
     @ScaledMetric(relativeTo: .caption) private var scale = ChatMetrics.scale
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
             PetAvatar(image: avatar, size: 24)
             VStack(alignment: .leading, spacing: 3) {
-                MarkdownBody(text: text)
+                MarkdownBody(text: text, find: find)
                     .padding(.top, 3)
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("bubble-\(item.id)")
