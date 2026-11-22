@@ -1,7 +1,7 @@
-name: TestFlight
+name: TestFlight iOS
 
 # Archives IronPet Remote (the iPhone app and its widget) and uploads it to TestFlight. Run it from the Actions tab on main;
-# the run waits for the required reviewer of the `testflight` environment, then builds with scripts/ios_testflight.sh.
+# the run waits for one of the required reviewers of the `testflight` environment, then builds with scripts/ios_testflight.sh.
 #
 # It signs with Apple's cloud-managed signing through an App Store Connect API key, so there is no certificate or provisioning
 # profile to store. Three secrets, in the `testflight` environment and NOT as repository secrets (a repository secret would
@@ -9,7 +9,7 @@ name: TestFlight
 #   ASC_KEY_P8     base64 of the App Store Connect API key (.p8), a key made for iOS with a role that allows cloud signing
 #   ASC_KEY_ID     that key's ID
 #   ASC_ISSUER_ID  the issuer ID shown above the keys in App Store Connect
-# The environment admits only main and has a required reviewer; CONTRIBUTING.md > iOS app has the setup. It never runs for
+# The environment admits only main and has required reviewers; CONTRIBUTING.md > iOS app has the setup. It never runs for
 # pull requests, tags or pushes. The actions are pinned to commits because this job holds the key; ci.yml, which holds no
 # secrets, uses tags. The job has a read-only token and cannot write to the repository.
 
