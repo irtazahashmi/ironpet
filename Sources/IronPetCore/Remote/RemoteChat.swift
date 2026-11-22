@@ -170,6 +170,29 @@ package struct RemoteChat {
         return Self.json(try await api.chat.message(uuid))
     }
 
+    /// The most bytes of one image the route sends. Uploads stop at 20 MiB, and a Mac screenshot is smaller than that.
+    package nonisolated static let maxFileBytes = RemoteUploads.maxBytes
+
+    /// The image behind a message of kind `screenshot`: a file the user attached on the Mac or a screenshot it took. The client names a
+    /// message of the open chat, never a path, so the route can read only a file the chat already holds. A message that is not an
+    /// image attachment, or whose file is gone, is a 404 with a reason the phone can show.
+    package func file(_ id: String) async throws -> (data: Data, contentType: String, name: String) {
+        guard let uuid = UUID(uuidString: id) else { throw Self.unknownMessage }
+        let item = try await api.chat.message(uuid)
+        guard case .screenshot(let path) = item.kind else {
+            throw RemoteFailure(status: 404, code: "not_found", message: "this message has no attachment")
+        }
+        let url = URL(fileURLWithPath: path)
+        guard FolderFileIntake.isImageFile(url) else {
+            throw RemoteFailure(status: 404, code: "not_found", message: "this attachment is not an image")
+        }
+        let size = (try? FileManager.default.attributesOfItem(atPath: url.path)[.size] as? Int) ?? nil
+        guard let size else { throw RemoteFailure(status: 404, code: "not_found", message: "the file is no longer on the Mac") }
+        guard size <= Self.maxFileBytes else { throw RemoteFailure(status: 413, code: "too_large", message: "the image is too large to send to the phone") }
+        let data = try await Task.detached { try Data(contentsOf: url) }.value
+        return (data, RemoteResources.contentType(url.lastPathComponent), url.lastPathComponent)
+    }
+
     private static var unknownMessage: RemoteFailure { RemoteFailure(status: 404, code: "not_found", message: "no message with this id") }
 
     package func threads() async -> [String: Any] { ["threads": await api.chat.threads().map(Self.json)] }

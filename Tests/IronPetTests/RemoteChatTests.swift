@@ -475,6 +475,67 @@ final class RemoteChatTests: XCTestCase {
         XCTAssertEqual(empty.status, 400)
     }
 
+    /// Sends one upload and returns the id of the attachment message it made.
+    private func sentAttachment(_ data: Data, name: String) async throws -> (id: String, stored: String) {
+        let saved = try await upload(data, name: name)
+        let sent = try await post("/v1/chat/current/messages", ["text": "look", "upload_ids": [saved.json["id"] as! String]])
+        XCTAssertEqual(sent.json["outcome"] as? String, "sent")
+        await settle()
+        let current = try await get("/v1/chat/current")
+        let shot = try XCTUnwrap(items(current).first { $0["kind"] as? String == "screenshot" })
+        return (shot["id"] as! String, shot["file_name"] as! String)
+    }
+
+    /// Step 4 of #190: the phone fetches the image behind an attachment message, with the device's token and nothing else.
+    func testAnAttachmentImageStreamsToAPairedDeviceAndToNoOneElse() async throws {
+        let bytes = Data((0..<4096).map { UInt8($0 % 251) })
+        let shot = try await sentAttachment(bytes, name: "screen.png")
+        let path = "/v1/chat/messages/\(shot.id)/file"
+
+        let fetched = try await get(path)
+        XCTAssertEqual(fetched.status, 200)
+        XCTAssertEqual(fetched.data, bytes)
+        XCTAssertEqual(fetched.headers["content-type"], "image/png")
+        XCTAssertEqual(fetched.headers["cache-control"], "no-store")
+
+        let anonymous = try await h.request("GET", path)
+        XCTAssertEqual(anonymous.status, 401, "an unpaired request is refused")
+        XCTAssertNotEqual(anonymous.data, bytes)
+        let forged = try await h.request("GET", path, token: "not-a-token")
+        XCTAssertEqual(forged.status, 401)
+
+        let other = try await h.pairDevice(name: "Other phone")
+        let second = try await h.request("GET", path, token: other.token)
+        XCTAssertEqual(second.status, 200, "every paired device reads the one shared chat")
+    }
+
+    func testTheFileRouteSendsOnlyImagesOfTheOpenChatAndNeverReadsAPathTheClientNames() async throws {
+        let text = try await sentAttachment(Data("hello".utf8), name: "notes.txt")
+        let notImage = try await get("/v1/chat/messages/\(text.id)/file")
+        XCTAssertEqual(notImage.status, 404)
+        XCTAssertEqual((notImage.json["error"] as? [String: Any])?["code"] as? String, "not_found")
+
+        let current = try await get("/v1/chat/current")
+        let user = try XCTUnwrap(items(current).first { $0["kind"] as? String == "user" })
+        let message = try await get("/v1/chat/messages/\(user["id"] as! String)/file")
+        XCTAssertEqual(message.status, 404, "a text message has no file")
+        let unknown = try await get("/v1/chat/messages/\(UUID().uuidString)/file")
+        XCTAssertEqual(unknown.status, 404)
+        let traversal = try await get("/v1/chat/messages/..%2F..%2Fetc%2Fpasswd/file")
+        XCTAssertEqual(traversal.status, 404)
+        let byPath = try await get("/v1/chat/messages/\(text.stored)/file")
+        XCTAssertEqual(byPath.status, 404, "a stored file name is not a message id")
+    }
+
+    func testAnImageThatIsGoneFromTheMacIsA404NotACrash() async throws {
+        let shot = try await sentAttachment(Data(repeating: 9, count: 64), name: "gone.png")
+        let folder = uploads.appendingPathComponent(deviceID)
+        for file in try FileManager.default.contentsOfDirectory(atPath: folder.path) { try FileManager.default.removeItem(at: folder.appendingPathComponent(file)) }
+        let reply = try await get("/v1/chat/messages/\(shot.id)/file")
+        XCTAssertEqual(reply.status, 404)
+        XCTAssertTrue(((reply.json["error"] as? [String: Any])?["message"] as? String ?? "").contains("no longer on the Mac"), "\(reply.json)")
+    }
+
     func testTheAccessLogHoldsNoMessageTextOrFileName() async throws {
         _ = try await upload(Data(repeating: 1, count: 10), name: "secret-name.png")
         _ = try await post("/v1/chat/current/messages", ["text": "my secret text"])

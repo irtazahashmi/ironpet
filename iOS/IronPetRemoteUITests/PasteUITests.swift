@@ -173,6 +173,43 @@ final class PasteUITests: XCTestCase {
         attach("sent-image")
     }
 
+    // Step 4 of #190: a Mac screenshot in the chat is a thumbnail on the phone, and a tap opens it full size.
+    func testAMacScreenshotShowsAsAThumbnailAndOpensFullSize() {
+        let name = "ab12cd34-Screen Shot.png"
+        let size = CGSize(width: 1200, height: 800)
+        let format = UIGraphicsImageRendererFormat(); format.scale = 1
+        server.setChatImage(UIGraphicsImageRenderer(size: size, format: format).pngData { context in
+            UIColor.systemTeal.setFill(); context.fill(CGRect(origin: .zero, size: size))
+        }, for: "shot-1")
+        var snapshot = server.chat
+        snapshot.items.append(RemoteChatItem(id: "shot-1", kind: "screenshot", fileName: name, isImage: true))
+        server.chat = snapshot
+        pair()
+        openChat()
+        let photo = any("photo-\(name)")
+        XCTAssertTrue(photo.waitForExistence(timeout: 20), "the Mac's screenshot shows as a thumbnail")
+        XCTAssertFalse(any("chip-\(name)").exists, "the chip is gone")
+        attach("mac-screenshot-thumbnail")
+        photo.tap()
+        XCTAssertTrue(any("image-viewer-picture").waitForExistence(timeout: 10), "a tap opens the full image")
+        attach("mac-screenshot-full")
+        app.buttons["image-viewer-done"].firstMatch.tap()
+        XCTAssertTrue(any("image-viewer-picture").waitForNonExistence(timeout: 10))
+        XCTAssertEqual(server.count("GET /v1/chat/messages/shot-1/file"), 1, "one download serves the thumbnail and the full picture")
+    }
+
+    func testAMacScreenshotTheMacNoLongerHasKeepsTheChipAndSaysWhy() {
+        let name = "ab12cd34-Gone.png"
+        var snapshot = server.chat
+        snapshot.items.append(RemoteChatItem(id: "shot-gone", kind: "screenshot", fileName: name, isImage: true))
+        server.chat = snapshot
+        pair()
+        openChat()
+        let chip = any("chip-\(name)")
+        XCTAssertTrue(chip.waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["the file is no longer on the Mac"].waitForExistence(timeout: 10))
+    }
+
     // S9, S13
     func testComposerStatesInLight() { composerStates() }
     func testComposerStatesInDark() { dark = true; composerStates() }

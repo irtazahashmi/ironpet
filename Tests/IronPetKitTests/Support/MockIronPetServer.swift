@@ -52,6 +52,8 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _uploadFails = false
     private var _brokenRoutes: [String: Int] = [:]
     private var _uploads: [String: Data] = [:]
+    private var _chatImages: [String: Data] = [:]
+    private var _chatImageHits = 0
     private var _uploadNames: [String: String] = [:]
     private var _uploadDelay: TimeInterval = 0
     private var _sendFails = false
@@ -163,6 +165,10 @@ final class MockIronPetServer: @unchecked Sendable {
     var uploadFails: Bool { get { lock.lock(); defer { lock.unlock() }; return _uploadFails } set { lock.lock(); _uploadFails = newValue; lock.unlock() } }
     /// Seconds the mock waits before it answers an upload, to look at the app while a send is in flight.
     var uploadDelay: TimeInterval { get { lock.lock(); defer { lock.unlock() }; return _uploadDelay } set { lock.lock(); _uploadDelay = newValue; lock.unlock() } }
+    /// The bytes `GET /v1/chat/messages/:id/file` serves for a message id. A message without them gets the Mac's 404 for a missing file.
+    func setChatImage(_ data: Data?, for id: String) { lock.lock(); _chatImages[id] = data; lock.unlock() }
+    /// How many times the file route was asked for an image, to show that a screenshot is fetched once.
+    var chatImageRequests: Int { lock.lock(); defer { lock.unlock() }; return _chatImageHits }
     /// The next sends answer 500 while this is true.
     var sendFails: Bool { get { lock.lock(); defer { lock.unlock() }; return _sendFails } set { lock.lock(); _sendFails = newValue; lock.unlock() } }
     /// Seconds the Mac takes to answer a send after it has recorded the message.
@@ -569,6 +575,10 @@ extension MockIronPetServer {
             guard let mode = request.json["mode"] as? String else { respond(connection, 200, Data("{\"changed\":true}".utf8)); return true }
             lock.lock(); let known = _chat.options.modes.contains { $0.id == mode }; if known { _chat.options.mode = mode }; lock.unlock()
             if known { respond(connection, 200, Data("{\"changed\":true}".utf8)) } else { fail(connection, 400, "invalid", "choose one of the modes the agent offers") }
+        case (5, "messages") where get && parts[4] == "file":
+            lock.lock(); let image = _chatImages[parts[3]]; _chatImageHits += 1; lock.unlock()
+            guard let image else { fail(connection, 404, "not_found", "the file is no longer on the Mac"); return true }
+            respond(connection, 200, image)
         case (3, "threads") where get: respond(connection, 200, ChatThreadListResponse(threads: chatThreads))
         case (4, "threads") where get:
             lock.lock(); let items = _threadItems[parts[3]]; lock.unlock()
