@@ -538,9 +538,9 @@ final class DesktopControlTests: XCTestCase {
 
     func testDesktopToolsAskInTheChatUnlessAutoIsOn() {
         let call = ACPToolCall(id: "1", title: "mcp__ironpet__desktop_press", kind: "other", rawInput: ["ref": "#abc"])
-        if case .allow = ApprovalRules.policy(for: call, auto: false) { XCTFail("a desktop action must ask in the chat") }
+        if case .allow = ApprovalRules.policy(for: call) { XCTFail("a desktop action must ask in the chat") }
         let find = ACPToolCall(id: "1", title: "mcp__ironpet__desktop_find", kind: "other", rawInput: ["app": "Notes"])
-        if case .allow = ApprovalRules.policy(for: find, auto: false) { XCTFail("reading another app must ask in the chat") }
+        if case .allow = ApprovalRules.policy(for: find) { XCTFail("reading another app must ask in the chat") }
     }
 
     // MARK: S6

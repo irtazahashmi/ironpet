@@ -60,13 +60,13 @@
       }
     },
     {
-      "name" : "auto mode on",
+      "name" : "pick a mode",
       "request" : {
         "id" : 4,
         "jsonrpc" : "2.0",
-        "method" : "chat.setAutoMode",
+        "method" : "chat.setMode",
         "params" : {
-          "on" : true
+          "id" : "plan"
         }
       },
       "response" : {

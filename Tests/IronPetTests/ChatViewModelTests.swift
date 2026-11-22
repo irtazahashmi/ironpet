@@ -68,10 +68,11 @@ final class ChatViewModelTests: XCTestCase {
     }
 
     func testOptionsChangesReachTheWindow() async throws {
-        await h.api.setAutoMode(true)
+        h.session.receiveModes(current: "default", modes: [AgentMode(id: "default", name: "Default"), AgentMode(id: "plan", name: "Plan")])
         await h.api.setModel("fast")
         await settle()
-        XCTAssertTrue(h.model.autoMode)
+        XCTAssertEqual(h.model.modes.map(\.id), ["default", "plan"])
+        XCTAssertEqual(h.model.mode, "default")
         XCTAssertEqual(h.model.model, "fast")
         h.session.receiveCommands([SlashCommand(name: "compact", detail: "Shrink")])
         await settle()

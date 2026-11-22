@@ -142,19 +142,20 @@ package final class ChatSession {
     package nonisolated static let voiceOrigin = ChatOrigin.voiceClient
 
     package struct Approval: Identifiable {
-        package init(title: String, detail: String, responders: [(ApprovalDecision) -> Void]) {
+        package init(title: String, detail: String, options: [PermissionOption] = [], responders: [(ApprovalDecision) -> Void]) {
             self.title = title
             self.detail = detail
+            self.options = options
             self.responders = responders
         }
 
         package let id = UUID()
         package let title: String
         package let detail: String
-        /// Identical requests share one card and one decision.
+        /// Exactly the answers the agent offered. Empty for a request that came without any.
+        package let options: [PermissionOption]
+        /// One request, one card, one answer: the option ids belong to the request that offered them.
         package var responders: [(ApprovalDecision) -> Void]
-
-        package var key: String { title + "\u{0}" + detail }
 
         package func respond(_ decision: ApprovalDecision) {
             responders.forEach { $0(decision) }
@@ -216,13 +217,38 @@ package final class ChatSession {
         willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "options") }
     }
-    package var autoMode = false {
+    /// The permission mode the agent reported for this chat's session, and every mode it advertises. Both are empty until the session
+    /// starts. The chat offers exactly those modes and adds none.
+    package private(set) var agentMode: String? {
         willSet { changes.send() }
-        didSet {
-            if persists { UserDefaults.standard.set(autoMode, forKey: Self.autoKey) }
-            events?.publish(.chatState, id: "options")
-        }
+        didSet { events?.publish(.chatState, id: "options") }
     }
+    package private(set) var agentModes: [AgentMode] = [] {
+        willSet { changes.send() }
+        didSet { events?.publish(.chatState, id: "options") }
+    }
+
+    private static func modeKey(_ agent: ACPAgent) -> String { "chatMode.\(agent.id)" }
+
+    /// The mode the user picked for the current agent, kept across new chats, saved threads and restarts. Nil means the agent's own
+    /// default, which is the mode the user set up in that agent (Claude Code reads `permissions.defaultMode`).
+    package var pickedMode: String? {
+        UserDefaults.standard.string(forKey: Self.modeKey(agent))
+    }
+
+    /// The user picked one of the agent's modes. Saved per agent, and applied to the open session at once.
+    package func setMode(_ id: String) {
+        guard agentModes.isEmpty || agentModes.contains(where: { $0.id == id }) else { return }
+        if persists { UserDefaults.standard.set(id, forKey: Self.modeKey(agent)) }
+        ChatLog.note("\(agent.name): user picked mode \(id)")
+        if let acp { Task { await acp.setMode(id) } } else { agentMode = id }
+    }
+
+    package func receiveModes(current: String?, modes: [AgentMode]) {
+        agentModes = modes
+        agentMode = current
+    }
+
     package private(set) var state: State = .idle {
         willSet { changes.send() }
         didSet { if state != oldValue { events?.publish(.chatState) } }
@@ -361,7 +387,6 @@ package final class ChatSession {
     /// False for preview sessions, so rendering screenshots neither reads nor overwrites the real chat.
     private let persists: Bool
     private static let threadKey = "chatThread"
-    private static let autoKey = "chatAutoMode"
     private var acp: ACPBackend?
     /// Ignores events from a turn the user stopped.
     private var turnID: UUID?
@@ -386,7 +411,6 @@ package final class ChatSession {
     /// The reply item that late updates extend, so a later result starts its own item.
     private var backgroundReply: UUID?
     /// Decisions made during the current run, so a repeated identical check isn't asked twice.
-    private var decided: [String: Bool] = [:]
     /// Reads replies aloud. The Mac passes its speech player; without one nothing is spoken.
     package let speech: SpeechOutput
     private var speechChanges: [ChangeToken] = []
@@ -400,8 +424,7 @@ package final class ChatSession {
     package static let scratchWorkspace = Paths.root.appendingPathComponent("scratch")
 
     /// `restore` reopens the chat that was open when the app last quit: its thread, folder and backend,
-    /// plus the unsent draft and attachments. Auto mode comes back only for that same chat; a new chat or
-    /// one opened from history still starts with Auto off.
+    /// plus the unsent draft and attachments. The picked permission mode is kept per agent, not per chat.
     /// Starts the agent's process and the probes. `AppDelegate` sets the Mac one right after creating the session.
     package var spawner: ProcessSpawner = UnsupportedProcessSpawner()
 
@@ -440,7 +463,6 @@ package final class ChatSession {
 
     private func restoreLastChat() {
         let defaults = UserDefaults.standard
-        autoMode = defaults.bool(forKey: Self.autoKey)
         if let id = defaults.string(forKey: Self.threadKey), let thread = ThreadStore.load(id) {
             apply(thread.restoredAfterQuit(), reason: "restore after launch")
         }
@@ -679,7 +701,7 @@ package final class ChatSession {
         return "> \(lead) \(owner) message\(when):\n\(quoted)\n\n\(text)"
     }
 
-    /// Auto mode is not touched: it is the user's setting, not part of a chat.
+    /// The picked permission mode is not touched: it is kept per agent, not per chat.
     package func newChat(reason: String = "new chat requested") {
         ChatLog.note("chat cleared (\(items.count) items, thread \(threadID ?? "none")): \(reason)")
         if let threadID { onThreadLeft?(threadID) }
@@ -860,7 +882,6 @@ package final class ChatSession {
         activity = "Thinking"
         runStartedAt = Date()
         lastRunDuration = nil
-        decided = [:]
         let id = UUID()
         turnID = id
         if let turnRunner {
@@ -1132,6 +1153,10 @@ package final class ChatSession {
         backend.onElicitation = { [weak self] form, respond in self?.handleElicitation(form, respond: respond) }
         backend.onBackground = { [weak self] event in self?.handleBackground(event) }
         backend.onPromptSent = { [weak self] in self?.steerNext() }
+        backend.onModes = { [weak self] current, modes in self?.receiveModes(current: current, modes: modes) }
+        backend.preferredMode = pickedMode
+        agentModes = []
+        agentMode = nil
         acp = backend
         return backend
     }
@@ -1188,13 +1213,26 @@ package final class ChatSession {
         decide(id: approval.id, allow: allow)
     }
 
+    /// Allow or deny from a client that has no option buttons (Telegram, the phone): the agent's once-only option of that kind, or
+    /// its first one of that kind.
     package func decide(id: UUID, allow: Bool) {
         guard let current = approvals.first(where: { $0.id == id }) else { return }
-        approvals.removeAll { $0.id == id }
-        decided[current.key] = allow
-        current.respond(allow ? .allow : .deny())
-        onApprovalResolved?(id)
-        if let origin = turnOrigin { onTurn?(origin, .approvalDecided(id: id, outcome: allow ? .allowed : .denied)) }
+        let prefix = allow ? "allow" : "reject"
+        let option = current.options.first { $0.kind == prefix + "_once" } ?? current.options.first { $0.kind.hasPrefix(prefix) }
+        finish(current, option.map(ApprovalDecision.choose) ?? (allow ? .allow : .deny()), allowed: allow)
+    }
+
+    /// The user chose one of the options the agent offered.
+    package func decide(id: UUID, optionID: String) {
+        guard let current = approvals.first(where: { $0.id == id }), let option = current.options.first(where: { $0.id == optionID }) else { return }
+        finish(current, .choose(option), allowed: option.allows)
+    }
+
+    private func finish(_ current: Approval, _ decision: ApprovalDecision, allowed: Bool) {
+        approvals.removeAll { $0.id == current.id }
+        current.respond(decision)
+        onApprovalResolved?(current.id)
+        if let origin = turnOrigin { onTurn?(origin, .approvalDecided(id: current.id, outcome: allowed ? .allowed : .denied)) }
         steerNext()
         if rolloverWaiting { rolloverIfDue() }
     }
@@ -1240,15 +1278,12 @@ package final class ChatSession {
         open.forEach { $0.respond(.cancel) }
     }
 
-    /// Answers the agent's `session/request_permission`: either straight away or through an approval card.
+    /// Shows the agent's `session/request_permission` as a card with the options the agent offered. ironpet never answers one
+    /// itself and never drops one: the agent's mode decides what it asks, and every request that arrives waits for the user.
     package func handlePermission(_ call: ACPToolCall, respond: @escaping (ApprovalDecision) -> Void) {
         if rollover != nil { return respond(.deny("IronPet is writing a session summary and needs no tools")) }
-        switch ApprovalRules.policy(for: call, auto: autoMode) {
-        case .allow:
-            respond(.allow)
-        case .ask(let title, let detail):
-            ask(title: title, detail: detail, respond: respond)
-        }
+        let card = ApprovalRules.card(for: call)
+        ask(title: card.title, detail: card.detail, options: call.permissionOptions, respond: respond)
     }
 
     package func retryAfterFix() {
@@ -1305,13 +1340,8 @@ package final class ChatSession {
         return summary
     }
 
-    private func ask(title: String, detail: String, respond: @escaping (ApprovalDecision) -> Void) {
-        let approval = Approval(title: title, detail: detail, responders: [respond])
-        if let previous = decided[approval.key] { return respond(previous ? .allow : .deny()) }
-        if let index = approvals.firstIndex(where: { $0.key == approval.key }) {
-            approvals[index].responders.append(respond)
-            return
-        }
+    private func ask(title: String, detail: String, options: [PermissionOption] = [], respond: @escaping (ApprovalDecision) -> Void) {
+        let approval = Approval(title: title, detail: detail, options: options, responders: [respond])
         approvals.append(approval)
         turnAskedApproval = true
         if let origin = turnOrigin { onTurn?(origin, .approval(id: approval.id, title: approval.title, detail: approval.detail)) }

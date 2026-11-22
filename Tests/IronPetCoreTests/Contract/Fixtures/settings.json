@@ -47,7 +47,8 @@
             "shareMCPSignIns" : false
           },
           "jobs" : {
-            "maxRunning" : 3
+            "maxRunning" : 3,
+            "permissionTimeoutMinutes" : 10
           },
           "meetings" : {
             "autoSummary" : true,
@@ -194,7 +195,8 @@
             "shareMCPSignIns" : false
           },
           "jobs" : {
-            "maxRunning" : 3
+            "maxRunning" : 3,
+            "permissionTimeoutMinutes" : 10
           },
           "meetings" : {
             "autoSummary" : true,
@@ -338,7 +340,8 @@
             "shareMCPSignIns" : false
           },
           "jobs" : {
-            "maxRunning" : 3
+            "maxRunning" : 3,
+            "permissionTimeoutMinutes" : 10
           },
           "meetings" : {
             "autoSummary" : true,

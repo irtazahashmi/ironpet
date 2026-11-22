@@ -29,7 +29,8 @@ package final class IronPetAPI {
             speech: SpeechOutput,
             petAssets: PetAssets = UnsupportedPetAssets(),
             files: FileIntake = FolderFileIntake(directory: Paths.attachments),
-            usage: UsageStore? = nil
+            usage: UsageStore? = nil,
+            permissions: BackgroundPermissions? = nil
         ) {
             self.tasks = tasks
             self.automations = automations
@@ -45,6 +46,7 @@ package final class IronPetAPI {
             self.petAssets = petAssets
             self.files = files
             self.usage = usage
+            self.permissions = permissions
         }
 
         package var tasks: TaskStore
@@ -64,6 +66,8 @@ package final class IronPetAPI {
         /// Where files a client attaches to the chat land.
         package var files: FileIntake = FolderFileIntake(directory: Paths.attachments)
         package var usage: UsageStore?
+        /// Where permission requests from jobs and automation sessions wait for an answer.
+        package var permissions: BackgroundPermissions?
     }
 
     package let events: APIEventBus
@@ -109,6 +113,8 @@ package final class IronPetAPI {
         agents = AgentsAPI(store: stores.sessions)
         stores.chat.events = events
         chat = ChatAPI(session: stores.chat, files: stores.files)
+        chat.background = stores.permissions
+        alerts.permissions = stores.permissions
         stores.meeting.events = events
         stores.meetingLibrary.events = events
         stores.config.events = events

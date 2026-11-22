@@ -21,7 +21,7 @@ package struct JobError: Error, LocalizedError {
 }
 
 /// Runs background jobs: at most `maxRunning` at once, the rest in line. Each job gets its own agent process in its
-/// folder. ironpet answers its permission requests with the Auto policy, so destructive commands still wait for Allow
+/// folder. the agent's own mode decides what it asks. A request that is not a read or another call ironpet always allows waits for Allow
 /// in a bubble. A task tracks every job, the transcript is saved as a thread, and the state is kept in `ironpet.db`, so
 /// a job that was running when ironpet quit shows as interrupted on the next launch.
 @MainActor
@@ -76,9 +76,9 @@ package final class JobService: ObservableObject {
         JobService.instructions(job) + "\n\n"
             + MemoryPreamble.build(store: FileMemoryStore.shared, workspace: URL(fileURLWithPath: job.folder), firstMessage: job.prompt, keepsTasks: false)
     }
-    /// Shows Allow and Deny for a job's request. The id is unique per request; `clearApproval` takes it down.
-    package var askApproval: (_ id: String, _ job: Job, _ title: String, _ detail: String, _ decide: @escaping (Bool) -> Void) -> Void = { _, _, _, _, _ in }
-    package var clearApproval: (String) -> Void = { _ in }
+    /// Where a request from a job waits for an answer: an alert, the Mac's bubble and notification, Telegram and the phone. The app
+    /// replaces it with the shared one.
+    package var permissions = BackgroundPermissions()
     /// Every change to a job, for the Agents section and the bubbles.
     package var onChange: (Job) -> Void = { _ in }
     /// A job saved its transcript, so the chat can reload its history list and the open thread.
@@ -106,13 +106,6 @@ package final class JobService: ObservableObject {
         var transcript: TranscriptRecorder
         var followUps: [String] = []
         var stopRequested = false
-        var approvals: [String: Approval] = [:]
-
-        struct Approval {
-            let title: String
-            let detail: String
-            let decide: (Bool) -> Void
-        }
 
         init(agent: JobAgent, transcript: TranscriptRecorder) {
             self.agent = agent
@@ -246,7 +239,7 @@ package final class JobService: ObservableObject {
         guard job.state.isActive else { return job }
         if let run = runs[id] {
             run.stopRequested = true
-            denyApprovals(run)
+            denyApprovals(id)
             cancel(id, run)
         } else {
             pendingFollowUps[id] = nil
@@ -258,20 +251,15 @@ package final class JobService: ObservableObject {
 
     /// Closes every job's agent process, at quit. The jobs show as interrupted on the next launch.
     package func shutdownAll() {
-        for run in runs.values {
+        for (id, run) in runs {
             run.stopRequested = true
-            denyApprovals(run)
+            denyApprovals(id)
             run.agent.shutdown()
         }
     }
 
-    private func denyApprovals(_ run: Run) {
-        let pending = run.approvals
-        run.approvals = [:]
-        for (approval, entry) in pending {
-            clearApproval(approval)
-            entry.decide(false)
-        }
+    private func denyApprovals(_ id: String) {
+        permissions.end(owner: id)
     }
 
     /// Sends `session/cancel`, and closes the process if the turn has not ended `stopGrace` later: an agent that is still
@@ -347,7 +335,7 @@ package final class JobService: ObservableObject {
             if run.stopRequested || error != nil && run.followUps.isEmpty { break }
             prompt = run.followUps.isEmpty ? nil : run.followUps.removeFirst()
         }
-        denyApprovals(run)
+        denyApprovals(id)
         run.agent.shutdown()
         runs[id] = nil
         let answer = run.transcript.answer
@@ -398,43 +386,36 @@ package final class JobService: ObservableObject {
         return failure
     }
 
-    /// Answers with the Auto policy. Anything it would still ask about (a destructive command) waits for a click.
+    /// Reads and ironpet's own tools are allowed. Any other request the agent sends becomes an alert with the agent's own options,
+    /// and the job waits for the answer. After `jobs.permissionTimeoutMinutes` the agent gets its reject option and the job's task
+    /// records the timeout.
     private func permission(_ id: String, _ call: ACPToolCall, _ respond: @escaping (ApprovalDecision) -> Void) {
         guard let run = runs[id], let job = job(id) else { return respond(.deny("The job ended")) }
         if run.stopRequested { return respond(.deny("The user stopped this job")) }
-        switch ApprovalRules.policy(for: call, auto: true) {
+        switch ApprovalRules.policy(for: call) {
         case .allow:
             respond(.allow)
-        case .ask(let title, let detail):
-            let approval = "job-approval:\(UUID().uuidString)"
-            run.approvals[approval] = .init(title: title, detail: detail) { [weak self, weak run] allow in
-                respond(allow ? .allow : .deny())
-                guard let self, let run, run.approvals.isEmpty, self.job(id)?.state == .needsApproval else { return }
+        case .ask(let title, _):
+            permissions.ask(owner: id, source: "Job \"\(job.title)\"", call: call, respond: { [weak self] decision in
+                respond(decision)
+                guard let self, permissions.pending(owner: id).isEmpty, self.job(id)?.state == .needsApproval else { return }
                 update(id) { job in
                     job.state = .running
                     job.waitingFor = nil
                 }
-            }
+            }, timedOut: { [weak self] line in
+                guard let self, let task = self.job(id)?.task else { return }
+                _ = try? tasks?.update(task, status: nil, note: line, by: Self.taskAuthor)
+            })
             update(id) { job in
                 job.state = .needsApproval
                 job.waitingFor = title
             }
-            show(approval, of: id)
         }
     }
 
-    /// Shows a waiting approval again, say after its bubble was closed without an answer.
-    package func showApprovals(_ id: String) {
-        for approval in runs[id]?.approvals.keys.sorted() ?? [] { show(approval, of: id) }
-    }
-
-    private func show(_ approval: String, of id: String) {
-        guard let pending = runs[id]?.approvals[approval], let job = job(id) else { return }
-        askApproval(approval, job, pending.title, pending.detail) { [weak self] allow in
-            guard let pending = self?.runs[id]?.approvals.removeValue(forKey: approval) else { return }
-            pending.decide(allow)
-        }
-    }
+    /// Raises a job's waiting requests again, say after their bubble was closed without an answer.
+    package func showApprovals(_ id: String) { permissions.reshow(owner: id) }
 
     private func finish(_ id: String, state: JobState, summary: String? = nil, error: String? = nil, note: String? = nil) {
         update(id) { job in

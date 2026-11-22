@@ -116,6 +116,7 @@ package final class TelegramBridge: ObservableObject {
     private var sentForms: [UUID: SentForm] = [:]
     private var nextFormNumber = 1
     private var stopListeningForms: (() -> Void)?
+    private var stopListeningBackground: (() -> Void)?
 
     package init(client: TelegramClient, host: ChatAPI, tokens: TelegramTokenStore, storage: Storage,
          filesDirectory: URL = Paths.telegramFiles,
@@ -143,6 +144,18 @@ package final class TelegramBridge: ObservableObject {
         stopListeningForms = host.onFormsChanged { [weak self] in
             guard let self else { return }
             self.enqueueIncoming { await self.syncForms() }
+        }
+        // Permission requests from jobs and automation sessions go to the first allowed user, with the same Approve and Reject buttons.
+        // One message per request, so a second user would not be able to edit it.
+        stopListeningBackground = host.onBackgroundApproval { [weak self] request, resolved, outcome in
+            guard let self else { return }
+            if let request {
+                if let user = storage.users().first {
+                    sendApproval(id: request.id, chat: user.id, title: request.title, detail: request.detail, source: request.source)
+                }
+            } else if let resolved, let outcome {
+                backgroundResolved(id: resolved, outcome: outcome)
+            }
         }
     }
 
@@ -717,8 +730,8 @@ package final class TelegramBridge: ObservableObject {
 
     /// Sends the approval with the same title and detail the Mac shows, and Approve and Reject buttons. The Mac
     /// offers no "Always", so there is no such button.
-    private func sendApproval(id: UUID, chat: Int64, title: String, detail: String) {
-        let text = "\(petName()) wants to: \(title.prefix(500))\n\n\(detail.prefix(2500))"
+    private func sendApproval(id: UUID, chat: Int64, title: String, detail: String, source: String? = nil) {
+        let text = "\(source ?? petName()) wants to: \(title.prefix(500))\n\n\(detail.prefix(2500))"
         approvalMessages[id] = SentApproval(chat: chat, text: text)
         let buttons = [TelegramButton(text: "Approve", data: "a:\(id.uuidString):1"),
                        TelegramButton(text: "Reject", data: "a:\(id.uuidString):0")]
@@ -754,6 +767,20 @@ package final class TelegramBridge: ObservableObject {
         }
         approvalMessages[id] = sent
         if sent.messageID != nil { editApproval(id) }
+    }
+
+    /// A background request was answered on another client, timed out, or its run ended.
+    private func backgroundResolved(id: UUID, outcome: BackgroundPermissions.Outcome) {
+        switch outcome {
+        case .answered(let allowed): approvalDecided(id: id, outcome: allowed ? .allowed : .denied)
+        case .ended:
+            approvalDecided(id: id, outcome: .ended)
+        case .timedOut:
+            guard var sent = approvalMessages[id] else { return }
+            sent.outcome = "Nobody answered in time: the agent was told no."
+            approvalMessages[id] = sent
+            if sent.messageID != nil { editApproval(id) }
+        }
     }
 
     private func editApproval(_ id: UUID) {
