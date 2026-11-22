@@ -1,5 +1,6 @@
 import AppKit
 import IronPetCore
+import IronPetKit
 import SwiftUI
 
 /// The Actions section: tricks Ghost does on request. It is a grid of buttons, not a list, so it has no search or detail
@@ -338,7 +339,7 @@ private struct StatusIcon: View {
     var body: some View {
         switch status {
         case .running:
-            ProgressView().controlSize(.small).scaleEffect(0.8)
+            ChatStepSpinner(size: 13)
         case .needsInput:
             Image(systemName: "hand.raised.fill").foregroundStyle(status.tint).symbolEffect(.pulse)
         case .done:

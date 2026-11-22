@@ -118,7 +118,7 @@ package struct POSIXProcessSpawner: ProcessSpawner {
     }
 }
 
-/// A process started by `POSIXProcessSpawner`. A background thread reaps it with `waitpid`.
+/// A process started by `POSIXProcessSpawner`. A dedicated thread reaps it with `waitpid`.
 package final class POSIXProcess: RunningProcess, @unchecked Sendable { // `result` and `handlers` are read and written only under `lock`; the rest is `let`.
     package let pid: Int32
     package let input: FileHandle?
@@ -137,7 +137,9 @@ package final class POSIXProcess: RunningProcess, @unchecked Sendable { // `resu
         self.input = input
         self.output = output
         self.error = error
-        DispatchQueue.global().async { [self] in
+        // A dedicated thread per child, not `DispatchQueue.global()`. A blocked `waitpid` would hold a shared worker for the child's
+        // whole life, and a saturated pool would leave exited children unreaped.
+        let reaper = Thread { [self] in
             var raw: Int32 = 0
             while waitpid(pid, &raw, 0) < 0, errno == EINTR {}
             let exit: ProcessExit = (raw & 0x7f) == 0 ? .code((raw >> 8) & 0xff) : .signal(raw & 0x7f)
@@ -149,6 +151,9 @@ package final class POSIXProcess: RunningProcess, @unchecked Sendable { // `resu
             lock.unlock()
             for handler in waiting { handler(exit) }
         }
+        reaper.name = "ironpet.reaper.\(pid)"
+        reaper.stackSize = 128 * 1024
+        reaper.start()
     }
 
     package var exit: ProcessExit? {
