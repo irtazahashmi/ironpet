@@ -512,6 +512,10 @@ final class RemoteServer {
             let id = Self.parameter(context, "id")
             return await self.chat(context) { try await $0.open(id) }
         }
+        router.patch("/v1/chat/options") { [self] request, context in
+            let body = try await Self.object(request, context)
+            return await self.chat(context) { try await $0.setOptions(body) }
+        }
         router.post("/v1/chat/new") { [self] _, context in await self.chat(context) { try await $0.newChat() } }
         router.post("/v1/chat/approvals/:id") { [self] request, context in
             let id = Self.parameter(context, "id")
