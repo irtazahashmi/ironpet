@@ -934,9 +934,6 @@ struct ChatView: View {
                             .buttonStyle(GlassCircleButtonStyle())
                             .help("Record a voice note")
                     }
-                    if session.isRunning {
-                        sendButton("stop.fill", color: .red, help: "Stop (Esc)", action: session.stop)
-                    }
                 }
             }
         }
@@ -955,34 +952,38 @@ struct ChatView: View {
         .padding(4)
         .frame(minHeight: GlassCircleButtonStyle.size)
         .overlay(alignment: .bottomTrailing) {
-            if !voiceActive, session.canSend {
+            if !voiceActive {
                 inlineSendButton
-                    .padding(4)
-                    .transition(.scale.combined(with: .opacity))
+                    .padding(Self.capsuleInset)
             }
         }
         .animation(.easeOut(duration: 0.12), value: session.canSend)
+        .animation(.easeOut(duration: 0.12), value: session.isRunning)
         .chromeGlass(in: RoundedRectangle(cornerRadius: GlassCircleButtonStyle.size / 2, style: .continuous))
         .contentShape(Rectangle())
         .onTapGesture { if !voiceActive { inputFocused = true } }
         .animation(.easeOut(duration: 0.12), value: inputFocused)
     }
 
-    /// Width the inline send button takes at the field's trailing edge, so text wraps before it.
-    private static let inlineSendWidth: CGFloat = 28
+    /// Gap between the send capsule and the field's top, bottom and trailing edges.
+    private static let capsuleInset: CGFloat = 6
+    private static let capsuleHeight: CGFloat = GlassCircleButtonStyle.size - 2 * capsuleInset
+    private static let capsuleWidth: CGFloat = (capsuleHeight * 1.375).rounded()
+    /// Width the capsule takes at the field's trailing edge, so text wraps before it.
+    private static let inlineSendWidth: CGFloat = capsuleWidth + capsuleInset
 
+    /// The capsule at the field's bottom-right corner: Stop while a turn runs and nothing is typed, otherwise Send (grey when empty).
+    @ViewBuilder
     private var inlineSendButton: some View {
-        Button(action: session.send) {
-            Image(systemName: "arrow.up")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: Self.inlineSendWidth - 4, height: Self.inlineSendWidth - 4)
-                .tintedCircle(.accentColor)
+        if session.isRunning, !session.canSend {
+            capsuleButton("stop.fill", fill: .red, foreground: .white, help: "Stop (Esc)", action: session.stop)
+        } else {
+            capsuleButton("arrow.up", fill: session.canSend ? Color.accentColor : Color.primary.opacity(0.1),
+                          foreground: session.canSend ? .white : Color.secondary,
+                          help: session.isRunning ? "Queue (Enter)" : "Send (Enter)", action: session.send)
+                .disabled(!session.canSend)
+                .accessibilityLabel("Send")
         }
-        .buttonStyle(.plain)
-        .pointerCursor()
-        .help(session.isRunning ? "Queue (Enter)" : "Send (Enter)")
-        .accessibilityLabel("Send")
     }
 
     private var composerInput: some View {
@@ -1055,7 +1056,7 @@ struct ChatView: View {
                     // The system focus ring is a rectangle; inside the rounded field it showed as a line at each end.
                     .focusEffectDisabled()
                     .padding(.leading, 10)
-                    .padding(.trailing, session.canSend ? Self.inlineSendWidth + 4 : 10)
+                    .padding(.trailing, voiceActive ? 10 : Self.inlineSendWidth)
                     .padding(.vertical, 5)
             }
         }
@@ -1099,13 +1100,14 @@ struct ChatView: View {
         }
     }
 
-    private func sendButton(_ symbol: String, color: Color, help: String, action: @escaping () -> Void) -> some View {
+    private func capsuleButton(_ symbol: String, fill: Color, foreground: Color, help: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 12, weight: .bold))
-                .foregroundStyle(.white)
-                .frame(width: GlassCircleButtonStyle.size, height: GlassCircleButtonStyle.size)
-                .tintedCircle(color)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(foreground)
+                .frame(width: Self.capsuleWidth, height: Self.capsuleHeight)
+                .background(fill, in: Capsule())
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .pointerCursor()

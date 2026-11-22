@@ -10,6 +10,8 @@ struct ComposerTextView: UIViewRepresentable {
     var onPasteImage: (Data) -> Void
 
     static let maxLines = 5
+    /// Top and bottom text inset. One body line plus this makes the field as tall as the 36 pt side circles.
+    static let verticalInset: CGFloat = 7
 
     func makeUIView(context: Context) -> PasteTextView {
         let view = PasteTextView()
@@ -17,7 +19,7 @@ struct ComposerTextView: UIViewRepresentable {
         view.font = .preferredFont(forTextStyle: .body)
         view.adjustsFontForContentSizeCategory = true
         view.backgroundColor = .clear
-        view.textContainerInset = UIEdgeInsets(top: 8, left: 6, bottom: 8, right: 6)
+        view.textContainerInset = UIEdgeInsets(top: Self.verticalInset, left: 6, bottom: Self.verticalInset, right: 6)
         view.isScrollEnabled = false
         view.autocorrectionType = .default
         view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
