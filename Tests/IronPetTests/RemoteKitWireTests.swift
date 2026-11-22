@@ -135,6 +135,12 @@ final class RemoteKitWireTests: XCTestCase {
         XCTAssertEqual(pet.json as NSDictionary, ["name": h.api.settings.config.pet.name, "mood": "needsInput", "badge": 2, "tricks": ["Wave"],
                                                   "background": h.api.settings.config.chat.background] as NSDictionary)
         XCTAssertEqual(decoded.badge, 2)
+        // With no accent the keys are absent, so the phone keeps the system blue.
+        XCTAssertNil(pet.json["accent"])
+        h.api.pet.accentProvider = { PetAccent(light: "#FF9500", dark: "#FF9F0A") }
+        let accented = try lossless(RemotePet.self, try await get("/v1/pet"), "GET /v1/pet with an accent")
+        XCTAssertEqual(accented.accent, "#FF9500")
+        XCTAssertEqual(accented.accentDark, "#FF9F0A")
         let trick = try await post("/v1/pet/tricks/Wave")
         XCTAssertEqual(trick.json as NSDictionary, ["performed": "Wave"] as NSDictionary)
 

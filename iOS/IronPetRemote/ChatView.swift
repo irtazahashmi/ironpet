@@ -445,6 +445,7 @@ private struct FormCard: View {
 // MARK: Composer
 
 private struct Composer: View {
+    @Environment(\.macAccent) private var macAccent
     let model: ChatModel
     @Environment(VoiceModel.self) private var voice: VoiceModel?
     @Binding var showFiles: Bool
@@ -520,7 +521,7 @@ private struct Composer: View {
                     Image(systemName: "arrow.up")
                         .font(.system(size: 11, weight: .bold)).foregroundStyle(.white)
                         .frame(width: Self.inlineSendWidth - 4, height: Self.inlineSendWidth - 4)
-                        .tintedCircle(.accentColor)
+                        .tintedCircle(macAccent)
                 }
                 .buttonStyle(.plain).accessibilityLabel("Send").accessibilityIdentifier("send-button")
                 .padding(4)

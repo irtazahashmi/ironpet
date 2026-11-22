@@ -188,6 +188,7 @@ struct TasksBoardView: View {
 }
 
 private struct BoardColumnView: View {
+    @Environment(\.macAccent) private var macAccent
     let column: BoardColumn
     let tasks: [RemoteTask]
     let onDrop: (String, BoardColumn) -> Void
@@ -220,7 +221,7 @@ private struct BoardColumnView: View {
         .padding(10)
         .frame(maxHeight: .infinity, alignment: .top)
         .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.accentColor, lineWidth: targeted ? 2 : 0))
+        .overlay(RoundedRectangle(cornerRadius: 12).stroke(macAccent, lineWidth: targeted ? 2 : 0))
         .dropDestination(for: String.self) { ids, _ in
             for id in ids { onDrop(id, column) }
             return !ids.isEmpty

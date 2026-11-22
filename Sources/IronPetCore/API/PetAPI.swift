@@ -18,6 +18,17 @@ package struct PetState: Codable, Equatable {
     package var badge: Int
 }
 
+/// The user's macOS accent colour as `#RRGGBB`, for light and dark mode.
+package struct PetAccent: Equatable {
+    package init(light: String, dark: String) {
+        self.light = light
+        self.dark = dark
+    }
+
+    package var light: String
+    package var dark: String
+}
+
 package struct PetInfo: Codable, Equatable, Identifiable {
     package init(id: String, name: String, builtIn: Bool, selected: Bool) {
         self.id = id
@@ -122,6 +133,9 @@ package final class PetAPI {
     package var stateProvider: () -> PetState = { PetState(mood: "idle", badge: 0) }
     /// Plays a trick by name. The pet window supplies it. Returns false for a name it does not know.
     package var trickHandler: (String) -> Bool = { _ in false }
+    /// The Mac's accent colour. Nil when the user has not picked one (macOS multicolour), so a client keeps its own default.
+    /// The Mac target supplies it, because reading it needs AppKit.
+    package var accentProvider: () -> PetAccent? = { nil }
     /// The tricks the pet knows, in menu order.
     package var trickNames: () -> [String] = { [] }
 
@@ -135,6 +149,8 @@ package final class PetAPI {
     package func state() -> PetState { stateProvider() }
 
     package func tricks() -> [String] { trickNames() }
+
+    package func accent() -> PetAccent? { accentProvider() }
 
     package func perform(_ request: PerformTrickRequest) throws {
         guard trickHandler(request.name) else { throw APIError.notFound("the pet does not know \"\(request.name)\"") }

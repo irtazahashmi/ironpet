@@ -20,9 +20,11 @@ package struct RemoteResources {
         let state = api.pet.state()
         let assets = await api.pet.manifest().assets
         let config = api.settings.config
+        let accent = api.pet.accent()
         return RemoteWire.object(RemotePet(name: config.pet.name, mood: state.mood, badge: state.badge, tricks: api.pet.tricks(),
                                            background: config.chat.background, sprite: assets.contains { $0.id == "pet.sprite" } ? "pet.sprite" : nil,
-                                           backgroundAsset: assets.contains { $0.id == "chat.background" } ? "chat.background" : nil))
+                                           backgroundAsset: assets.contains { $0.id == "chat.background" } ? "chat.background" : nil,
+                                           accent: accent?.light, accentDark: accent?.dark))
     }
 
     package func trick(_ name: String) throws -> [String: Any] {
