@@ -47,7 +47,7 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-crypto.git", exact: "4.5.2"),
     ] + macDependencies,
     targets: [
-        // The wire types, the client and the sprite atlas that the iOS app and the Mac app share. It imports only Foundation, CryptoKit, Security, CoreGraphics, ImageIO and SwiftUI, so it builds for iOS.
+        // The wire types, the client and the sprite atlas that the iOS app and the Mac app share. Every Apple-only import (CryptoKit, Security, CoreGraphics, ImageIO, SwiftUI, AppKit) sits behind `canImport`, so it builds for iOS and for Linux.
         .target(name: "IronPetKit", dependencies: [.product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux, .windows]))], path: "Sources/IronPetKit"),
         // SQLite for Linux and Windows. Apple platforms use the SQLite3 module from the SDK, so nothing links this there.
         .systemLibrary(name: "CSQLite", path: "Sources/CSQLite", pkgConfig: "sqlite3", providers: [.apt(["libsqlite3-dev"])]),

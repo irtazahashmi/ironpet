@@ -1,5 +1,6 @@
 import AppKit
 import XCTest
+import IronPetKit
 @testable import IronPet
 @testable import IronPetCore
 
@@ -286,10 +287,10 @@ final class RemoteResourcesTests: XCTestCase {
     }
 
     func testTargetsKeepTheirTypes() {
-        XCTAssertEqual(RemoteResources.target(.task("t"))["type"] as? String, "task")
-        XCTAssertEqual(RemoteResources.target(.session(id: "s", workspace: nil, bundleID: nil))["type"] as? String, "session")
-        XCTAssertEqual(RemoteResources.target(.alert(id: "a", url: URL(string: "https://x.test")))["url"] as? String, "https://x.test")
-        XCTAssertEqual(RemoteResources.target(.meeting("m"))["type"] as? String, "meeting")
+        XCTAssertEqual(RemoteResources.target(.task("t")).type, .task)
+        XCTAssertEqual(RemoteResources.target(.session(id: "s", workspace: nil, bundleID: nil)).type, .session)
+        XCTAssertEqual(RemoteResources.target(.alert(id: "a", url: URL(string: "https://x.test"))).url, "https://x.test")
+        XCTAssertEqual(RemoteResources.target(.meeting("m")).type, .meeting)
     }
 
     // MARK: Assets, S2 and S3
