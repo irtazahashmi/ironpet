@@ -26,7 +26,9 @@ concurrency:
 
 jobs:
   testflight:
-    runs-on: macos-15
+    # The image with Xcode 27 on macOS 27. App Store Connect requires the iOS 27 SDK for uploads from April 2027 (ITMS-90725),
+    # and the macos-15 and macos-26 images stop at Xcode 26.
+    runs-on: xcode-27
     timeout-minutes: 45
     environment: testflight
     steps:
@@ -42,11 +44,11 @@ jobs:
         with:
           persist-credentials: false # nothing later needs the token, so it must not sit in .git/config
 
-      # App Store Connect only takes builds from a recent SDK, and the runner's default Xcode (16.4) is too old for that.
-      - name: Select Xcode 26.3
+      # A release Xcode, not a beta: App Store Connect rejects builds from a beta SDK. The image's default is 27.1.
+      - name: Select Xcode 27.2
         run: |
-          test -d /Applications/Xcode_26.3.app
-          sudo xcode-select -s /Applications/Xcode_26.3.app
+          test -d /Applications/Xcode_27.2.app
+          sudo xcode-select -s /Applications/Xcode_27.2.app
           xcodebuild -version
 
       # The same pinned and checksum-verified XcodeGen as ci.yml.
