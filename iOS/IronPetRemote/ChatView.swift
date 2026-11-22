@@ -106,6 +106,7 @@ private final class FollowTracker {
 private struct Transcript: View {
     let model: ChatModel
     var avatar: CGImage?
+    @Environment(VoiceModel.self) private var voice: VoiceModel?
     /// The follow logic keeps its last measurements in a reference, so a scroll frame does not invalidate the view. Only a change of
     /// `pinned` or `newBelow` does.
     @State private var tracker = FollowTracker()
@@ -139,7 +140,8 @@ private struct Transcript: View {
                         ForEach(RemoteTranscriptGroup.make(model.items)) { group in
                             TranscriptGroupView(group: group, photos: model.sentPhotos, avatar: avatar, expanded: expandedMessages,
                                                 toggleExpand: { id in if !expandedMessages.insert(id).inserted { expandedMessages.remove(id) } },
-                                                onReply: { model.replyTo = $0 })
+                                                onReply: { model.replyTo = $0 },
+                                                readAloud: { item in voice.flatMap { ReadAloud(item: item, voice: $0) } })
                         }
                         if showsTyping { TypingRow(started: model.snapshot?.runStarted, avatar: avatar) }
                         ForEach(model.approvals) { ApprovalCard(approval: $0, model: model) }
@@ -208,6 +210,8 @@ private struct TranscriptGroupView: View {
     var expanded: Set<String> = []
     var toggleExpand: (String) -> Void = { _ in }
     var onReply: (RemoteChatItem) -> Void = { _ in }
+    /// Nil in a saved thread, whose messages the Mac cannot read from the open chat.
+    var readAloud: (RemoteChatItem) -> ReadAloud? = { _ in nil }
 
     var body: some View {
         switch group {
@@ -215,7 +219,8 @@ private struct TranscriptGroupView: View {
             ToolStepsRow(steps: steps)
         case .item(let item):
             MessageRow(item: item, photo: item.fileName.flatMap { photos[$0] }, avatar: avatar, expanded: expanded.contains(item.id),
-                       onToggleExpand: { toggleExpand(item.id) }, onReply: item.canReply ? { onReply(item) } : nil)
+                       onToggleExpand: { toggleExpand(item.id) }, onReply: item.canReply ? { onReply(item) } : nil,
+                       readAloud: item.kind == "assistant" ? readAloud(item) : nil)
         }
     }
 }
@@ -245,12 +250,13 @@ struct MessageRow: View {
     var expanded = false
     var onToggleExpand: () -> Void = {}
     var onReply: (() -> Void)?
+    var readAloud: ReadAloud?
 
     var body: some View {
         Group {
             switch item.row {
             case .user(let text): UserBubble(item: item, text: text, expanded: expanded, onToggleExpand: onToggleExpand)
-            case .assistant(let text): AssistantBubble(item: item, text: text, avatar: avatar)
+            case .assistant(let text): AssistantBubble(item: item, text: text, avatar: avatar, readAloud: readAloud)
             case .tool: ToolStepsRow(steps: [item])
             case .error(let text): ErrorRow(text: text)
             case .notice(let text): NoticeRow(notice: ChatNotice(text))
@@ -271,6 +277,11 @@ struct MessageRow: View {
         .contextMenu {
             if let onReply { Button { onReply() } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") } }
             if let text = item.text, !text.isEmpty { Button { UIPasteboard.general.string = text } label: { Label("Copy", systemImage: "doc.on.doc") } }
+            if let readAloud {
+                Button(action: readAloud.toggle) {
+                    Label(readAloud.active ? "Stop Reading" : "Read Aloud", systemImage: readAloud.active ? "stop.circle" : "speaker.wave.2")
+                }
+            }
         }
     }
 

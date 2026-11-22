@@ -264,6 +264,86 @@ final class PhaseSixTests: XCTestCase {
         XCTAssertTrue(channel.sentTexts.contains { VoiceClientMessage.parse($0) == .ttsEnable(true) })
     }
 
+    // MARK: Read aloud
+
+    func testTheSpeakerButtonAsksTheMacToReadThatMessage() async {
+        let log = Log()
+        let channel = FakeChannel(log: log)
+        let model = VoiceModel(player: ReplyPlayer(engine: FakeEngine(log: log)), defaults: defaults(), openChannel: { channel }, makeMic: { SilentMic() })
+        XCTAssertFalse(model.spokenReplies, "it works with spoken replies off")
+        await model.toggleReading("m1")
+        XCTAssertEqual(channel.sentTexts.compactMap(VoiceClientMessage.parse), [.ttsSpeak(item: "m1")])
+        XCTAssertEqual(model.readingItem, "m1", "the button shows Stop at once")
+        XCTAssertTrue(model.speaking)
+    }
+
+    func testTheButtonShowsPlayingThenStopsWhenTheReplyEnds() async {
+        let log = Log()
+        let channel = FakeChannel(log: log)
+        let engine = FakeEngine(log: log)
+        let model = VoiceModel(player: ReplyPlayer(engine: engine), defaults: defaults(), openChannel: { channel }, makeMic: { SilentMic() })
+        await model.toggleReading("m1")
+        reply(model, "m1", clips: 1)
+        XCTAssertEqual(model.readingItem, "m1")
+        XCTAssertEqual(log.entries.filter { $0 == "engine.play 10" }.count, 1)
+        model.handle(.text(VoiceServerMessage.ttsEnd(reply: "m1").json))
+        engine.finishCurrent?()
+        XCTAssertNil(model.readingItem)
+        XCTAssertFalse(model.speaking)
+    }
+
+    func testTappingTheButtonOfTheReplyThatPlaysStopsItBeforeTellingTheMac() async {
+        let log = Log()
+        let channel = FakeChannel(log: log)
+        let model = VoiceModel(player: ReplyPlayer(engine: FakeEngine(log: log)), defaults: defaults(), openChannel: { channel }, makeMic: { SilentMic() })
+        await model.toggleReading("m1")
+        reply(model, "m1", clips: 2)
+        log.entries = []
+        await model.toggleReading("m1")
+        XCTAssertEqual(log.entries, ["engine.stop", "send ttsStop"])
+        XCTAssertNil(model.readingItem)
+    }
+
+    func testReadingAnotherReplyStopsTheFirstAndAsksForTheSecond() async {
+        let log = Log()
+        let channel = FakeChannel(log: log)
+        let model = VoiceModel(player: ReplyPlayer(engine: FakeEngine(log: log)), defaults: defaults(), openChannel: { channel }, makeMic: { SilentMic() })
+        await model.toggleReading("m1")
+        reply(model, "m1", clips: 2)
+        log.entries = []
+        await model.toggleReading("m2")
+        XCTAssertEqual(log.entries, ["engine.stop", "send ttsStop", "send ttsSpeak(item: \"m2\")"])
+        XCTAssertEqual(model.readingItem, "m2")
+    }
+
+    func testAReplyThatWasStoppedCanBeReadAgain() async {
+        let log = Log()
+        let channel = FakeChannel(log: log)
+        let model = VoiceModel(player: ReplyPlayer(engine: FakeEngine(log: log)), defaults: defaults(), openChannel: { channel }, makeMic: { SilentMic() })
+        await model.toggleReading("m1")
+        await model.toggleReading("m1")
+        XCTAssertNil(model.readingItem)
+        await model.toggleReading("m1")
+        reply(model, "m1", clips: 1)
+        XCTAssertEqual(model.readingItem, "m1")
+        XCTAssertTrue(log.entries.contains("engine.play 10"), "clips of the new request are not dropped")
+    }
+
+    func testAMacThatNeverAnswersEndsTheButtonWithAnError() async {
+        let log = Log()
+        let channel = FakeChannel(log: log)
+        let model = VoiceModel(player: ReplyPlayer(engine: FakeEngine(log: log)), defaults: defaults(), openChannel: { channel }, makeMic: { SilentMic() })
+        let saved = VoiceModel.readTimeout
+        VoiceModel.readTimeout = .milliseconds(50)
+        defer { VoiceModel.readTimeout = saved }
+        await model.toggleReading("m1")
+        XCTAssertNotNil(model.readingItem)
+        // A Mac without tts.speak never answers.
+        await settle(5) { model.readingItem == nil }
+        XCTAssertNil(model.readingItem)
+        XCTAssertNotNil(model.errorMessage)
+    }
+
     func testDictationLandsAfterTheDraftWithOneSpace() async throws {
         let server = MockIronPetServer()
         try server.start()
