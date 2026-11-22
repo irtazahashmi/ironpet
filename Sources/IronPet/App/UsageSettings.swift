@@ -41,6 +41,27 @@ enum UsageFormat {
     }
 }
 
+/// What the hover tooltip on one chart column shows: the bucket's date, each feature with a value and the total.
+struct UsageTooltip: Equatable {
+    struct Row: Equatable {
+        let feature: UsageFeature
+        let value: String
+    }
+
+    let title: String
+    let rows: [Row]
+    let total: String
+
+    /// Nil when nothing was used in the bucket, so an empty column shows no tooltip at all.
+    init?(day: Date, values: [UsageFeature: Double], hourly: Bool, format: (Double) -> String) {
+        let used = UsageFeature.allCases.filter { (values[$0] ?? 0) > 0 }
+        guard !used.isEmpty else { return nil }
+        title = hourly ? day.formatted(.dateTime.month().day().hour().minute()) : day.formatted(.dateTime.weekday(.abbreviated).month().day())
+        rows = used.map { Row(feature: $0, value: format(values[$0] ?? 0)) }
+        total = format(used.reduce(0) { $0 + (values[$1] ?? 0) })
+    }
+}
+
 /// What ironpet itself ran, by feature and model. Agents ironpet only launches or watches are not in here.
 struct UsageSettings: View {
     private enum Metric: String, CaseIterable { case requests = "Requests", tokens = "Tokens", cost = "Cost" }
@@ -48,6 +69,8 @@ struct UsageSettings: View {
     @State private var range: Int
     @State private var metric = Metric.requests
     @State private var summary = UsageSummary(rows: [], days: [])
+    /// Start of the column under the pointer, nil when the pointer is off the chart.
+    @State private var hoveredDay: Date?
 
     /// Range tag for today, charted by hour. The other tags are a number of days.
     nonisolated static let todayRange = 1
@@ -55,7 +78,8 @@ struct UsageSettings: View {
     /// `sample` fills the view without reading the store, for `--render-previews`.
     private let sample: UsageSummary?
 
-    init(range: Int = 30, sample: UsageSummary? = nil, showCost: Bool = false) {
+    init(range: Int = 30, sample: UsageSummary? = nil, showCost: Bool = false, hoveredDay: Date? = nil) {
+        _hoveredDay = State(initialValue: hoveredDay)
         _range = State(initialValue: range)
         _metric = State(initialValue: showCost ? .cost : .requests)
         _summary = State(initialValue: sample ?? UsageSummary(rows: [], days: []))
@@ -168,10 +192,98 @@ struct UsageSettings: View {
             }
         }
         .chartXScale(domain: xDomain)
+        .chartOverlay { proxy in hoverOverlay(proxy) }
         .frame(height: 150)
         .overlay {
             if points.isEmpty { Text("No data").font(.caption).foregroundStyle(.secondary) }
         }
+    }
+
+    /// A one-bar chart on the same colour scale as the main chart, so the dot is exactly the bar's colour whatever Swift Charts picks.
+    private func colorDot(_ feature: UsageFeature) -> some View {
+        Chart {
+            BarMark(x: .value("x", 0), y: .value("y", 1)).foregroundStyle(by: .value("Feature", feature.title))
+        }
+        .chartForegroundStyleScale(domain: UsageFeature.allCases.map(\.title))
+        .chartLegend(.hidden).chartXAxis(.hidden).chartYAxis(.hidden)
+        .chartPlotStyle { $0.padding(0) }
+        .frame(width: 7, height: 7)
+        .clipShape(Circle())
+    }
+
+    private static let tooltipWidth: CGFloat = 200
+
+    /// The column whose bucket contains `date`, so a pointer above a short bar still finds it.
+    private func day(at date: Date) -> Date? {
+        guard date < xDomain.upperBound else { return nil }
+        return summary.days.last { $0.day <= date }?.day
+    }
+
+    private func tooltip(for day: Date) -> UsageTooltip? {
+        guard let entry = summary.days.first(where: { $0.day == day }) else { return nil }
+        let values: [UsageFeature: Double]
+        let format: (Double) -> String
+        switch metric {
+        case .requests: values = entry.requests.mapValues(Double.init); format = { UsageFormat.count(Int($0)) }
+        case .tokens: values = entry.tokens.mapValues(Double.init); format = { UsageFormat.count(Int($0)) }
+        case .cost: values = entry.cost; format = { UsageFormat.cost($0, currency: nil) }
+        }
+        return UsageTooltip(day: day, values: values, hourly: summary.hourly, format: format)
+    }
+
+    /// Catches the pointer over the whole plot, highlights the hovered column and shows its tooltip beside it.
+    private func hoverOverlay(_ proxy: ChartProxy) -> some View {
+        GeometryReader { geometry in
+            let plot = proxy.plotFrame.map { geometry[$0] } ?? .zero
+            let unit: Calendar.Component = summary.hourly ? .hour : .day
+            ZStack(alignment: .topLeading) {
+                Rectangle().fill(.clear).contentShape(Rectangle())
+                    .onContinuousHover { phase in
+                        switch phase {
+                        case .active(let location):
+                            let date: Date? = proxy.value(atX: location.x - plot.minX, as: Date.self)
+                            hoveredDay = date.flatMap(day(at:))
+                        case .ended:
+                            hoveredDay = nil
+                        }
+                    }
+                if let hoveredDay, let start = proxy.position(forX: hoveredDay),
+                   let end = Calendar.current.date(byAdding: unit, value: 1, to: hoveredDay).flatMap({ proxy.position(forX: $0) }) {
+                    let left = plot.minX + start, right = plot.minX + end
+                    Rectangle().fill(.primary.opacity(0.08))
+                        .frame(width: max(right - left, 1), height: plot.height)
+                        .offset(x: left, y: plot.minY)
+                        .allowsHitTesting(false)
+                    if let tip = tooltip(for: hoveredDay) {
+                        // Right of the column, or left of it when that would run past the chart edge.
+                        let fitsRight = right + 6 + Self.tooltipWidth <= geometry.size.width
+                        let x = fitsRight ? right + 6 : max(0, left - 6 - Self.tooltipWidth)
+                        tooltipView(tip).offset(x: x, y: 0).allowsHitTesting(false)
+                    }
+                }
+            }
+        }
+    }
+
+    private func tooltipView(_ tip: UsageTooltip) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(tip.title).fontWeight(.semibold)
+            ForEach(tip.rows, id: \.feature) { row in
+                HStack(spacing: 6) {
+                    colorDot(row.feature)
+                    Text(row.feature.title).lineLimit(1)
+                    Spacer(minLength: 6)
+                    Text(row.value)
+                }
+            }
+            Divider()
+            HStack { Text("Total").fontWeight(.semibold); Spacer(minLength: 6); Text(tip.total).fontWeight(.semibold) }
+        }
+        .font(.caption2).monospacedDigit()
+        .padding(.horizontal, 8).padding(.vertical, 3)
+        .frame(width: Self.tooltipWidth)
+        .background(Color(nsColor: .windowBackgroundColor), in: RoundedRectangle(cornerRadius: 6))
+        .overlay(RoundedRectangle(cornerRadius: 6).stroke(.separator))
     }
 
     private var table: some View {

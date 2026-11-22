@@ -236,4 +236,28 @@ final class UsageTests: XCTestCase {
         XCTAssertEqual(UsageFormat.cost(nil, currency: nil), "–")
         XCTAssertEqual(UsageFormat.time(nil), "–")
     }
+
+    // MARK: Chart tooltip
+
+    func testTooltipListsOnlyFeaturesWithUsageInEnumOrderAndTheirTotal() throws {
+        let day = daysAgo(1)
+        let values: [UsageFeature: Double] = [.memory: 0.5, .chat: 2.25, .automations: 0, .jobs: 1.25]
+        let tip = try XCTUnwrap(UsageTooltip(day: day, values: values, hourly: false) { UsageFormat.cost($0, currency: nil) })
+        XCTAssertEqual(tip.rows.map(\.feature), [.chat, .jobs, .memory])
+        XCTAssertEqual(tip.rows.map(\.value), [UsageFormat.cost(2.25, currency: nil), UsageFormat.cost(1.25, currency: nil), UsageFormat.cost(0.5, currency: nil)])
+        XCTAssertEqual(tip.total, UsageFormat.cost(4, currency: nil))
+        XCTAssertEqual(tip.title, day.formatted(.dateTime.weekday(.abbreviated).month().day()))
+    }
+
+    func testTooltipOfAColumnWithNoUsageIsNil() {
+        XCTAssertNil(UsageTooltip(day: daysAgo(0), values: [:], hourly: false) { UsageFormat.cost($0, currency: nil) })
+        XCTAssertNil(UsageTooltip(day: daysAgo(0), values: [.chat: 0], hourly: true) { UsageFormat.count(Int($0)) })
+    }
+
+    func testTooltipOfAnHourlyBucketNamesTheHour() throws {
+        let hour = daysAgo(0, hour: 14)
+        let tip = try XCTUnwrap(UsageTooltip(day: hour, values: [.chat: 3], hourly: true) { UsageFormat.count(Int($0)) })
+        XCTAssertEqual(tip.title, hour.formatted(.dateTime.month().day().hour().minute()))
+        XCTAssertEqual(tip.total, "3")
+    }
 }
