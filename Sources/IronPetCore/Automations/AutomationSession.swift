@@ -20,9 +20,24 @@ package enum AutomationSession {
         if ["edit", "delete", "move"].contains(call.kind), call.allPaths.contains(where: FileMemoryStore.contains) {
             return .deny("Automations may not edit Ghost's memory files")
         }
-        if case .allow = ApprovalRules.policy(for: call, auto: true) { return .allow }
+        if case .allow = ApprovalRules.policy(for: call) { return .allow }
         return .deny("This automation runs without anyone to ask")
     }
+    /// What an automation's own session does with a permission request. `allowedTools` and `disallowedTools` apply first: an allowed
+    /// tool is answered with allow and a disallowed one with a refusal, and neither raises an alert. Anything else the agent
+    /// asks about waits for the user.
+    package enum Route { case answer(ApprovalDecision), ask }
+
+    package nonisolated static func route(for call: ACPToolCall, allowed: [String]?, disallowed: [String]?) -> Route {
+        if ["edit", "delete", "move"].contains(call.kind), call.allPaths.contains(where: FileMemoryStore.contains) {
+            return .answer(.deny("Automations may not edit Ghost's memory files"))
+        }
+        if let disallowed, disallowed.contains(where: { ToolRule.matches($0, call) }) { return .answer(.deny("This automation may not use that tool")) }
+        if let allowed, allowed.contains(where: { ToolRule.matches($0, call) }) { return .answer(.allow) }
+        if case .allow = ApprovalRules.policy(for: call) { return .answer(.allow) }
+        return .ask
+    }
+
     /// Threads kept per automation. Older ones are deleted after a run.
     package static let keptThreads = 50
 
@@ -31,7 +46,7 @@ package enum AutomationSession {
     /// `agentOverride` and `turnRunner` let tests run a scripted agent.
     package static func run(_ automation: Automation, prompt: String, workspace: URL, spawner: ProcessSpawner, timeout: TimeInterval = 900,
                     agentOverride: ACPAgent? = nil, turnRunner: TurnRunner? = nil, now: Date = Date(),
-                    fork: String? = nil, onNote: ((String) -> Void)? = nil,
+                    fork: String? = nil, onNote: ((String) -> Void)? = nil, permissions: BackgroundPermissions? = nil,
                     rolloverLimit: Int64? = nil, handoffTimeout: Duration = .seconds(90)) async -> Result<String, AutomationError> {
         guard let agent = agentOverride ?? AgentCatalog.agent(id: AutomationPrompt.agentID(automation)) else {
             return .failure(.init(message: "no agent is available"))
@@ -44,12 +59,22 @@ package enum AutomationSession {
             earlier = last
         }
 
+        let owner = "automation-run:\(UUID().uuidString)"
+        defer { permissions?.end(owner: owner) }
         func makeBackend() -> ACPBackend {
             let created = ACPBackend(agent: agent, spawner: spawner)
             created.usageFeature = .automations
             created.mcpCaller = "automation:\(automation.id)"
             created.sharesMemoryFolder = false
-            created.onPermission = { call, respond in respond(Self.decision(for: call)) }
+            created.onPermission = { call, respond in
+                switch Self.route(for: call, allowed: automation.action.allowedTools, disallowed: automation.action.disallowedTools) {
+                case .answer(let decision): respond(decision)
+                case .ask:
+                    guard let permissions else { return respond(.deny("This automation runs without anyone to ask")) }
+                    permissions.ask(owner: owner, source: "Automation \"\(automation.name)\"", call: call, respond: respond,
+                                    timedOut: { onNote?($0) })
+                }
+            }
             return created
         }
 
@@ -159,5 +184,36 @@ package enum AutomationSession {
         backend?.cancel()
         backend?.shutdown()
         return summary
+    }
+}
+
+/// Matches the `allowedTools` and `disallowedTools` entries of an automation (`Bash`, `Bash(git status:*)`, `mcp__github`) to a call.
+package enum ToolRule {
+    package nonisolated static func matches(_ rule: String, _ call: ACPToolCall) -> Bool {
+        let rule = rule.trimmingCharacters(in: .whitespaces)
+        var name = rule
+        var argument: String?
+        if let open = rule.firstIndex(of: "("), rule.hasSuffix(")") {
+            name = String(rule[..<open])
+            argument = String(rule[rule.index(after: open)..<rule.index(before: rule.endIndex)])
+        }
+        // Agents that send no tool name still say what kind of call it is.
+        let names: [String]
+        if let toolName = call.toolName { names = [toolName] } else {
+            switch call.kind {
+            case "execute": names = ["Bash"]
+            case "edit": names = ["Edit", "Write", "MultiEdit", "NotebookEdit"]
+            case "read": names = ["Read"]
+            case "search": names = ["Grep", "Glob"]
+            case "fetch": names = ["WebFetch", "WebSearch"]
+            default: names = [call.title]
+            }
+        }
+        guard names.contains(where: { $0 == name || $0.hasPrefix(name + "__") }) else { return false }
+        guard let argument else { return true }
+        var wanted = argument
+        for suffix in [":*", "*"] where wanted.hasSuffix(suffix) { wanted.removeLast(suffix.count); break }
+        let actual = call.kind == "execute" ? call.command : (call.path ?? call.arguments)
+        return actual.hasPrefix(wanted)
     }
 }

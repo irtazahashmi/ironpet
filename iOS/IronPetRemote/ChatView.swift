@@ -12,6 +12,7 @@ struct ChatView: View {
     /// The pet's face, which marks the agent's replies as it does on the Mac.
     var avatar: CGImage?
     @State private var showThreads = false
+    @State private var showSettings = false
     @State private var showFiles = false
     @State private var photos: [PhotosPickerItem] = []
     @State private var focused = false
@@ -52,12 +53,15 @@ struct ChatView: View {
                         Text(model.subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1).accessibilityIdentifier("chat-subtitle")
                     }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { showSettings = true } label: { Image(systemName: "slider.horizontal.3") }
+                        .accessibilityLabel("Chat settings").accessibilityIdentifier("chat-settings-button")
                     Button { showThreads = true } label: { Image(systemName: "clock.arrow.circlepath") }
                         .accessibilityLabel("Chats").accessibilityIdentifier("threads-button")
                 }
             }
             .sheet(isPresented: $showThreads) { ThreadsSheet(model: model, avatar: avatar) }
+            .sheet(isPresented: $showSettings) { ChatSettingsSheet(model: model) }
             .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
                 guard case .success(let urls) = result else { return }
                 for url in urls {
@@ -561,6 +565,97 @@ private struct Composer: View {
 }
 
 // MARK: Threads
+
+/// The Mac chat's settings popover, as a sheet: project, agent, model and the agent's mode. Each choice goes to the Mac and the sheet shows what
+/// the Mac reports back, so a refused change does not stay on screen.
+private struct ChatSettingsSheet: View {
+    let model: ChatModel
+    @Environment(\.dismiss) private var dismiss
+
+    private var options: RemoteChatOptions { model.snapshot?.options ?? RemoteChatOptions() }
+    private var locked: Bool { model.running }
+
+    private var folderName: String {
+        guard let folder = options.folder else { return "No project" }
+        return options.folders.first { $0.id == folder }?.name ?? (folder as NSString).lastPathComponent
+    }
+
+    private var modelName: String {
+        guard let id = model.snapshot?.model else { return "Default" }
+        return options.models.first { $0.id == id }?.name ?? id
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    Picker("Project", selection: Binding(
+                        get: { options.folder ?? "" },
+                        set: { id in Task { await model.setOptions(id.isEmpty ? RemoteChatOptionsChange(noProject: true) : RemoteChatOptionsChange(folder: id)) } })) {
+                        Text("No project").tag("")
+                        ForEach(options.folders) { Text($0.name).tag($0.id) }
+                        if let folder = options.folder, !options.folders.contains(where: { $0.id == folder }) { Text(folderName).tag(folder) }
+                    }
+                    .accessibilityIdentifier("settings-project")
+                    Picker("Agent", selection: Binding(
+                        get: { model.snapshot?.agent.id ?? "" },
+                        set: { id in Task { await model.setOptions(RemoteChatOptionsChange(agent: id)) } })) {
+                        ForEach(options.agents) { Text($0.name).tag($0.id) }
+                    }
+                    .accessibilityIdentifier("settings-agent")
+                    if !options.models.isEmpty {
+                        Picker("Model", selection: Binding(
+                            get: { model.snapshot?.model ?? "" },
+                            set: { id in Task { await model.setOptions(RemoteChatOptionsChange(model: .some(id.isEmpty ? nil : id))) } })) {
+                            Text("Default (agent setting)").tag("")
+                            ForEach(options.models) { Text($0.name).tag($0.id) }
+                        }
+                        .accessibilityIdentifier("settings-model")
+                    }
+                } footer: {
+                    Text(locked ? "The agent is working. Project, agent and model change when it is done." : "Changing the project or agent starts a new chat on your Mac.")
+                }
+                .disabled(locked)
+                if !options.modes.isEmpty {
+                    // The modes the agent advertises, the same list as the Mac's picker. A mode can change while the agent works.
+                    Section {
+                        Picker("Mode", selection: Binding(
+                            get: { options.mode ?? "" },
+                            set: { id in if !id.isEmpty { Task { await model.setOptions(RemoteChatOptionsChange(mode: id)) } } })) {
+                            ForEach(options.modes) { mode in
+                                VStack(alignment: .leading) {
+                                    Text(mode.name)
+                                    if let detail = mode.detail, !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(.secondary) }
+                                }
+                                .tag(mode.id)
+                                .accessibilityIdentifier("settings-mode-\(mode.id)")
+                            }
+                        }
+                        .pickerStyle(.inline).labelsHidden()
+                    } header: {
+                        Text("Mode")
+                    } footer: {
+                        Text("What the agent may do without asking. The agent defines the modes.")
+                    }
+                }
+                Section {
+                    Button { Task { if await model.newChat() { dismiss() } } } label: { Label("New chat", systemImage: "square.and.pencil") }
+                        .disabled(locked)
+                        .accessibilityIdentifier("settings-new-chat")
+                }
+            }
+            .navigationTitle("Chat settings")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
+            .alert("Cannot do that now", isPresented: Binding(get: { model.conflictMessage != nil }, set: { if !$0 { model.conflictMessage = nil } })) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text(model.conflictMessage ?? "")
+            }
+        }
+        .presentationDetents([.medium, .large])
+    }
+}
 
 private struct ThreadsSheet: View {
     let model: ChatModel

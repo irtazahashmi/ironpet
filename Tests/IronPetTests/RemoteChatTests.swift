@@ -270,6 +270,108 @@ final class RemoteChatTests: XCTestCase {
         XCTAssertNil(chat.threadID)
     }
 
+    private func patch(_ body: [String: Any]) async throws -> RemoteReply { try await h.request("PATCH", "/v1/chat/options", token: token, body: body) }
+
+    /// Gives the chat a model list, as the agent does when its session starts.
+    private func offerModels() async throws {
+        _ = try await post("/v1/chat/current/messages", ["text": "hi"])
+        await settle()
+        deliver[0](.models(current: nil, [ChatModel(id: "m1", name: "Model one"), ChatModel(id: "m2", name: "Model two")]))
+        deliver[0](.finished(error: nil))
+        await settle()
+    }
+
+    func testTheChatSnapshotListsTheSettingsTheMacOffers() async throws {
+        try await offerModels()
+        let options = try await get("/v1/chat/current").json["options"] as? [String: Any] ?? [:]
+        XCTAssertEqual((options["models"] as? [[String: Any]])?.compactMap { $0["id"] as? String }, ["m1", "m2"])
+        XCTAssertEqual((options["agents"] as? [[String: Any]])?.compactMap { $0["id"] as? String }, chat.agents.map(\.id))
+        XCTAssertEqual(options["folder"] as? String, chat.workspace?.path)
+        XCTAssertNil(options["auto_mode"], "the phone has no auto toggle of its own")
+        XCTAssertNil(options["modes"], "an agent that advertises no modes sends none")
+    }
+
+    /// The phone shows the list the agent advertises and the one in force, and picking one is the Mac picker's call.
+    func testTheChatSnapshotListsTheAgentsModesAndAPhonePicksOneLikeTheMacPicker() async throws {
+        defer { UserDefaults.standard.removeObject(forKey: "chatMode.\(chat.agent.id)") }
+        chat.receiveModes(current: "default", modes: [AgentMode(id: "default", name: "Default", detail: "Asks first"), AgentMode(id: "acceptEdits", name: "Accept edits"),
+                                                       AgentMode(id: "plan", name: "Plan"), AgentMode(id: "bypassPermissions", name: "Bypass permissions")])
+        let options = try await get("/v1/chat/current").json["options"] as? [String: Any] ?? [:]
+        let modes = options["modes"] as? [[String: Any]] ?? []
+        XCTAssertEqual(modes.compactMap { $0["id"] as? String }, ["default", "acceptEdits", "plan", "bypassPermissions"], "the agent's own list, in its order")
+        XCTAssertEqual(modes.first?["detail"] as? String, "Asks first")
+        XCTAssertNil(modes[1]["detail"], "no detail is an absent key")
+        XCTAssertEqual(options["mode"] as? String, "default")
+
+        let picked = try await patch(["mode": "plan"])
+        XCTAssertEqual(picked.status, 200)
+        XCTAssertEqual(chat.agentMode, "plan", "the same session call as the Mac's picker")
+        let after = try await get("/v1/chat/current").json["options"] as? [String: Any] ?? [:]
+        XCTAssertEqual(after["mode"] as? String, "plan")
+
+        for body: [String: Any] in [["mode": "auto"], ["mode": true], ["mode": ""], ["auto_mode": true, "mode": "nope"]] {
+            let refused = try await patch(body)
+            XCTAssertEqual(refused.status, 400, "\(body): a mode the agent does not offer is refused")
+        }
+        XCTAssertEqual(chat.agentMode, "plan")
+    }
+
+    func testAPhoneChangesTheModelAndTheModeAndTheMacChatAndNextTurnUseThem() async throws {
+        defer {
+            UserDefaults.standard.removeObject(forKey: "chatModel.\(chat.agent.id)"); UserDefaults.standard.removeObject(forKey: "cachedModels.\(chat.agent.id)")
+            UserDefaults.standard.removeObject(forKey: "chatMode.\(chat.agent.id)")
+        }
+        try await offerModels()
+        chat.receiveModes(current: "default", modes: [AgentMode(id: "default", name: "Default"), AgentMode(id: "acceptEdits", name: "Accept edits")])
+        let changed = try await patch(["model": "m2", "mode": "acceptEdits"])
+        XCTAssertEqual(changed.status, 200)
+        XCTAssertEqual(chat.model, "m2")
+        XCTAssertEqual(chat.agentMode, "acceptEdits")
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "chatModel.\(chat.agent.id)"), "m2", "stored the same way as a Mac change")
+        let current = try await get("/v1/chat/current").json
+        XCTAssertEqual(current["model"] as? String, "m2")
+        XCTAssertEqual((current["options"] as? [String: Any])?["mode"] as? String, "acceptEdits")
+        _ = try await post("/v1/chat/current/messages", ["text": "next"])
+        await settle()
+        XCTAssertEqual(turns.last?.model, "m2", "the next turn runs with the phone's model")
+        let reset = try await patch(["model": NSNull()])
+        XCTAssertEqual(reset.status, 409, "the second turn is still running")
+        XCTAssertEqual(chat.model, "m2")
+        let back = try await patch(["mode": "default"])
+        XCTAssertEqual(back.status, 200, "the mode changes during a turn, as on the Mac")
+        XCTAssertEqual(chat.agentMode, "default")
+    }
+
+    func testBadSettingsAreRefusedBeforeAnythingChanges() async throws {
+        try await offerModels()
+        chat.receiveModes(current: "default", modes: [AgentMode(id: "default", name: "Default")])
+        let before = (chat.agent.id, chat.model, chat.agentMode, chat.workspace)
+        for body: [String: Any] in [["model": "nope"], ["agent": "nope"], ["folder": "/etc"], ["mode": "yes"], ["model": 3],
+                                    ["agent": chat.agent.id, "model": "nope", "mode": "default"], ["model": "m2", "mode": "nope"], ["folder": "/etc", "no_project": true]] {
+            let reply = try await patch(body)
+            XCTAssertEqual(reply.status, 400, "\(body)")
+        }
+        XCTAssertEqual(chat.agent.id, before.0)
+        XCTAssertEqual(chat.model, before.1)
+        XCTAssertEqual(chat.agentMode, before.2)
+        XCTAssertEqual(chat.workspace, before.3)
+    }
+
+    func testNoProjectLeavesTheFolderOut() async throws {
+        let before = chat.workspace
+        defer { chat.workspace = before }
+        _ = try await patch(["no_project": true])
+        let options = try await get("/v1/chat/current").json["options"] as? [String: Any] ?? [:]
+        XCTAssertNil(options["folder"], "no project is an absent folder, not the scratch path")
+    }
+
+    func testSettingsNeedAPairedDevice() async throws {
+        chat.receiveModes(current: "default", modes: [AgentMode(id: "default", name: "Default"), AgentMode(id: "plan", name: "Plan")])
+        let reply = try await h.request("PATCH", "/v1/chat/options", token: nil, body: ["mode": "plan"])
+        XCTAssertEqual(reply.status, 401)
+        XCTAssertEqual(chat.agentMode, "default")
+    }
+
     // S7
     func testThreadsListMatchesTheAPIAndOneThreadCanBeRead() async throws {
         ThreadStore.save(ChatThread(id: "t-1", title: "First", workspace: "/tmp/web-app", updatedAt: Date(), items: [ChatItem(kind: .user("q")), ChatItem(kind: .assistant("a"))], agent: chat.agent.id))

@@ -191,10 +191,12 @@ final class ChatViewModel: ObservableObject {
         guard let model else { return "Default" }
         return options.models.first { $0.id == model }?.name ?? model
     }
-    var autoMode: Bool {
-        get { options.autoMode }
-        set { options.autoMode = newValue; Task { await api.setAutoMode(newValue) } }
+    var modes: [ChatNamedInfo] { options.modes }
+    var mode: String? {
+        get { options.mode }
+        set { guard let newValue else { return }; options.mode = newValue; Task { await api.setMode(newValue) } }
     }
+    var modeName: String { options.modes.first { $0.id == options.mode }?.name ?? options.mode ?? "" }
     var workspace: URL? { options.folder.map(URL.init(fileURLWithPath:)) }
     var workspaceLabel: String { options.folderLabel }
     var needsWorkspace: Bool { options.needsFolder }
@@ -342,6 +344,10 @@ final class ChatViewModel: ObservableObject {
     }
 
     // MARK: Approvals, questions and the queue
+
+    func decide(_ approval: ChatApprovalInfo, option: PermissionOption) {
+        read { _ in _ = try? await self.api.decide(DecideApprovalRequest(id: approval.id, allow: option.allows, option: option.id)) }
+    }
 
     func decide(_ approval: ChatApprovalInfo, allow: Bool) {
         read { _ in _ = try? await self.api.decide(DecideApprovalRequest(id: approval.id, allow: allow)) }

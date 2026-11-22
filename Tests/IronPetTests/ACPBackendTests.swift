@@ -15,6 +15,8 @@ final class ACPBackendTests: XCTestCase {
     def send(o): sys.stdout.write(json.dumps(o) + "\n"); sys.stdout.flush()
     sid = None
     turns = 0
+    # FAKE_MODES "<current>:<id>,<id>..." replaces the default mode block, as a real Claude, Codex or Cursor session advertises it.
+    custom = os.environ.get("FAKE_MODES")
     def update(u): send({"jsonrpc": "2.0", "method": "session/update", "params": {"sessionId": sid, "update": u}})
     for line in sys.stdin:
         m = json.loads(line); log.write(line); log.flush()
@@ -36,9 +38,12 @@ final class ACPBackendTests: XCTestCase {
                 update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "REPLAY"}})
                 update({"sessionUpdate": "available_commands_update", "availableCommands": [{"name": "review", "description": "Review code"}, {"name": "init", "description": "Set up", "input": {"hint": "path"}}, {"name": "compact", "description": "Shrink"}]})
             send({"jsonrpc": "2.0", "id": mid, "result": {"sessionId": sid,
-                  "modes": {"currentModeId": "bypassPermissions" if mode == "bypass" else "default",
-                            "availableModes": [{"id": "default"}, {"id": "bypassPermissions"}]},
+                  "modes": ({"currentModeId": custom.split(":")[0], "availableModes": [{"id": i} for i in custom.split(":")[1].split(",")]} if custom else
+                            {"currentModeId": "bypassPermissions" if mode == "bypass" else "default",
+                            "availableModes": [{"id": "default"}, {"id": "bypassPermissions"}]}),
                   "models": {"currentModelId": "m1", "availableModels": [{"modelId": "m1", "name": "Model One"}, {"modelId": "m2", "name": "Model Two"}]}}})
+        elif method == "session/set_mode" and os.environ.get("FAKE_SETMODE_FAIL"):
+            send({"jsonrpc": "2.0", "id": mid, "error": {"code": -32603, "message": "cannot switch"}})
         elif method in ("session/set_model", "session/set_mode"):
             send({"jsonrpc": "2.0", "id": mid, "result": {}})
         elif method == "session/prompt":
@@ -88,6 +93,33 @@ final class ACPBackendTests: XCTestCase {
                 reply = json.loads(sys.stdin.readline()); log.write(json.dumps(reply) + "\n"); log.flush()
                 ok = reply["result"]["outcome"].get("optionId") == "yes"
                 update({"sessionUpdate": "tool_call_update", "toolCallId": "t1", "status": "completed" if ok else "failed"})
+            if "PLANEXIT" in text:
+                send({"jsonrpc": "2.0", "id": 902, "method": "session/request_permission", "params": {"sessionId": sid,
+                      "toolCall": {"toolCallId": "p1", "title": "Ready to code?", "kind": "switch_mode", "rawInput": {"plan": "1. Edit a.swift\n2. Run tests"}},
+                      "options": [{"optionId": "acceptEdits", "name": "Yes, and auto-accept edits", "kind": "allow_always"},
+                                  {"optionId": "default", "name": "Yes, and manually approve edits", "kind": "allow_once"},
+                                  {"optionId": "plan", "name": "No, keep planning", "kind": "reject_once"},
+                                  {"optionId": "x-revise", "name": "Revise the plan", "kind": "revise"}]}})
+                reply = json.loads(sys.stdin.readline()); log.write(json.dumps(reply) + "\n"); log.flush()
+            if "EDITPERM" in text:
+                send({"jsonrpc": "2.0", "id": 903, "method": "session/request_permission", "params": {"sessionId": sid,
+                      "toolCall": {"toolCallId": "e1", "title": "Edit a.swift", "kind": "edit", "locations": [{"path": "/work/a.swift"}],
+                                   "rawInput": {"file_path": "/work/a.swift", "new_string": "let x = 1"}},
+                      "options": [{"optionId": "allow", "name": "Yes", "kind": "allow_once"}, {"optionId": "reject", "name": "No", "kind": "reject_once"}]}})
+                reply = json.loads(sys.stdin.readline()); log.write(json.dumps(reply) + "\n"); log.flush()
+            if "ALWAYS" in text:
+                # The agent remembers an "allow always" answer and does not ask for the same tool again in this session.
+                remembered = False
+                for n in (1, 2):
+                    if remembered:
+                        log.write(json.dumps({"skipped": n}) + "\n"); log.flush(); continue
+                    send({"jsonrpc": "2.0", "id": 910 + n, "method": "session/request_permission", "params": {"sessionId": sid,
+                          "toolCall": {"toolCallId": "a%d" % n, "title": "`make`", "kind": "execute", "rawInput": {"command": "make"}},
+                          "options": [{"optionId": "once", "name": "Allow once", "kind": "allow_once"},
+                                      {"optionId": "always", "name": "Always allow make", "kind": "allow_always"},
+                                      {"optionId": "no", "name": "Reject", "kind": "reject_once"}]}})
+                    reply = json.loads(sys.stdin.readline()); log.write(json.dumps(reply) + "\n"); log.flush()
+                    remembered = reply["result"]["outcome"].get("optionId") == "always"
             if "ELICIT" in text:
                 props = {"question_0": {"type": "string", "title": "Library", "description": "Which one?", "oneOf": [{"const": "A", "title": "A", "description": "first"}, {"const": "B", "title": "B"}]},
                          "question_0_custom": {"type": "string", "title": "Other"}}
@@ -127,6 +159,8 @@ final class ACPBackendTests: XCTestCase {
         setenv("FAKE_LOG", dir.appendingPathComponent("log").path, 1)
         unsetenv("FAKE_MODE")
         unsetenv("FAKE_STEER")
+        unsetenv("FAKE_MODES")
+        unsetenv("FAKE_SETMODE_FAIL")
     }
 
     override func tearDown() {
@@ -375,6 +409,139 @@ final class ACPBackendTests: XCTestCase {
         }
     }
 
+    private func permissionReplies() -> [String] {
+        logged().compactMap { (((($0["result"] as? JSON)?["outcome"]) as? JSON)?["optionId"]) as? String }
+    }
+
+    // Background requests: an automation's own session (new, own and fork all use this path) raises an alert and waits.
+    private func automation(allowed: [String]? = nil, disallowed: [String]? = nil, session: String = "new") -> Automation {
+        Automation(id: "review", name: "Review", trigger: .init(type: "interval", minutes: 20, clock: "wall"),
+                   action: .init(type: "prompt", prompt: "EDITPERM", session: session, allowedTools: allowed, disallowedTools: disallowed))
+    }
+
+    private func runAutomation(_ a: Automation, permissions: BackgroundPermissions, notes: @escaping (String) -> Void = { _ in }) -> Task<Result<String, AutomationError>, Never> {
+        let agent = agent, dir = dir!
+        return Task { @MainActor in
+            await AutomationSession.run(a, prompt: "EDITPERM", workspace: dir, spawner: POSIXProcessSpawner(), agentOverride: agent,
+                                        onNote: notes, permissions: permissions)
+        }
+    }
+
+    private func waitFor(_ condition: () -> Bool) async {
+        for _ in 0..<400 where !condition() { try? await Task.sleep(for: .milliseconds(10)) }
+        XCTAssertTrue(condition(), "timed out")
+    }
+
+    func testAnAutomationRequestRaisesAnAlertAndTheAnswerResumesTheRun() async {
+        let signals = SignalStore()
+        let permissions = BackgroundPermissions(signals: signals, timeout: { 600 })
+        for session in ["new", "own", "fork"] {
+            try? FileManager.default.removeItem(at: dir.appendingPathComponent("log"))
+            let task = runAutomation(automation(session: session), permissions: permissions)
+            await waitFor { permissions.pending.count == 1 }
+            let request = permissions.pending.first
+            XCTAssertEqual(request?.source, "Automation \"Review\"", session)
+            XCTAssertEqual(request?.options.map(\.id), ["allow", "reject"], session)
+            XCTAssertEqual(signals.signals.count, 1, "the alerts list shows it (\(session))")
+            XCTAssertTrue(permissionReplies().isEmpty, "the run waits, nothing was answered for it (\(session))")
+            XCTAssertTrue(permissions.answer(request!.id, optionID: "allow"))
+            guard case .success = await task.value else { return XCTFail("the run should finish after the answer (\(session))") }
+            XCTAssertEqual(permissionReplies(), ["allow"], session)
+            XCTAssertTrue(signals.signals.isEmpty)
+        }
+    }
+
+    func testAnUnansweredAutomationRequestIsRejectedAndRecorded() async {
+        let permissions = BackgroundPermissions(timeout: { 0.1 })
+        var notes: [String] = []
+        let task = runAutomation(automation(), permissions: permissions) { notes.append($0) }
+        guard case .success = await task.value else { return XCTFail("the run should go on after the reject") }
+        XCTAssertEqual(permissionReplies(), ["reject"], "the agent's reject_once option")
+        XCTAssertEqual(notes, ["permission timed out: Edit a.swift"])
+        XCTAssertTrue(permissions.pending.isEmpty)
+    }
+
+    func testAllowedToolsSkipTheAlertAndDisallowedToolsAreRejectedWithoutOne() async {
+        var raised = 0
+        let permissions = BackgroundPermissions(timeout: { 600 })
+        _ = permissions.observe(raised: { _ in raised += 1 }, resolved: { _, _ in })
+        let allowed = runAutomation(automation(allowed: ["Edit"]), permissions: permissions)
+        guard case .success = await allowed.value else { return XCTFail("an allowed tool runs") }
+        XCTAssertEqual(permissionReplies(), ["allow"])
+        try? FileManager.default.removeItem(at: dir.appendingPathComponent("log"))
+        let disallowed = runAutomation(automation(disallowed: ["Edit"]), permissions: permissions)
+        guard case .success = await disallowed.value else { return XCTFail("a disallowed tool is refused and the run goes on") }
+        XCTAssertEqual(permissionReplies(), ["reject"])
+        XCTAssertEqual(raised, 0, "neither raised an alert")
+    }
+
+    func testAToolRuleMatchesToolsAndCommandPrefixes() {
+        func call(_ kind: String, tool: String? = nil, command: String? = nil) -> ACPToolCall {
+            ACPToolCall(id: "1", title: tool ?? kind, kind: kind, rawInput: command.map { ["command": $0] }, toolName: tool)
+        }
+        XCTAssertTrue(ToolRule.matches("Bash", call("execute", tool: "Bash", command: "ls")))
+        XCTAssertTrue(ToolRule.matches("Bash(git status:*)", call("execute", tool: "Bash", command: "git status -s")))
+        XCTAssertFalse(ToolRule.matches("Bash(git status:*)", call("execute", tool: "Bash", command: "git push")))
+        XCTAssertTrue(ToolRule.matches("mcp__github", call("other", tool: "mcp__github__create_issue")))
+        XCTAssertFalse(ToolRule.matches("mcp__github", call("other", tool: "mcp__gitlab__create_issue")))
+        XCTAssertTrue(ToolRule.matches("Edit", call("edit")), "an agent without tool names still has a kind")
+    }
+
+    // S7: Claude's plan-mode exit request arrives with the agent's own four options, one of them of a kind ironpet has no name for.
+    func testPlanExitRequestKeepsEveryOptionAndTheChosenIdGoesBack() async {
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
+        var asked: ACPToolCall?
+        backend.onPermission = { call, respond in
+            asked = call
+            respond(.choose(call.permissionOptions[3]))
+        }
+        _ = await run(backend, turn("PLANEXIT"))
+        XCTAssertEqual(asked?.kind, "switch_mode")
+        XCTAssertEqual(asked?.permissionOptions.map(\.id), ["acceptEdits", "default", "plan", "x-revise"])
+        XCTAssertEqual(asked?.permissionOptions.map(\.name), ["Yes, and auto-accept edits", "Yes, and manually approve edits", "No, keep planning", "Revise the plan"])
+        XCTAssertEqual(asked?.permissionOptions.last?.kind, "revise")
+        XCTAssertEqual(permissionReplies(), ["x-revise"], "an option ironpet does not know is sent back by its id")
+        XCTAssertEqual(ApprovalRules.card(for: asked!).detail, "1. Edit a.swift\n2. Run tests")
+        backend.shutdown()
+    }
+
+    // S7: an edit approval in default mode.
+    func testEditApprovalOffersTheAgentsOptions() async {
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
+        var asked: ACPToolCall?
+        backend.onPermission = { call, respond in
+            asked = call
+            respond(.choose(call.permissionOptions[1]))
+        }
+        _ = await run(backend, turn("EDITPERM"))
+        XCTAssertEqual(asked?.kind, "edit")
+        XCTAssertEqual(asked?.permissionOptions.map(\.id), ["allow", "reject"])
+        XCTAssertEqual(permissionReplies(), ["reject"])
+        backend.shutdown()
+    }
+
+    // S7: "allow always" goes back as its own option id, and the agent then stops asking.
+    func testAllowAlwaysIsSentAndTheAgentHonoursIt() async {
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
+        var requests = 0
+        backend.onPermission = { call, respond in
+            requests += 1
+            respond(.choose(call.permissionOptions.first { $0.kind == "allow_always" }!))
+        }
+        _ = await run(backend, turn("ALWAYS"))
+        XCTAssertEqual(permissionReplies(), ["always"])
+        XCTAssertEqual(requests, 1, "the agent did not ask again")
+        XCTAssertTrue(logged().contains { $0["skipped"] as? Int == 2 })
+        backend.shutdown()
+    }
+
+    func testAnAnswerWithoutAnOptionStillMapsToOnceOptions() {
+        let options: [JSON] = [["optionId": "a", "kind": "allow_always"], ["optionId": "b", "kind": "allow_once"], ["optionId": "c", "kind": "reject_once"]]
+        XCTAssertEqual((ACPBackend.outcome(.allow, options: options)["outcome"] as? JSON)?["optionId"] as? String, "b")
+        XCTAssertEqual((ACPBackend.outcome(.deny(), options: options)["outcome"] as? JSON)?["optionId"] as? String, "c")
+        XCTAssertEqual((ACPBackend.outcome(.init(allow: true, message: "", optionID: "gone"), options: options)["outcome"] as? JSON)?["optionId"] as? String, "b")
+    }
+
     private func elicitationReplies() -> [JSON] {
         logged().filter { $0["id"] as? Int == 901 }.compactMap { $0["result"] as? JSON }
     }
@@ -477,13 +644,12 @@ final class ACPBackendTests: XCTestCase {
         backend.shutdown()
     }
 
-    func testBypassModeFromTheUsersSettingsIsSwitchedToTheAskingMode() async {
+    func testBypassModeFromTheUsersSettingsIsKept() async {
         setenv("FAKE_MODE", "bypass", 1)
         defer { unsetenv("FAKE_MODE") }
         let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
         _ = await run(backend, turn("hi"))
-        let set = logged().first { $0["method"] as? String == "session/set_mode" }
-        XCTAssertEqual((set?["params"] as? JSON)?["modeId"] as? String, "default")
+        XCTAssertEqual(modeSets(), [], "no regex and no forced mode: the agent's own mode decides what it asks")
         backend.shutdown()
     }
 
@@ -494,16 +660,101 @@ final class ACPBackendTests: XCTestCase {
         backend.shutdown()
     }
 
-    func testAskingModeChoice() {
-        XCTAssertEqual(ACPBackend.askingMode(current: "bypassPermissions", available: ["default", "acceptEdits", "plan", "auto", "bypassPermissions"]), "default")
-        XCTAssertEqual(ACPBackend.askingMode(current: "acceptEdits", available: ["default", "acceptEdits"]), "default")
-        XCTAssertEqual(ACPBackend.askingMode(current: "auto", available: ["default", "auto"]), "default")
-        XCTAssertEqual(ACPBackend.askingMode(current: "full-access", available: ["read-only", "auto", "full-access"]), "auto")
-        XCTAssertEqual(ACPBackend.askingMode(current: "yolo", available: ["default", "autoEdit", "yolo"]), "default")
-        XCTAssertNil(ACPBackend.askingMode(current: "default", available: ["default", "bypassPermissions"]))
-        XCTAssertNil(ACPBackend.askingMode(current: "agent", available: ["agent", "plan", "ask"]), "Cursor's modes are left alone")
-        XCTAssertNil(ACPBackend.askingMode(current: "auto", available: ["read-only", "auto", "full-access"]), "Codex's auto asks on request")
-        XCTAssertNil(ACPBackend.askingMode(current: nil, available: ["default"]))
+    private static let claudeModes = "default,acceptEdits,plan,auto,bypassPermissions"
+
+    private func modeSets() -> [String] {
+        logged().filter { $0["method"] as? String == "session/set_mode" }.compactMap { ($0["params"] as? JSON)?["modeId"] as? String }
+    }
+
+    /// A chat's backend: it runs in the agent's own mode unless the user picked one.
+    private func runChat(_ modes: String, picked: String? = nil) async -> (ACPBackend, [AgentEvent], [(String?, [AgentMode])]) {
+        setenv("FAKE_MODES", modes, 1)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
+        backend.preferredMode = picked
+        var reported: [(String?, [AgentMode])] = []
+        backend.onModes = { reported.append(($0, $1)) }
+        let events = await run(backend, turn("hi"))
+        return (backend, events, reported)
+    }
+
+    // S1: the picker offers what the agent advertised and nothing else.
+    func testTheChatReportsExactlyTheModesTheAgentAdvertised() async {
+        let (backend, _, reported) = await runChat("default:" + Self.claudeModes)
+        XCTAssertEqual(reported.last?.0, "default")
+        XCTAssertEqual(reported.last?.1.map(\.id), ["default", "acceptEdits", "plan", "auto", "bypassPermissions"])
+        XCTAssertEqual(modeSets(), [])
+        backend.shutdown()
+    }
+
+    // S2: the user's own default stays, whatever it is.
+    func testAChatLeavesTheModeTheUserConfiguredForTheAgent() async {
+        for mode in ["bypassPermissions", "acceptEdits", "auto", "plan"] {
+            try? FileManager.default.removeItem(at: dir.appendingPathComponent("log"))
+            let (backend, events, reported) = await runChat(mode + ":" + Self.claudeModes)
+            XCTAssertEqual(modeSets(), [], mode)
+            XCTAssertEqual(reported.last?.0, mode)
+            guard case .finished(let error) = events.last else { return XCTFail("no finish") }
+            XCTAssertNil(error)
+            backend.shutdown()
+        }
+    }
+
+    // S3
+    func testThePickedModeIsAppliedWhenTheSessionStarts() async {
+        let (backend, _, reported) = await runChat("bypassPermissions:" + Self.claudeModes, picked: "plan")
+        XCTAssertEqual(modeSets(), ["plan"])
+        XCTAssertEqual(reported.last?.0, "plan")
+        backend.shutdown()
+    }
+
+    func testAPickedModeTheAgentNoLongerAdvertisesIsIgnored() async {
+        let (backend, _, reported) = await runChat("default:default,plan", picked: "auto")
+        XCTAssertEqual(modeSets(), [])
+        XCTAssertEqual(reported.last?.0, "default")
+        backend.shutdown()
+    }
+
+    func testPickingAModeDuringASessionSwitchesIt() async {
+        let (backend, _, _) = await runChat("default:" + Self.claudeModes)
+        var current: String?
+        backend.onModes = { mode, _ in current = mode }
+        await backend.setMode("acceptEdits")
+        XCTAssertEqual(modeSets(), ["acceptEdits"])
+        XCTAssertEqual(current, "acceptEdits")
+        await backend.setMode("acceptEdits")
+        XCTAssertEqual(modeSets(), ["acceptEdits"], "the same mode is not sent twice")
+        backend.shutdown()
+    }
+
+    func testNamesAndDescriptionsComeFromTheAgent() async {
+        setenv("FAKE_MODES", "default:default", 1)
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
+        var modes: [AgentMode] = []
+        backend.onModes = { modes = $1 }
+        _ = await run(backend, turn("hi"))
+        XCTAssertEqual(modes, [AgentMode(id: "default", name: "default")], "no name sent means the id is shown")
+        backend.shutdown()
+    }
+
+    // An agent with no modes: nothing to pick and nothing is sent.
+    func testAnAgentWithoutModesGetsNoSetMode() async {
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
+        backend.preferredMode = "plan"
+        _ = await run(backend, turn("hi"))
+        XCTAssertEqual(modeSets(), [])
+        backend.shutdown()
+    }
+
+    // Jobs and automations follow the agent's mode too: nothing moves them out of a permissive one.
+    func testBackendsWithoutAPickKeepEveryAdvertisedStartMode() async {
+        for current in ["bypassPermissions", "yolo", "dontAsk", "full-access", "default"] {
+            try? FileManager.default.removeItem(at: dir.appendingPathComponent("log"))
+            setenv("FAKE_MODES", "\(current):default,auto,\(current)", 1)
+            let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
+            _ = await run(backend, turn("hi"))
+            XCTAssertEqual(modeSets(), [], current)
+            backend.shutdown()
+        }
     }
 
     func testStoredSessionIsReopenedWithSessionLoad() async {

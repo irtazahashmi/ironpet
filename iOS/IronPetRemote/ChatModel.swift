@@ -198,6 +198,15 @@ final class ChatModel: SocketModel {
     @discardableResult
     func newChat() async -> Bool { await change { try await self.client.newChat() } }
 
+    /// Applies one change to the Mac chat's settings. A 409 (a turn is running) sets `conflictMessage`. The snapshot reloads either way, so
+    /// a rejected choice snaps back to what the Mac has.
+    @discardableResult
+    func setOptions(_ change: RemoteChatOptionsChange) async -> Bool {
+        let done = await self.change { try await self.client.setChatOptions(change) }
+        if !done { await reload() }
+        return done
+    }
+
     private func change(_ call: () async throws -> Void) async -> Bool {
         do {
             try await call()
