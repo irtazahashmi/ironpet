@@ -239,7 +239,7 @@ final class RemoteVoiceTests: XCTestCase {
     func testAnotherDevicesTurnIsNotSpoken() async throws {
         api.voice.synthesize = { _ in Data([1]) }
         voice.receive(text: VoiceClientMessage.ttsEnable(true).json)
-        try finishTurn(reply, from: ChatOrigin(client: ChatOrigin.iosClient, ref: "someone-else"))
+        try finishTurn(reply, from: ChatOrigin.ios(device: "someone-else"))
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertTrue(out.isEmpty)
     }
@@ -340,7 +340,7 @@ final class RemoteVoiceTests: XCTestCase {
 
     /// Ends a turn the way the chat does, through the listeners `ChatAPI` keeps.
     private func finishTurn(_ answer: String, from origin: ChatOrigin? = nil) throws {
-        let sender = origin ?? ChatOrigin(client: ChatOrigin.iosClient, ref: device)
+        let sender = origin ?? ChatOrigin.ios(device: device)
         session.onTurn?(sender, .finished(answer))
     }
 }
