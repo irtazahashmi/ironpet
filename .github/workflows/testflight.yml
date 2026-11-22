@@ -1,4 +1,4 @@
-name: TestFlight
+name: TestFlight iOS
 
 # Archives IronPet Remote (the iPhone app and its widget) and uploads it to TestFlight. Run it from the Actions tab on main;
 # the run waits for one of the required reviewers of the `testflight` environment, then builds with scripts/ios_testflight.sh.

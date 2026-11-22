@@ -1,4 +1,4 @@
-name: Release
+name: Release macOS
 
 # Builds the downloadable Mac app and attaches it to a DRAFT GitHub Release for you to review and publish.
 # Run it by pushing a tag on main (git tag v0.1.0 && git push origin v0.1.0) or from the Actions tab on main.
