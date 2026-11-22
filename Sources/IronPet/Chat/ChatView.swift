@@ -24,7 +24,7 @@ struct ChatView: View {
     @ObservedObject private var config = SettingsAPI.live
     @FocusState private var inputFocused: Bool
     @State private var showSettings = false
-    @State private var follow = TranscriptFollow()
+    @State private var follow = TranscriptFollowState()
     @State private var topRowID: UUID?
     @State private var scrollActivity = ScrollActivity()
     @State private var lastContentHeight: CGFloat = 0
@@ -428,11 +428,11 @@ struct ChatView: View {
         lastViewportHeight = metrics.viewportHeight
         checkBlank(proxy)
         // While a width change re-wraps the rows, the offset moves because the heights do, not because the reader scrolled.
-        follow.geometryChanged(distanceFromBottom: metrics.distanceFromBottom, userDriven: userDriven && !resizing)
+        follow.geometryChanged(distanceFromBottom: Double(metrics.distanceFromBottom), userDriven: userDriven && !resizing)
         // Rows below the viewport only have estimated heights, so the end moves as they are measured.
         lastGap = metrics.distanceFromBottom
         if follow.pinned, topRowID != nil { topRowID = nil }
-        guard follow.pinned, !userDriven, !resizing, grew, metrics.distanceFromBottom > TranscriptFollow.bottomTolerance else { return }
+        guard follow.pinned, !userDriven, !resizing, grew, metrics.distanceFromBottom > CGFloat(TranscriptFollowState.bottomTolerance) else { return }
         settleAtEnd(proxy, attempt: 0)
     }
 
@@ -499,7 +499,7 @@ struct ChatView: View {
         settleScroll?.cancel()
         let work = DispatchWorkItem {
             guard follow.pinned, !resizing else { return }
-            if lastGap > TranscriptFollow.bottomTolerance { scrollToEnd(proxy) }
+            if lastGap > CGFloat(TranscriptFollowState.bottomTolerance) { scrollToEnd(proxy) }
             if attempt < 3 { settleAtEnd(proxy, attempt: attempt + 1) }
         }
         settleScroll = work
@@ -1265,7 +1265,7 @@ private struct UserBubble: View {
     var onToggleExpand: () -> Void = {}
 
     var body: some View {
-        let preview = MessageCollapse.preview(of: text)
+        let preview = ChatMessageCollapse.preview(of: text)
         // A row with find matches shows the whole text, so the highlighted occurrences exist on screen.
         let showsAll = expanded || find != nil
         VStack(alignment: .trailing, spacing: 3) {
@@ -1458,7 +1458,7 @@ private struct ToolSteps: View {
 
     private func stepText(_ step: (id: UUID, summary: String, ok: Bool?)) -> Text {
         guard let find = finds.first(where: { $0.0 == step.id })?.1 else { return Text(LocalizedStringKey(step.summary)) }
-        return ChatFind.text(Markdown.inline(step.summary), segment: 0, find: find)
+        return ChatFind.text(ChatMarkdown.inlineWithPathLinks(step.summary), segment: 0, find: find)
     }
 
     /// The running step while one is in flight, otherwise a count per kind of step.

@@ -1,5 +1,6 @@
 import AppKit
 import IronPetCore
+import IronPetKit
 import SwiftUI
 
 /// The text blocks of a reply (headings, paragraphs, lists and quotes) as one attributed string. One string
@@ -16,15 +17,8 @@ enum MarkdownText {
     static let itemSpacing: CGFloat = 4
     static let markerGap: CGFloat = 6
 
-    static func isTextBlock(_ block: Markdown.Block) -> Bool {
-        switch block {
-        case .heading, .paragraph, .list, .quote: return true
-        case .code, .table, .rule: return false
-        }
-    }
-
     /// `blocks` must all be text blocks. `firstSegment` is the find segment number of the first piece of text.
-    static func attributed(_ blocks: [Markdown.Block], size: CGFloat, firstSegment: Int = 0,
+    static func attributed(_ blocks: [ChatMarkdown.Block], size: CGFloat, firstSegment: Int = 0,
                            find: ChatFind.RowHighlight? = nil) -> NSAttributedString {
         let result = NSMutableAttributedString()
         var segment = firstSegment
@@ -41,13 +35,13 @@ enum MarkdownText {
             switch block {
             case .heading(let level, let text):
                 let heading: CGFloat = level == 1 ? 17 : level == 2 ? 15.5 : 14
-                let body = piece(Markdown.inline(text), weight: level <= 2 ? .bold : .semibold, fontSize: heading)
+                let body = piece(ChatMarkdown.inlineWithPathLinks(text), weight: level <= 2 ? .bold : .semibold, fontSize: heading)
                 result.append(paragraphs(body, style: style(before: 2), last: style(before: 2, after: blockSpacing)))
             case .paragraph(let text):
-                let body = piece(Markdown.inline(text))
+                let body = piece(ChatMarkdown.inlineWithPathLinks(text))
                 result.append(paragraphs(body, style: style(lineSpacing: 2), last: style(lineSpacing: 2, after: blockSpacing - 2)))
             case .quote(let text):
-                let body = piece(Markdown.inline(text), color: .secondaryLabelColor)
+                let body = piece(ChatMarkdown.inlineWithPathLinks(text), color: .secondaryLabelColor)
                 let inner = style(first: quoteIndent, head: quoteIndent)
                 let quoted = paragraphs(body, style: inner, last: style(first: quoteIndent, head: quoteIndent, after: blockSpacing))
                 quoted.addAttribute(quoteBar, value: true, range: NSRange(location: 0, length: quoted.length - 1))
@@ -55,7 +49,7 @@ enum MarkdownText {
             case .list(_, let items):
                 for (index, item) in items.enumerated() {
                     let task = item.task
-                    let body = piece(Markdown.inline(task?.text ?? item.text))
+                    let body = piece(ChatMarkdown.inlineWithPathLinks(task?.text ?? item.text))
                     let (marker, markerEnd) = marker(for: item, task: task, size: size)
                     let head = markerEnd + markerGap
                     let tabs = [NSTextTab(textAlignment: .right, location: markerEnd), NSTextTab(textAlignment: .left, location: head)]
@@ -135,7 +129,7 @@ enum MarkdownText {
     }
 
     /// The marker with its leading and trailing tab, and where the marker column ends.
-    private static func marker(for item: Markdown.ListItem, task: (done: Bool, text: String)?, size: CGFloat) -> (NSAttributedString, CGFloat) {
+    private static func marker(for item: ChatMarkdown.ListItem, task: (done: Bool, text: String)?, size: CGFloat) -> (NSAttributedString, CGFloat) {
         let start = CGFloat(item.indent) * listIndent
         let indentCopy = String(repeating: "  ", count: item.indent)
         var attributes: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: size), .foregroundColor: NSColor.secondaryLabelColor]

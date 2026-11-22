@@ -1,4 +1,5 @@
 import Foundation
+import IronPetKit
 
 /// Matching logic for the chat's Cmd-F search. Pure functions over `ChatItem`, so it is unit tested
 /// without a view. Search is plain text, case and diacritic insensitive.
@@ -54,7 +55,7 @@ package enum ChatFind {
         case .user(let text), .error(let text):
             return [text]
         case .assistant(let text):
-            return Markdown.segments(of: text)
+            return ChatMarkdown.segments(of: text)
         case .tool(let summary, _):
             return [displayed(summary)]
         case .form(let record):
@@ -68,7 +69,7 @@ package enum ChatFind {
 
     /// A tool summary as drawn: its inline markdown without the markers.
     package static func displayed(_ markdown: String) -> String {
-        String(Markdown.parseInline(markdown).characters)
+        String(ChatMarkdown.inline(markdown).characters)
     }
 
     /// Every match across the transcript in reading order.

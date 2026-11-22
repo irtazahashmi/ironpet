@@ -1,4 +1,5 @@
 import Foundation
+import IronPetKit
 #if canImport(NaturalLanguage)
 import NaturalLanguage
 #endif
@@ -62,13 +63,13 @@ package enum SpeechText {
     /// Headings, paragraphs, quotes and list items, with inline markup removed. Code, tables and rules are skipped:
     /// read aloud they are noise.
     package static func spokenBlocks(of markdown: String) -> [String] {
-        Markdown.parse(markdown).flatMap { block -> [String] in
+        ChatMarkdown.parse(markdown).flatMap { block -> [String] in
             switch block {
             case .paragraph, .quote:
-                return Markdown.segments(of: block).map { clean($0) }
+                return ChatMarkdown.segments(of: block).map { clean($0) }
             case .heading, .list:
                 // A heading or item without closing punctuation still gets a pause before the next one.
-                return Markdown.segments(of: block).map { ending(clean($0)) }
+                return ChatMarkdown.segments(of: block).map { ending(clean($0)) }
             case .code, .table, .rule:
                 return []
             }

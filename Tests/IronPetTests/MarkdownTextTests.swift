@@ -2,11 +2,12 @@ import AppKit
 import XCTest
 @testable import IronPet
 @testable import IronPetCore
+@testable import IronPetKit
 
 @MainActor
 final class MarkdownTextTests: XCTestCase {
     private func attributed(_ markdown: String, find: ChatFind.RowHighlight? = nil) -> NSAttributedString {
-        MarkdownText.attributed(Markdown.parse(markdown), size: 13.5, find: find)
+        MarkdownText.attributed(ChatMarkdown.parse(markdown), size: 13.5, find: find)
     }
 
     private func copied(_ text: NSAttributedString, _ range: NSRange? = nil) -> String {

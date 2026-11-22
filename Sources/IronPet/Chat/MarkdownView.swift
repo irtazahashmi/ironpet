@@ -1,11 +1,12 @@
 import AppKit
 import IronPetCore
+import IronPetKit
 import SwiftUI
 import WebKit
 
-extension Markdown {
+extension ChatMarkdown {
     /// The inline markdown of `text` with file paths made into links.
-    static func inline(_ text: String) -> AttributedString { FilePathLinks.link(parseInline(text)) }
+    static func inlineWithPathLinks(_ text: String) -> AttributedString { FilePathLinks.link(inline(text)) }
 }
 
 /// Renders a reply's markdown as SwiftUI views. Each run of text blocks (headings, paragraphs, lists, quotes)
@@ -20,14 +21,14 @@ struct MarkdownView: View {
     @ObservedObject private var paths = PathCache.shared
 
     private enum Piece {
-        case text([Markdown.Block], segment: Int)
-        case block(Markdown.Block, segment: Int)
+        case text([ChatMarkdown.Block], segment: Int)
+        case block(ChatMarkdown.Block, segment: Int)
     }
 
     var body: some View {
-        let blocks = Markdown.parse(text)
+        let blocks = ChatMarkdown.parse(text)
         // Only a row with a match needs the segment numbers, so streaming without find parses nothing extra.
-        let starts = find == nil ? [] : blocks.reduce(into: [0]) { $0.append($0.last! + Markdown.segments(of: $1).count) }
+        let starts = find == nil ? [] : blocks.reduce(into: [0]) { $0.append($0.last! + ChatMarkdown.segments(of: $1).count) }
         let pieces = Self.pieces(blocks, starts: starts)
         VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(pieces.enumerated()), id: \.offset) { _, piece in
@@ -43,11 +44,11 @@ struct MarkdownView: View {
         }
     }
 
-    private static func pieces(_ blocks: [Markdown.Block], starts: [Int]) -> [Piece] {
+    private static func pieces(_ blocks: [ChatMarkdown.Block], starts: [Int]) -> [Piece] {
         var pieces: [Piece] = []
         for (index, block) in blocks.enumerated() {
             let segment = starts.isEmpty ? 0 : starts[index]
-            if MarkdownText.isTextBlock(block) {
+            if ChatMarkdown.isTextBlock(block) {
                 if case .text(let run, let first)? = pieces.last {
                     pieces[pieces.count - 1] = .text(run + [block], segment: first)
                 } else {
@@ -61,7 +62,7 @@ struct MarkdownView: View {
     }
 
     @ViewBuilder
-    private func view(for block: Markdown.Block, segment: Int) -> some View {
+    private func view(for block: ChatMarkdown.Block, segment: Int) -> some View {
         switch block {
         case .code(let language, let text, let closed):
             if language?.lowercased() == "mermaid", closed {
@@ -133,7 +134,7 @@ private struct TableBlock: View {
             Grid(alignment: .leading, horizontalSpacing: 14, verticalSpacing: 6) {
                 GridRow {
                     ForEach(Array(header.enumerated()), id: \.offset) { column, cell in
-                        ChatFind.text(Markdown.inline(cell), segment: segment + column, find: find).fontWeight(.semibold)
+                        ChatFind.text(ChatMarkdown.inlineWithPathLinks(cell), segment: segment + column, find: find).fontWeight(.semibold)
                     }
                 }
                 Rectangle().fill(Color.primary.opacity(0.12)).frame(height: 1).gridCellColumns(max(header.count, 1))
@@ -141,7 +142,7 @@ private struct TableBlock: View {
                 ForEach(Array(rows.enumerated()), id: \.offset) { r, row in
                     GridRow {
                         ForEach(Array(row.enumerated()), id: \.offset) { column, cell in
-                            ChatFind.text(Markdown.inline(cell), segment: rowStarts[r] + column, find: find)
+                            ChatFind.text(ChatMarkdown.inlineWithPathLinks(cell), segment: rowStarts[r] + column, find: find)
                         }
                     }
                 }

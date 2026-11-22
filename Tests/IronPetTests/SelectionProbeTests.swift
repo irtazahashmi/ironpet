@@ -2,12 +2,13 @@ import AppKit
 import XCTest
 @testable import IronPet
 @testable import IronPetCore
+@testable import IronPetKit
 
 @MainActor
 final class SelectionProbeTests: XCTestCase {
     private func view(_ markdown: String) -> ChatTextView {
         let view = ChatTextView.make()
-        view.setContent(MarkdownText.attributed(Markdown.parse(markdown), size: 13.5, find: nil))
+        view.setContent(MarkdownText.attributed(ChatMarkdown.parse(markdown), size: 13.5, find: nil))
         view.frame = CGRect(origin: .zero, size: view.fittingSize(forWidth: 300))
         return view
     }
