@@ -16,6 +16,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var telegramTokens: TelegramTokenStore = TelegramAPI.testMode ? MemoryTokenStore() : TelegramToken(secrets: platform.secrets)
     private let store = SessionStore()
     private let signals = SignalStore()
+    /// Permission requests from background jobs and automation sessions.
+    private lazy var backgroundPermissions = BackgroundPermissions(signals: signals, timeout: {
+        TimeInterval(ConfigStore.shared.config.jobs.permissionTimeoutMinutes * 60)
+    })
     private let chat = ChatSession(speech: SpeechPlayer())
     private lazy var recordingKeys = RecordingKeys(voice: chatModel.voice, heldModifiers: {
         Shortcut(ConfigStore.shared.config.hotkeys.voice)?.modifiers ?? 0
@@ -146,7 +150,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         announcer.openSession = { [weak self] id in self?.openSession(id) }
         announcer.openChat = { [weak self] in self?.showChat() }
         announcer.ask = { [weak self] prompt in self?.ask(prompt) }
-        announcer.decide = { [weak self] id, allow in self?.chat.decide(id: id, allow: allow) }
+        announcer.decide = { [weak self] id, allow in
+            guard let self else { return }
+            if backgroundPermissions.has(id) { backgroundPermissions.answer(id, allow: allow) } else { chat.decide(id: id, allow: allow) }
+        }
+        backgroundPermissions.observe(raised: { [weak self] request in
+            self?.announcer.backgroundPermission(request) { option in self?.backgroundPermissions.answer(request.id, optionID: option) }
+        }, resolved: { [weak self] id, _ in self?.announcer.clearApproval(id: id) })
         announcer.automationAction = { [weak self] ids, snooze in self?.automations.notificationAction(ids: ids, snooze: snooze) }
         notifier.start()
         // Resolving the login-shell PATH runs the user's shell, so do it before the first chat needs it.
@@ -322,7 +332,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         taskStore = tasks
         let service = AutomationService(store: store, engine: engine, database: database)
         let notificationStore = NotificationStore(database: database)
-        api = IronPetAPI(stores: .init(tasks: tasks, automations: service, signals: signals, bubbles: announcer.bubbles, notifications: notificationStore, sessions: self.store, chat: chat, meeting: platform.meetings, meetingLibrary: meetings, config: config, speech: platform.speech, petAssets: platform.pets, files: platform.files, usage: UsageStore.shared), events: events)
+        api = IronPetAPI(stores: .init(tasks: tasks, automations: service, signals: signals, bubbles: announcer.bubbles, notifications: notificationStore, sessions: self.store, chat: chat, meeting: platform.meetings, meetingLibrary: meetings, config: config, speech: platform.speech, petAssets: platform.pets, files: platform.files, usage: UsageStore.shared, permissions: backgroundPermissions), events: events)
         pet.tasks = api.tasks
         pet.notifications = NotificationsModel(api: api.notifications, events: events)
         announcer.notifications = notificationStore
@@ -407,7 +417,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         service.runSession = { [weak self, weak service] automation, prompt, fork in
             let agent = AutomationPrompt.agentID(automation)
             let result = await AutomationSession.run(automation, prompt: prompt, workspace: workspace, spawner: spawner, fork: fork,
-                                                     onNote: { service?.record(automation.id, "warning", $0) })
+                                                     onNote: { service?.record(automation.id, "warning", $0) },
+                                                     permissions: self?.backgroundPermissions)
             self?.chat.refreshHistory()
             if case .success(let answer) = result { self?.memorySawAutomation(automation.id, answer: answer, agent: agent) }
             return result
@@ -467,14 +478,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         voiceMode.conversation.cancelHeldJob = { [weak service] in service?.cancelHeldVoiceJob() }
         voiceMode.conversation.releaseHeldJobs = { [weak service] in service?.releaseVoiceHolds() }
         service.onThreadSaved = { [weak self] thread in self?.chat.threadSaved(thread) }
-        service.askApproval = { [weak self] id, job, title, detail, decide in
-            self?.announcer.automation(AutomationNotice(
-                id: id, symbol: "exclamationmark.shield.fill", tint: .warn, title: "\(job.title) wants to \(title.prefix(1).lowercased() + title.dropFirst())",
-                subtitle: "Background job", body: detail,
-                buttons: [.init(title: "Allow", primary: true) { decide(true) },
-                          .init(title: "Deny", destructive: true) { decide(false) }]))
-        }
-        service.clearApproval = { [weak self] id in self?.announcer.bubbles.dismiss(id) }
+        service.permissions = backgroundPermissions
         service.sessionBusy = { [weak self] thread in self.map { $0.chat.isRunning && $0.chat.threadID == thread } ?? false }
         // The signal fires before `state` changes, so the handler reads it on the next main-actor turn.
         lastChatState = chat.state

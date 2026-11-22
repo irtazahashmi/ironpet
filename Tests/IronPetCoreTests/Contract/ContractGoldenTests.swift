@@ -26,7 +26,7 @@ final class ContractGoldenTests: XCTestCase {
         ]
         let writes: [String: Set<String>] = [
             "tasks": ["tasks.create", "tasks.update", "tasks.close"], "alerts": ["alerts.dismiss"], "agents": ["agents.acknowledge"],
-            "automations": ["automations.create", "automations.setEnabled"], "chat": ["chat.send", "chat.setAutoMode"],
+            "automations": ["automations.create", "automations.setEnabled"], "chat": ["chat.send", "chat.setMode"],
             "memory": ["memory.call"], "settings": ["settings.patch"], "today": ["today.brief"],
         ]
         for facade in reads.keys.sorted() {

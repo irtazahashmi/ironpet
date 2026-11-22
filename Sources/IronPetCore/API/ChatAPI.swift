@@ -112,25 +112,31 @@ package struct ChatStopResult: Codable, Equatable {
 
 /// An approval card as a client that cannot draw the Mac's sees it.
 package struct ChatApprovalInfo: Codable, Equatable, Identifiable {
-    package init(id: UUID, title: String, detail: String) {
+    package init(id: UUID, title: String, detail: String, options: [PermissionOption]? = nil) {
         self.id = id
         self.title = title
         self.detail = detail
+        self.options = options
     }
 
     package var id: UUID
     package var title: String
     package var detail: String
+    /// The answers the agent offered, in its order. Nil from a build that predates them.
+    package var options: [PermissionOption]?
 }
 
 package struct DecideApprovalRequest: Codable, Equatable {
-    package init(id: UUID, allow: Bool) {
+    package init(id: UUID, allow: Bool, option: String? = nil) {
         self.id = id
         self.allow = allow
+        self.option = option
     }
 
     package var id: UUID
     package var allow: Bool
+    /// The `optionId` the user chose. When set it wins over `allow`.
+    package var option: String?
 }
 
 /// A question the agent asked, with what has been entered so far.
@@ -313,7 +319,8 @@ package struct ChatOptions: Codable, Equatable {
         folderLabel: String,
         recentFolders: [String],
         needsFolder: Bool,
-        autoMode: Bool,
+        modes: [ChatNamedInfo] = [],
+        mode: String? = nil,
         runtimeOffer: String? = nil,
         installingRuntime: Bool,
         signInMethods: [ChatNamedInfo]
@@ -326,7 +333,8 @@ package struct ChatOptions: Codable, Equatable {
         self.folderLabel = folderLabel
         self.recentFolders = recentFolders
         self.needsFolder = needsFolder
-        self.autoMode = autoMode
+        self.modes = modes
+        self.mode = mode
         self.runtimeOffer = runtimeOffer
         self.installingRuntime = installingRuntime
         self.signInMethods = signInMethods
@@ -340,7 +348,9 @@ package struct ChatOptions: Codable, Equatable {
     package var folderLabel: String
     package var recentFolders: [String]
     package var needsFolder: Bool
-    package var autoMode: Bool
+    /// The permission modes the agent advertises, empty until its session starts, and the current one.
+    package var modes: [ChatNamedInfo]
+    package var mode: String?
     /// The agent the chat offers to download a runtime for, or nil.
     package var runtimeOffer: String?
     package var installingRuntime: Bool
@@ -388,6 +398,33 @@ package final class ChatAPI {
     private let files: FileIntake
     private var listeners: [UUID: (ChatOrigin, ChatTurnEvent) -> Void] = [:]
     private var formListeners: [UUID: () -> Void] = [:]
+    private var backgroundListeners: [UUID: (BackgroundPermissions.Request?, UUID?, BackgroundPermissions.Outcome?) -> Void] = [:]
+    private var stopBackground: (() -> Void)?
+
+    /// Permission requests from jobs and automation sessions. They show up in `approvals()` next to the chat's own, with the same
+    /// options, and `decide` answers them. `status().pendingApprovals` leaves them out: they do not hold the chat.
+    package var background: BackgroundPermissions? {
+        didSet {
+            stopBackground?()
+            stopBackground = background?.observe(raised: { [weak self] request in
+                guard let self else { return }
+                session.events?.publish(.chatState, id: "approvals")
+                for listener in Array(backgroundListeners.values) { listener(request, nil, nil) }
+            }, resolved: { [weak self] id, outcome in
+                guard let self else { return }
+                session.events?.publish(.chatState, id: "approvals")
+                for listener in Array(backgroundListeners.values) { listener(nil, id, outcome) }
+            })
+        }
+    }
+
+    /// Hears a background request as it is raised (first value) and as it is resolved (the id and how).
+    @discardableResult
+    package func onBackgroundApproval(_ listener: @escaping (BackgroundPermissions.Request?, UUID?, BackgroundPermissions.Outcome?) -> Void) -> () -> Void {
+        let id = UUID()
+        backgroundListeners[id] = listener
+        return { [weak self] in self?.backgroundListeners[id] = nil }
+    }
 
     /// `files` receives what a client uploads. `IronPetAPI` passes the platform's; the default copies them into the attachments folder and converts nothing.
     package init(session: ChatSession, files: FileIntake = FolderFileIntake(directory: Paths.attachments)) {
@@ -474,7 +511,10 @@ package final class ChatAPI {
         return list.map { ChatCommandInfo(name: $0.name, detail: $0.detail, hint: $0.hint, kind: .command) }
     }
 
-    private var currentApprovals: [ChatApprovalInfo] { session.approvals.map { ChatApprovalInfo(id: $0.id, title: $0.title, detail: $0.detail) } }
+    private var currentApprovals: [ChatApprovalInfo] {
+        session.approvals.map { ChatApprovalInfo(id: $0.id, title: $0.title, detail: $0.detail, options: $0.options) }
+            + (background?.pending ?? []).map { ChatApprovalInfo(id: $0.id, title: $0.heading, detail: $0.detail, options: $0.options) }
+    }
     private var currentForms: [ChatFormInfo] { session.forms.map { ChatFormInfo(id: $0.id, form: $0.form, answers: $0.answers) } }
 
     private var currentQueue: [ChatQueuedInfo] {
@@ -497,7 +537,7 @@ package final class ChatAPI {
         ChatOptions(agent: Self.info(session.agent), agents: session.agents.map(Self.info), model: session.model,
                     models: session.models.map { ChatNamedInfo(id: $0.id, name: $0.name) }, folder: session.workspace?.path,
                     folderLabel: session.workspaceLabel, recentFolders: session.recents.map(\.path), needsFolder: session.needsWorkspace,
-                    autoMode: session.autoMode, runtimeOffer: session.runtimeOffer, installingRuntime: session.installingRuntime,
+                    modes: session.agentModes.map { ChatNamedInfo(id: $0.id, name: $0.name, detail: $0.detail ?? "") }, mode: session.agentMode, runtimeOffer: session.runtimeOffer, installingRuntime: session.installingRuntime,
                     signInMethods: session.signInOptions.map { ChatNamedInfo(id: $0.id, name: $0.name, detail: $0.detail) })
     }
 
@@ -536,8 +576,23 @@ package final class ChatAPI {
 
     /// Allows or denies a tool call, the same as the Allow and Deny buttons on the Mac.
     package func decide(_ request: DecideApprovalRequest) async throws {
+        if let background, background.has(request.id) {
+            if let option = request.option {
+                guard background.answer(request.id, optionID: option) else { throw APIError.invalid("the agent did not offer that option") }
+            } else {
+                background.answer(request.id, allow: request.allow)
+            }
+            return
+        }
         guard session.hasPendingApproval(request.id) else { throw APIError.notFound("that approval is no longer waiting") }
-        session.decide(id: request.id, allow: request.allow)
+        if let option = request.option {
+            guard session.approvals.first(where: { $0.id == request.id })?.options.contains(where: { $0.id == option }) == true else {
+                throw APIError.invalid("the agent did not offer that option")
+            }
+            session.decide(id: request.id, optionID: option)
+        } else {
+            session.decide(id: request.id, allow: request.allow)
+        }
     }
 
     package func answerForm(_ request: AnswerFormRequest) async throws {
@@ -583,7 +638,7 @@ package final class ChatAPI {
     /// Nil uses the agent's default model.
     package func setModel(_ id: String?) async { session.model = id }
 
-    package func setAutoMode(_ on: Bool) async { session.autoMode = on }
+    package func setMode(_ id: String) async { session.setMode(id) }
 
     /// Chooses the folder the chat works in. A different folder starts a new chat.
     package func useFolder(_ path: String) async throws {

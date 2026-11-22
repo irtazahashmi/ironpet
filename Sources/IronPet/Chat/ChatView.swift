@@ -131,14 +131,6 @@ struct ChatView: View {
 
     private var headerControls: some View {
         HStack(spacing: 2) {
-            if session.autoMode {
-                // The switch lives in settings; this stays so it is always obvious the agent runs unattended.
-                Image(systemName: "bolt.fill")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.orange)
-                    .help("Auto is on: the agent edits and runs commands without asking")
-                    .padding(.horizontal, 6)
-            }
             settingsButton
         }
     }
@@ -160,15 +152,7 @@ struct ChatView: View {
                 if !session.models.isEmpty { SettingsRow("Model", last: true) { modelMenu } }
             }
             SettingsCard {
-                SettingsRow("Auto") {
-                    Toggle("", isOn: $session.autoMode)
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .tint(.orange)
-                        .pointerCursor()
-                }
-                .help("Let the agent edit and run commands without asking (destructive commands still ask)")
+                if !session.modes.isEmpty { SettingsRow("Mode") { modeMenu } }
                 SettingsRow("Send voice notes automatically", last: true) {
                     Toggle("", isOn: $session.sendAfterDictation)
                         .labelsHidden()
@@ -833,20 +817,34 @@ struct ChatView: View {
                     .padding(8)
                     .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
             }
-            HStack {
-                Button { session.decide(approval, allow: true) } label: {
-                    Label("Allow", systemImage: "checkmark").frame(minWidth: 70)
+            if let options = approval.options, !options.isEmpty {
+                // Exactly the agent's options, in its order and with its labels, whatever kinds they are.
+                let allowOnceID = options.first { $0.kind == "allow_once" }?.id
+                VStack(alignment: .leading, spacing: 6) {
+                    ForEach(options) { option in
+                        Button { session.decide(approval, option: option) } label: {
+                            Text(option.name).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(ApprovalOptionStyle(kind: option.kind, first: option.id == options.first?.id))
+                        .pointerCursor()
+                        .modifier(AllowShortcut(active: option.id == allowOnceID))
+                    }
                 }
-                .buttonStyle(.borderedProminent)
-                .pointerCursor()
-                .keyboardShortcut(.return, modifiers: .command)
-                Button { session.decide(approval, allow: false) } label: {
-                    Label("Deny", systemImage: "xmark").frame(minWidth: 70)
+            } else {
+                HStack {
+                    Button { session.decide(approval, allow: true) } label: {
+                        Label("Allow", systemImage: "checkmark").frame(minWidth: 70)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    .pointerCursor()
+                    .keyboardShortcut(.return, modifiers: .command)
+                    Button { session.decide(approval, allow: false) } label: {
+                        Label("Deny", systemImage: "xmark").frame(minWidth: 70)
+                    }
+                    .buttonStyle(.bordered)
+                    .pointerCursor()
+                    Spacer()
                 }
-                .buttonStyle(.bordered)
-                .pointerCursor()
-                Spacer()
-                Text("⌘↩ to allow").font(.system(size: 10)).foregroundStyle(.secondary)
             }
         }
         .padding(12)
@@ -1127,6 +1125,23 @@ struct ChatView: View {
         .settingsValueMenu()
         .disabled(session.isRunning)
         .help("Agent that runs your request. Switching starts a new chat.")
+    }
+
+    private var modeMenu: some View {
+        Menu {
+            ForEach(session.modes) { mode in
+                Button {
+                    session.mode = mode.id
+                } label: {
+                    if session.mode == mode.id { Label(mode.name, systemImage: "checkmark") } else { Text(mode.name) }
+                }
+                .help(mode.detail ?? "")
+            }
+        } label: {
+            Text(session.modeName)
+        }
+        .settingsValueMenu()
+        .help("The agent's own permission mode. It decides which calls ask first, and your pick is kept for this agent")
     }
 
     private var modelMenu: some View {
@@ -1908,5 +1923,33 @@ private extension View {
             rows.set(id, visible: false)
             if !rows.hasVisible { emptied() }
         }
+    }
+}
+
+/// An approval option button. Allow kinds are filled, reject kinds are outlined in red, and any other kind the agent defines
+/// (plan approval, say) looks like a plain button with the agent's own label.
+private struct ApprovalOptionStyle: ButtonStyle {
+    let kind: String
+    let first: Bool
+
+    func makeBody(configuration: Configuration) -> some View {
+        let reject = kind.hasPrefix("reject")
+        let allow = kind.hasPrefix("allow")
+        configuration.label
+            .font(.system(size: 12.5, weight: first ? .semibold : .regular))
+            .foregroundStyle(allow && kind == "allow_once" ? Color.white : reject ? Color.red : Color.primary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 6)
+            .background(allow && kind == "allow_once" ? Color.accentColor : Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 7))
+            .opacity(configuration.isPressed ? 0.7 : 1)
+    }
+}
+
+/// Command-Return picks the agent's allow-once option, as it did for the old Allow button.
+private struct AllowShortcut: ViewModifier {
+    let active: Bool
+
+    func body(content: Content) -> some View {
+        if active { content.keyboardShortcut(.return, modifiers: .command) } else { content }
     }
 }

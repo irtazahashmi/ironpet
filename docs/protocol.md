@@ -214,7 +214,7 @@ The open chat with Ghost.
 | `chat.newChat` | none | `null` | `POST /v1/chat/new` |
 | `chat.openThread` | `ID` | `null` | `POST /v1/chat/open/:id` |
 | `chat.send` | `SendChatRequest` | `ChatSendResult` | `POST /v1/chat/current/messages` |
-| `chat.setAutoMode` | `SetAutoMode` | `null` | none |
+| `chat.setMode` | `SetMode` | `null` | none |
 | `chat.skipForm` | `UUIDParam` | `null` | `POST /v1/chat/forms/:id/skip` |
 | `chat.snapshot` | none | `ChatSnapshot` | `GET /v1/chat/current` |
 | `chat.status` | none | `ChatStatus` | none |

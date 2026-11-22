@@ -14,6 +14,9 @@ package final class AlertsAPI {
     /// Starts a conversation about an alert: shows the chat with the alert's prompt in the input. The app owner sets it.
     package var askHandler: ((String) -> Void)?
 
+    /// Permission requests from background runs are alerts. Dismissing one refuses the request.
+    package var permissions: BackgroundPermissions?
+
     package init(store: SignalStore) {
         self.store = store
         forwarding = [
@@ -36,10 +39,14 @@ package final class AlertsAPI {
 
     package func dismiss(_ id: String) throws {
         _ = try get(id)
+        if permissions?.dismissAlert(id) == true { return }
         store.dismiss(id)
     }
 
-    package func dismissAll() { store.dismissAll() }
+    package func dismissAll() {
+        for alert in store.signals { _ = permissions?.dismissAlert(alert.id) }
+        store.dismissAll()
+    }
 
     /// "Ask Ghost" on an alert. Fails for an alert that has no prompt.
     package func ask(_ id: String) throws {

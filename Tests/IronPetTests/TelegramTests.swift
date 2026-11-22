@@ -320,7 +320,6 @@ final class TelegramTests: XCTestCase {
             if turn.prompt == "busy" { await withCheckedContinuation { release = $0 } }
             await MainActor.run { emit(.finished(error: nil)) }
         }
-        session.autoMode = true
         session.submitLocal("busy", files: [], reply: nil)
         for _ in 0..<50 where release == nil { try? await Task.sleep(nanoseconds: 20_000_000) }
         session.isVisible = false
@@ -333,7 +332,6 @@ final class TelegramTests: XCTestCase {
         session.cancel(from: .telegram(chat: 10))
         XCTAssertEqual(session.items.map(\.id), before)
         XCTAssertEqual(session.threadID, "thread-1")
-        XCTAssertTrue(session.autoMode)
         XCTAssertFalse(log.contains { $0.hasPrefix("chat cleared") || $0.hasPrefix("thread ") })
         release?.resume()
     }
@@ -572,11 +570,10 @@ actor Script {
 }
 
 @MainActor
-final class TelegramAutoApprovalTests: XCTestCase {
-    private func session(auto: Bool, telegram: Bool) -> ChatSession {
+final class TelegramApprovalTests: XCTestCase {
+    private func session(telegram: Bool) -> ChatSession {
         let session = ChatSession(restore: false)
         session.use(URL(fileURLWithPath: "/tmp/telegram-test-project"))
-        session.autoMode = auto
         session.turnRunner = { _, _ in }
         if telegram { session.submit("hi", from: .telegram(chat: 5)) } else { session.submitLocal("hi", files: [], reply: nil) }
         return session
@@ -589,28 +586,9 @@ final class TelegramAutoApprovalTests: XCTestCase {
     }
 
     private let ps = ACPToolCall(id: "1", title: "Run", kind: "execute", rawInput: ["command": "ps -axo lstart,command"])
-    private let rm = ACPToolCall(id: "2", title: "Run", kind: "execute", rawInput: ["command": "rm -rf build"])
 
-    func testAutoAllowsSafeCommandOnTelegramTurn() {
-        let s = session(auto: true, telegram: true)
-        var events: [ChatSession.TurnEvent] = []
-        s.onTurn = { _, e in events.append(e) }
-        XCTAssertNotNil(decision(s, ps))
-        XCTAssertTrue(s.approvals.isEmpty)
-        XCTAssertTrue(events.isEmpty)
-    }
-
-    func testAutoStillAsksForDestructiveCommandOnTelegramTurn() {
-        let s = session(auto: true, telegram: true)
-        var asked = false
-        s.onTurn = { _, e in if case .approval = e { asked = true } }
-        XCTAssertNil(decision(s, rm))
-        XCTAssertEqual(s.approvals.count, 1)
-        XCTAssertTrue(asked)
-    }
-
-    func testAutoOffAsksOnTelegramTurn() {
-        let s = session(auto: false, telegram: true)
+    func testAnyCommandAsksOnATelegramTurn() {
+        let s = session(telegram: true)
         var asked = false
         s.onTurn = { _, e in if case .approval = e { asked = true } }
         XCTAssertNil(decision(s, ps))
@@ -621,15 +599,13 @@ final class TelegramAutoApprovalTests: XCTestCase {
     func testMacAndTelegramTurnsGetTheSamePolicy() {
         let calls = [
             ACPToolCall(id: "a", title: "Read", kind: "read"),
-            ps, rm,
+            ps,
             ACPToolCall(id: "b", title: "Edit", kind: "edit", rawInput: ["file_path": "/work/app.swift", "new_string": "x"]),
             ACPToolCall(id: "c", title: "mcp__sentry__search_issues", kind: "other"),
             ACPToolCall(id: "d", title: "mcp__db__run_query", kind: "other", rawInput: ["sql": "DROP TABLE users"]),
         ]
         for call in calls {
-            let mac = session(auto: true, telegram: false)
-            let tg = session(auto: true, telegram: true)
-            XCTAssertEqual(decision(mac, call) == nil, decision(tg, call) == nil, call.title)
+            XCTAssertEqual(decision(session(telegram: false), call) == nil, decision(session(telegram: true), call) == nil, call.title)
         }
     }
 }

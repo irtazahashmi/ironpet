@@ -328,9 +328,16 @@ package struct Config: Codable, Equatable {
 
     /// Background jobs: work an agent hands off to its own agent session (`jobs_start`), each with a task in the Tasks section.
     package struct Jobs: Codable, Equatable {
-        package init(maxRunning: Int = 3) {
+        package init(maxRunning: Int = 3, permissionTimeoutMinutes: Int = 10) {
             self.maxRunning = maxRunning
+            self.permissionTimeoutMinutes = permissionTimeoutMinutes
         }
+
+        /// Minutes a permission request from a job or an automation's own session waits for an answer. After that the agent gets
+        /// its reject option and the run records that the request timed out.
+        package var permissionTimeoutMinutes = 10
+
+        package static let permissionTimeoutRange = 1...1440
 
         /// Jobs running at once. A job started past this waits in line.
         package var maxRunning = 3
@@ -653,6 +660,7 @@ package struct Config: Codable, Equatable {
         c.automations.logRetentionDays = min(365, max(1, c.automations.logRetentionDays))
         c.tasks.keepDoneDays = min(365, max(1, c.tasks.keepDoneDays))
         c.jobs.maxRunning = min(Jobs.maxRunningRange.upperBound, max(Jobs.maxRunningRange.lowerBound, c.jobs.maxRunning))
+        c.jobs.permissionTimeoutMinutes = min(Jobs.permissionTimeoutRange.upperBound, max(Jobs.permissionTimeoutRange.lowerBound, c.jobs.permissionTimeoutMinutes))
         c.voice.baseUrl = c.voice.baseUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         c.voice.model = c.voice.model.trimmingCharacters(in: .whitespacesAndNewlines)
         c.speech.model = c.speech.model.trimmingCharacters(in: .whitespacesAndNewlines)

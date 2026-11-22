@@ -51,6 +51,9 @@ enum PreviewRenderer {
         render(ChatView(session: pastedModel).frame(width: 520, height: 640).panel(), to: dir, "chat-pasted-text")
         let settings = ChatSession(restore: false)
         settings.loadPreview(.done)
+        settings.receiveModes(current: "bypassPermissions", modes: [
+            AgentMode(id: "default", name: "Default"), AgentMode(id: "acceptEdits", name: "Accept Edits"), AgentMode(id: "plan", name: "Plan Mode"),
+            AgentMode(id: "auto", name: "Auto"), AgentMode(id: "bypassPermissions", name: "Bypass Permissions")])
         render(ChatView(session: Self.chatModel(settings), settingsOnly: true).panel(), to: dir, "chat-settings")
 
         let sessions = SessionStore()

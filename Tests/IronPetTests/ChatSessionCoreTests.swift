@@ -75,10 +75,10 @@ final class ChatSessionCoreTests: XCTestCase {
 
     func testSignalFiresBeforeTheValueMoves() {
         let session = ChatSession(restore: false)
-        var seen: [Bool] = []
-        let token = session.changes.observe { seen.append(session.autoMode) }
-        session.autoMode = true
-        XCTAssertEqual(seen, [false], "willSet: the handler still sees the old value")
+        var seen: [String?] = []
+        let token = session.changes.observe { seen.append(session.agentMode) }
+        session.receiveModes(current: "plan", modes: [AgentMode(id: "plan", name: "Plan")])
+        XCTAssertEqual(seen.first, .some(nil), "willSet: the handler still sees the old value")
         withExtendedLifetime(token) {}
     }
 }

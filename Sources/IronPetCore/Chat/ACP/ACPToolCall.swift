@@ -13,6 +13,8 @@ package struct ACPToolCall {
     /// The tool call of the subagent this call runs under. The Claude adapter stamps `_meta.claudeCode.parentToolUseId`
     /// on every update that comes from a subagent, including a background one. Nil for the main agent's own calls.
     package var parentToolUseID: String?
+    /// The answers the agent offered with `session/request_permission`, in its order. Empty for a call that is not a request.
+    package var permissionOptions: [PermissionOption] = []
 
     package init(id: String = "", title: String = "", kind: String = "other", rawInput: Any? = nil, paths: [String] = [], toolName: String? = nil,
          parentToolUseID: String? = nil) {
@@ -71,7 +73,7 @@ package struct ACPToolCall {
         return paths + keys.compactMap { input[$0] as? String }.filter { !$0.isEmpty }
     }
 
-    /// Everything the agent passes in, as text for the destructive-pattern check and the approval card.
+    /// Everything the agent passes in, as text for the approval card.
     package var arguments: String {
         if let text = rawInput as? String { return text }
         guard let object = rawInput, JSONSerialization.isValidJSONObject(object),
@@ -113,11 +115,6 @@ package enum ApprovalPolicy: Equatable {
 }
 
 package enum ApprovalRules {
-    /// Commands that still ask in Auto mode.
-    package static let destructive = try! NSRegularExpression(pattern: #"""
-        \brm\s+-[a-zA-Z]*(rf|fr)|\brm\s+-[a-zA-Z]*r[a-zA-Z]*\s+-[a-zA-Z]*f|git\s+reset\s+--hard|git\s+push\b.*(--force|\s-f\b)|git\s+clean\s+-[a-zA-Z]*f|\bdrop\s+(table|database|schema)\b|\btruncate\s+table\b|\bmkfs\b|\bdd\s+if=
-        """#, options: [.caseInsensitive])
-
     /// MCP tool name prefixes treated as read-only (e.g. Sentry `search_issues`, Langfuse `getHealth`).
     package static let readOnlyMCPVerbs = ["get", "list", "search", "find", "fetch", "read", "describe", "whoami", "lookup", "show", "count"]
 
@@ -144,41 +141,54 @@ package enum ApprovalRules {
         return server == nil || server == "ironpet"
     }
 
-    package static func isDestructive(_ text: String) -> Bool {
-        destructive.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
+    /// What a request's card says. A chat shows one for every request the agent sends, whatever its kind.
+    package static func card(for call: ACPToolCall) -> (title: String, detail: String) {
+        switch call.kind {
+        case "read", "search", "think", "fetch":
+            let target = call.path.map { URL(fileURLWithPath: $0).lastPathComponent }
+            return (call.title.isEmpty ? "Use \(call.kind)\(target.map { " on " + $0 } ?? "")?" : call.title + "?", String(call.arguments.prefix(600)))
+        case "execute":
+            return ("Run this command?", call.command)
+        case "edit", "delete", "move":
+            let preview = ((call.input["content"] ?? call.input["new_string"] ?? call.input["new_source"]) as? String)?
+                .split(separator: "\n", omittingEmptySubsequences: false).prefix(8).joined(separator: "\n")
+            let verb = call.kind == "delete" ? "Delete" : call.kind == "move" ? "Move" : "Edit"
+            let title = call.path.map { "\(verb) \(URL(fileURLWithPath: $0).lastPathComponent)?" } ?? "\(verb) a file?"
+            return (title, [call.path, preview].compactMap { $0 }.joined(separator: "\n\n"))
+        case "switch_mode":
+            // Claude's exit-plan-mode request carries the plan as text. Show all of it: the user is approving it.
+            let plan = call.input["plan"] as? String
+            return (call.title.isEmpty ? "Change the mode?" : call.title, String((plan ?? call.arguments).prefix(6000)))
+        default:
+            let mcp = call.mcp
+            let tool = mcp?.tool ?? call.toolName ?? call.title
+            let target = mcp.map { " (\($0.server))" } ?? ""
+            return ("Use " + tool + target + "?", String(call.arguments.prefix(600)))
+        }
     }
 
-    /// Whether ironpet answers a permission request itself or shows a card. The agent only asks about calls it
-    /// considers risky, so anything not clearly read-only still asks.
-    package static func policy(for call: ACPToolCall, auto: Bool, isMemoryFile: (String) -> Bool = FileMemoryStore.isNoteFile) -> ApprovalPolicy {
+    /// Whether a run with nobody at the chat answers a permission request itself (a read, a memory-note edit, a read-only MCP
+    /// tool, ironpet's own tools) or must ask. The agent only asks about calls its mode treats as risky, and ironpet applies no
+    /// pattern of its own: no command is judged by its text. A chat does not use this, it shows a card for every request.
+    package static func policy(for call: ACPToolCall, isMemoryFile: (String) -> Bool = FileMemoryStore.isNoteFile) -> ApprovalPolicy {
         switch call.kind {
         case "read", "search", "think", "fetch":
             return .allow
         case "execute":
-            let command = call.command
-            let dangerous = isDestructive(command + "\n" + call.arguments)
-            if auto, !dangerous { return .allow }
-            return .ask(title: dangerous ? "Run a destructive command?" : "Run this command?", detail: command)
+            return .ask(title: "Run this command?", detail: call.command)
         case "edit", "delete", "move":
-            let path = call.path
             // Only edits: deleting or moving a note file skips its .history copy.
             let all = call.allPaths
-            if auto || call.kind == "edit" && !all.isEmpty && all.allSatisfy(isMemoryFile) { return .allow }
-            let preview = ((call.input["content"] ?? call.input["new_string"] ?? call.input["new_source"]) as? String)?
-                .split(separator: "\n", omittingEmptySubsequences: false).prefix(8).joined(separator: "\n")
-            let verb = call.kind == "delete" ? "Delete" : call.kind == "move" ? "Move" : "Edit"
-            let title = path.map { "\(verb) \(URL(fileURLWithPath: $0).lastPathComponent)?" } ?? "\(verb) a file?"
-            return .ask(title: title, detail: [path, preview].compactMap { $0 }.joined(separator: "\n\n"))
+            if call.kind == "edit" && !all.isEmpty && all.allSatisfy(isMemoryFile) { return .allow }
+            let card = card(for: call)
+            return .ask(title: card.title, detail: card.detail)
         default:
             // MCP servers can change real systems (databases, issue trackers), so anything not read-only asks first.
             let mcp = call.mcp
             let tool = mcp?.tool ?? call.toolName ?? call.title
             if isReadOnlyMCP(tool) || isOwnTaskTool(server: mcp?.server, tool: tool) { return .allow }
-            let arguments = call.arguments
-            let dangerous = isDestructive(arguments)
-            if auto, !dangerous { return .allow }
-            let target = mcp.map { " (\($0.server))" } ?? ""
-            return .ask(title: (dangerous ? "Run a destructive tool: " : "Use ") + tool + target + "?", detail: String(arguments.prefix(600)))
+            let card = card(for: call)
+            return .ask(title: card.title, detail: card.detail)
         }
     }
 }
