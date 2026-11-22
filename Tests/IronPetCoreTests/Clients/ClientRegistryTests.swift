@@ -15,7 +15,7 @@ final class ClientRegistryTests: XCTestCase {
 
     private func at(_ seconds: TimeInterval) -> Date { Date(timeIntervalSince1970: 1_800_000_000 + seconds) }
 
-    func testAPhoneConnectingMakesASessionAndDisconnectingRemovesIt() {
+    func testAPhoneConnectingMakesASessionAndDisconnectingRemovesIt() async {
         let clients = registry()
         let phone = clients.connect(deviceID: "phone-1", name: "Ana's iPhone", kind: .ios, connection: .remote)
         XCTAssertEqual(clients.sessions, [phone])
@@ -28,7 +28,7 @@ final class ClientRegistryTests: XCTestCase {
         XCTAssertNil(clients.disconnect(phone.id), "a second disconnect finds nothing")
     }
 
-    func testTheSameDeviceConnectingTwiceHasTwoSessions() {
+    func testTheSameDeviceConnectingTwiceHasTwoSessions() async {
         let clients = registry()
         let first = clients.connect(deviceID: "phone-1", name: "iPhone", kind: .ios, connection: .remote)
         let second = clients.connect(deviceID: "phone-1", name: "iPhone", kind: .ios, connection: .remote)
@@ -37,7 +37,7 @@ final class ClientRegistryTests: XCTestCase {
         XCTAssertEqual(clients.sessions.map(\.id), [second.id])
     }
 
-    func testTheLocalClientIsRegisteredOnceAndItsCapabilitiesAreUpdated() {
+    func testTheLocalClientIsRegisteredOnceAndItsCapabilitiesAreUpdated() async {
         let clients = registry()
         let first = clients.registerLocal(name: "Mac", kind: .mac, capabilities: [.presence])
         XCTAssertEqual(first.deviceID, ClientRegistry.localDeviceID)
@@ -48,7 +48,7 @@ final class ClientRegistryTests: XCTestCase {
         XCTAssertEqual(clients.local?.capabilities, [.presence, .screen], "sorted and without duplicates")
     }
 
-    func testCapabilitiesAreOneForEachRealAdapter() {
+    func testCapabilitiesAreOneForEachRealAdapter() async {
         XCTAssertEqual(Platform.unsupported.clientCapabilities(), [])
         XCTAssertEqual(Platform.unsupported.clientCapabilities(extra: [.desktop]), [.desktop])
         let names = Set(Platform.unsupported.capabilities.map(\.name))
@@ -56,7 +56,7 @@ final class ClientRegistryTests: XCTestCase {
         XCTAssertEqual(Set(Platform.capabilityForAdapter.keys).subtracting(names), [], "a capability name for an adapter that is gone")
     }
 
-    func testASessionEncodesAsPlainJSON() throws {
+    func testASessionEncodesAsPlainJSON() async throws {
         let session = ClientSession(id: "s1", deviceID: "d1", name: "Mac", kind: .mac, capabilities: [.screen, .desktop], lastInputAt: at(5),
                                     connectedAt: at(0), subscriptions: ["tasks.changed"], connection: .inProcess)
         let encoder = JSONEncoder()
@@ -69,7 +69,7 @@ final class ClientRegistryTests: XCTestCase {
         XCTAssertEqual(try decoder.decode(ClientSession.self, from: Data(json.utf8)), session)
     }
 
-    func testInputNeverMovesBackwards() {
+    func testInputNeverMovesBackwards() async {
         let clients = registry()
         let mac = clients.connect(deviceID: "mac", name: "Mac", kind: .mac, capabilities: [.screen], connection: .inProcess)
         clients.recordInput(mac.id, at: at(10))
@@ -79,7 +79,7 @@ final class ClientRegistryTests: XCTestCase {
 
     // MARK: My screen (S2)
 
-    func testMyScreenIsTheOriginDeviceWhenItHasAScreen() {
+    func testMyScreenIsTheOriginDeviceWhenItHasAScreen() async {
         let clients = registry()
         let laptop = clients.connect(deviceID: "laptop", name: "Laptop", kind: .windows, capabilities: [.screen], connection: .remote)
         let desk = clients.connect(deviceID: "desk", name: "Desk", kind: .mac, capabilities: [.screen], connection: .remote)
@@ -88,7 +88,7 @@ final class ClientRegistryTests: XCTestCase {
         XCTAssertEqual(clients.resolveScreen(origin: origin), .client(clients.session(laptop.id)!), "the origin wins over the more recent desk")
     }
 
-    func testMyScreenIsTheMostRecentlyActiveDesktopWhenTheOriginHasNone() {
+    func testMyScreenIsTheMostRecentlyActiveDesktopWhenTheOriginHasNone() async {
         let clients = registry()
         let old = clients.connect(deviceID: "old", name: "Old", kind: .mac, capabilities: [.screen], connection: .remote)
         let fresh = clients.connect(deviceID: "fresh", name: "Fresh", kind: .windows, capabilities: [.screen], connection: .remote)
@@ -100,7 +100,7 @@ final class ClientRegistryTests: XCTestCase {
         XCTAssertEqual(clients.resolveScreen(origin: nil), .client(clients.session(fresh.id)!), "the Mac's own input box has no origin")
     }
 
-    func testAClientThatNeverTypedCountsFromWhenItConnected() {
+    func testAClientThatNeverTypedCountsFromWhenItConnected() async {
         let clients = registry()
         let early = clients.connect(deviceID: "early", name: "Early", kind: .mac, capabilities: [.screen], connection: .remote)
         clock = at(60)
@@ -110,7 +110,7 @@ final class ClientRegistryTests: XCTestCase {
         XCTAssertEqual(clients.resolveScreen(), .client(clients.session(early.id)!))
     }
 
-    func testMyScreenAsksWhenNoDesktopCanBeUsed() {
+    func testMyScreenAsksWhenNoDesktopCanBeUsed() async {
         let clients = registry()
         XCTAssertEqual(clients.resolveScreen(), .ask(candidates: []))
         clients.connect(deviceID: "phone", name: "Phone", kind: .ios, connection: .remote)
@@ -119,7 +119,7 @@ final class ClientRegistryTests: XCTestCase {
         XCTAssertEqual(clients.resolveScreen(), .ask(candidates: []), "a desktop that cannot capture is not a candidate")
     }
 
-    func testMyScreenAsksInsteadOfPickingBetweenTwoEquallyRecentDesktops() {
+    func testMyScreenAsksInsteadOfPickingBetweenTwoEquallyRecentDesktops() async {
         let clients = registry()
         let one = clients.connect(deviceID: "one", name: "One", kind: .mac, capabilities: [.screen], connection: .remote)
         let two = clients.connect(deviceID: "two", name: "Two", kind: .windows, capabilities: [.screen], connection: .remote)

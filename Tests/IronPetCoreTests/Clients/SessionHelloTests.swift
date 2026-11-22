@@ -9,7 +9,7 @@ final class SessionHelloTests: XCTestCase {
         HelloRequest(protocolVersion: protocolVersion, client: ClientInfo(name: "ironpet-ios", version: "1.4.0"), lastSeq: lastSeq)
     }
 
-    func testHelloOpensASessionOnAConnectionThatHasNone() throws {
+    func testHelloOpensASessionOnAConnectionThatHasNone() async throws {
         let rig = try ContractRig()
         let connection = RPCConnection(deviceID: "cli-1", name: "CLI", kind: .cli, connection: .inProcess)
         let result = try rig.api.session.hello(hello(), connection: connection)
@@ -20,7 +20,7 @@ final class SessionHelloTests: XCTestCase {
         XCTAssertEqual(session.client, ClientInfo(name: "ironpet-ios", version: "1.4.0"))
     }
 
-    func testHelloNamesTheClientInTheSessionTheTransportOpened() throws {
+    func testHelloNamesTheClientInTheSessionTheTransportOpened() async throws {
         let rig = try ContractRig()
         let phone = rig.api.clients.connect(deviceID: "phone-1", name: "iPhone", kind: .ios, connection: .remote)
         let connection = RPCConnection(deviceID: "phone-1", name: "iPhone", kind: .ios, connection: .remote, sessionID: phone.id)
@@ -30,7 +30,7 @@ final class SessionHelloTests: XCTestCase {
         XCTAssertEqual(rig.api.clients.session(phone.id)?.client?.name, "ironpet-ios")
     }
 
-    func testGapIsTrueOnlyWhenEventsWereLost() throws {
+    func testGapIsTrueOnlyWhenEventsWereLost() async throws {
         let events = APIEventBus(capacity: 3)
         let clients = ClientRegistry()
         let session = SessionAPI(clients: clients, events: events) { ["tasks"] }
@@ -43,7 +43,7 @@ final class SessionHelloTests: XCTestCase {
         XCTAssertEqual(try session.hello(hello(), connection: connection).seq, 5)
     }
 
-    func testAnUnknownProtocolIsInvalidInSwiftToo() throws {
+    func testAnUnknownProtocolIsInvalidInSwiftToo() async throws {
         let rig = try ContractRig()
         let connection = RPCConnection(deviceID: "d", name: "n", kind: .cli, connection: .inProcess)
         XCTAssertThrowsError(try rig.api.session.hello(hello(protocolVersion: 7), connection: connection)) {
@@ -83,7 +83,7 @@ final class SessionHelloTests: XCTestCase {
         XCTAssertEqual(reply.error?.message, "screen is not available on iOS")
     }
 
-    func testTheChatOriginCarriesTheDeviceAndOldOnesStillDecode() throws {
+    func testTheChatOriginCarriesTheDeviceAndOldOnesStillDecode() async throws {
         let origin = ChatOrigin.ios(device: "phone-1")
         XCTAssertEqual(origin.device, "phone-1")
         XCTAssertEqual(origin.ref, "phone-1")

@@ -23,7 +23,7 @@ final class SessionPresenceTests: XCTestCase {
 
     private let now = Date(timeIntervalSince1970: 1_800_000_000)
 
-    func testTheLocalIdleTimeComesBackThroughTheSession() throws {
+    func testTheLocalIdleTimeComesBackThroughTheSession() async throws {
         let clients = ClientRegistry(now: { self.now })
         let session = clients.registerLocal(name: "Mac", kind: .mac, capabilities: [.presence])
         let adapter = Adapter()
@@ -35,7 +35,7 @@ final class SessionPresenceTests: XCTestCase {
         XCTAssertEqual(presence.idleOrZero(), 400)
     }
 
-    func testTheMostRecentDesktopInputWinsAndAPhoneDoesNotCount() throws {
+    func testTheMostRecentDesktopInputWinsAndAPhoneDoesNotCount() async throws {
         let clients = ClientRegistry(now: { self.now })
         clients.registerLocal(name: "Mac", kind: .mac, capabilities: [.presence])
         let windows = clients.connect(deviceID: "pc", name: "PC", kind: .windows, capabilities: [.presence], connection: .remote)
@@ -46,7 +46,7 @@ final class SessionPresenceTests: XCTestCase {
         XCTAssertEqual(try presence.idleSeconds(), 5, "the PC was used 5 s ago, the Mac 30 s ago")
     }
 
-    func testWithNoReportingClientTheUserCountsAsAtTheKeyboard() {
+    func testWithNoReportingClientTheUserCountsAsAtTheKeyboard() async {
         let clients = ClientRegistry(now: { self.now })
         let adapter = Adapter()
         adapter.idle = nil
@@ -56,14 +56,14 @@ final class SessionPresenceTests: XCTestCase {
         XCTAssertEqual(presence.idleOrZero(), 0)
     }
 
-    func testALocalClientWithoutThePresenceCapabilityIsNotAsked() {
+    func testALocalClientWithoutThePresenceCapabilityIsNotAsked() async {
         let clients = ClientRegistry(now: { self.now })
         clients.registerLocal(name: "Mac", kind: .mac, capabilities: [])
         let presence = SessionPresence(registry: clients, local: Adapter(), now: { self.now })
         XCTAssertEqual(presence.idleOrZero(), 0)
     }
 
-    func testLockWakeAndMicrophoneStayWithTheMachine() {
+    func testLockWakeAndMicrophoneStayWithTheMachine() async {
         let clients = ClientRegistry(now: { self.now })
         let adapter = Adapter()
         adapter.locked = true
