@@ -52,7 +52,16 @@ package final class MeetingLibrary {
         self.root = root
     }
 
+    /// True once `reload()` has read the folder. Until then `meetings` is empty because nobody asked, not because there are none.
+    package private(set) var isLoaded = false
+
+    /// Reads the folder the first time a caller needs the list, such as the phone's `GET /v1/meetings` right after the app starts.
+    package func loadIfNeeded() {
+        if !isLoaded { reload() }
+    }
+
     package func reload() {
+        isLoaded = true
         let folders = (try? FileManager.default.contentsOfDirectory(at: root, includingPropertiesForKeys: [.isDirectoryKey])) ?? []
         meetings = folders.compactMap(Self.record).sorted { ($0.date, $0.id) > ($1.date, $1.id) }
     }

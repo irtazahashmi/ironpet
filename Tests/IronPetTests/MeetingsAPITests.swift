@@ -47,6 +47,14 @@ final class MeetingsAPITests: XCTestCase {
         XCTAssertThrowsError(try api.meetings.get("nope")) { XCTAssertEqual(($0 as? APIError)?.code, .notFound) }
     }
 
+    /// The phone asks right after the app starts, before the Transcripts page has ever loaded the folder.
+    func testListReadsTheFolderWhenNothingLoadedItYet() async throws {
+        let fresh = APITestSupport.makeAPI(events: events, meeting: controller, meetingLibrary: MeetingLibrary(root: root))
+        XCTAssertEqual(fresh.meetings.list().map(\.id), ["2026-11-15-1000", "2026-11-14-1400"])
+        let summary = try await fresh.meetings.text(MeetingTextRequest(id: "2026-11-14-1400", kind: .summary))
+        XCTAssertNotNil(summary)
+    }
+
     func testSummaryAndTranscriptText() async throws {
         let summary = try await api.meetings.text(MeetingTextRequest(id: "2026-11-14-1400", kind: .summary))
         XCTAssertEqual(summary, "## Summary\nPlanned the launch.\n")

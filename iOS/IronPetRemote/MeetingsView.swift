@@ -42,7 +42,10 @@ struct MeetingsView: View {
     private var unlocked: some View {
         List {
             if let message = model.errorMessage {
-                Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).accessibilityIdentifier("meetings-error")
+                VStack(alignment: .leading, spacing: 8) {
+                    Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).accessibilityIdentifier("meetings-error")
+                    Button("Retry") { Task { await model.refresh() } }.accessibilityIdentifier("meetings-retry")
+                }
             }
             if let notice = model.notice {
                 Label(notice, systemImage: "info.circle").accessibilityIdentifier("meetings-notice")
@@ -71,7 +74,7 @@ struct MeetingsView: View {
                 .accessibilityIdentifier("meeting-\(meeting.id)")
                 .swipeActions { Button("Delete", role: .destructive) { deleting = meeting } }
             }
-            if model.loaded, model.meetings.isEmpty {
+            if model.showsEmptyState {
                 ContentUnavailableView("No meetings", systemImage: "person.2", description: Text("Meetings recorded on the Mac show up here."))
             }
         }
@@ -108,6 +111,9 @@ struct MeetingDetailView: View {
                     Text(text).textSelection(.enabled).accessibilityIdentifier("meeting-text")
                 } else if loading {
                     ProgressView()
+                } else if let message = model.errorMessage {
+                    Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).accessibilityIdentifier("meeting-text-error")
+                    Button("Retry") { Task { await load() } }.accessibilityIdentifier("meeting-text-retry")
                 } else {
                     Text("This meeting has no \(kind) yet.").foregroundStyle(.secondary)
                 }
@@ -132,12 +138,14 @@ struct MeetingDetailView: View {
         } message: {
             Text("The audio goes to the voice server again. The old files stay on the Mac as .prev.md.")
         }
-        .task(id: kind) {
-            loading = true
-            text = await model.text(meeting.id, kind)
-            loading = false
-        }
+        .task(id: kind) { await load() }
         // Locking drops the text from the model, so the screen drops its copy too.
         .onChange(of: model.gate.isUnlocked) { _, unlocked in if !unlocked { text = nil } }
+    }
+
+    private func load() async {
+        loading = true
+        text = await model.text(meeting.id, kind)
+        loading = false
     }
 }

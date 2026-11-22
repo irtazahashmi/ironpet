@@ -50,11 +50,15 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _threadItems: [String: [RemoteChatItem]] = ["th-1": [RemoteChatItem(id: "th-1-u", kind: "user", text: "Old question"), RemoteChatItem(id: "th-1-a", kind: "assistant", text: "Old answer")]]
     private var _openConflict: String?
     private var _uploadFails = false
+    private var _brokenRoutes: [String: Int] = [:]
     private var _uploads: [String: Data] = [:]
     private var _chatImages: [String: Data] = [:]
     private var _chatImageHits = 0
     private var _uploadNames: [String: String] = [:]
     private var _uploadDelay: TimeInterval = 0
+    private var _sendFails = false
+    private var _sendDelay: TimeInterval = 0
+    private var _sendPushesFirst = false
     fileprivate var _p4 = MockPhaseFour()
     private let encoder = WireJSON.makeEncoder()
     private(set) var port: UInt16 = 0
@@ -155,6 +159,8 @@ final class MockIronPetServer: @unchecked Sendable {
     var chatThreads: [RemoteChatThread] { get { lock.lock(); defer { lock.unlock() }; return _chatThreads } set { lock.lock(); _chatThreads = newValue; lock.unlock() } }
     /// When set, opening a thread or starting a new chat answers 409 with this text, as a Mac with a running turn does.
     var openConflict: String? { get { lock.lock(); defer { lock.unlock() }; return _openConflict } set { lock.lock(); _openConflict = newValue; lock.unlock() } }
+    /// Routes that answer with a fixed status instead of their data, by exact path. Status 200 answers a body the client cannot decode.
+    var brokenRoutes: [String: Int] { get { lock.lock(); defer { lock.unlock() }; return _brokenRoutes } set { lock.lock(); _brokenRoutes = newValue; lock.unlock() } }
     /// True answers every upload with 500.
     var uploadFails: Bool { get { lock.lock(); defer { lock.unlock() }; return _uploadFails } set { lock.lock(); _uploadFails = newValue; lock.unlock() } }
     /// Seconds the mock waits before it answers an upload, to look at the app while a send is in flight.
@@ -163,6 +169,12 @@ final class MockIronPetServer: @unchecked Sendable {
     func setChatImage(_ data: Data?, for id: String) { lock.lock(); _chatImages[id] = data; lock.unlock() }
     /// How many times the file route was asked for an image, to show that a screenshot is fetched once.
     var chatImageRequests: Int { lock.lock(); defer { lock.unlock() }; return _chatImageHits }
+    /// The next sends answer 500 while this is true.
+    var sendFails: Bool { get { lock.lock(); defer { lock.unlock() }; return _sendFails } set { lock.lock(); _sendFails = newValue; lock.unlock() } }
+    /// Seconds the Mac takes to answer a send after it has recorded the message.
+    var sendDelay: TimeInterval { get { lock.lock(); defer { lock.unlock() }; return _sendDelay } set { lock.lock(); _sendDelay = newValue; lock.unlock() } }
+    /// Push the `chat.item` event before the answer to the send, as a fast socket can.
+    var sendPushesFirst: Bool { get { lock.lock(); defer { lock.unlock() }; return _sendPushesFirst } set { lock.lock(); _sendPushesFirst = newValue; lock.unlock() } }
     /// The bytes of an upload by id.
     func uploaded(_ id: String) -> Data? { lock.lock(); defer { lock.unlock() }; return _uploads[id] }
 
@@ -296,6 +308,9 @@ final class MockIronPetServer: @unchecked Sendable {
         let open = request.path == APIPath.pair || request.path.hasPrefix("/v1/pair/")
         if !open, !(valid && request.headers["authorization"] == "Bearer \(token)") {
             return fail(connection, 401, "unauthorized", "unauthorized")
+        }
+        if let status = brokenRoutes[request.path] {
+            return status == 200 ? respond(connection, 200, Data(#"{"unexpected":true}"#.utf8)) : fail(connection, status, "failed", "the Mac could not answer")
         }
         let parts = request.path.split(separator: "/").map(String.init)
         if routeResources(request, parts, connection) || routeChat(request, parts, connection) || routePhaseFour(request, parts, connection) { return }
@@ -555,6 +570,11 @@ extension MockIronPetServer {
         case (4, "messages") where get:
             guard let item = chat.items.first(where: { $0.id == parts[3] }) else { fail(connection, 404, "not_found", "no message"); return true }
             respond(connection, 200, item)
+        case (3, "options") where request.method == "PATCH":
+            // Only `mode` is acted on: it must be one the chat advertises, as on the Mac, and then it is the mode in force.
+            guard let mode = request.json["mode"] as? String else { respond(connection, 200, Data("{\"changed\":true}".utf8)); return true }
+            lock.lock(); let known = _chat.options.modes.contains { $0.id == mode }; if known { _chat.options.mode = mode }; lock.unlock()
+            if known { respond(connection, 200, Data("{\"changed\":true}".utf8)) } else { fail(connection, 400, "invalid", "choose one of the modes the agent offers") }
         case (5, "messages") where get && parts[4] == "file":
             lock.lock(); let image = _chatImages[parts[3]]; _chatImageHits += 1; lock.unlock()
             guard let image else { fail(connection, 404, "not_found", "the file is no longer on the Mac"); return true }
@@ -565,6 +585,7 @@ extension MockIronPetServer {
             guard let thread = chatThreads.first(where: { $0.id == parts[3] }), let items else { fail(connection, 404, "not_found", "no thread"); return true }
             respond(connection, 200, RemoteChatThreadDetail(thread: thread, items: items))
         case (4, "current") where post && parts[3] == "messages":
+            if sendFails { fail(connection, 500, "failed", "the Mac could not take the message"); return true }
             guard let text = request.json["text"] as? String, !text.isEmpty || request.json["upload_ids"] != nil else { fail(connection, 400, "invalid", "the message is empty"); return true }
             lock.lock()
             let queued = _chat.running
@@ -578,9 +599,12 @@ extension MockIronPetServer {
                     _chat.items.append(RemoteChatItem(id: "\(id)-file-\(index)", kind: "screenshot", date: Date(), origin: "ios", fileName: stored, isImage: true))
                 }
             }
+            let delay = _sendDelay, pushFirst = _sendPushesFirst
             lock.unlock()
-            respond(connection, 200, RemoteSendResult(outcome: queued ? "queued" : "sent"))
-            publish(queued ? RemoteEvent.chatState : RemoteEvent.chatItem, id: queued ? "queue" : id)
+            let answer = { [self] in respond(connection, 200, RemoteSendResult(outcome: queued ? "queued" : "sent")) }
+            let push = { [self] in _ = publish(queued ? RemoteEvent.chatState : RemoteEvent.chatItem, id: queued ? "queue" : id) }
+            if pushFirst { push() }
+            if delay > 0 { queue.asyncAfter(deadline: .now() + delay) { answer(); if !pushFirst { push() } } } else { answer(); if !pushFirst { push() } }
         case (4, "current") where post && parts[3] == "stop":
             lock.lock(); _chat.running = false; _chat.state = "idle"; lock.unlock()
             respond(connection, 200, Data(#"{"stopped":true}"#.utf8))

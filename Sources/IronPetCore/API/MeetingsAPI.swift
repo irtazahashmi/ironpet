@@ -145,6 +145,7 @@ package final class MeetingsAPI {
     package func reload() { library.reload() }
 
     package func list() -> [MeetingInfo] {
+        library.loadIfNeeded()
         let active = activeFolder
         return library.meetings.map { MeetingInfo(id: $0.id, date: $0.date, preview: $0.preview, hasSummary: $0.hasSummary,
                                                   hasTranscript: $0.hasTranscript, hasAudio: $0.hasAudio, active: $0.folder == active) }
@@ -307,6 +308,7 @@ package final class MeetingsAPI {
     package func regenerateSummary() { recorder.regenerateSummary() }
 
     private func record(_ id: String) throws -> MeetingRecord {
+        library.loadIfNeeded()
         guard let record = library.meetings.first(where: { $0.id == id }) else { throw APIError.notFound("no meeting with id \"\(id)\"") }
         return record
     }

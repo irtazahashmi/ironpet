@@ -220,7 +220,8 @@ final class PasteUITests: XCTestCase {
         openChat()
         assertAppearance()
         XCTAssertTrue(any("attach-button").waitForExistence(timeout: 10))
-        XCTAssertFalse(app.buttons["send-button"].exists, "send is hidden on an empty draft")
+        XCTAssertTrue(app.buttons["send-button"].exists, "the send capsule is always shown")
+        XCTAssertFalse(app.buttons["send-button"].isEnabled, "and is disabled on an empty draft")
         XCTAssertFalse(app.buttons["stop-button"].exists)
         attach("composer-empty-\(name)")
         input.tap()
@@ -230,7 +231,10 @@ final class PasteUITests: XCTestCase {
         pasteFromMenu()
         XCTAssertTrue(any("attachment-thumbnail-0").waitForExistence(timeout: 10))
         attach("composer-draft-thumbnail-\(name)")
-        // A turn the Mac started shows the red Stop circle, and it goes when the turn ends.
+        // Stop replaces Send while a turn runs and nothing is typed, so empty the draft first.
+        any("attachment-remove-0").tap()
+        input.typeText(String(repeating: XCUIKeyboardKey.delete.rawValue, count: 7))
+        // A turn the Mac started shows the red Stop capsule, and it goes when the turn ends.
         var snapshot = server.chat
         snapshot.running = true
         snapshot.state = "running"
@@ -256,5 +260,60 @@ final class PasteUITests: XCTestCase {
         XCTAssertTrue(any("chat-background-paws").waitForExistence(timeout: 20), "the chat follows the pet resource's background")
         assertAppearance()
         attach("background-paws-\(dark ? "dark" : "light")")
+    }
+}
+
+/// The chat settings sheet lists the modes the agent advertises, as the Mac's picker does.
+final class ChatModeUITests: XCTestCase {
+    var server: MockIronPetServer!
+    var app: XCUIApplication!
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        server = MockIronPetServer()
+        try server.start()
+        app = XCUIApplication()
+    }
+
+    override func tearDown() { server.stop() }
+
+    private func attach(_ name: String) {
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = name
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
+    func testTheSettingsSheetListsTheAgentsModesAndPickingOneReachesTheMac() {
+        server.chat.options.modes = [.init(id: "default", name: "Default", detail: "Asks before edits and commands"), .init(id: "acceptEdits", name: "Accept edits"),
+                                     .init(id: "plan", name: "Plan"), .init(id: "bypassPermissions", name: "Bypass permissions")]
+        server.chat.options.mode = "default"
+        app.launchArguments = ["--reset-credentials"]
+        app.launch()
+        let field = app.textFields["pairing-link-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        field.typeText(server.pairingLink)
+        app.buttons["pair-button"].tap()
+        let tab = app.tabBars.buttons["Chat"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        tab.tap()
+        let settings = app.buttons["chat-settings-button"]
+        XCTAssertTrue(settings.waitForExistence(timeout: 20))
+        settings.tap()
+        XCTAssertFalse(app.switches["settings-auto"].exists, "no invented auto toggle")
+        // Four modes do not fit the half-height sheet, so open it to full height.
+        let grabber = app.buttons["Sheet Grabber"]
+        if grabber.waitForExistence(timeout: 5) { grabber.swipeUp() }
+        let accept = app.buttons["settings-mode-acceptEdits"]
+        XCTAssertTrue(accept.waitForExistence(timeout: 10), "the agent's own list")
+        XCTAssertTrue(app.buttons["settings-mode-bypassPermissions"].exists)
+        // SwiftUI repeats the identifier on the selected row, so find it by its label.
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Default'")).firstMatch.isSelected, "the mode in force is selected")
+        attach("settings-modes")
+        app.buttons["settings-mode-plan"].tap()
+        let picked = NSPredicate { _, _ in self.server.requests.contains { $0.line == "PATCH /v1/chat/options" && $0.json["mode"] as? String == "plan" } }
+        wait(for: [XCTNSPredicateExpectation(predicate: picked, object: nil)], timeout: 10)
+        attach("settings-mode-plan")
     }
 }

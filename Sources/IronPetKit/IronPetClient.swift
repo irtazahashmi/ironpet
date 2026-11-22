@@ -248,7 +248,7 @@ public final class IronPetClient: @unchecked Sendable {
 
     public func newChat() async throws { try await post(APIPath.chatNew) }
 
-    /// Changes the chat's agent, model, folder or auto mode. The Mac answers 409 while a turn runs, for all but `autoMode`.
+    /// Changes the chat's agent, model, folder or permission mode. The Mac answers 409 while a turn runs, for all but `mode`.
     public func setChatOptions(_ change: RemoteChatOptionsChange) async throws {
         _ = try await perform(request("PATCH", APIPath.chatOptions, body: try JSONSerialization.data(withJSONObject: change.json)))
     }

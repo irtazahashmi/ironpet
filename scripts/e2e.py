@@ -8,6 +8,7 @@ With no arguments, runs every scenario except those in OPT_IN, which need extra 
 """
 import json
 import os
+import re
 import shutil
 import subprocess
 import sys
@@ -361,11 +362,58 @@ def scenario_runtime():
     relaunch(test_mode=True)
 
 
-def scenario_modes():
-    """S10: the agent's own mode decides what asks. IronPet judges no command text.
+def agent_modes(workspace):
+    """What Claude Code's adapter itself reports in session/new: (current mode, [mode ids]). Spoken straight to the adapter in the
+    app bundle, so it does not depend on what ironpet shows. None when the adapter does not answer."""
+    import select
+    node, claude = which("node")[0], which("claude")[0]
+    script = f"{APP}/Contents/Resources/acp/claude.mjs"
+    if not (node and claude and os.path.exists(script)):
+        return None
+    proc = subprocess.Popen([node, script], stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+                            env={**os.environ, "CLAUDE_CODE_EXECUTABLE": claude})
 
-    In `default` mode Claude Code asks before `rm -rf ./junk`: the card carries the agent's own options and ironpet adds no
-    "destructive" wording. In `bypassPermissions` the agent never asks, so the same command runs with no card."""
+    def rpc(number, method, params):
+        proc.stdin.write(json.dumps({"jsonrpc": "2.0", "id": number, "method": method, "params": params}) + "\n")
+        proc.stdin.flush()
+        deadline = time.time() + 60
+        while time.time() < deadline:
+            if not select.select([proc.stdout], [], [], 1)[0]:
+                continue
+            line = proc.stdout.readline()
+            if line.strip().startswith("{") and json.loads(line).get("id") == number:
+                return json.loads(line)
+        return None
+    try:
+        rpc(1, "initialize", {"protocolVersion": 1, "clientCapabilities": {}})
+        modes = ((rpc(2, "session/new", {"cwd": workspace, "mcpServers": []}) or {}).get("result") or {}).get("modes") or {}
+        return modes.get("currentModeId"), [m["id"] for m in modes.get("availableModes", [])]
+    finally:
+        proc.kill()
+
+
+MODE_KEY = "chatMode.claude"
+
+
+def scenario_modes():
+    """S10: the agent's own permission modes decide what asks. IronPet judges no command text.
+
+    The picker lists the modes Claude Code reports over ACP. A mode the user picks survives a new chat and an app relaunch. In
+    `default` mode `rm -rf ./junk` asks with the agent's own options and no ironpet wording; in `bypassPermissions` it does not ask.
+    A background job that asks raises an alert, and with nobody answering the agent gets its reject option and the job notes it."""
+    # Picking a mode saves it in the app's defaults, so put back what the user had once the scenario is over.
+    domain = subprocess.run(["defaults", "read", DEFAULTS_DOMAIN, MODE_KEY], capture_output=True, text=True)
+    saved = domain.stdout.strip() if domain.returncode == 0 else None
+    try:
+        modes_checks()
+    finally:
+        if saved is None:
+            subprocess.run(["defaults", "delete", DEFAULTS_DOMAIN, MODE_KEY], capture_output=True)
+        else:
+            subprocess.run(["defaults", "write", DEFAULTS_DOMAIN, MODE_KEY, saved])
+
+
+def modes_checks():
     fresh_workspace()
     os.makedirs(os.path.join(WS, "junk"))
     run_chat("Run the shell command `rm -rf ./junk`. If it is denied, do not retry; just say so.", "claude", mode="default")
@@ -384,19 +432,115 @@ def scenario_modes():
            and "default" in modes,
            f"card='{title}' options={[(o['id'], o['kind']) for o in options]} modes={modes} junk_kept={kept} state={end and end['state']}")
 
+    reported = agent_modes(WS)
+    record("S10 mode picker offers exactly the modes the agent reports over ACP, none invented",
+           bool(reported) and bool(modes) and modes == reported[1] and (c or {}).get("mode") == "default",
+           f"picker={modes} agent={reported} current={(c or {}).get('mode')}")
+
     if "bypassPermissions" not in modes:
-        return record("S10 bypassPermissions: no card", False, f"the agent did not advertise bypassPermissions (modes={modes})")
+        record("S10 bypassPermissions: no card", False, f"the agent did not advertise bypassPermissions (modes={modes})")
+    else:
+        fresh_workspace()
+        os.makedirs(os.path.join(WS, "junk"))
+        run_chat("Run the shell command `rm -rf ./junk`, then say done.", "claude", mode="bypassPermissions")
+        c = wait_approval_or_end()
+        asked = bool(c and c["approvals"])
+        if asked:
+            call("POST", "/test/approve", {"allow": False})
+        end = wait_end()
+        gone = not os.path.isdir(os.path.join(WS, "junk"))
+        record("S10 bypassPermissions: the agent does not ask, so ironpet shows no card and the command runs", not asked and gone,
+               f"asked={asked} junk_removed={gone} mode={end and end['mode']} state={end and end['state']}")
+
+    mode_persists(reported)
+    background_permission()
+
+
+def mode_persists(reported):
+    """A picked mode stays selected in a new chat and after the app restarts. It differs from the mode the agent starts in, so the
+    default cannot make the check pass."""
+    start = reported[0] if reported else None
+    pick = "plan" if start == "acceptEdits" else "acceptEdits"
     fresh_workspace()
-    os.makedirs(os.path.join(WS, "junk"))
-    run_chat("Run the shell command `rm -rf ./junk`, then say done.", "claude", mode="bypassPermissions")
-    c = wait_approval_or_end()
-    asked = bool(c and c["approvals"])
-    if asked:
-        call("POST", "/test/approve", {"allow": False})
-    end = wait_end()
-    gone = not os.path.isdir(os.path.join(WS, "junk"))
-    record("S10 bypassPermissions: the agent does not ask, so ironpet shows no card and the command runs", not asked and gone,
-           f"asked={asked} junk_removed={gone} mode={end and end['mode']} state={end and end['state']}")
+    run_chat("Reply with the single word pong. Do not use tools.", "claude", mode=pick)
+    picked = wait_end()
+    fresh_workspace()
+    run_chat("Reply with the single word pong. Do not use tools.", "claude")
+    new_chat = wait_end()
+    relaunch(test_mode=True)
+    fresh_workspace()
+    run_chat("Reply with the single word pong. Do not use tools.", "claude")
+    relaunched = wait_end()
+    record("S10 a picked mode is still selected in a new chat and after the app relaunches",
+           [x and x["mode"] for x in (picked, new_chat, relaunched)] == [pick] * 3 and start != pick,
+           f"pick={pick} agent_starts_in={start} picked={picked and picked['mode']} new_chat={new_chat and new_chat['mode']} "
+           f"after_relaunch={relaunched and relaunched['mode']}")
+
+
+class RestoredConfig:
+    """Puts config.json back on exit. It stops no app: S10 runs against whichever copy `APP` names, and a run beside the user's own
+    app must leave that one alone."""
+
+    def __enter__(self):
+        self.data = open(CONFIG, "rb").read() if os.path.exists(CONFIG) else None
+        return self
+
+    def __exit__(self, *exc):
+        if self.data is None:
+            if os.path.exists(CONFIG):
+                os.remove(CONFIG)
+        else:
+            open(CONFIG, "wb").write(self.data)
+        return False
+
+
+def background_permission():
+    """A job whose agent asks raises an alert with the job and the command. Nobody answers, so after jobs.permissionTimeoutMinutes
+    (set to its 1 minute minimum, the shortest the app allows) the alert goes, the agent is rejected and the job's task notes it.
+    No test endpoint lists the buttons of the alert's bubble, so the agent's options are checked on the chat card above."""
+    with RestoredConfig():
+        relaunch(test_mode=True)
+        config = read_config()
+        config.setdefault("jobs", {})["permissionTimeoutMinutes"] = 1
+        json.dump(config, open(CONFIG, "w"), indent=2)
+        time.sleep(2.6)
+        fresh_workspace()
+        os.makedirs(os.path.join(WS, "junk"))
+        # The job runs in the agent's own mode, which this Mac may set to one that never asks. The folder's setting wins.
+        os.makedirs(os.path.join(WS, ".claude"))
+        json.dump({"permissions": {"defaultMode": "default"}}, open(os.path.join(WS, ".claude", "settings.json"), "w"))
+        # A chat in the folder makes it one ironpet knows, and makes Claude Code the agent a job uses.
+        run_chat("Reply with the single word pong. Do not use tools.", "claude")
+        wait_end()
+        title = f"e2e permission {int(time.time())}"
+        started = call("POST", "/mcp", {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {
+            "name": "jobs_start", "arguments": {"title": title, "folder": WS,
+                                                "prompt": "Run the shell command `rm -rf ./junk`. If it is denied, do not retry; just say so."}}})
+        reply = json.dumps(started)
+        job_id = next(iter(re.findall(r"job-[a-z0-9]+", reply)), "")
+        asked_at = time.time()
+
+        def alert():
+            return next((x for x in call("GET", "/test/signals")["signals"] if x["id"].startswith("permission:")), None)
+        raised = wait_for(alert, 120)
+        job = next((j for j in call("GET", "/test/jobs")["jobs"] if j["id"] == job_id), {})
+        shot("modes-job-alert")
+        record("S10 a job that asks raises an alert naming the job and the command, and waits",
+               bool(raised) and title in raised["title"] and "junk" in raised["title"] + raised["subtitle"]
+               and job.get("state") == "needs_approval",
+               f"alert={raised} job_state={job.get('state')} start={reply[:200]}")
+        if not raised:
+            relaunch(test_mode=True)
+            return
+        gone = wait_for(lambda: alert() is None, 120)
+        waited = time.time() - asked_at
+        task = next((t for t in call("GET", "/test/tasks")["tasks"] if t.get("source_ref") == job_id), {})
+        noted = [e["detail"] for e in task.get("history", []) if "permission timed out" in e["detail"]]
+        record("S10 with nobody answering, the alert clears after the timeout, the agent is rejected and the job notes it",
+               bool(gone) and waited >= 50 and os.path.isdir(os.path.join(WS, "junk")) and bool(noted),
+               f"alert_cleared={bool(gone)} after={waited:.0f}s junk_kept={os.path.isdir(os.path.join(WS, 'junk'))} notes={noted}")
+        call("POST", "/mcp", {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "jobs_stop", "arguments": {"id": job_id}}})
+    relaunch(test_mode=True)
 
 
 def scenario_picker():
