@@ -89,7 +89,7 @@ package final class RemoteVoice {
         self.api = api
         self.device = device
         self.send = send
-        let origin = ChatOrigin(client: ChatOrigin.iosClient, ref: device)
+        let origin = ChatOrigin.ios(device: device)
         unsubscribe = api.chat.onTurn { [weak self] sender, event in
             guard sender == origin, case .finished(let answer) = event, let answer else { return }
             self?.turnFinished(answer)
@@ -170,7 +170,7 @@ package final class RemoteVoice {
                 guard !Task.isCancelled else { return }
                 send(.text(VoiceServerMessage.transcript(id: finished.id, text: text).json))
                 guard finished.mode == .send, !text.isEmpty else { return }
-                let origin = ChatOrigin(client: ChatOrigin.iosClient, ref: device)
+                let origin = ChatOrigin.ios(device: device)
                 if try await api.chat.send(SendChatRequest(text: text, origin: origin)).outcome == .needsFolder {
                     fail(finished.id, "Choose a folder for this chat on the Mac.")
                 }

@@ -122,4 +122,22 @@ final class ContractDocTests: XCTestCase {
         XCTAssertTrue(doc.contains("core PR 12"), "the handshake must say it is implemented in core PR 12")
         XCTAssertTrue(doc.lowercased().contains("newline-delimited"), "the stdio framing must be documented")
     }
+
+    // MARK: Clients
+
+    func testEveryClientKindAndCapabilityIsDocumented() async throws {
+        let kinds = ClientKind.allCases.map(\.rawValue).filter { !doc.contains("`\($0)`") }
+        XCTAssertEqual(kinds, [], "docs/protocol.md does not name these client kinds")
+        let names = Set(Platform.capabilityForAdapter.values.map(\.rawValue)).union([ClientCapability.desktop.rawValue])
+        XCTAssertEqual(names.filter { !doc.contains("`\($0)`") }.sorted(), [], "docs/protocol.md does not name these client capabilities")
+    }
+
+    func testEveryClientSessionFieldIsDocumented() async throws {
+        let session = ClientSession(id: "s", deviceID: "d", name: "n", kind: .mac, lastInputAt: Date(), connectedAt: Date(), connection: .inProcess,
+                                    client: ClientInfo(name: "n", version: "1"))
+        let object = try JSONSerialization.jsonObject(with: JSONEncoder().encode(session)) as? [String: Any] ?? [:]
+        XCTAssertGreaterThanOrEqual(object.count, 9, "every field of a full session")
+        let missing = object.keys.sorted().filter { !doc.contains("| `\($0)` |") }
+        XCTAssertEqual(missing, [], "the ClientSession table in docs/protocol.md lacks these fields")
+    }
 }
