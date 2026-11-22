@@ -21,16 +21,16 @@ final class ContractDocTests: XCTestCase {
         }
     }
 
-    func testTheDocumentExists() {
+    func testTheDocumentExists() async throws {
         XCTAssertFalse(doc.isEmpty, "docs/protocol.md is missing")
     }
 
-    func testEveryEventIsDocumentedAsANotification() {
+    func testEveryEventIsDocumentedAsANotification() async throws {
         let missing = APIEventKind.allCases.map(\.rawValue).filter { !doc.contains("`\($0)`") }
         XCTAssertEqual(missing, [], "docs/protocol.md has no notification for these events")
     }
 
-    func testEveryAPIErrorCaseIsInTheErrorTable() {
+    func testEveryAPIErrorCaseIsInTheErrorTable() async throws {
         for code in APIError.Code.allCases {
             let row = doc.split(separator: "\n").first { $0.contains("`\(code.rawValue)`") && $0.contains("\(RPCDispatcher.code(for: code))") }
             XCTAssertNotNil(row, "docs/protocol.md has no error row for `\(code.rawValue)` with code \(RPCDispatcher.code(for: code))")
@@ -40,7 +40,7 @@ final class ContractDocTests: XCTestCase {
         }
     }
 
-    func testEveryFacadeHasASection() throws {
+    func testEveryFacadeHasASection() async throws {
         let files = try FileManager.default.contentsOfDirectory(atPath: ContractFiles.root.appendingPathComponent("Sources/IronPetCore/API").path)
         let facades = files.filter { $0.hasSuffix("API.swift") && $0 != "IronPetAPI.swift" }
             .map { String($0.dropLast("API.swift".count)).lowercased() }.sorted()
@@ -50,7 +50,7 @@ final class ContractDocTests: XCTestCase {
     }
 
     /// Every method in the table has a row with its params type, result type and REST route.
-    func testEveryMethodHasARowWithItsTypesAndRoute() throws {
+    func testEveryMethodHasARowWithItsTypesAndRoute() async throws {
         let rig = try ContractRig()
         let rows = doc.split(separator: "\n").map(String.init)
         for method in rig.dispatcher.all {
@@ -69,7 +69,7 @@ final class ContractDocTests: XCTestCase {
     }
 
     /// The methods in the document are the methods in the table, so a removed method does not stay documented.
-    func testNoDocumentedMethodIsMissingFromTheTable() throws {
+    func testNoDocumentedMethodIsMissingFromTheTable() async throws {
         let known = Set(try ContractRig().dispatcher.all.map(\.name))
         let documented = matches(#"(?m)^\| `([a-z]+\.[A-Za-z]+)` \| (?:`[^`]+`|none) \| `[^`]+` \|"#, in: doc).map { $0[1] }
         XCTAssertEqual(Set(documented).subtracting(known).sorted(), [], "documented, but no such method in RPCDispatcher")
@@ -83,14 +83,14 @@ final class ContractDocTests: XCTestCase {
         return found.map { (verb: $0[1] == "ws" ? "GET" : $0[1].uppercased(), path: $0[2]) }
     }
 
-    func testEveryRemoteServerRouteIsListed() throws {
+    func testEveryRemoteServerRouteIsListed() async throws {
         let routes = try serverRoutes()
         XCTAssertGreaterThan(routes.count, 60)
         let missing = routes.map { "\($0.verb) \($0.path)" }.filter { !doc.contains("`\($0)`") }
         XCTAssertEqual(missing, [], "docs/protocol.md does not list these /v1 routes")
     }
 
-    func testEveryAPIPathRouteIsListed() throws {
+    func testEveryAPIPathRouteIsListed() async throws {
         let text = try source("Sources/IronPetKit/APIPath.swift")
         let paths = matches(#""(/v1/[^"]+)""#, in: text).map { $0[1] }
         XCTAssertGreaterThan(paths.count, 60)
@@ -106,7 +106,7 @@ final class ContractDocTests: XCTestCase {
     }
 
     /// A method's REST route must be a route the server registers, so the mapping column cannot name a route that is not there.
-    func testEveryMethodRouteExistsOnTheServer() throws {
+    func testEveryMethodRouteExistsOnTheServer() async throws {
         let routes = Set(try serverRoutes().map { "\($0.verb) \($0.path)" })
         for method in try ContractRig().dispatcher.all where method.route != "none" {
             for route in method.route.components(separatedBy: ", ") {
@@ -117,7 +117,7 @@ final class ContractDocTests: XCTestCase {
 
     // MARK: Handshake
 
-    func testTheHandshakeIsDocumentedAndMarkedForCorePR12() {
+    func testTheHandshakeIsDocumentedAndMarkedForCorePR12() async throws {
         XCTAssertTrue(doc.contains("`session.hello`"))
         XCTAssertTrue(doc.contains("core PR 12"), "the handshake must say it is implemented in core PR 12")
         XCTAssertTrue(doc.lowercased().contains("newline-delimited"), "the stdio framing must be documented")

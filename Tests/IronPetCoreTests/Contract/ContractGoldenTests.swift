@@ -18,7 +18,7 @@ final class ContractGoldenTests: XCTestCase {
         for name in names { try await run(name) }
     }
 
-    func testEveryRequiredFacadeHasAReadAndAWrite() throws {
+    func testEveryRequiredFacadeHasAReadAndAWrite() async throws {
         let reads: [String: Set<String>] = [
             "tasks": ["tasks.list", "tasks.get"], "alerts": ["alerts.list", "alerts.get"], "agents": ["agents.list", "agents.get"],
             "automations": ["automations.list", "automations.get"], "chat": ["chat.status", "chat.messages"],
@@ -58,7 +58,7 @@ final class ContractGoldenTests: XCTestCase {
         XCTAssertTrue(message.contains(#""title""#), message)
     }
 
-    func testTheDifferenceNamesTheFieldInsideAList() {
+    func testTheDifferenceNamesTheFieldInsideAList() async throws {
         let golden = RemoteJSON.object(["result": .array([.object(["id": .string("a"), "title": .string("One")])])])
         let actual = RemoteJSON.object(["result": .array([.object(["id": .string("a"), "title": .string("Two")])])])
         XCTAssertEqual(GoldenJSON.difference(golden: golden, actual: actual),

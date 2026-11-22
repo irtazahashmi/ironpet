@@ -75,7 +75,7 @@ final class ContractErrorTests: XCTestCase {
 
     // MARK: Envelope
 
-    func testASuccessWithNothingToReturnKeepsItsNullResult() throws {
+    func testASuccessWithNothingToReturnKeepsItsNullResult() async throws {
         let data = RPCDispatcher.encode(JSONRPCResponse(id: .int(1), result: .null))
         XCTAssertEqual(String(decoding: data, as: UTF8.self), #"{"id":1,"jsonrpc":"2.0","result":null}"#)
         let back = try JSONDecoder().decode(JSONRPCResponse.self, from: data)
@@ -83,12 +83,12 @@ final class ContractErrorTests: XCTestCase {
         XCTAssertNil(back.error)
     }
 
-    func testAnErrorResponseHasNoResultMember() throws {
+    func testAnErrorResponseHasNoResultMember() async throws {
         let data = RPCDispatcher.encode(JSONRPCResponse(id: .string("a"), error: JSONRPCError(code: -32601, message: "no method")))
         XCTAssertEqual(String(decoding: data, as: UTF8.self), #"{"error":{"code":-32601,"message":"no method"},"id":"a","jsonrpc":"2.0"}"#)
     }
 
-    func testEveryEventKindBecomesANotificationNamedAfterIt() throws {
+    func testEveryEventKindBecomesANotificationNamedAfterIt() async throws {
         let at = ContractRig.epoch
         for kind in APIEventKind.allCases {
             let note = RPCDispatcher.notification(for: APIEvent(seq: 7, at: at, kind: kind, id: "abc"))
