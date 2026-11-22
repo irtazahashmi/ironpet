@@ -23,11 +23,27 @@ final class ChatFileLinksUITests: XCTestCase {
         add(shot)
     }
 
+    /// Taps the path a reply starts with.
+    private func tapPath(in message: String, _ path: String) {
+        let link = app.links[path]
+        if link.waitForExistence(timeout: 3) {
+            link.tap()
+            return
+        }
+        let bubble = app.staticTexts["bubble-\(message)"]
+        XCTAssertTrue(bubble.waitForExistence(timeout: 20), "no message \(message): \(app.debugDescription)")
+        bubble.coordinate(withNormalizedOffset: CGVector(dx: 0.1, dy: 0.25)).tap()
+    }
+
     private func openChat() {
+        // One path at the start of each reply. Some simulator runtimes do not expose a link inside a Text as an element, so a test taps
+        // the start of the message when `app.links` has nothing, and that is where the path is.
         server.chat.items = [
             RemoteChatItem(id: "m-1", kind: "user", date: Date(), text: "where does the login test fail?"),
-            RemoteChatItem(id: "m-2", kind: "assistant", date: Date(),
-                           text: "It fails in /Users/dev/demo-app/src/auth/login.ts:42, and the settings are in /etc/hosts. The chart is /Users/dev/demo-app/docs/diagram.png and the archive is /Users/dev/demo-app/blob.bin. A folder name like src/auth is not a path."),
+            RemoteChatItem(id: "m-2", kind: "assistant", date: Date(), text: "/Users/dev/demo-app/src/auth/login.ts:42 is where it fails."),
+            RemoteChatItem(id: "m-3", kind: "assistant", date: Date(), text: "/etc/hosts holds the settings."),
+            RemoteChatItem(id: "m-4", kind: "assistant", date: Date(), text: "/Users/dev/demo-app/docs/diagram.png is the chart."),
+            RemoteChatItem(id: "m-5", kind: "assistant", date: Date(), text: "/Users/dev/demo-app/blob.bin is the archive."),
         ]
         server.chat.state = "done"
         let size = CGSize(width: 240, height: 120)
@@ -55,10 +71,9 @@ final class ChatFileLinksUITests: XCTestCase {
 
     func testTappingAPathInAReplyShowsTheFileFromTheMac() {
         openChat()
-        let link = app.links["/Users/dev/demo-app/src/auth/login.ts:42"]
-        XCTAssertTrue(link.waitForExistence(timeout: 20), "the path is a link: \(app.debugDescription)")
+        XCTAssertTrue(app.staticTexts["bubble-m-5"].waitForExistence(timeout: 20))
         attach("file-1-reply-with-links")
-        link.tap()
+        tapPath(in: "m-2", "/Users/dev/demo-app/src/auth/login.ts:42")
         let text = app.staticTexts["file-preview-text"]
         XCTAssertTrue(text.waitForExistence(timeout: 10))
         XCTAssertTrue(text.label.contains("refreshToken(user)"), text.label)
@@ -71,9 +86,7 @@ final class ChatFileLinksUITests: XCTestCase {
 
     func testAPathOutsideTheMacsFolderIsRefusedWithAClearMessage() {
         openChat()
-        let link = app.links["/etc/hosts"]
-        XCTAssertTrue(link.waitForExistence(timeout: 20))
-        link.tap()
+        tapPath(in: "m-3", "/etc/hosts")
         let error = app.staticTexts["file-preview-error"]
         XCTAssertTrue(error.waitForExistence(timeout: 10))
         XCTAssertEqual(error.label, "The Mac only previews files inside the folders its chat works in")
@@ -84,17 +97,13 @@ final class ChatFileLinksUITests: XCTestCase {
 
     func testTappingAnImagePathShowsTheImageAndABinaryFileSaysItIsNotShown() {
         openChat()
-        let image = app.links["/Users/dev/demo-app/docs/diagram.png"]
-        XCTAssertTrue(image.waitForExistence(timeout: 20))
-        image.tap()
+        tapPath(in: "m-4", "/Users/dev/demo-app/docs/diagram.png")
         XCTAssertTrue(app.images["file-preview-image"].waitForExistence(timeout: 10))
         XCTAssertFalse(app.staticTexts["file-preview-text"].exists)
         attach("file-4-image-preview")
         app.buttons["file-preview-done"].tap()
 
-        let binary = app.links["/Users/dev/demo-app/blob.bin"]
-        XCTAssertTrue(binary.waitForExistence(timeout: 10))
-        binary.tap()
+        tapPath(in: "m-5", "/Users/dev/demo-app/blob.bin")
         let error = app.staticTexts["file-preview-error"]
         XCTAssertTrue(error.waitForExistence(timeout: 10))
         XCTAssertEqual(error.label, "The phone previews text files and images only.")
