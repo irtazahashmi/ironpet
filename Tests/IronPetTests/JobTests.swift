@@ -95,7 +95,7 @@ final class JobTests: XCTestCase {
         signals = SignalStore()
         permissions = BackgroundPermissions(signals: signals, timeout: { 600 })
         raised = []
-        permissions.observe(raised: { [unowned self] in raised.append($0) }, resolved: { _, _ in })
+        _ = permissions.observe(raised: { [unowned self] in raised.append($0) }, resolved: { _, _ in })
     }
 
     override func tearDown() async throws {

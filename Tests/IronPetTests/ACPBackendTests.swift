@@ -464,7 +464,7 @@ final class ACPBackendTests: XCTestCase {
     func testAllowedToolsSkipTheAlertAndDisallowedToolsAreRejectedWithoutOne() async {
         var raised = 0
         let permissions = BackgroundPermissions(timeout: { 600 })
-        permissions.observe(raised: { _ in raised += 1 }, resolved: { _, _ in })
+        _ = permissions.observe(raised: { _ in raised += 1 }, resolved: { _, _ in })
         let allowed = runAutomation(automation(allowed: ["Edit"]), permissions: permissions)
         guard case .success = await allowed.value else { return XCTFail("an allowed tool runs") }
         XCTAssertEqual(permissionReplies(), ["allow"])

@@ -62,7 +62,7 @@ final class BackgroundPermissionsTests: XCTestCase {
         let signals = SignalStore()
         let permissions = BackgroundPermissions(signals: signals)
         var resolved: [BackgroundPermissions.Outcome] = []
-        permissions.observe(raised: { _ in }, resolved: { _, outcome in resolved.append(outcome) })
+        _ = permissions.observe(raised: { _ in }, resolved: { _, outcome in resolved.append(outcome) })
         var decision: ApprovalDecision?
         permissions.ask(owner: "job-1", source: "Job", call: call(), respond: { decision = $0 }, timedOut: { _ in })
         permissions.end(owner: "job-1")
