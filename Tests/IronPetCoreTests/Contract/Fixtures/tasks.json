@@ -1,0 +1,286 @@
+{
+  "cases" : [
+    {
+      "name" : "empty list",
+      "request" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.list",
+        "params" : {
+          "includeDone" : false,
+          "labels" : {
+
+          }
+        }
+      },
+      "response" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "result" : [
+
+        ]
+      }
+    },
+    {
+      "capture" : {
+        "taskId" : "result.id"
+      },
+      "name" : "create",
+      "request" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.create",
+        "params" : {
+          "by" : "user",
+          "labels" : {
+
+          },
+          "links" : [
+
+          ],
+          "notes" : "",
+          "source" : "cli",
+          "status" : "backlog",
+          "title" : "Write the protocol doc"
+        }
+      },
+      "response" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "created" : "<date>",
+          "id" : "$taskId",
+          "labels" : {
+
+          },
+          "links" : [
+
+          ],
+          "notes" : "",
+          "source" : "cli",
+          "status" : "backlog",
+          "title" : "Write the protocol doc",
+          "updated" : "<date>"
+        }
+      }
+    },
+    {
+      "name" : "list after create",
+      "request" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.list",
+        "params" : {
+          "includeDone" : false,
+          "labels" : {
+
+          }
+        }
+      },
+      "response" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "result" : [
+          {
+            "created" : "<date>",
+            "id" : "$taskId",
+            "labels" : {
+
+            },
+            "links" : [
+
+            ],
+            "notes" : "",
+            "source" : "cli",
+            "status" : "backlog",
+            "title" : "Write the protocol doc",
+            "updated" : "<date>"
+          }
+        ]
+      }
+    },
+    {
+      "name" : "get",
+      "request" : {
+        "id" : 4,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.get",
+        "params" : {
+          "id" : "$taskId"
+        }
+      },
+      "response" : {
+        "id" : 4,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "history" : [
+            {
+              "at" : "<date>",
+              "by" : "user",
+              "detail" : "backlog: Write the protocol doc",
+              "kind" : "created"
+            }
+          ],
+          "task" : {
+            "created" : "<date>",
+            "id" : "$taskId",
+            "labels" : {
+
+            },
+            "links" : [
+
+            ],
+            "notes" : "",
+            "source" : "cli",
+            "status" : "backlog",
+            "title" : "Write the protocol doc",
+            "updated" : "<date>"
+          }
+        }
+      }
+    },
+    {
+      "name" : "update status",
+      "request" : {
+        "id" : 5,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.update",
+        "params" : {
+          "by" : "user",
+          "clearDue" : false,
+          "id" : "$taskId",
+          "labels" : {
+
+          },
+          "removeLabels" : [
+
+          ],
+          "status" : "in_progress"
+        }
+      },
+      "response" : {
+        "id" : 5,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "created" : "<date>",
+          "id" : "$taskId",
+          "labels" : {
+
+          },
+          "links" : [
+
+          ],
+          "notes" : "",
+          "source" : "cli",
+          "status" : "in_progress",
+          "title" : "Write the protocol doc",
+          "updated" : "<date>"
+        }
+      }
+    },
+    {
+      "name" : "close",
+      "request" : {
+        "id" : 6,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.close",
+        "params" : {
+          "by" : "user",
+          "id" : "$taskId",
+          "note" : "Shipped"
+        }
+      },
+      "response" : {
+        "id" : 6,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "closed" : "<date>",
+          "created" : "<date>",
+          "id" : "$taskId",
+          "labels" : {
+
+          },
+          "links" : [
+
+          ],
+          "notes" : "",
+          "source" : "cli",
+          "status" : "done",
+          "title" : "Write the protocol doc",
+          "updated" : "<date>"
+        }
+      }
+    },
+    {
+      "name" : "list done",
+      "request" : {
+        "id" : 7,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.list",
+        "params" : {
+          "includeDone" : true,
+          "labels" : {
+
+          }
+        }
+      },
+      "response" : {
+        "id" : 7,
+        "jsonrpc" : "2.0",
+        "result" : [
+          {
+            "closed" : "<date>",
+            "created" : "<date>",
+            "id" : "$taskId",
+            "labels" : {
+
+            },
+            "links" : [
+
+            ],
+            "notes" : "",
+            "source" : "cli",
+            "status" : "done",
+            "title" : "Write the protocol doc",
+            "updated" : "<date>"
+          }
+        ]
+      }
+    },
+    {
+      "name" : "suggestions",
+      "request" : {
+        "id" : 8,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.suggestions"
+      },
+      "response" : {
+        "id" : 8,
+        "jsonrpc" : "2.0",
+        "result" : [
+
+        ]
+      }
+    },
+    {
+      "name" : "delete",
+      "request" : {
+        "id" : 9,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.delete",
+        "params" : {
+          "by" : "user",
+          "id" : "$taskId"
+        }
+      },
+      "response" : {
+        "id" : 9,
+        "jsonrpc" : "2.0",
+        "result" : null
+      }
+    }
+  ],
+  "seed" : [
+
+  ]
+}

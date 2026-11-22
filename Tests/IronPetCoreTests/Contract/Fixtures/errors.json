@@ -1,0 +1,222 @@
+{
+  "cases" : [
+    {
+      "name" : "unknown method",
+      "request" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.fly",
+        "params" : {
+
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32601,
+          "data" : {
+            "method" : "tasks.fly"
+          },
+          "message" : "no method \"tasks.fly\""
+        },
+        "id" : 1,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "missing field",
+      "request" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.create",
+        "params" : {
+          "by" : "user",
+          "labels" : {
+
+          },
+          "links" : [
+
+          ],
+          "notes" : "",
+          "source" : "cli",
+          "status" : "backlog"
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32602,
+          "data" : {
+            "field" : "title"
+          },
+          "message" : "params: title is missing"
+        },
+        "id" : 2,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "wrong type",
+      "request" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.get",
+        "params" : {
+          "id" : 7
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32602,
+          "data" : {
+            "field" : "id"
+          },
+          "message" : "params: id has the wrong type"
+        },
+        "id" : 3,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "not_found",
+      "request" : {
+        "id" : 4,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.get",
+        "params" : {
+          "id" : "missing"
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32001,
+          "data" : {
+            "code" : "not_found"
+          },
+          "message" : "no task with id \"missing\""
+        },
+        "id" : 4,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "invalid empty title",
+      "request" : {
+        "id" : 5,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.create",
+        "params" : {
+          "by" : "user",
+          "labels" : {
+
+          },
+          "links" : [
+
+          ],
+          "notes" : "",
+          "source" : "cli",
+          "status" : "backlog",
+          "title" : "   "
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32002,
+          "data" : {
+            "code" : "invalid"
+          },
+          "message" : "title is empty"
+        },
+        "id" : 5,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "conflict",
+      "request" : {
+        "id" : 6,
+        "jsonrpc" : "2.0",
+        "method" : "meetings.stop"
+      },
+      "response" : {
+        "error" : {
+          "code" : -32003,
+          "data" : {
+            "code" : "conflict"
+          },
+          "message" : "no meeting is being recorded"
+        },
+        "id" : 6,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "unavailable no ask handler",
+      "request" : {
+        "id" : 7,
+        "jsonrpc" : "2.0",
+        "method" : "alerts.ask",
+        "params" : {
+          "id" : "alert-ci"
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32004,
+          "data" : {
+            "code" : "unavailable"
+          },
+          "message" : "the chat is not available"
+        },
+        "id" : 7,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "invalid settings patch",
+      "request" : {
+        "id" : 8,
+        "jsonrpc" : "2.0",
+        "method" : "settings.patch",
+        "params" : {
+          "patch" : "[]"
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32002,
+          "data" : {
+            "code" : "invalid"
+          },
+          "message" : "the patch must be a JSON object"
+        },
+        "id" : 8,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "unknown memory tool",
+      "request" : {
+        "id" : 9,
+        "jsonrpc" : "2.0",
+        "method" : "memory.call",
+        "params" : {
+          "name" : "memory_fly"
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32001,
+          "data" : {
+            "code" : "not_found"
+          },
+          "message" : "no memory tool \"memory_fly\""
+        },
+        "id" : 9,
+        "jsonrpc" : "2.0"
+      }
+    }
+  ],
+  "seed" : [
+    "memory",
+    "alerts"
+  ]
+}

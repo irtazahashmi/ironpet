@@ -1,0 +1,246 @@
+{
+  "cases" : [
+    {
+      "name" : "empty list",
+      "request" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "method" : "automations.list"
+      },
+      "response" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "result" : [
+
+        ]
+      }
+    },
+    {
+      "name" : "create",
+      "request" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "method" : "automations.create",
+        "params" : {
+          "by" : "user",
+          "definition" : "{\"name\": \"Stretch\", \"trigger\": {\"type\": \"interval\", \"minutes\": 30, \"clock\": \"wall\"}, \"action\": {\"type\": \"bubble\", \"title\": \"Stretch\", \"body\": \"Stand up\"}}"
+        }
+      },
+      "response" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "action" : {
+            "body" : "Stand up",
+            "title" : "Stretch",
+            "type" : "bubble"
+          },
+          "createdBy" : "user",
+          "enabled" : true,
+          "id" : "stretch",
+          "name" : "Stretch",
+          "presentation" : {
+
+          },
+          "trigger" : {
+            "clock" : "wall",
+            "minutes" : 30,
+            "type" : "interval"
+          }
+        }
+      }
+    },
+    {
+      "name" : "list after create",
+      "request" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "method" : "automations.list"
+      },
+      "response" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "result" : [
+          {
+            "action" : {
+              "body" : "Stand up",
+              "title" : "Stretch",
+              "type" : "bubble"
+            },
+            "createdBy" : "user",
+            "enabled" : true,
+            "id" : "stretch",
+            "name" : "Stretch",
+            "presentation" : {
+
+            },
+            "trigger" : {
+              "clock" : "wall",
+              "minutes" : 30,
+              "type" : "interval"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name" : "get",
+      "request" : {
+        "id" : 4,
+        "jsonrpc" : "2.0",
+        "method" : "automations.get",
+        "params" : {
+          "id" : "stretch"
+        }
+      },
+      "response" : {
+        "id" : 4,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "action" : {
+            "body" : "Stand up",
+            "title" : "Stretch",
+            "type" : "bubble"
+          },
+          "createdBy" : "user",
+          "enabled" : true,
+          "id" : "stretch",
+          "name" : "Stretch",
+          "presentation" : {
+
+          },
+          "trigger" : {
+            "clock" : "wall",
+            "minutes" : 30,
+            "type" : "interval"
+          }
+        }
+      }
+    },
+    {
+      "name" : "status",
+      "request" : {
+        "id" : 5,
+        "jsonrpc" : "2.0",
+        "method" : "automations.status",
+        "params" : {
+          "id" : "stretch"
+        }
+      },
+      "response" : {
+        "id" : 5,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "id" : "stretch",
+          "nextRun" : "<date>",
+          "trigger" : "every 30 min (clock time)"
+        }
+      }
+    },
+    {
+      "name" : "history",
+      "request" : {
+        "id" : 6,
+        "jsonrpc" : "2.0",
+        "method" : "automations.history",
+        "params" : {
+          "id" : "stretch",
+          "limit" : 5
+        }
+      },
+      "response" : {
+        "id" : 6,
+        "jsonrpc" : "2.0",
+        "result" : [
+
+        ]
+      }
+    },
+    {
+      "name" : "disable",
+      "request" : {
+        "id" : 7,
+        "jsonrpc" : "2.0",
+        "method" : "automations.setEnabled",
+        "params" : {
+          "enabled" : false,
+          "id" : "stretch"
+        }
+      },
+      "response" : {
+        "id" : 7,
+        "jsonrpc" : "2.0",
+        "result" : null
+      }
+    },
+    {
+      "name" : "get after disable",
+      "request" : {
+        "id" : 8,
+        "jsonrpc" : "2.0",
+        "method" : "automations.get",
+        "params" : {
+          "id" : "stretch"
+        }
+      },
+      "response" : {
+        "id" : 8,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "action" : {
+            "body" : "Stand up",
+            "title" : "Stretch",
+            "type" : "bubble"
+          },
+          "createdBy" : "user",
+          "enabled" : false,
+          "id" : "stretch",
+          "name" : "Stretch",
+          "presentation" : {
+
+          },
+          "trigger" : {
+            "clock" : "wall",
+            "minutes" : 30,
+            "type" : "interval"
+          }
+        }
+      }
+    },
+    {
+      "name" : "approve",
+      "request" : {
+        "id" : 9,
+        "jsonrpc" : "2.0",
+        "method" : "automations.approve",
+        "params" : {
+          "id" : "stretch"
+        }
+      },
+      "response" : {
+        "id" : 9,
+        "jsonrpc" : "2.0",
+        "result" : null
+      }
+    },
+    {
+      "name" : "delete",
+      "request" : {
+        "id" : 10,
+        "jsonrpc" : "2.0",
+        "method" : "automations.delete",
+        "params" : {
+          "id" : "stretch"
+        }
+      },
+      "response" : {
+        "id" : 10,
+        "jsonrpc" : "2.0",
+        "result" : null
+      }
+    }
+  ],
+  "seed" : [
+
+  ]
+}

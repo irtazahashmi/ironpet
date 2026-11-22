@@ -1,0 +1,95 @@
+{
+  "cases" : [
+    {
+      "name" : "status",
+      "request" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "method" : "chat.status"
+      },
+      "response" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "pendingApprovals" : 0,
+          "pendingForms" : 0,
+          "queued" : 0,
+          "running" : false,
+          "state" : "idle",
+          "title" : "New chat"
+        }
+      }
+    },
+    {
+      "name" : "messages",
+      "request" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "method" : "chat.messages"
+      },
+      "response" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "result" : [
+
+        ]
+      }
+    },
+    {
+      "name" : "send empty text",
+      "request" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "method" : "chat.send",
+        "params" : {
+          "files" : [
+
+          ],
+          "text" : "   ",
+          "uploads" : [
+
+          ]
+        }
+      },
+      "response" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "outcome" : "ignored"
+        }
+      }
+    },
+    {
+      "name" : "auto mode on",
+      "request" : {
+        "id" : 4,
+        "jsonrpc" : "2.0",
+        "method" : "chat.setAutoMode",
+        "params" : {
+          "on" : true
+        }
+      },
+      "response" : {
+        "id" : 4,
+        "jsonrpc" : "2.0",
+        "result" : null
+      }
+    },
+    {
+      "name" : "new chat",
+      "request" : {
+        "id" : 5,
+        "jsonrpc" : "2.0",
+        "method" : "chat.newChat"
+      },
+      "response" : {
+        "id" : 5,
+        "jsonrpc" : "2.0",
+        "result" : null
+      }
+    }
+  ],
+  "seed" : [
+
+  ]
+}

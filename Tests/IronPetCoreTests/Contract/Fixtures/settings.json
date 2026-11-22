@@ -1,0 +1,436 @@
+{
+  "cases" : [
+    {
+      "name" : "get",
+      "request" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "method" : "settings.get"
+      },
+      "response" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "automations" : {
+            "autoApprove" : false,
+            "autoFix" : true,
+            "logRetentionDays" : 14
+          },
+          "chat" : {
+            "background" : "default",
+            "pasteAttachmentChars" : 4000,
+            "pasteAttachmentLines" : 60
+          },
+          "desktopControl" : {
+            "enabled" : false
+          },
+          "editors" : [
+
+          ],
+          "hotkeys" : {
+            "captureRegion" : "cmd+opt+ctrl+g",
+            "captureWindow" : "cmd+opt+shift+g",
+            "chat" : "cmd+opt+g",
+            "meeting" : "",
+            "voice" : "cmd+opt+v",
+            "voiceMode" : "cmd+opt+ctrl+v"
+          },
+          "integrations" : {
+            "claudeHooks" : false,
+            "cursorHooks" : false,
+            "githubAlerts" : false,
+            "hooks" : {
+
+            },
+            "shareMCPSignIns" : false
+          },
+          "jobs" : {
+            "maxRunning" : 3
+          },
+          "meetings" : {
+            "autoSummary" : true,
+            "enabled" : false,
+            "ignoredMicApps" : [
+
+            ],
+            "lastApp" : "",
+            "offerToRecordCalls" : true,
+            "recogniseSpeakers" : false,
+            "summaryAgent" : "claude"
+          },
+          "memory" : {
+            "quietMinutes" : 30,
+            "reflect" : true,
+            "tidy" : false
+          },
+          "openIn" : "auto",
+          "pet" : {
+            "name" : "Ghost"
+          },
+          "reminders" : {
+            "eyes" : {
+              "enabled" : true,
+              "minutes" : 20
+            },
+            "idleResetMinutes" : 5,
+            "paused" : false,
+            "snoozeMinutes" : 10,
+            "stretch" : {
+              "enabled" : true,
+              "minutes" : 60
+            },
+            "water" : {
+              "enabled" : true,
+              "minutes" : 45
+            }
+          },
+          "remote" : {
+            "address" : "",
+            "baseUrl" : "",
+            "enabled" : false,
+            "machineName" : "",
+            "port" : 47380
+          },
+          "screenCapture" : {
+            "enabled" : false,
+            "excludedApps" : [
+
+            ],
+            "ocr" : false,
+            "retentionDays" : 30
+          },
+          "skills" : {
+            "autoUpdate" : true
+          },
+          "speech" : {
+            "enabled" : false,
+            "model" : "mlx-community/Kokoro-82M-bf16",
+            "speed" : 1,
+            "voice" : "am_puck"
+          },
+          "tasks" : {
+            "dueReminders" : true,
+            "keepDoneDays" : 30,
+            "meetingSuggestions" : true
+          },
+          "telegram" : {
+            "allowedUsers" : [
+
+            ],
+            "enabled" : false
+          },
+          "voice" : {
+            "baseUrl" : "http://localhost:8000/v1",
+            "enabled" : false,
+            "holdToTalk" : true,
+            "model" : "mlx-community/parakeet-tdt-0.6b-v3"
+          },
+          "voiceMode" : {
+            "enabled" : false,
+            "listenWith" : "ironpet",
+            "model" : "",
+            "silenceSeconds" : 20,
+            "speakJobUpdates" : true
+          },
+          "welcomeBack" : {
+            "enabled" : true
+          },
+          "window" : {
+            "appearance" : "system",
+            "autoHide" : false
+          }
+        }
+      }
+    },
+    {
+      "name" : "patch",
+      "request" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "method" : "settings.patch",
+        "params" : {
+          "patch" : "{\"speech\":{\"enabled\":true}}"
+        }
+      },
+      "response" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "automations" : {
+            "autoApprove" : false,
+            "autoFix" : true,
+            "logRetentionDays" : 14
+          },
+          "chat" : {
+            "background" : "default",
+            "pasteAttachmentChars" : 4000,
+            "pasteAttachmentLines" : 60
+          },
+          "desktopControl" : {
+            "enabled" : false
+          },
+          "editors" : [
+
+          ],
+          "hotkeys" : {
+            "captureRegion" : "cmd+opt+ctrl+g",
+            "captureWindow" : "cmd+opt+shift+g",
+            "chat" : "cmd+opt+g",
+            "meeting" : "",
+            "voice" : "cmd+opt+v",
+            "voiceMode" : "cmd+opt+ctrl+v"
+          },
+          "integrations" : {
+            "claudeHooks" : false,
+            "cursorHooks" : false,
+            "githubAlerts" : false,
+            "hooks" : {
+
+            },
+            "shareMCPSignIns" : false
+          },
+          "jobs" : {
+            "maxRunning" : 3
+          },
+          "meetings" : {
+            "autoSummary" : true,
+            "enabled" : false,
+            "ignoredMicApps" : [
+
+            ],
+            "lastApp" : "",
+            "offerToRecordCalls" : true,
+            "recogniseSpeakers" : false,
+            "summaryAgent" : "claude"
+          },
+          "memory" : {
+            "quietMinutes" : 30,
+            "reflect" : true,
+            "tidy" : false
+          },
+          "openIn" : "auto",
+          "pet" : {
+            "name" : "Ghost"
+          },
+          "reminders" : {
+            "eyes" : {
+              "enabled" : true,
+              "minutes" : 20
+            },
+            "idleResetMinutes" : 5,
+            "paused" : false,
+            "snoozeMinutes" : 10,
+            "stretch" : {
+              "enabled" : true,
+              "minutes" : 60
+            },
+            "water" : {
+              "enabled" : true,
+              "minutes" : 45
+            }
+          },
+          "remote" : {
+            "address" : "",
+            "baseUrl" : "",
+            "enabled" : false,
+            "machineName" : "",
+            "port" : 47380
+          },
+          "screenCapture" : {
+            "enabled" : false,
+            "excludedApps" : [
+
+            ],
+            "ocr" : false,
+            "retentionDays" : 30
+          },
+          "skills" : {
+            "autoUpdate" : true
+          },
+          "speech" : {
+            "enabled" : true,
+            "model" : "mlx-community/Kokoro-82M-bf16",
+            "speed" : 1,
+            "voice" : "am_puck"
+          },
+          "tasks" : {
+            "dueReminders" : true,
+            "keepDoneDays" : 30,
+            "meetingSuggestions" : true
+          },
+          "telegram" : {
+            "allowedUsers" : [
+
+            ],
+            "enabled" : false
+          },
+          "voice" : {
+            "baseUrl" : "http://localhost:8000/v1",
+            "enabled" : false,
+            "holdToTalk" : true,
+            "model" : "mlx-community/parakeet-tdt-0.6b-v3"
+          },
+          "voiceMode" : {
+            "enabled" : false,
+            "listenWith" : "ironpet",
+            "model" : "",
+            "silenceSeconds" : 20,
+            "speakJobUpdates" : true
+          },
+          "welcomeBack" : {
+            "enabled" : true
+          },
+          "window" : {
+            "appearance" : "system",
+            "autoHide" : false
+          }
+        }
+      }
+    },
+    {
+      "name" : "get after patch",
+      "request" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "method" : "settings.get"
+      },
+      "response" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "automations" : {
+            "autoApprove" : false,
+            "autoFix" : true,
+            "logRetentionDays" : 14
+          },
+          "chat" : {
+            "background" : "default",
+            "pasteAttachmentChars" : 4000,
+            "pasteAttachmentLines" : 60
+          },
+          "desktopControl" : {
+            "enabled" : false
+          },
+          "editors" : [
+
+          ],
+          "hotkeys" : {
+            "captureRegion" : "cmd+opt+ctrl+g",
+            "captureWindow" : "cmd+opt+shift+g",
+            "chat" : "cmd+opt+g",
+            "meeting" : "",
+            "voice" : "cmd+opt+v",
+            "voiceMode" : "cmd+opt+ctrl+v"
+          },
+          "integrations" : {
+            "claudeHooks" : false,
+            "cursorHooks" : false,
+            "githubAlerts" : false,
+            "hooks" : {
+
+            },
+            "shareMCPSignIns" : false
+          },
+          "jobs" : {
+            "maxRunning" : 3
+          },
+          "meetings" : {
+            "autoSummary" : true,
+            "enabled" : false,
+            "ignoredMicApps" : [
+
+            ],
+            "lastApp" : "",
+            "offerToRecordCalls" : true,
+            "recogniseSpeakers" : false,
+            "summaryAgent" : "claude"
+          },
+          "memory" : {
+            "quietMinutes" : 30,
+            "reflect" : true,
+            "tidy" : false
+          },
+          "openIn" : "auto",
+          "pet" : {
+            "name" : "Ghost"
+          },
+          "reminders" : {
+            "eyes" : {
+              "enabled" : true,
+              "minutes" : 20
+            },
+            "idleResetMinutes" : 5,
+            "paused" : false,
+            "snoozeMinutes" : 10,
+            "stretch" : {
+              "enabled" : true,
+              "minutes" : 60
+            },
+            "water" : {
+              "enabled" : true,
+              "minutes" : 45
+            }
+          },
+          "remote" : {
+            "address" : "",
+            "baseUrl" : "",
+            "enabled" : false,
+            "machineName" : "",
+            "port" : 47380
+          },
+          "screenCapture" : {
+            "enabled" : false,
+            "excludedApps" : [
+
+            ],
+            "ocr" : false,
+            "retentionDays" : 30
+          },
+          "skills" : {
+            "autoUpdate" : true
+          },
+          "speech" : {
+            "enabled" : true,
+            "model" : "mlx-community/Kokoro-82M-bf16",
+            "speed" : 1,
+            "voice" : "am_puck"
+          },
+          "tasks" : {
+            "dueReminders" : true,
+            "keepDoneDays" : 30,
+            "meetingSuggestions" : true
+          },
+          "telegram" : {
+            "allowedUsers" : [
+
+            ],
+            "enabled" : false
+          },
+          "voice" : {
+            "baseUrl" : "http://localhost:8000/v1",
+            "enabled" : false,
+            "holdToTalk" : true,
+            "model" : "mlx-community/parakeet-tdt-0.6b-v3"
+          },
+          "voiceMode" : {
+            "enabled" : false,
+            "listenWith" : "ironpet",
+            "model" : "",
+            "silenceSeconds" : 20,
+            "speakJobUpdates" : true
+          },
+          "welcomeBack" : {
+            "enabled" : true
+          },
+          "window" : {
+            "appearance" : "system",
+            "autoHide" : false
+          }
+        }
+      }
+    }
+  ],
+  "seed" : [
+
+  ]
+}

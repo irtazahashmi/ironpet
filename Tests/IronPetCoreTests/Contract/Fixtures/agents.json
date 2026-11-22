@@ -1,0 +1,142 @@
+{
+  "cases" : [
+    {
+      "name" : "list",
+      "request" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "method" : "agents.list"
+      },
+      "response" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "result" : [
+          {
+            "editedFiles" : [
+
+            ],
+            "ended" : false,
+            "id" : "session-1",
+            "origin" : {
+
+            },
+            "prompt" : "Fix the build",
+            "source" : "claude",
+            "status" : 4,
+            "turnStartedAt" : "<date>",
+            "updatedAt" : "<date>"
+          }
+        ]
+      }
+    },
+    {
+      "name" : "get",
+      "request" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "method" : "agents.get",
+        "params" : {
+          "id" : "session-1"
+        }
+      },
+      "response" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "editedFiles" : [
+
+          ],
+          "ended" : false,
+          "id" : "session-1",
+          "origin" : {
+
+          },
+          "prompt" : "Fix the build",
+          "source" : "claude",
+          "status" : 4,
+          "turnStartedAt" : "<date>",
+          "updatedAt" : "<date>"
+        }
+      }
+    },
+    {
+      "name" : "ask",
+      "request" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "method" : "agents.ask",
+        "params" : {
+          "id" : "session-1"
+        }
+      },
+      "response" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "result" : null
+      }
+    },
+    {
+      "name" : "acknowledge",
+      "request" : {
+        "id" : 4,
+        "jsonrpc" : "2.0",
+        "method" : "agents.acknowledge",
+        "params" : {
+          "id" : "session-1"
+        }
+      },
+      "response" : {
+        "id" : 4,
+        "jsonrpc" : "2.0",
+        "result" : null
+      }
+    },
+    {
+      "name" : "get after acknowledge",
+      "request" : {
+        "id" : 5,
+        "jsonrpc" : "2.0",
+        "method" : "agents.get",
+        "params" : {
+          "id" : "session-1"
+        }
+      },
+      "response" : {
+        "id" : 5,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "editedFiles" : [
+
+          ],
+          "ended" : false,
+          "id" : "session-1",
+          "origin" : {
+
+          },
+          "prompt" : "Fix the build",
+          "source" : "claude",
+          "status" : 4,
+          "turnStartedAt" : "<date>",
+          "updatedAt" : "<date>"
+        }
+      }
+    },
+    {
+      "name" : "acknowledge all",
+      "request" : {
+        "id" : 6,
+        "jsonrpc" : "2.0",
+        "method" : "agents.acknowledgeAll"
+      },
+      "response" : {
+        "id" : 6,
+        "jsonrpc" : "2.0",
+        "result" : null
+      }
+    }
+  ],
+  "seed" : [
+    "agents",
+    "asks"
+  ]
+}

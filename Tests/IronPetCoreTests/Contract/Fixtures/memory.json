@@ -1,0 +1,82 @@
+{
+  "cases" : [
+    {
+      "name" : "search finds nothing",
+      "request" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "method" : "memory.call",
+        "params" : {
+          "arguments" : {
+            "query" : "pnpm"
+          },
+          "name" : "memory_search"
+        }
+      },
+      "response" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "count" : 0,
+          "hits" : [
+
+          ]
+        }
+      }
+    },
+    {
+      "name" : "remember",
+      "request" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "method" : "memory.call",
+        "params" : {
+          "arguments" : {
+            "scope" : "me",
+            "text" : "Prefers pnpm over npm"
+          },
+          "name" : "memory_remember"
+        }
+      },
+      "response" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "file" : "me.md",
+          "saved" : "Prefers pnpm over npm"
+        }
+      }
+    },
+    {
+      "name" : "forget",
+      "request" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "method" : "memory.call",
+        "params" : {
+          "arguments" : {
+            "query" : "pnpm",
+            "scope" : "me"
+          },
+          "name" : "memory_forget"
+        }
+      },
+      "response" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "removed" : [
+            {
+              "file" : "me.md",
+              "note" : "Prefers pnpm over npm",
+              "person" : null
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "seed" : [
+    "memory"
+  ]
+}
