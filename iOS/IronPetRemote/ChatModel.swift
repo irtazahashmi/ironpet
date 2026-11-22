@@ -290,7 +290,8 @@ final class ChatModel: SocketModel {
             mark(.failed("The send was cancelled."))
             return false
         } catch {
-            if id == nil { errorMessage = error.localizedDescription }
+            // The banner stays as before, and the failed row under the message carries the same reason with its Retry.
+            errorMessage = error.localizedDescription
             mark(.failed(error.localizedDescription))
             return false
         }
