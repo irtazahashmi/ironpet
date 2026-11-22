@@ -22,6 +22,7 @@ struct ChatView: View {
     private var findKey: String {
         "\(find.query)-\(find.isOpen)-\(model.displayItems.count)-\(model.displayItems.last?.text?.utf16.count ?? 0)"
     }
+    @Environment(VoiceModel.self) private var voice: VoiceModel?
 
     var body: some View {
         NavigationStack {
@@ -41,6 +42,7 @@ struct ChatView: View {
                                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.vertical, 6)
                                     .background(.thinMaterial).accessibilityIdentifier("chat-notice")
                             }
+                            if let voice { VoiceNotice(voice: voice) }
                             Composer(model: model, showFiles: $showFiles, photos: $photos, focused: $focused)
                         }
                     }

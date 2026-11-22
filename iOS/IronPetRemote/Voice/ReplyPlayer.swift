@@ -7,12 +7,17 @@ protocol ClipEngine: AnyObject {
     /// Starts the clip and calls `onFinish` when it ends. A clip cut by `stop()` does not call it.
     func play(_ wav: Data, onFinish: @escaping @MainActor () -> Void) throws
     func stop()
+    /// Called when a clip that plays dies on its own: it cannot be decoded, or a call or another app interrupts it. `onFinish` is not
+    /// called for that clip. The string says what happened and is shown to the user.
+    var onFailure: (@MainActor (String) -> Void)? { get set }
 }
 
 @MainActor
 final class AudioPlayerEngine: NSObject, ClipEngine, AVAudioPlayerDelegate {
     private var player: AVAudioPlayer?
     private var finished: (@MainActor () -> Void)?
+    var onFailure: (@MainActor (String) -> Void)?
+    private var interruption: NSObjectProtocol?
 
     func play(_ wav: Data, onFinish: @escaping @MainActor () -> Void) throws {
         let session = AVAudioSession.sharedInstance()
@@ -22,6 +27,13 @@ final class AudioPlayerEngine: NSObject, ClipEngine, AVAudioPlayerDelegate {
         next.delegate = self
         finished = onFinish
         player = next
+        if interruption == nil {
+            interruption = NotificationCenter.default.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
+                let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+                guard raw.flatMap(AVAudioSession.InterruptionType.init(rawValue:)) == .began else { return }
+                MainActor.assumeIsolated { self?.died("Another app or a call interrupted the reply.") }
+            }
+        }
         guard next.play() else {
             player = nil
             finished = nil
@@ -36,8 +48,23 @@ final class AudioPlayerEngine: NSObject, ClipEngine, AVAudioPlayerDelegate {
         player = nil
     }
 
+    /// The clip ended without finishing: drop it and tell the player why.
+    private func died(_ reason: String) {
+        guard player != nil else { return }
+        finished = nil
+        player?.delegate = nil
+        player?.stop()
+        player = nil
+        onFailure?(reason)
+    }
+
+    nonisolated func audioPlayerDecodeErrorDidOccur(_ player: AVAudioPlayer, error: Error?) {
+        Task { @MainActor in self.died("The reply audio could not be played: \(error?.localizedDescription ?? "decoding failed").") }
+    }
+
     nonisolated func audioPlayerDidFinishPlaying(_ player: AVAudioPlayer, successfully flag: Bool) {
         Task { @MainActor in
+            guard flag else { return died("The reply audio stopped before its end.") }
             let done = finished
             finished = nil
             self.player = nil
@@ -61,7 +88,22 @@ final class ReplyPlayer {
     var onChange: () -> Void = {}
     var onError: (String) -> Void = { _ in }
 
-    init(engine: any ClipEngine) { self.engine = engine }
+    init(engine: any ClipEngine) {
+        self.engine = engine
+        self.engine.onFailure = { [weak self] reason in self?.clipFailed(reason) }
+    }
+
+    /// The clip that plays died. The rest of its reply is dropped, so the button returns to Speak and the user sees why.
+    private func clipFailed(_ reason: String) {
+        guard let reply = playing else { return }
+        onError(reason)
+        dropped.insert(reply)
+        receiving = receiving == reply ? nil : receiving
+        queue.removeAll { $0.reply == reply }
+        playing = nil
+        playNext()
+        onChange()
+    }
 
     /// A clip plays, one waits, or the Mac is still sending the reply.
     var isBusy: Bool { playing != nil || !queue.isEmpty || receiving != nil }

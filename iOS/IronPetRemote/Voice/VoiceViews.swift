@@ -40,3 +40,27 @@ struct VoiceSettingsSection: View {
         }
     }
 }
+
+/// Why the last recording failed or ended, above the composer. Without it a failed recording looks like a button that flips back.
+struct VoiceNotice: View {
+    let voice: VoiceModel
+
+    var body: some View {
+        if let message = voice.errorMessage {
+            HStack(alignment: .top, spacing: 8) {
+                Label(message, systemImage: "mic.slash").font(.footnote).foregroundStyle(.orange)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                if voice.needsSettings {
+                    Button("Settings") {
+                        if let url = URL(string: UIApplication.openSettingsURLString) { UIApplication.shared.open(url) }
+                    }
+                    .font(.footnote.weight(.semibold)).accessibilityIdentifier("voice-settings")
+                }
+                Button { voice.errorMessage = nil } label: { Image(systemName: "xmark").font(.footnote) }
+                    .accessibilityLabel("Dismiss").accessibilityIdentifier("voice-error-dismiss")
+            }
+            .padding(.horizontal).padding(.vertical, 6)
+            .background(.thinMaterial).accessibilityIdentifier("voice-error")
+        }
+    }
+}
