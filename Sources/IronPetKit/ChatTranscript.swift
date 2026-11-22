@@ -333,18 +333,35 @@ public enum RemoteTranscriptGroup: Identifiable, Equatable, Sendable {
     }
 
     public static func make(_ items: [RemoteChatItem]) -> [RemoteTranscriptGroup] {
-        var groups: [RemoteTranscriptGroup] = []
-        var run: [RemoteChatItem] = []
-        for item in items {
-            if item.kind == "tool" {
-                run.append(item)
+        ChatToolRuns.split(items, isTool: { $0.kind == "tool" }).map { run in
+            run.isTool ? .tools(run.items) : .item(run.items[0])
+        }
+    }
+}
+
+/// The one rule for folding consecutive tool steps into a run. The Mac's `TranscriptGroup` and the phone's
+/// `RemoteTranscriptGroup` both build on it, over their own item types.
+public enum ChatToolRuns {
+    public struct Run<Item> {
+        public let isTool: Bool
+        public let items: [Item]
+    }
+
+    /// Consecutive items where `isTool` holds become one run. Every other item is a run of one. `skip` drops items that draw nothing.
+    public static func split<Items: Sequence>(_ items: Items, isTool: (Items.Element) -> Bool,
+                                              skip: (Items.Element) -> Bool = { _ in false }) -> [Run<Items.Element>] {
+        var runs: [Run<Items.Element>] = []
+        var tools: [Items.Element] = []
+        for item in items where !skip(item) {
+            if isTool(item) {
+                tools.append(item)
             } else {
-                if !run.isEmpty { groups.append(.tools(run)); run = [] }
-                groups.append(.item(item))
+                if !tools.isEmpty { runs.append(Run(isTool: true, items: tools)); tools = [] }
+                runs.append(Run(isTool: false, items: [item]))
             }
         }
-        if !run.isEmpty { groups.append(.tools(run)) }
-        return groups
+        if !tools.isEmpty { runs.append(Run(isTool: true, items: tools)) }
+        return runs
     }
 }
 

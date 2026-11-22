@@ -1624,18 +1624,10 @@ enum TranscriptGroup {
     }
 
     static func make(_ items: ArraySlice<ChatItem>) -> [TranscriptGroup] {
-        var groups: [TranscriptGroup] = []
-        var run: [ChatItem] = []
-        for item in items where !item.isMetaOnly {
-            if case .tool = item.kind {
-                run.append(item)
-            } else {
-                if !run.isEmpty { groups.append(.tools(run)); run = [] }
-                groups.append(.item(item))
-            }
+        ChatToolRuns.split(items, isTool: { if case .tool = $0.kind { return true } else { return false } },
+                           skip: { $0.isMetaOnly }).map { run in
+            run.isTool ? .tools(run.items) : .item(run.items[0])
         }
-        if !run.isEmpty { groups.append(.tools(run)) }
-        return groups
     }
 }
 
