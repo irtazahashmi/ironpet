@@ -270,6 +270,76 @@ final class RemoteChatTests: XCTestCase {
         XCTAssertNil(chat.threadID)
     }
 
+    private func patch(_ body: [String: Any]) async throws -> RemoteReply { try await h.request("PATCH", "/v1/chat/options", token: token, body: body) }
+
+    /// Gives the chat a model list, as the agent does when its session starts.
+    private func offerModels() async throws {
+        _ = try await post("/v1/chat/current/messages", ["text": "hi"])
+        await settle()
+        deliver[0](.models(current: nil, [ChatModel(id: "m1", name: "Model one"), ChatModel(id: "m2", name: "Model two")]))
+        deliver[0](.finished(error: nil))
+        await settle()
+    }
+
+    func testTheChatSnapshotListsTheSettingsTheMacOffers() async throws {
+        try await offerModels()
+        let options = try await get("/v1/chat/current").json["options"] as? [String: Any] ?? [:]
+        XCTAssertEqual((options["models"] as? [[String: Any]])?.compactMap { $0["id"] as? String }, ["m1", "m2"])
+        XCTAssertEqual((options["agents"] as? [[String: Any]])?.compactMap { $0["id"] as? String }, chat.agents.map(\.id))
+        XCTAssertEqual(options["auto_mode"] as? Bool, chat.autoMode)
+        XCTAssertEqual(options["folder"] as? String, chat.workspace?.path)
+    }
+
+    func testAPhoneChangesTheModelAndAutoModeAndTheMacChatAndNextTurnUseThem() async throws {
+        defer { UserDefaults.standard.removeObject(forKey: "chatModel.\(chat.agent.id)"); UserDefaults.standard.removeObject(forKey: "cachedModels.\(chat.agent.id)") }
+        try await offerModels()
+        let changed = try await patch(["model": "m2", "auto_mode": true])
+        XCTAssertEqual(changed.status, 200)
+        XCTAssertEqual(chat.model, "m2")
+        XCTAssertTrue(chat.autoMode)
+        XCTAssertEqual(UserDefaults.standard.string(forKey: "chatModel.\(chat.agent.id)"), "m2", "stored the same way as a Mac change")
+        let current = try await get("/v1/chat/current").json
+        XCTAssertEqual(current["model"] as? String, "m2")
+        XCTAssertEqual((current["options"] as? [String: Any])?["auto_mode"] as? Bool, true)
+        _ = try await post("/v1/chat/current/messages", ["text": "next"])
+        await settle()
+        XCTAssertEqual(turns.last?.model, "m2", "the next turn runs with the phone's model")
+        let reset = try await patch(["model": NSNull()])
+        XCTAssertEqual(reset.status, 409, "the second turn is still running")
+        XCTAssertEqual(chat.model, "m2")
+        let auto = try await patch(["auto_mode": false])
+        XCTAssertEqual(auto.status, 200, "auto mode changes during a turn, as on the Mac")
+        XCTAssertFalse(chat.autoMode)
+    }
+
+    func testBadSettingsAreRefusedBeforeAnythingChanges() async throws {
+        try await offerModels()
+        let before = (chat.agent.id, chat.model, chat.autoMode, chat.workspace)
+        for body: [String: Any] in [["model": "nope"], ["agent": "nope"], ["folder": "/etc"], ["auto_mode": "yes"], ["model": 3],
+                                    ["agent": chat.agent.id, "model": "nope", "auto_mode": true], ["folder": "/etc", "no_project": true]] {
+            let reply = try await patch(body)
+            XCTAssertEqual(reply.status, 400, "\(body)")
+        }
+        XCTAssertEqual(chat.agent.id, before.0)
+        XCTAssertEqual(chat.model, before.1)
+        XCTAssertEqual(chat.autoMode, before.2)
+        XCTAssertEqual(chat.workspace, before.3)
+    }
+
+    func testNoProjectLeavesTheFolderOut() async throws {
+        let before = chat.workspace
+        defer { chat.workspace = before }
+        _ = try await patch(["no_project": true])
+        let options = try await get("/v1/chat/current").json["options"] as? [String: Any] ?? [:]
+        XCTAssertNil(options["folder"], "no project is an absent folder, not the scratch path")
+    }
+
+    func testSettingsNeedAPairedDevice() async throws {
+        let reply = try await h.request("PATCH", "/v1/chat/options", token: nil, body: ["auto_mode": true])
+        XCTAssertEqual(reply.status, 401)
+        XCTAssertFalse(chat.autoMode)
+    }
+
     // S7
     func testThreadsListMatchesTheAPIAndOneThreadCanBeRead() async throws {
         ThreadStore.save(ChatThread(id: "t-1", title: "First", workspace: "/tmp/web-app", updatedAt: Date(), items: [ChatItem(kind: .user("q")), ChatItem(kind: .assistant("a"))], agent: chat.agent.id))
