@@ -499,8 +499,11 @@ final class RemoteServer {
             return await self.chat(context) { try await $0.thread(id) }
         }
         router.post("/v1/chat/current/messages") { [self] request, context in
+            HopLog.mark("mac.receive")
             let body = try await Self.object(request, context)
-            return await self.chat(context) { try await $0.send(body) }
+            let response = await self.chat(context) { try await $0.send(body) }
+            HopLog.mark("mac.transcript")
+            return response
         }
         router.post("/v1/chat/current/stop") { [self] _, context in await self.chat(context) { await $0.stop() } }
         router.post("/v1/chat/open/:id") { [self] _, context in
@@ -671,7 +674,10 @@ final class RemoteServer {
                 if gap { send.yield(Self.text(["kind": "resync", "seq": bus.lastSeq])) }
                 // A streamed reply changes one message many times a second. The phone reads it again on each event, so it gets at most
                 // one `chat.item` per message per interval, and the last one after the stream pauses.
-                let throttle = RemoteEventThrottle(interval: interval) { send.yield(Self.text(Self.describe($0))) }
+                let throttle = RemoteEventThrottle(interval: interval) {
+                    if $0.kind == .chatItem { HopLog.mark("mac.push") }
+                    send.yield(Self.text(Self.describe($0)))
+                }
                 return (bus.subscribe(after: gap ? nil : since) { throttle.push($0) }, throttle)
             }
             defer { Task { @MainActor in subscription.cancel(); throttle.cancel() } }

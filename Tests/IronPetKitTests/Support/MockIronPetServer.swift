@@ -53,6 +53,9 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _uploads: [String: Data] = [:]
     private var _uploadNames: [String: String] = [:]
     private var _uploadDelay: TimeInterval = 0
+    private var _sendFails = false
+    private var _sendDelay: TimeInterval = 0
+    private var _sendPushesFirst = false
     fileprivate var _p4 = MockPhaseFour()
     private let encoder = WireJSON.makeEncoder()
     private(set) var port: UInt16 = 0
@@ -157,6 +160,12 @@ final class MockIronPetServer: @unchecked Sendable {
     var uploadFails: Bool { get { lock.lock(); defer { lock.unlock() }; return _uploadFails } set { lock.lock(); _uploadFails = newValue; lock.unlock() } }
     /// Seconds the mock waits before it answers an upload, to look at the app while a send is in flight.
     var uploadDelay: TimeInterval { get { lock.lock(); defer { lock.unlock() }; return _uploadDelay } set { lock.lock(); _uploadDelay = newValue; lock.unlock() } }
+    /// The next sends answer 500 while this is true.
+    var sendFails: Bool { get { lock.lock(); defer { lock.unlock() }; return _sendFails } set { lock.lock(); _sendFails = newValue; lock.unlock() } }
+    /// Seconds the Mac takes to answer a send after it has recorded the message.
+    var sendDelay: TimeInterval { get { lock.lock(); defer { lock.unlock() }; return _sendDelay } set { lock.lock(); _sendDelay = newValue; lock.unlock() } }
+    /// Push the `chat.item` event before the answer to the send, as a fast socket can.
+    var sendPushesFirst: Bool { get { lock.lock(); defer { lock.unlock() }; return _sendPushesFirst } set { lock.lock(); _sendPushesFirst = newValue; lock.unlock() } }
     /// The bytes of an upload by id.
     func uploaded(_ id: String) -> Data? { lock.lock(); defer { lock.unlock() }; return _uploads[id] }
 
@@ -560,6 +569,7 @@ extension MockIronPetServer {
             guard let thread = chatThreads.first(where: { $0.id == parts[3] }), let items else { fail(connection, 404, "not_found", "no thread"); return true }
             respond(connection, 200, RemoteChatThreadDetail(thread: thread, items: items))
         case (4, "current") where post && parts[3] == "messages":
+            if sendFails { fail(connection, 500, "failed", "the Mac could not take the message"); return true }
             guard let text = request.json["text"] as? String, !text.isEmpty || request.json["upload_ids"] != nil else { fail(connection, 400, "invalid", "the message is empty"); return true }
             lock.lock()
             let queued = _chat.running
@@ -573,9 +583,12 @@ extension MockIronPetServer {
                     _chat.items.append(RemoteChatItem(id: "\(id)-file-\(index)", kind: "screenshot", date: Date(), origin: "ios", fileName: stored, isImage: true))
                 }
             }
+            let delay = _sendDelay, pushFirst = _sendPushesFirst
             lock.unlock()
-            respond(connection, 200, RemoteSendResult(outcome: queued ? "queued" : "sent"))
-            publish(queued ? RemoteEvent.chatState : RemoteEvent.chatItem, id: queued ? "queue" : id)
+            let answer = { [self] in respond(connection, 200, RemoteSendResult(outcome: queued ? "queued" : "sent")) }
+            let push = { [self] in _ = publish(queued ? RemoteEvent.chatState : RemoteEvent.chatItem, id: queued ? "queue" : id) }
+            if pushFirst { push() }
+            if delay > 0 { queue.asyncAfter(deadline: .now() + delay) { answer(); if !pushFirst { push() } } } else { answer(); if !pushFirst { push() } }
         case (4, "current") where post && parts[3] == "stop":
             lock.lock(); _chat.running = false; _chat.state = "idle"; lock.unlock()
             respond(connection, 200, Data(#"{"stopped":true}"#.utf8))
