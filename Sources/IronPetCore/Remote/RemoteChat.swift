@@ -95,9 +95,17 @@ package struct RemoteChat {
         var object: [String: Any] = [
             "agents": options.agents.map { ["id": $0.id, "name": $0.name] },
             "models": options.models.map { ["id": $0.id, "name": $0.name] },
-            "folders": options.recentFolders.map { ["id": $0, "name": ($0 as NSString).lastPathComponent] },
-            "auto_mode": options.autoMode
+            "folders": options.recentFolders.map { ["id": $0, "name": ($0 as NSString).lastPathComponent] }
         ]
+        // The modes the agent advertises, as the Mac's picker lists them, and the one in force. A client never invents a mode.
+        if !options.modes.isEmpty {
+            object["modes"] = options.modes.map { mode -> [String: Any] in
+                var entry: [String: Any] = ["id": mode.id, "name": mode.name]
+                if !mode.detail.isEmpty { entry["detail"] = mode.detail }
+                return entry
+            }
+        }
+        if let mode = options.mode { object["mode"] = mode }
         // No `folder` means no project, so the scratch folder the Mac uses for general questions is left out.
         if let folder = options.folder, folder != ChatSession.scratchWorkspace.path { object["folder"] = folder }
         return object
@@ -105,7 +113,7 @@ package struct RemoteChat {
 
     // MARK: Settings
 
-    /// `{agent?, model?, folder?, no_project?, auto_mode?}`, the same choices as the Mac's chat settings, applied through the same API.
+    /// `{agent?, model?, folder?, no_project?, mode?}`, the same choices as the Mac's chat settings, applied through the same API.
     /// `model: null` returns to the agent's default. The agent, model and folder cannot change while a turn runs, as on the Mac, and the
     /// folder must be one the Mac chat already lists. Everything is checked before anything changes.
     package func setOptions(_ body: [String: Any]) async throws -> [String: Any] {
@@ -125,10 +133,10 @@ package struct RemoteChat {
         let noProject = body["no_project"] as? Bool == true
         if body["no_project"] != nil, body["no_project"] as? Bool == nil { throw RemoteFailure.invalid("no_project must be true or false") }
         if folder != nil, noProject { throw RemoteFailure.invalid("choose a folder or no project, not both") }
-        var auto: Bool?
-        if let raw = body["auto_mode"] {
-            guard let flag = raw as? Bool else { throw RemoteFailure.invalid("auto_mode must be true or false") }
-            auto = flag
+        var mode: String?
+        if let raw = body["mode"] {
+            guard let id = raw as? String, options.modes.contains(where: { $0.id == id }) else { throw RemoteFailure.invalid("choose one of the modes the agent offers") }
+            mode = id
         }
         if let model {
             // A model belongs to an agent, so it is checked against the list of the agent that will run it.
@@ -145,7 +153,7 @@ package struct RemoteChat {
         if changesModel { await api.chat.setModel(model) }
         if let folder { try await api.chat.useFolder(folder) }
         if noProject { await api.chat.useNoProject() }
-        if let auto { await api.chat.setAutoMode(auto) }
+        if let mode { await api.chat.setMode(mode) }
         return ["changed": true]
     }
 

@@ -566,7 +566,7 @@ private struct Composer: View {
 
 // MARK: Threads
 
-/// The Mac chat's settings popover, as a sheet: project, agent, model and auto mode. Each choice goes to the Mac and the sheet shows what
+/// The Mac chat's settings popover, as a sheet: project, agent, model and the agent's mode. Each choice goes to the Mac and the sheet shows what
 /// the Mac reports back, so a refused change does not stay on screen.
 private struct ChatSettingsSheet: View {
     let model: ChatModel
@@ -616,14 +616,27 @@ private struct ChatSettingsSheet: View {
                     Text(locked ? "The agent is working. Project, agent and model change when it is done." : "Changing the project or agent starts a new chat on your Mac.")
                 }
                 .disabled(locked)
-                Section {
-                    Toggle("Auto", isOn: Binding(
-                        get: { options.autoMode },
-                        set: { on in Task { await model.setOptions(RemoteChatOptionsChange(autoMode: on)) } }))
-                        .tint(.orange)
-                        .accessibilityIdentifier("settings-auto")
-                } footer: {
-                    Text("Let the agent edit and run commands without asking. Destructive commands still ask.")
+                if !options.modes.isEmpty {
+                    // The modes the agent advertises, the same list as the Mac's picker. A mode can change while the agent works.
+                    Section {
+                        Picker("Mode", selection: Binding(
+                            get: { options.mode ?? "" },
+                            set: { id in if !id.isEmpty { Task { await model.setOptions(RemoteChatOptionsChange(mode: id)) } } })) {
+                            ForEach(options.modes) { mode in
+                                VStack(alignment: .leading) {
+                                    Text(mode.name)
+                                    if let detail = mode.detail, !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(.secondary) }
+                                }
+                                .tag(mode.id)
+                                .accessibilityIdentifier("settings-mode-\(mode.id)")
+                            }
+                        }
+                        .pickerStyle(.inline).labelsHidden()
+                    } header: {
+                        Text("Mode")
+                    } footer: {
+                        Text("What the agent may do without asking. The agent defines the modes.")
+                    }
                 }
                 Section {
                     Button { Task { if await model.newChat() { dismiss() } } } label: { Label("New chat", systemImage: "square.and.pencil") }
