@@ -3,15 +3,19 @@ import Foundation
 /// Who sent a chat message when it was not typed on the Mac. The chat tells the sender how its turn goes (`ChatAPI.onTurn`),
 /// so a client only hears about its own messages.
 package struct ChatOrigin: Codable, Equatable, Hashable {
-    package init(client: String, ref: String) {
+    package init(client: String, ref: String, device: String? = nil) {
         self.client = client
         self.ref = ref
+        self.device = device
     }
 
     /// The kind of client: `telegram`, `ios`.
     package var client: String
     /// The client's own id for the conversation, such as a Telegram chat id or a device id.
     package var ref: String
+    /// The paired device the message came from, the id of its `ClientSession.deviceID`. Nil for clients that are not a device, such as
+    /// Telegram, and for the Mac's own input box. "My screen" in this turn means this device's screen.
+    package var device: String?
 
     package static let telegramClient = "telegram"
     /// Messages an automation sent into the chat.
@@ -29,6 +33,9 @@ package struct ChatOrigin: Codable, Equatable, Hashable {
     }
 
     package static func telegram(chat: Int64) -> ChatOrigin { ChatOrigin(client: telegramClient, ref: String(chat)) }
+
+    /// A message from a paired iPhone. Its `ref` and `device` are both the device id.
+    package static func ios(device: String) -> ChatOrigin { ChatOrigin(client: iosClient, ref: device, device: device) }
 }
 
 package typealias ChatItem = ChatSession.Item

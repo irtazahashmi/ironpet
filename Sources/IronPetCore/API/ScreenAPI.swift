@@ -91,3 +91,82 @@ extension ScreenAPI: ObservableObject {
     package nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
 }
 #endif
+
+/// One capture a client read on its own screen. The client already redacted it: secrets, card numbers and the like are gone before the
+/// text leaves the client. The core still runs its own redactor on what it stores, as it does for a capture it takes itself, but it
+/// cannot tell what a client left out, so `redacted` must say the client did its part.
+package struct ClientCapture: Codable, Equatable {
+    package init(app: String, appName: String, title: String? = nil, url: String? = nil, trigger: String, lines: [String],
+                 inputLines: [String]? = nil, at: Date? = nil, redacted: Bool) {
+        self.app = app
+        self.appName = appName
+        self.title = title
+        self.url = url
+        self.trigger = trigger
+        self.lines = lines
+        self.inputLines = inputLines
+        self.at = at
+        self.redacted = redacted
+    }
+
+    /// The app's bundle id, or its package name on a client with no bundles.
+    package var app: String
+    package var appName: String
+    package var title: String?
+    package var url: String?
+    /// Why it was taken: a `CaptureTrigger` name such as `app_switch` or `idle`.
+    package var trigger: String
+    package var lines: [String]
+    /// Lines the person typed into fields, kept apart because they are a draft, not page text.
+    package var inputLines: [String]?
+    /// When the client read the window. The host's clock when nil.
+    package var at: Date?
+    /// The client redacted `lines` and `inputLines`. A capture that says false is refused.
+    package var redacted: Bool
+}
+
+package struct ScreenIngestRequest: Codable, Equatable {
+    package init(captures: [ClientCapture]) { self.captures = captures }
+
+    package var captures: [ClientCapture]
+}
+
+package struct ScreenIngestResult: Codable, Equatable {
+    package init(stored: Int, unchanged: Int, skipped: Int) {
+        self.stored = stored
+        self.unchanged = unchanged
+        self.skipped = skipped
+    }
+
+    /// Captures that added something new.
+    package var stored: Int
+    /// Captures with nothing new since the window's last one.
+    package var unchanged: Int
+    /// Captures dropped: capture is paused or off for that app, or the capture had no text.
+    package var skipped: Int
+}
+
+extension ScreenAPI {
+    /// The most captures one call takes.
+    package static let maxIngestCaptures = 50
+    /// The most lines one capture may carry.
+    package static let maxIngestLines = 5000
+
+    /// Stores captures a client took on its own screen. The client redacts before it sends. Pause and the app deny lists apply as they do
+    /// to a capture taken here.
+    package func ingest(_ request: ScreenIngestRequest) async throws -> ScreenIngestResult {
+        guard !request.captures.isEmpty else { throw APIError.invalid("captures is empty") }
+        guard request.captures.count <= Self.maxIngestCaptures else {
+            throw APIError.invalid("a call takes at most \(Self.maxIngestCaptures) captures")
+        }
+        for (index, capture) in request.captures.enumerated() {
+            guard capture.redacted else { throw APIError.invalid("captures[\(index)] is not redacted: the client redacts before it sends") }
+            guard !capture.app.isEmpty else { throw APIError.invalid("captures[\(index)].app is empty") }
+            guard capture.lines.count <= Self.maxIngestLines else { throw APIError.invalid("captures[\(index)] has more than \(Self.maxIngestLines) lines") }
+            guard CaptureTrigger(rawValue: capture.trigger) != nil else { throw APIError.invalid("captures[\(index)].trigger \"\(capture.trigger)\" is not a trigger") }
+        }
+        let control = control, captures = request.captures
+        // A `CapabilityError` passes through unchanged, so the wire error keeps the capability and the platform.
+        return try await Task.detached(priority: .userInitiated) { try control.ingest(captures) }.value
+    }
+}

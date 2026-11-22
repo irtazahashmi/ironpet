@@ -85,10 +85,16 @@ package final class IronPetAPI {
     package private(set) var assistant: AssistantAPI?
     package private(set) var memory: MemoryAPI?
     package let pet: PetAPI
+    /// The clients connected now, and the handshake that opens a session.
+    package let session: SessionAPI
+    package var clients: ClientRegistry { session.clients }
 
-    package init(stores: Stores, events: APIEventBus? = nil) {
+    package init(stores: Stores, events: APIEventBus? = nil, clients: ClientRegistry? = nil) {
         let events = events ?? APIEventBus()
         self.events = events
+        let registry = clients ?? ClientRegistry()
+        var served: () -> [String] = { [] }
+        session = SessionAPI(clients: registry, events: events) { served() }
         stores.tasks.events = events
         stores.automations.store.events = events
         tasks = TasksAPI(store: stores.tasks)
@@ -119,6 +125,15 @@ package final class IronPetAPI {
         // Tests build their own API over a memory-only config and must not replace the app's.
         if stores.config === ConfigStore.shared { SettingsAPI.live = settings }
         meetings = MeetingsAPI(recorder: stores.meeting, library: stores.meetingLibrary)
+        served = { [unowned self] in self.servedFacades }
+    }
+
+    /// The facades `session.hello` reports: the ones a client can call now. `memory` and `screen` join once they are attached.
+    private var servedFacades: [String] {
+        var names = ["agents", "alerts", "automations", "bubbles", "chat", "meetings", "notifications", "session", "settings", "tasks", "today"]
+        if memory != nil { names.append("memory") }
+        if screen != nil { names.append("screen") }
+        return names.sorted()
     }
 
     package func attach(capture control: CaptureControl) { screen = ScreenAPI(control: control) }

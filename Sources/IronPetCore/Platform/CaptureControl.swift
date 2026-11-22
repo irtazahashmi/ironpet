@@ -24,10 +24,19 @@ package protocol CaptureControl: AnyObject, Sendable {
     func seenApps() -> [(bundleId: String, name: String, captures: Int)]
     /// The MCP tools `screen_search` and `screen_window`, which read loose JSON arguments.
     func callTool(_ name: String, _ args: [String: Any]) -> Result<Any, ScreenMCP.Failure>
+
+    /// Stores captures a client took on its own screen and already redacted. Applies pause and the app deny lists, as for a capture
+    /// taken here. Throws `CapabilityError.unsupported` where nothing stores captures.
+    func ingest(_ captures: [ClientCapture]) throws -> ScreenIngestResult
 }
 
 extension CaptureControl {
     package var isSupported: Bool { true }
+
+    /// An adapter that does not take captures from other clients says so.
+    package func ingest(_ captures: [ClientCapture]) throws -> ScreenIngestResult {
+        throw CapabilityError.unsupported(capability: "CaptureControl.ingest", platform: PlatformName.current)
+    }
 }
 
 /// Captures nothing and stores nothing.
@@ -52,4 +61,5 @@ package final class UnsupportedCaptureControl: CaptureControl, @unchecked Sendab
     package func callTool(_ name: String, _ args: [String: Any]) -> Result<Any, ScreenMCP.Failure> {
         .failure(ScreenMCP.Failure(message: error.localizedDescription))
     }
+    package func ingest(_ captures: [ClientCapture]) throws -> ScreenIngestResult { throw error }
 }

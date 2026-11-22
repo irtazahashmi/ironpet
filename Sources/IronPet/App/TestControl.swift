@@ -59,6 +59,8 @@ final class TestControl {
     var tasks: TaskStore?
     /// The remote API, for `/test/remote/*`: a pairing code to scan and the paired devices.
     var remote: RemoteController?
+    /// The connected clients, for `GET /test/clients`: the local Mac client and each paired phone with its event socket open.
+    var clients: ClientRegistry?
     /// Screen capture, for the `/test/screen/*` endpoints. They feed synthetic captures in, so no test reads the real screen.
     var screen: CaptureService?
     /// Opens the Screen section and returns its window number.
@@ -381,6 +383,12 @@ final class TestControl {
             return Self.encode(["ok": true, "code": code.code, "fingerprint": code.fingerprint,
                                 "link": remote.pairingLink ?? "", "address": remote.server?.secureAddress ?? "",
                                 "port": remote.server?.port ?? 0, "running": remote.server?.isRunning ?? false])
+        case ("GET", "/test/clients"):
+            guard let clients else { return Self.encode(["ok": false, "error": "no client registry"]) }
+            let encoder = JSONEncoder()
+            encoder.dateEncodingStrategy = .iso8601
+            let sessions = clients.sessions.compactMap { try? JSONSerialization.jsonObject(with: encoder.encode($0)) }
+            return Self.encode(["ok": true, "sessions": sessions])
         case ("GET", "/test/remote"):
             guard let remote else { return Self.encode(["ok": false, "error": "no remote API"]) }
             return Self.encode(["ok": true, "running": remote.server?.isRunning ?? false, "port": remote.server?.port ?? 0,

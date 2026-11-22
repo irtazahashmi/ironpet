@@ -37,6 +37,7 @@ package final class RPCDispatcher {
         case .conflict: return -32003
         case .unavailable: return -32004
         case .failed: return -32005
+        case .unsupported: return -32006
         }
     }
 
@@ -53,7 +54,12 @@ package final class RPCDispatcher {
         registerBubbles()
         registerNotifications()
         registerMeetings()
+        registerSession()
+        registerScreen()
     }
+
+    /// The connection the request in flight arrived on, for the methods that depend on it. Set by `handle(_:connection:)`.
+    @TaskLocal private static var currentConnection: RPCConnection?
 
     /// Adds a method. Tests use it to reach an error that no real method raises with in-memory stores, such as `failed`.
     package func register(_ method: RPCMethod) { methods[method.name] = method }
@@ -64,18 +70,30 @@ package final class RPCDispatcher {
     // MARK: Requests
 
     /// Runs one request and returns the response to send. A call that throws becomes an `error` response, never a crash.
-    package func handle(_ request: JSONRPCRequest) async -> JSONRPCResponse {
+    ///
+    /// `connection` is what the transport knows about the caller. `allowed`, when given, limits the connection to those methods:
+    /// the remote event socket serves `session.hello` only, so a device cannot reach the rest of the table through it.
+    package func handle(_ request: JSONRPCRequest, connection: RPCConnection? = nil, allowed: Set<String>? = nil) async -> JSONRPCResponse {
         guard request.jsonrpc == JSONRPC.version else {
             return JSONRPCResponse(id: request.id, error: JSONRPCError(code: JSONRPCError.invalidRequest, message: "jsonrpc must be \"2.0\""))
         }
-        guard let method = methods[request.method] else {
+        guard let method = methods[request.method], allowed?.contains(request.method) ?? true else {
             return JSONRPCResponse(id: request.id, error: JSONRPCError(
                 code: JSONRPCError.methodNotFound, message: "no method \"\(request.method)\"", data: .object(["method": .string(request.method)])))
         }
         do {
-            return JSONRPCResponse(id: request.id, result: try await method.run(request.params))
+            let result = try await Self.$currentConnection.withValue(connection) { try await method.run(request.params) }
+            return JSONRPCResponse(id: request.id, result: result)
         } catch let error as JSONRPCError {
             return JSONRPCResponse(id: request.id, error: error)
+        } catch let error as CapabilityError {
+            // The wire form of "nothing can do this": the same fields the Swift error carries, so a client can say which and where.
+            switch error {
+            case .unsupported(let capability, let platform):
+                return JSONRPCResponse(id: request.id, error: JSONRPCError(
+                    code: Self.code(for: .unsupported), message: error.localizedDescription,
+                    data: .object(["code": .string(APIError.Code.unsupported.rawValue), "capability": .string(capability), "platform": .string(platform)])))
+            }
         } catch {
             let api = APIError.wrap(error)
             return JSONRPCResponse(id: request.id, error: JSONRPCError(
@@ -85,12 +103,12 @@ package final class RPCDispatcher {
 
     /// Runs one line of a stdio stream (newline-delimited JSON). A line that is not JSON, or not a request, gets the error the
     /// JSON-RPC 2.0 specification names, with a `null` id because no id could be read.
-    package func handle(line: Data) async -> Data {
+    package func handle(line: Data, connection: RPCConnection? = nil, allowed: Set<String>? = nil) async -> Data {
         let response: JSONRPCResponse
         if (try? JSONSerialization.jsonObject(with: line, options: [.fragmentsAllowed])) == nil {
             response = JSONRPCResponse(id: .null, error: JSONRPCError(code: JSONRPCError.parseError, message: "the line is not JSON"))
         } else if let request = try? JSONDecoder().decode(JSONRPCRequest.self, from: line) {
-            response = await handle(request)
+            response = await handle(request, connection: connection, allowed: allowed)
         } else {
             response = JSONRPCResponse(id: .null, error: JSONRPCError(code: JSONRPCError.invalidRequest, message: "the line is not a JSON-RPC 2.0 request"))
         }
@@ -333,6 +351,26 @@ package final class RPCDispatcher {
         add("meetings.get", "none", params: "ID", result: "MeetingInfo") { (p: ID) in try meetings.get(p.id) }
         addVoid("meetings.delete", "DELETE /v1/meetings/:id", params: "ID") { (p: ID) in try meetings.delete(p.id) }
         addVoid("meetings.stop", "POST /v1/meetings/stop") { try meetings.stopRecording() }
+    }
+
+    private func registerSession() {
+        let session = api.session
+        add("session.hello", "none", params: "HelloRequest", result: "HelloResult") { (p: HelloRequest) -> HelloResult in
+            guard SessionAPI.supportedProtocols.contains(p.protocolVersion) else {
+                throw JSONRPCError(code: Self.code(for: .invalid), message: "protocol \(p.protocolVersion) is not supported",
+                                   data: .object(["code": .string(APIError.Code.invalid.rawValue),
+                                                  "supported": .array(SessionAPI.supportedProtocols.map { .int($0) })]))
+            }
+            guard let connection = Self.currentConnection else { throw APIError.unavailable("this transport has no connection to open a session on") }
+            return try session.hello(p, connection: connection)
+        }
+    }
+
+    private func registerScreen() {
+        add("screen.ingest", "none", params: "ScreenIngestRequest", result: "ScreenIngestResult") { [api] (p: ScreenIngestRequest) -> ScreenIngestResult in
+            guard let screen = api.screen else { throw APIError.unavailable("screen capture is not available on this host") }
+            return try await screen.ingest(p)
+        }
     }
 
     private func registerNotifications() {
