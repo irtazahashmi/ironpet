@@ -253,11 +253,30 @@ struct UserBubble: View {
     }
 }
 
-/// The agent's reply: the pet's face beside the markdown, with the time under it.
+/// What a reply needs to be read aloud: whether it is being read now, and the button action. The speaker button and the long-press
+/// menu item share it.
+struct ReadAloud {
+    var active: Bool
+    var toggle: () -> Void
+
+    @MainActor
+    init(item: RemoteChatItem, voice: VoiceModel) {
+        active = voice.readingItem == item.id
+        toggle = { Task { await voice.toggleReading(item.id) } }
+    }
+
+    init(active: Bool, toggle: @escaping () -> Void) {
+        self.active = active
+        self.toggle = toggle
+    }
+}
+
+/// The agent's reply: the pet's face beside the markdown, with the time under it and a speaker button that reads it aloud.
 struct AssistantBubble: View {
     let item: RemoteChatItem
     let text: String
     var avatar: CGImage?
+    var readAloud: ReadAloud?
     @ScaledMetric(relativeTo: .caption) private var scale = ChatMetrics.scale
 
     var body: some View {
@@ -268,12 +287,35 @@ struct AssistantBubble: View {
                     .padding(.top, 3)
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("bubble-\(item.id)")
-                if let date = item.date {
-                    Text(ChatMetrics.timeFormatter.string(from: date)).font(.system(size: 10 * scale)).foregroundStyle(.tertiary)
+                HStack(spacing: 8) {
+                    if let date = item.date {
+                        Text(ChatMetrics.timeFormatter.string(from: date)).font(.system(size: 10 * scale)).foregroundStyle(.tertiary)
+                    }
+                    if let readAloud { SpeakButton(readAloud: readAloud, scale: scale) }
                 }
             }
             Spacer(minLength: 30)
         }
+    }
+}
+
+/// Reads a reply aloud, or stops it. Shows Stop while its reply is being read.
+private struct SpeakButton: View {
+    let readAloud: ReadAloud
+    let scale: CGFloat
+
+    var body: some View {
+        let label = readAloud.active ? "Stop reading" : "Read aloud"
+        Button(action: readAloud.toggle) {
+            Image(systemName: readAloud.active ? "stop.circle.fill" : "speaker.wave.2")
+                .font(.system(size: 12 * scale))
+                .foregroundStyle(readAloud.active ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
+                .frame(minWidth: 28, minHeight: 28)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+        .accessibilityIdentifier("speak-button")
     }
 }
 

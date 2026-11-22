@@ -12,6 +12,9 @@ public enum VoiceClientMessage: Equatable, Sendable {
     case cancel(id: String)
     /// Stops the reply audio that is being made or queued.
     case ttsStop
+    /// Reads one reply of the open chat aloud, whether or not spoken replies are on. `item` is the chat message id, and the Mac
+    /// answers with `tts.chunk` and `tts.end` whose `reply` is that same id. An older Mac ignores it.
+    case ttsSpeak(item: String)
     /// Turns spoken replies on or off for this socket. They are off until the phone turns them on.
     case ttsEnable(Bool)
 
@@ -24,6 +27,7 @@ public enum VoiceClientMessage: Equatable, Sendable {
         case .cancel(let id): return VoiceWire.encode(["type": "voice.cancel", "id": id])
         case .ttsStop: return VoiceWire.encode(["type": "tts.stop"])
         case .ttsEnable(let on): return VoiceWire.encode(["type": "tts.enable", "enabled": on])
+        case .ttsSpeak(let item): return VoiceWire.encode(["type": "tts.speak", "item": item])
         }
     }
 
@@ -39,6 +43,9 @@ public enum VoiceClientMessage: Equatable, Sendable {
         case "voice.cancel": return .cancel(id: id)
         case "tts.stop": return .ttsStop
         case "tts.enable": return .ttsEnable(object["enabled"] as? Bool ?? false)
+        case "tts.speak":
+            guard let item = object["item"] as? String, !item.isEmpty else { return nil }
+            return .ttsSpeak(item: item)
         default: return nil
         }
     }

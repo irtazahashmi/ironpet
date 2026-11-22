@@ -20,12 +20,14 @@ final class VoiceWireTests: XCTestCase {
     }
 
     func testMessagesRoundTrip() {
-        let client: [VoiceClientMessage] = [.start(id: "a", mode: .send), .end(id: "a"), .cancel(id: "a"), .ttsStop, .ttsEnable(true)]
+        let client: [VoiceClientMessage] = [.start(id: "a", mode: .send), .end(id: "a"), .cancel(id: "a"), .ttsStop, .ttsEnable(true), .ttsSpeak(item: "8a1f")]
         for message in client { XCTAssertEqual(VoiceClientMessage.parse(message.json), message) }
         let server: [VoiceServerMessage] = [.transcript(id: "a", text: "hi \"there\""), .error(id: nil, message: "no"), .error(id: "a", message: "no"),
                                             .ttsChunk(reply: "r", index: 2, last: true), .ttsEnd(reply: "r")]
         for message in server { XCTAssertEqual(VoiceServerMessage.parse(message.json), message) }
         XCTAssertNil(VoiceClientMessage.parse("not json"))
+        XCTAssertNil(VoiceClientMessage.parse(#"{"type":"tts.speak"}"#), "a read request names its message")
+        XCTAssertNil(VoiceClientMessage.parse(#"{"type":"tts.speak","item":""}"#))
         XCTAssertNil(VoiceServerMessage.parse(#"{"type":"unknown"}"#))
     }
 

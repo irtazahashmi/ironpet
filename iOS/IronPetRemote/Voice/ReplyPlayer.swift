@@ -66,6 +66,16 @@ final class ReplyPlayer {
     /// A clip plays, one waits, or the Mac is still sending the reply.
     var isBusy: Bool { playing != nil || !queue.isEmpty || receiving != nil }
 
+    /// The reply that plays, or the next one in line, or the one the Mac is still sending. Nil when nothing is busy.
+    var current: String? { playing ?? queue.first?.reply ?? receiving }
+
+    /// The user asked the Mac to read `reply`, which may be one that was stopped before. Its clips are expected now.
+    func begin(reply: String) {
+        dropped.remove(reply)
+        receiving = reply
+        onChange()
+    }
+
     /// The Mac announced a clip of `reply`.
     func receive(reply: String) {
         guard !dropped.contains(reply) else { return }

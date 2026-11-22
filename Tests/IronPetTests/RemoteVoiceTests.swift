@@ -272,6 +272,72 @@ final class RemoteVoiceTests: XCTestCase {
         await wait("tts.end") { messages.contains { if case .ttsEnd = $0 { return true } else { return false } } }
     }
 
+    // MARK: Read aloud (tts.speak)
+
+    private func chunks() -> [(reply: String, index: Int)] {
+        messages.compactMap { if case .ttsChunk(let reply, let index, _) = $0 { return (reply, index) } else { return nil } }
+    }
+
+    private func errors() -> [String] {
+        messages.compactMap { if case .error(_, let message) = $0 { return message } else { return nil } }
+    }
+
+    func testASpeakRequestReadsThatMessageWithSpokenRepliesOff() async throws {
+        var synthesized: [String] = []
+        api.voice.synthesize = { text in synthesized.append(text); return Data([1, 2]) }
+        let item = ChatItem(kind: .assistant(reply))
+        session.items = [ChatItem(kind: .user("question")), item]
+        voice.receive(text: VoiceClientMessage.ttsSpeak(item: item.id.uuidString).json)
+        await wait("tts.end") { messages.contains { if case .ttsEnd = $0 { return true } else { return false } } }
+        XCTAssertEqual(chunks().map(\.index), [0, 1, 2])
+        XCTAssertEqual(Set(chunks().map(\.reply)), [item.id.uuidString], "the reply id is the message id, so the phone can match its button")
+        XCTAssertEqual(messages.last, .ttsEnd(reply: item.id.uuidString))
+        XCTAssertEqual(synthesized.count, 3)
+        XCTAssertFalse(api.voice.status.speaking, "nothing played on this Mac")
+    }
+
+    func testASpeakRequestForAMessageThatIsNotAReplyIsRefused() async throws {
+        api.voice.synthesize = { _ in Data([1]) }
+        let user = ChatItem(kind: .user("question"))
+        session.items = [user]
+        voice.receive(text: VoiceClientMessage.ttsSpeak(item: user.id.uuidString).json)
+        await wait("the error") { !errors().isEmpty }
+        XCTAssertTrue(chunks().isEmpty)
+        XCTAssertEqual(messages.last, .ttsEnd(reply: user.id.uuidString), "the phone's button resets")
+    }
+
+    func testASpeakRequestForAnUnknownOrMalformedIdIsRefused() async throws {
+        api.voice.synthesize = { _ in Data([1]) }
+        session.items = []
+        let unknown = UUID().uuidString
+        voice.receive(text: VoiceClientMessage.ttsSpeak(item: unknown).json)
+        await wait("the error") { !errors().isEmpty }
+        XCTAssertEqual(messages.last, .ttsEnd(reply: unknown))
+        out = []
+        voice.receive(text: VoiceClientMessage.ttsSpeak(item: "../../etc/passwd").json)
+        await wait("the second error") { !errors().isEmpty }
+        XCTAssertTrue(chunks().isEmpty)
+    }
+
+    func testStopCancelsAReadRequest() async throws {
+        var synthesized = 0
+        var gate: CheckedContinuation<Void, Never>?
+        api.voice.synthesize = { _ in
+            synthesized += 1
+            if synthesized == 2 { await withCheckedContinuation { gate = $0 } }
+            return Data([1])
+        }
+        let item = ChatItem(kind: .assistant(reply))
+        session.items = [item]
+        voice.receive(text: VoiceClientMessage.ttsSpeak(item: item.id.uuidString).json)
+        await wait("the second synthesis") { gate != nil }
+        voice.receive(text: VoiceClientMessage.ttsStop.json)
+        gate?.resume()
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(synthesized, 2)
+        XCTAssertFalse(messages.contains { if case .ttsEnd = $0 { return true } else { return false } })
+    }
+
     /// Ends a turn the way the chat does, through the listeners `ChatAPI` keeps.
     private func finishTurn(_ answer: String, from origin: ChatOrigin? = nil) throws {
         let sender = origin ?? ChatOrigin(client: ChatOrigin.iosClient, ref: device)
