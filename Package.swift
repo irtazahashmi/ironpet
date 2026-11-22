@@ -55,6 +55,6 @@ let package = Package(
         // and the platform protocols. Tests/IronPetCoreTests/ImportAllowListTests.swift fails when a file here imports a framework
         // outside its allow list. A feature with no UI lands here, and UI code calls only IronPetAPI.
         .target(name: "IronPetCore", dependencies: ["IronPetKit", .product(name: "JMESPath", package: "jmespath.swift"), .product(name: "QuickJS", package: "QuickJS-Swift"), .product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux, .windows])), .target(name: "CSQLite", condition: .when(platforms: [.linux, .windows]))], path: "Sources/IronPetCore"),
-        .testTarget(name: "IronPetCoreTests", dependencies: ["IronPetCore", .product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux, .windows]))], path: "Tests/IronPetCoreTests", resources: [.copy("Fixtures")]),
+        .testTarget(name: "IronPetCoreTests", dependencies: ["IronPetCore", .product(name: "Crypto", package: "swift-crypto", condition: .when(platforms: [.linux, .windows]))], path: "Tests/IronPetCoreTests", exclude: ["Contract/Fixtures"], resources: [.copy("Fixtures")]),
     ] + macTargets
 )

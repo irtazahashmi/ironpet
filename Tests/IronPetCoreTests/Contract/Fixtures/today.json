@@ -1,0 +1,131 @@
+{
+  "cases" : [
+    {
+      "name" : "morning brief",
+      "request" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "method" : "today.brief",
+        "params" : {
+          "kind" : "brief"
+        }
+      },
+      "response" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "kind" : "brief",
+          "lines" : [
+
+          ],
+          "sections" : [
+            {
+              "id" : "due",
+              "items" : [
+
+              ],
+              "title" : "Due"
+            },
+            {
+              "id" : "needs",
+              "items" : [
+
+              ],
+              "title" : "Needs you"
+            },
+            {
+              "id" : "alerts",
+              "items" : [
+
+              ],
+              "title" : "Alerts"
+            },
+            {
+              "id" : "meetings",
+              "items" : [
+
+              ],
+              "title" : "From recent meetings"
+            },
+            {
+              "id" : "agents",
+              "items" : [
+
+              ],
+              "title" : "Agents waiting"
+            }
+          ],
+          "window" : {
+            "duration" : 163200,
+            "start" : "<date>"
+          }
+        }
+      }
+    },
+    {
+      "name" : "recap",
+      "request" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "method" : "today.brief",
+        "params" : {
+          "kind" : "recap"
+        }
+      },
+      "response" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "kind" : "recap",
+          "lines" : [
+
+          ],
+          "sections" : [
+            {
+              "id" : "agents",
+              "items" : [
+
+              ],
+              "title" : "Agents"
+            },
+            {
+              "id" : "closed",
+              "items" : [
+
+              ],
+              "title" : "Tasks closed"
+            },
+            {
+              "id" : "resolved",
+              "items" : [
+
+              ],
+              "title" : "Alerts resolved"
+            },
+            {
+              "id" : "meetings",
+              "items" : [
+
+              ],
+              "title" : "Meetings"
+            },
+            {
+              "id" : "open",
+              "items" : [
+
+              ],
+              "title" : "Still open"
+            }
+          ],
+          "window" : {
+            "duration" : 76800,
+            "start" : "<date>"
+          }
+        }
+      }
+    }
+  ],
+  "seed" : [
+
+  ]
+}

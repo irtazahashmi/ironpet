@@ -1,0 +1,123 @@
+{
+  "cases" : [
+    {
+      "name" : "list",
+      "request" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "method" : "alerts.list"
+      },
+      "response" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "result" : [
+          {
+            "ask" : "Why did CI fail?",
+            "date" : "<date>",
+            "id" : "alert-ci",
+            "label" : "CI",
+            "links" : [
+
+            ],
+            "mood" : "failed",
+            "subtitle" : "main",
+            "symbol" : "xmark.circle",
+            "title" : "CI failed"
+          }
+        ]
+      }
+    },
+    {
+      "name" : "get",
+      "request" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "method" : "alerts.get",
+        "params" : {
+          "id" : "alert-ci"
+        }
+      },
+      "response" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "ask" : "Why did CI fail?",
+          "date" : "<date>",
+          "id" : "alert-ci",
+          "label" : "CI",
+          "links" : [
+
+          ],
+          "mood" : "failed",
+          "subtitle" : "main",
+          "symbol" : "xmark.circle",
+          "title" : "CI failed"
+        }
+      }
+    },
+    {
+      "name" : "ask",
+      "request" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "method" : "alerts.ask",
+        "params" : {
+          "id" : "alert-ci"
+        }
+      },
+      "response" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "result" : null
+      }
+    },
+    {
+      "name" : "dismiss",
+      "request" : {
+        "id" : 4,
+        "jsonrpc" : "2.0",
+        "method" : "alerts.dismiss",
+        "params" : {
+          "id" : "alert-ci"
+        }
+      },
+      "response" : {
+        "id" : 4,
+        "jsonrpc" : "2.0",
+        "result" : null
+      }
+    },
+    {
+      "name" : "list after dismiss",
+      "request" : {
+        "id" : 5,
+        "jsonrpc" : "2.0",
+        "method" : "alerts.list"
+      },
+      "response" : {
+        "id" : 5,
+        "jsonrpc" : "2.0",
+        "result" : [
+
+        ]
+      }
+    },
+    {
+      "name" : "dismiss all",
+      "request" : {
+        "id" : 6,
+        "jsonrpc" : "2.0",
+        "method" : "alerts.dismissAll"
+      },
+      "response" : {
+        "id" : 6,
+        "jsonrpc" : "2.0",
+        "result" : null
+      }
+    }
+  ],
+  "seed" : [
+    "alerts",
+    "asks"
+  ]
+}

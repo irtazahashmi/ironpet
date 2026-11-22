@@ -1,0 +1,63 @@
+{
+  "cases" : [
+    {
+      "name" : "list",
+      "request" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "method" : "meetings.list"
+      },
+      "response" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "result" : [
+
+        ]
+      }
+    },
+    {
+      "name" : "get missing",
+      "request" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "method" : "meetings.get",
+        "params" : {
+          "id" : "missing"
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32001,
+          "data" : {
+            "code" : "not_found"
+          },
+          "message" : "no meeting with id \"missing\""
+        },
+        "id" : 2,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "stop",
+      "request" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "method" : "meetings.stop"
+      },
+      "response" : {
+        "error" : {
+          "code" : -32003,
+          "data" : {
+            "code" : "conflict"
+          },
+          "message" : "no meeting is being recorded"
+        },
+        "id" : 3,
+        "jsonrpc" : "2.0"
+      }
+    }
+  ],
+  "seed" : [
+
+  ]
+}
