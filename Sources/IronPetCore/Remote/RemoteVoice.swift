@@ -59,6 +59,8 @@ package struct VoiceStreamBuffer {
 ///
 /// Text to speech. After `tts.enable`, when a turn this device started ends, the reply is synthesized chunk by chunk and written as a
 /// `tts.chunk` message followed by its WAV. Nothing plays on this Mac and `isQuiet` is not asked: it guards only the Mac's speaker.
+/// `tts.speak` (`item`) reads one message of the open chat the same way, whether or not spoken replies are on, and answers with the
+/// message id as the `reply`. Only an assistant message is read, and its text comes from the chat, not from the phone.
 /// `tts.stop` drops the reply that is being made.
 @MainActor
 package final class RemoteVoice {
@@ -126,6 +128,8 @@ package final class RemoteVoice {
             if let current = stream, id.isEmpty || id == current.id { stream = nil }
         case .ttsStop:
             stopSpeech()
+        case .ttsSpeak(let item):
+            speakMessage(item)
         case .ttsEnable(let on):
             spokenReplies = on
             if !on { stopSpeech() }
@@ -185,25 +189,50 @@ package final class RemoteVoice {
 
     private func turnFinished(_ answer: String) {
         guard spokenReplies else { return }
+        speak(answer, reply: UUID().uuidString.lowercased())
+    }
+
+    /// Reads one assistant message of the open chat. The phone names the message; the text is the chat's own.
+    private func speakMessage(_ item: String) {
+        guard let id = UUID(uuidString: item) else {
+            fail(nil, "That message is not in this chat.")
+            send(.text(VoiceServerMessage.ttsEnd(reply: item).json))
+            return
+        }
         stopSpeech()
-        let reply = UUID().uuidString.lowercased()
         speech = Task { [weak self] in
             guard let self else { return }
-            do {
-                for try await chunk in try api.voice.audio(SpeakRequest(text: answer)) {
-                    guard !Task.isCancelled else { return }
-                    send(.text(VoiceServerMessage.ttsChunk(reply: reply, index: chunk.index, last: chunk.index == chunk.count - 1).json))
-                    send(.binary(VoiceWire.ttsFrame(index: UInt32(chunk.index), wav: chunk.audio)))
-                }
-                // A stream that a cancel ended looks like a finished one.
+            guard let message = try? await api.chat.message(id), case .assistant(let text) = message.kind, !text.isEmpty else {
                 guard !Task.isCancelled else { return }
-            } catch is CancellationError {
+                fail(nil, "That message is not a reply that can be read.")
+                send(.text(VoiceServerMessage.ttsEnd(reply: item).json))
                 return
-            } catch {
-                fail(nil, error.localizedDescription)
             }
-            send(.text(VoiceServerMessage.ttsEnd(reply: reply).json))
+            guard !Task.isCancelled else { return }
+            await synthesize(text, reply: item)
         }
+    }
+
+    private func speak(_ text: String, reply: String) {
+        stopSpeech()
+        speech = Task { [weak self] in await self?.synthesize(text, reply: reply) }
+    }
+
+    private func synthesize(_ text: String, reply: String) async {
+        do {
+            for try await chunk in try api.voice.audio(SpeakRequest(text: text)) {
+                guard !Task.isCancelled else { return }
+                send(.text(VoiceServerMessage.ttsChunk(reply: reply, index: chunk.index, last: chunk.index == chunk.count - 1).json))
+                send(.binary(VoiceWire.ttsFrame(index: UInt32(chunk.index), wav: chunk.audio)))
+            }
+            // A stream that a cancel ended looks like a finished one.
+            guard !Task.isCancelled else { return }
+        } catch is CancellationError {
+            return
+        } catch {
+            fail(nil, error.localizedDescription)
+        }
+        send(.text(VoiceServerMessage.ttsEnd(reply: reply).json))
     }
 
     private func stopSpeech() {

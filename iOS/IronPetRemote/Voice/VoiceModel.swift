@@ -35,6 +35,8 @@ final class VoiceModel {
     }
     /// True while a reply plays or arrives.
     private(set) var speaking = false
+    /// The id of the chat message that plays or arrives, so its speaker button shows Stop.
+    private(set) var readingItem: String?
 
     /// The text of a finished dictation. The chat puts it in the composer when the mode was `draft`.
     @ObservationIgnored var onTranscript: (String, VoiceMode) -> Void = { _, _ in }
@@ -51,6 +53,12 @@ final class VoiceModel {
     @ObservationIgnored private var streamMode: VoiceMode = .draft
     @ObservationIgnored private var announcedReply: String?
     @ObservationIgnored private var reconnect: Task<Void, Never>?
+    /// The message a speaker button asked for, until its first clip or its end arrives.
+    @ObservationIgnored private var pendingRead: String?
+    @ObservationIgnored private var readTimeout: Task<Void, Never>?
+
+    /// How long the Mac has to start a reply that a speaker button asked for. An older Mac never answers.
+    static var readTimeout: Duration = .seconds(20)
 
     init(player: ReplyPlayer, defaults: UserDefaults = .standard, openChannel: @escaping () -> any VoiceChannel, makeMic: @escaping () -> any MicSource) {
         self.player = player
@@ -59,7 +67,10 @@ final class VoiceModel {
         self.makeMic = makeMic
         spokenReplies = defaults.bool(forKey: Self.spokenRepliesKey)
         sendAtOnce = defaults.bool(forKey: Self.sendKey)
-        player.onChange = { [weak self] in self?.speaking = self?.player.isBusy ?? false }
+        player.onChange = { [weak self] in
+            self?.speaking = self?.player.isBusy ?? false
+            self?.readingItem = self?.player.current
+        }
         player.onError = { [weak self] in self?.errorMessage = $0 }
     }
 
@@ -155,6 +166,35 @@ final class VoiceModel {
         guard player.isBusy else { return }
         player.stop()
         await send(.ttsStop)
+    }
+
+    /// The speaker button of a reply: reads the message aloud, or stops it when it is the one being read. Works with spoken replies off.
+    func toggleReading(_ item: String) async {
+        if readingItem == item {
+            pendingRead = nil
+            await stopSpeaking()
+            return
+        }
+        errorMessage = nil
+        // Whatever plays stops on the phone first, as when the mic is tapped.
+        await stopSpeaking()
+        guard let channel = ensureChannel() else { return }
+        player.begin(reply: item)
+        pendingRead = item
+        readTimeout?.cancel()
+        readTimeout = Task { [weak self] in
+            try? await Task.sleep(for: Self.readTimeout)
+            guard !Task.isCancelled, let self, pendingRead == item else { return }
+            pendingRead = nil
+            player.stop()
+            errorMessage = "The Mac did not answer. Update ironpet on the Mac to read replies aloud."
+        }
+        do { try await channel.send(text: VoiceClientMessage.ttsSpeak(item: item).json) } catch {
+            pendingRead = nil
+            readTimeout?.cancel()
+            player.stop()
+            errorMessage = "The Mac is not reachable."
+        }
     }
 
     /// The user typed in the composer. A reply that plays stops at once.
@@ -253,9 +293,11 @@ final class VoiceModel {
                     state = .idle
                 }
             case .ttsChunk(let reply, _, _):
+                if pendingRead == reply { pendingRead = nil }
                 announcedReply = reply
                 player.receive(reply: reply)
             case .ttsEnd(let reply):
+                if pendingRead == reply { pendingRead = nil }
                 player.finish(reply: reply)
             }
         case .binary(let data):
