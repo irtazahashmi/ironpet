@@ -21,6 +21,8 @@ final class VoiceModel {
 
     private(set) var state: State = .idle
     var errorMessage: String?
+    /// True when `errorMessage` is about microphone permission, so the view offers a way to the Settings app.
+    var needsSettings: Bool { errorMessage == MicError.denied.errorDescription }
     /// Whether the Mac sends the audio of replies to this phone. Off until the user turns it on.
     var spokenReplies: Bool {
         didSet {
@@ -59,6 +61,8 @@ final class VoiceModel {
 
     /// How long the Mac has to start a reply that a speaker button asked for. An older Mac never answers.
     static var readTimeout: Duration = .seconds(20)
+    /// How long the Mac has to answer a finished recording with its text before the phone gives up.
+    static var transcribeTimeout: Duration = .seconds(30)
 
     init(player: ReplyPlayer, defaults: UserDefaults = .standard, openChannel: @escaping () -> any VoiceChannel, makeMic: @escaping () -> any MicSource) {
         self.player = player
@@ -71,7 +75,11 @@ final class VoiceModel {
             self?.speaking = self?.player.isBusy ?? false
             self?.readingItem = self?.player.current
         }
-        player.onError = { [weak self] in self?.errorMessage = $0 }
+        // A clip that failed drops the rest of its reply on the phone, so the Mac stops producing it too.
+        player.onError = { [weak self] message in
+            self?.errorMessage = message
+            Task { await self?.send(.ttsStop) }
+        }
     }
 
     /// Connects when spoken replies are on, so the Mac knows to send them. Call when the tabs appear.
@@ -130,6 +138,12 @@ final class VoiceModel {
             errorMessage = error.localizedDescription
             return
         }
+        source.onFailure = { [weak self, weak source] reason in
+            Task { @MainActor in
+                guard let self, let source else { return }
+                await self.micDied(source, reason)
+            }
+        }
         let id = UUID().uuidString.lowercased()
         mic = source
         streamID = id
@@ -150,6 +164,14 @@ final class VoiceModel {
         }
     }
 
+    /// The microphone stopped on its own while recording. The Mac is told to drop the stream and the user sees why.
+    private func micDied(_ source: any MicSource, _ reason: String) async {
+        guard mic === source, state == .recording else { return }
+        let id = streamID
+        fail(reason)
+        if let id { await send(.cancel(id: id)) }
+    }
+
     private func endRecording() async {
         guard let id = streamID, let channel else { return }
         mic?.stop()
@@ -157,8 +179,19 @@ final class VoiceModel {
         state = .transcribing
         var framer = await pump?.value ?? VoiceFramer()
         pump = nil
-        if let last = framer.flush() { try? await channel.send(binary: last) }
-        await send(.end(id: id))
+        do {
+            if let last = framer.flush() { try await channel.send(binary: last) }
+            try await channel.send(text: VoiceClientMessage.end(id: id).json)
+        } catch {
+            fail("The Mac is not reachable.")
+            return
+        }
+        let timeout = Self.transcribeTimeout
+        Task { [weak self] in
+            try? await Task.sleep(for: timeout)
+            guard let self, state == .transcribing, streamID == id else { return }
+            fail("The Mac did not send the text back. Try again.")
+        }
     }
 
     /// Cuts the reply that plays or arrives. The player stops before `tts.stop` goes out.
@@ -251,6 +284,11 @@ final class VoiceModel {
             streamID = nil
             state = .idle
             errorMessage = "The connection to the Mac closed."
+        }
+        if player.isBusy || pendingRead != nil {
+            pendingRead = nil
+            readTimeout?.cancel()
+            if errorMessage == nil { errorMessage = "The connection to the Mac closed, so the reply stopped." }
         }
         player.stop()
         guard spokenReplies else { return }

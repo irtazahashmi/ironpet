@@ -6,6 +6,9 @@ protocol MicSource: AnyObject {
     /// Starts capturing. The stream ends after `stop()`, or when a file source runs out of audio.
     func start() async throws -> AsyncStream<Data>
     func stop()
+    /// Called once, from any thread, when capture dies on its own after `start()` (a route change, a phone call, a media services reset).
+    /// The source has already torn itself down. The string says what happened and is shown to the user.
+    var onFailure: (@Sendable (String) -> Void)? { get set }
 }
 
 enum MicError: LocalizedError {
@@ -55,6 +58,8 @@ final class PCMConverter {
 final class EngineMicSource: MicSource {
     private let engine = AVAudioEngine()
     private var running = false
+    private var observers: [NSObjectProtocol] = []
+    var onFailure: (@Sendable (String) -> Void)?
 
     func start() async throws -> AsyncStream<Data> {
         guard await AVAudioApplication.requestRecordPermission() else { throw MicError.denied }
@@ -82,7 +87,34 @@ final class EngineMicSource: MicSource {
         }
         running = true
         finish = { continuation.finish() }
+        observeFailures()
         return stream
+    }
+
+    /// The engine stops itself on a route or format change, and the session ends under a call or Siri. Without these observers the
+    /// recording would stall with the button still on Stop.
+    private func observeFailures() {
+        let center = NotificationCenter.default
+        observers = [
+            center.addObserver(forName: .AVAudioEngineConfigurationChange, object: engine, queue: .main) { [weak self] _ in
+                self?.captureDied("The audio route changed, so the microphone stopped.")
+            },
+            center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
+                let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+                guard raw.flatMap(AVAudioSession.InterruptionType.init(rawValue:)) == .began else { return }
+                self?.captureDied("Another app or a call took over the microphone.")
+            },
+            center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main) { [weak self] _ in
+                self?.captureDied("The audio system restarted, so the microphone stopped.")
+            },
+        ]
+    }
+
+    private func captureDied(_ reason: String) {
+        guard running else { return }
+        finish()
+        teardown()
+        onFailure?(reason)
     }
 
     private var finish: () -> Void = {}
@@ -95,6 +127,8 @@ final class EngineMicSource: MicSource {
     private func teardown() {
         guard running else { return }
         running = false
+        observers.forEach(NotificationCenter.default.removeObserver)
+        observers = []
         engine.inputNode.removeTap(onBus: 0)
         engine.stop()
     }
@@ -104,6 +138,7 @@ final class EngineMicSource: MicSource {
 final class FileMicSource: MicSource {
     private let url: URL
     private var task: Task<Void, Never>?
+    var onFailure: (@Sendable (String) -> Void)?
 
     init(url: URL) { self.url = url }
 

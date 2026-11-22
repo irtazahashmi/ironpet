@@ -33,7 +33,10 @@ private final class FakeChannel: VoiceChannel, @unchecked Sendable {
     var sentTexts: [String] { lock.lock(); defer { lock.unlock() }; return texts }
     var sentBinaries: [Data] { lock.lock(); defer { lock.unlock() }; return binaries }
 
+    var failTexts: (String) -> Bool = { _ in false }
+
     func send(text: String) async throws {
+        if failTexts(text) { throw URLError(.notConnectedToInternet) }
         lock.lock(); texts.append(text); lock.unlock()
         let label = VoiceClientMessage.parse(text).map { "\($0)" } ?? text
         await MainActor.run { log.entries.append("send \(label)") }
@@ -51,6 +54,7 @@ private final class FakeChannel: VoiceChannel, @unchecked Sendable {
 private final class FakeEngine: ClipEngine {
     let log: Log
     var finishCurrent: (@MainActor () -> Void)?
+    var onFailure: (@MainActor (String) -> Void)?
     init(log: Log) { self.log = log }
 
     func play(_ wav: Data, onFinish: @escaping @MainActor () -> Void) throws {
@@ -68,8 +72,11 @@ private final class FakeEngine: ClipEngine {
 private final class SilentMic: MicSource {
     private var finish: () -> Void = {}
     private(set) var stopped = false
+    var onFailure: (@Sendable (String) -> Void)?
+    var startError: Error?
 
     func start() async throws -> AsyncStream<Data> {
+        if let startError { throw startError }
         let (stream, continuation) = AsyncStream<Data>.makeStream()
         finish = { continuation.finish() }
         return stream
@@ -173,6 +180,140 @@ final class PhaseSixTests: XCTestCase {
         XCTAssertEqual(model.errorMessage, "Voice input is off in Settings.")
         XCTAssertEqual(model.state, .idle)
         XCTAssertTrue(mic.stopped, "an error for the stream also stops the microphone")
+    }
+
+    func testAMicrophoneThatDiesMidRecordingReturnsToIdleWithItsReason() async {
+        let mic = SilentMic()
+        let log = Log()
+        let channel = FakeChannel(log: log)
+        let model = VoiceModel(player: ReplyPlayer(engine: FakeEngine(log: log)), defaults: defaults(), openChannel: { channel }, makeMic: { mic })
+        await model.micTapped()
+        XCTAssertEqual(model.state, .recording)
+        mic.onFailure?("The audio route changed, so the microphone stopped.")
+        await settle { model.state == .idle }
+        XCTAssertEqual(model.state, .idle)
+        XCTAssertEqual(model.errorMessage, "The audio route changed, so the microphone stopped.")
+        XCTAssertTrue(mic.stopped)
+        await settle { channel.sentTexts.contains { VoiceClientMessage.parse($0).map { if case .cancel = $0 { true } else { false } } ?? false } }
+        XCTAssertTrue(channel.sentTexts.compactMap(VoiceClientMessage.parse).contains { if case .cancel = $0 { true } else { false } }, "the Mac drops the stream")
+    }
+
+    func testAFailedEndOfStreamShowsAnErrorInsteadOfWaitingForever() async {
+        let mic = SilentMic()
+        let log = Log()
+        let channel = FakeChannel(log: log)
+        let model = VoiceModel(player: ReplyPlayer(engine: FakeEngine(log: log)), defaults: defaults(), openChannel: { channel }, makeMic: { mic })
+        await model.micTapped()
+        channel.failTexts = { VoiceClientMessage.parse($0).map { if case .end = $0 { true } else { false } } ?? false }
+        await model.micTapped()
+        XCTAssertEqual(model.state, .idle)
+        XCTAssertEqual(model.errorMessage, "The Mac is not reachable.")
+    }
+
+    func testADeniedMicrophoneShowsAMessageAndTheWayToSettings() async {
+        let mic = SilentMic()
+        mic.startError = MicError.denied
+        let log = Log()
+        let model = VoiceModel(player: ReplyPlayer(engine: FakeEngine(log: log)), defaults: defaults(), openChannel: { FakeChannel(log: log) }, makeMic: { mic })
+        await model.micTapped()
+        XCTAssertEqual(model.state, .idle)
+        XCTAssertEqual(model.errorMessage, MicError.denied.errorDescription)
+        XCTAssertTrue(model.needsSettings)
+        mic.startError = nil
+        await model.micTapped()
+        XCTAssertFalse(model.needsSettings, "a new attempt clears the Settings offer")
+    }
+
+    func testAnAudioSessionFailureShowsItAndStaysIdle() async {
+        let mic = SilentMic()
+        mic.startError = MicError.unavailable("session could not start")
+        let log = Log()
+        let model = VoiceModel(player: ReplyPlayer(engine: FakeEngine(log: log)), defaults: defaults(), openChannel: { FakeChannel(log: log) }, makeMic: { mic })
+        await model.micTapped()
+        XCTAssertEqual(model.state, .idle)
+        XCTAssertEqual(model.errorMessage, "The microphone is not available: session could not start")
+        XCTAssertFalse(model.needsSettings)
+    }
+
+    func testAFifteenSecondRecordingStaysOnStopUntilTheUserTaps() async throws {
+        let url = try recording(seconds: 15)
+        defer { try? FileManager.default.removeItem(at: url) }
+        let log = Log()
+        let channel = FakeChannel(log: log)
+        let model = VoiceModel(player: ReplyPlayer(engine: FakeEngine(log: log)), defaults: defaults(), openChannel: { channel }, makeMic: { FileMicSource(url: url) })
+        await model.micTapped()
+        await settle { channel.sentBinaries.count >= 149 }
+        XCTAssertGreaterThanOrEqual(channel.sentBinaries.count, 149, "15 s is about 150 frames of 100 ms, the last still in the framer")
+        XCTAssertEqual(model.state, .recording, "the audio running out does not end the recording")
+        XCTAssertNil(model.errorMessage)
+        await model.micTapped()
+        XCTAssertEqual(model.state, .transcribing)
+    }
+
+    func testAMacThatNeverSendsTheTextEndsTheSpinnerWithAnError() async {
+        VoiceModel.transcribeTimeout = .milliseconds(50)
+        defer { VoiceModel.transcribeTimeout = .seconds(30) }
+        let log = Log()
+        let model = VoiceModel(player: ReplyPlayer(engine: FakeEngine(log: log)), defaults: defaults(), openChannel: { FakeChannel(log: log) }, makeMic: { SilentMic() })
+        await model.micTapped()
+        await model.micTapped()
+        XCTAssertEqual(model.state, .transcribing)
+        await settle { model.state == .idle }
+        XCTAssertEqual(model.state, .idle)
+        XCTAssertEqual(model.errorMessage, "The Mac did not send the text back. Try again.")
+    }
+
+    // MARK: Read Aloud
+
+    func testAClipThatDiesWhilePlayingShowsAnErrorAndDropsTheReply() async {
+        let log = Log()
+        let engine = FakeEngine(log: log)
+        let channel = FakeChannel(log: log)
+        let model = VoiceModel(player: ReplyPlayer(engine: engine), defaults: defaults(), openChannel: { channel }, makeMic: { SilentMic() })
+        await model.toggleReading("r1")
+        model.handle(.text(VoiceServerMessage.ttsChunk(reply: "r1", index: 0, last: false).json))
+        model.handle(.binary(VoiceWire.ttsFrame(index: 0, wav: Data([1, 2]))))
+        XCTAssertEqual(model.readingItem, "r1")
+        engine.onFailure?("Another app or a call interrupted the reply.")
+        XCTAssertEqual(model.errorMessage, "Another app or a call interrupted the reply.")
+        XCTAssertFalse(model.speaking)
+        XCTAssertNil(model.readingItem)
+        model.handle(.text(VoiceServerMessage.ttsChunk(reply: "r1", index: 1, last: true).json))
+        model.handle(.binary(VoiceWire.ttsFrame(index: 1, wav: Data([3]))))
+        XCTAssertFalse(model.speaking, "the rest of a failed reply is dropped")
+    }
+
+    func testAReplyPlaysEveryClipUntilItEnds() async {
+        let log = Log()
+        let engine = FakeEngine(log: log)
+        let channel = FakeChannel(log: log)
+        let model = VoiceModel(player: ReplyPlayer(engine: engine), defaults: defaults(), openChannel: { channel }, makeMic: { SilentMic() })
+        await model.toggleReading("r1")
+        for index in 0..<3 {
+            model.handle(.text(VoiceServerMessage.ttsChunk(reply: "r1", index: index, last: index == 2).json))
+            model.handle(.binary(VoiceWire.ttsFrame(index: UInt32(index), wav: Data(repeating: 1, count: 10 + index))))
+        }
+        model.handle(.text(VoiceServerMessage.ttsEnd(reply: "r1").json))
+        for _ in 0..<3 {
+            XCTAssertTrue(model.speaking)
+            engine.finishCurrent?()
+        }
+        XCTAssertEqual(log.entries.filter { $0.hasPrefix("engine.play") }, ["engine.play 10", "engine.play 11", "engine.play 12"])
+        XCTAssertFalse(model.speaking)
+        XCTAssertNil(model.errorMessage)
+    }
+
+    func testTheSocketClosingMidReplyShowsAnError() async {
+        let log = Log()
+        let channel = FakeChannel(log: log)
+        let model = VoiceModel(player: ReplyPlayer(engine: FakeEngine(log: log)), defaults: defaults(), openChannel: { channel }, makeMic: { SilentMic() })
+        await model.toggleReading("r1")
+        model.handle(.text(VoiceServerMessage.ttsChunk(reply: "r1", index: 0, last: false).json))
+        model.handle(.binary(VoiceWire.ttsFrame(index: 0, wav: Data([1]))))
+        channel.close()
+        await settle { model.errorMessage != nil }
+        XCTAssertEqual(model.errorMessage, "The connection to the Mac closed, so the reply stopped.")
+        XCTAssertFalse(model.speaking)
     }
 
     // MARK: S6
