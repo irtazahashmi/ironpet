@@ -337,9 +337,27 @@ package final class ChatSession {
     package var quietReply: (String) -> [String]? = { _ in nil }
     private var turnOrigin: ChatOrigin?
 
+    /// The IronPet thread. It is the first agent session's id and never changes, so memory search hits stay valid.
     package private(set) var threadID: String? {
         didSet { if persists { UserDefaults.standard.set(threadID, forKey: Self.threadKey) } }
     }
+    /// The agent session the thread runs on. Differs from `threadID` after a rollover; nil before the first turn and
+    /// between a rollover and the first turn of the new session.
+    package private(set) var agentSessionID: String?
+    /// Sessions the thread left at a rollover, oldest first.
+    private var previousSessions: [String] = []
+    /// What the next new session's first turn carries after a rollover. Cleared once the new session exists.
+    private var pendingHandoff: String?
+    /// Set while the old session writes its handoff summary. The chat shows as busy, so messages queue.
+    private var rollover: UUID?
+    private var rolloverWaiting = false
+    private var rolledFrom: (id: String, bytes: Int64)?
+    /// The transcript size at which the chat moves to a fresh agent session.
+    package var rolloverLimit: () -> Int64 = { Int64(Config.load().config.chat.sessionRolloverMB) * 1_048_576 }
+    /// The size of an agent session's transcript: agent id, folder, session id. Nil when it cannot be located.
+    package var sessionSize: (String, String, String) -> Int64? = { AgentTranscript.size(agent: $0, workspace: $1, session: $2) }
+    /// How long the old session gets to write its summary before the chat builds one from its messages.
+    package var handoffTimeout: Duration = .seconds(90)
     /// False for preview sessions, so rendering screenshots neither reads nor overwrites the real chat.
     private let persists: Bool
     private static let threadKey = "chatThread"
@@ -669,6 +687,9 @@ package final class ChatSession {
         shutdownAgent()
         items = []
         threadID = nil
+        agentSessionID = nil
+        previousSessions = []
+        pendingHandoff = nil
         jobMessages = []
         state = .idle
         lastRunDuration = nil
@@ -686,6 +707,9 @@ package final class ChatSession {
         if let saved = AgentCatalog.agent(id: thread.agent), saved != agent { select(saved) }
         items = thread.items
         threadID = thread.id
+        agentSessionID = thread.activeSession
+        previousSessions = thread.previousSessions ?? []
+        pendingHandoff = thread.handoff
         jobMessages = []
         state = .idle
         let url = URL(fileURLWithPath: thread.workspace)
@@ -713,6 +737,9 @@ package final class ChatSession {
             thread.job = earlier.job
             thread.voice = earlier.voice
         }
+        thread.session = agentSessionID == threadID ? nil : agentSessionID
+        thread.previousSessions = previousSessions.isEmpty ? nil : previousSessions
+        thread.handoff = pendingHandoff
         ThreadStore.save(thread)
         history = ThreadStore.recent()
     }
@@ -803,7 +830,12 @@ package final class ChatSession {
             items += shots.map { Item(kind: .screenshot($0.path), origin: origin) }
             items.append(Item(kind: .user(prompt), origin: origin, reply: reply))
         }
-        let preamble = threadID == nil ? MemoryPreamble.build(store: FileMemoryStore.shared, workspace: workspace, firstMessage: prompt) : nil
+        // The first turn of every new agent session carries the memory notes, including the one after a rollover.
+        var preamble: String?
+        if agentSessionID == nil {
+            preamble = MemoryPreamble.build(store: FileMemoryStore.shared, workspace: workspace, firstMessage: prompt)
+            if let handoff = pendingHandoff, let built = preamble { preamble = SessionHandoff.insert(handoff, into: built) }
+        }
         turnOrigin = client
         turnSpoken = client == nil && automation == nil && !silent
         turnAskedApproval = false
@@ -815,7 +847,7 @@ package final class ChatSession {
         let sent = MetaTag.escape(reply.map { Self.replyPrompt($0, text: prompt) } ?? prompt)
         var text = silent ? MetaTag.triggerLead : Self.withVoiceMode(sent, on: voiceModeOn())
         if !pendingMeta.isEmpty { text += "\n\n" + MetaTag.block(pendingMeta) }
-        run(ACPTurn(prompt: text, preamble: preamble, workspace: workspace, resume: threadID, model: model,
+        run(ACPTurn(prompt: text, preamble: preamble, workspace: workspace, resume: agentSessionID, model: model,
                     images: shots.filter(FolderFileIntake.isImageFile), files: shots.filter { !FolderFileIntake.isImageFile($0) }))
         return true
     }
@@ -923,7 +955,7 @@ package final class ChatSession {
         let prompt = Self.displayText(message)
         let sent = MetaTag.escape(message.reply.map { Self.replyPrompt($0, text: prompt) } ?? prompt)
         return ACPTurn(prompt: Self.withVoiceMode(sent, on: voiceModeOn()), preamble: nil, workspace: workspace ?? Self.scratchWorkspace,
-                       resume: threadID, model: model,
+                       resume: agentSessionID, model: model,
                        images: message.attachments.filter(FolderFileIntake.isImageFile), files: message.attachments.filter { !FolderFileIntake.isImageFile($0) })
     }
 
@@ -1111,11 +1143,12 @@ package final class ChatSession {
 
     /// For the test endpoints: which process and session the chat is using.
     package var processID: Int32? { acp?.processID }
-    package var sessionID: String? { acp?.sessionID ?? threadID }
+    package var sessionID: String? { acp?.sessionID ?? agentSessionID }
     package var activeModel: String? { acp?.activeModel }
 
     package func stop() {
         stops += 1
+        rollover = nil
         steerFailed = false
         let steered = steeredOrigins
         steeredOrigins = []
@@ -1163,10 +1196,12 @@ package final class ChatSession {
         onApprovalResolved?(id)
         if let origin = turnOrigin { onTurn?(origin, .approvalDecided(id: id, outcome: allow ? .allowed : .denied)) }
         steerNext()
+        if rolloverWaiting { rolloverIfDue() }
     }
 
     /// Shows the agent's `elicitation/create` form as a card. The reply goes out when the user submits or skips.
     package func handleElicitation(_ form: ElicitationForm, respond: @escaping (ElicitationReply) -> Void) {
+        if rollover != nil { return respond(.cancel) }
         let pending = PendingForm(form: form, respond: respond)
         forms.append(pending)
         if !isVisible {
@@ -1195,6 +1230,7 @@ package final class ChatSession {
         items.append(Item(kind: .form(record)))
         pending.respond(reply)
         steerNext()
+        if rolloverWaiting { rolloverIfDue() }
     }
 
     /// The turn stopped or ended with forms open. The agent aborts the tool call that asked.
@@ -1206,6 +1242,7 @@ package final class ChatSession {
 
     /// Answers the agent's `session/request_permission`: either straight away or through an approval card.
     package func handlePermission(_ call: ACPToolCall, respond: @escaping (ApprovalDecision) -> Void) {
+        if rollover != nil { return respond(.deny("IronPet is writing a session summary and needs no tools")) }
         switch ApprovalRules.policy(for: call, auto: autoMode) {
         case .allow:
             respond(.allow)
@@ -1287,10 +1324,19 @@ package final class ChatSession {
         case .session(let id):
             // The agent started a fresh session because it could not resume the old one. The chat keeps its thread
             // and transcript; only the agent's own context starts over.
-            if let current = threadID, current != id {
-                ChatLog.note("agent session \(id) replaced unresumable \(current); chat thread and \(items.count) items kept")
-            } else {
+            if threadID == nil {
                 threadID = id
+                agentSessionID = id
+            } else if let current = agentSessionID, current != id {
+                ChatLog.note("agent session \(id) replaced unresumable \(current); chat thread and \(items.count) items kept")
+            } else if agentSessionID == nil {
+                // The first turn of the new session after a rollover.
+                if let from = rolledFrom {
+                    ChatLog.note("session rollover done: thread \(threadID ?? "none"), old session \(from.id) (\(from.bytes) bytes), new session \(id)")
+                }
+                rolledFrom = nil
+                agentSessionID = id
+                pendingHandoff = nil
             }
             // Saved now, not only when the turn ends, so quitting mid-run keeps the question.
             saveThread()
@@ -1338,6 +1384,7 @@ package final class ChatSession {
             }
             turnSpoken = false
             if error == nil { sendNextQueued() } else { restoreQueue(reason: "The turn before it failed, so this message did not run.") }
+            rolloverIfDue()
         }
     }
 
@@ -1404,6 +1451,78 @@ package final class ChatSession {
         let count = subagentCalls[id]?.count ?? 0
         guard count > 0 else { return base }
         return "\(base) · \(count) tool call\(count == 1 ? "" : "s")"
+    }
+
+    // MARK: Session rollover
+
+    /// Moves the thread to a fresh agent session when the agent's transcript file is over the limit and the chat is idle:
+    /// no turn running, no approval or form open, no message queued. Called after each finished turn, at launch, and when
+    /// an approval or form that held it back is answered. A busy chat is left alone and rechecked at its next idle moment.
+    package func rolloverIfDue() {
+        rolloverWaiting = false
+        guard rollover == nil, let threadID, let workspace, let session = agentSessionID, !items.isEmpty,
+              let bytes = sessionSize(agent.id, workspace.path, session), bytes > rolloverLimit() else { return }
+        // Threads that belong to a job, an automation or voice mode have their own limits.
+        if let saved = ThreadStore.load(threadID), saved.automation != nil || saved.job != nil || saved.voice == true { return }
+        guard !isRunning, approvals.isEmpty, forms.isEmpty, queue.isEmpty else {
+            rolloverWaiting = true
+            return
+        }
+        let id = UUID()
+        rollover = id
+        let before = state
+        state = .running
+        activity = "Starting a fresh session"
+        runStartedAt = Date()
+        let turn = ACPTurn(prompt: SessionHandoff.prompt, preamble: nil, workspace: workspace, resume: session, model: model, images: [], files: [])
+        Task { [weak self] in
+            guard let self else { return }
+            let summary = await self.requestHandoff(turn)
+            self.finishRollover(id, thread: threadID, old: session, bytes: bytes, summary: summary, stateBefore: before)
+        }
+    }
+
+    /// Runs the summary request on the old session. Its events never reach the transcript. Nil when the turn failed or timed out.
+    private func requestHandoff(_ turn: ACPTurn) async -> String? {
+        let collector = HandoffCollector()
+        let timeout = handoffTimeout
+        let backend: ACPBackend? = turnRunner == nil ? (acp?.agent == agent ? acp : makeBackend()) : nil
+        return await withCheckedContinuation { continuation in
+            collector.wait(timeout: timeout, continuation)
+            Task { @MainActor in
+                if let turnRunner = self.turnRunner {
+                    await turnRunner(turn) { collector.receive($0) }
+                } else {
+                    await backend?.runTurn(turn) { collector.receive($0) }
+                }
+            }
+        }
+    }
+
+    private func finishRollover(_ id: UUID, thread: String, old: String, bytes: Int64, summary: String?, stateBefore: State) {
+        // The user stopped the chat, or left the thread, while the summary was being written.
+        guard rollover == id, threadID == thread else { return }
+        rollover = nil
+        state = stateBefore == .running ? .idle : stateBefore
+        activity = nil
+        runStartedAt = nil
+        let fromAgent = SessionHandoff.clean(summary)
+        pendingHandoff = SessionHandoff.compose(summary: fromAgent ?? SessionHandoff.fallbackSummary(items: items), items: items)
+        previousSessions.append(old)
+        agentSessionID = nil
+        rolledFrom = (old, bytes)
+        items.append(Item(kind: .notice(SessionHandoff.systemLine)))
+        shutdownAgent()
+        ChatLog.note("session rollover: thread \(thread) left session \(old) (\(bytes) bytes), summary from \(fromAgent == nil ? "chat messages" : "the agent"); the next message starts the new session")
+        saveThread()
+        pruneOldSessions()
+        sendNextQueued()
+    }
+
+    /// Deletes transcripts of earlier sessions that are past `chat.sessionRetentionDays`. It only touches ids that threads
+    /// recorded as left behind, never a session any thread still runs on.
+    package func pruneOldSessions() {
+        AgentTranscript.pruneInBackground(alsoActive: agentSessionID.map { Set([$0]) } ?? [])
     }
 
     private func endTurn() {

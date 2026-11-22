@@ -14,7 +14,10 @@ package struct ChatThread: Codable, Identifiable {
         automationName: String? = nil,
         runs: Int? = nil,
         job: String? = nil,
-        voice: Bool? = nil
+        voice: Bool? = nil,
+        session: String? = nil,
+        previousSessions: [String]? = nil,
+        handoff: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -27,6 +30,9 @@ package struct ChatThread: Codable, Identifiable {
         self.runs = runs
         self.job = job
         self.voice = voice
+        self.session = session
+        self.previousSessions = previousSessions
+        self.handoff = handoff
     }
 
     package let id: String
@@ -47,7 +53,19 @@ package struct ChatThread: Codable, Identifiable {
     /// True for a voice-mode conversation (`FrontDesk`).
     package var voice: Bool? = nil
 
+    /// The agent session the thread runs on now. Nil means `id`, which is how a thread saved before rollover existed
+    /// (and any thread that never rolled over) stores it. `id` itself never changes, so memory search hits stay valid.
+    package var session: String? = nil
+    /// Agent sessions the thread left at a rollover, oldest first. Their transcripts are deleted after the retention period.
+    package var previousSessions: [String]? = nil
+    /// Set between a rollover and the first turn of the new agent session: the context that turn carries. While it is
+    /// set and `session` is nil, the thread has no agent session yet.
+    package var handoff: String? = nil
+
     package var isAutomationRun: Bool { automation != nil }
+
+    /// The agent session id this thread resumes, or nil when a rollover left it waiting for a fresh session.
+    package var activeSession: String? { session ?? (handoff == nil ? id : nil) }
 }
 
 extension ChatThread {
@@ -117,7 +135,7 @@ package enum ThreadStore {
         Array(all().filter { $0.voice == true }.prefix(limit))
     }
 
-    private static func all() -> [ChatThread] {
+    package static func all() -> [ChatThread] {
         let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
         return files
             .filter { $0.pathExtension == "json" }

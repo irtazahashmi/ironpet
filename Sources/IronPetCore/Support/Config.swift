@@ -470,12 +470,16 @@ package struct Config: Codable, Equatable {
             background: String = "default",
             customImage: String? = nil,
             pasteAttachmentChars: Int = Chat.defaultPasteChars,
-            pasteAttachmentLines: Int = Chat.defaultPasteLines
+            pasteAttachmentLines: Int = Chat.defaultPasteLines,
+            sessionRolloverMB: Int = Chat.defaultRolloverMB,
+            sessionRetentionDays: Int = Chat.defaultRetentionDays
         ) {
             self.background = background
             self.customImage = customImage
             self.pasteAttachmentChars = pasteAttachmentChars
             self.pasteAttachmentLines = pasteAttachmentLines
+            self.sessionRolloverMB = sessionRolloverMB
+            self.sessionRetentionDays = sessionRetentionDays
         }
 
         /// `"default"` (plain), a built-in id such as `"paws"`, or `"custom"` for the image in `customImage`.
@@ -486,7 +490,15 @@ package struct Config: Codable, Equatable {
         package var pasteAttachmentChars = Chat.defaultPasteChars
         /// A paste over this many lines becomes a `pasted-text.txt` attachment.
         package var pasteAttachmentLines = Chat.defaultPasteLines
+        /// The chat moves to a fresh agent session when the agent's transcript file passes this many megabytes.
+        package var sessionRolloverMB = Chat.defaultRolloverMB
+        /// Transcripts of earlier agent sessions of a chat are deleted this many days after their last write.
+        package var sessionRetentionDays = Chat.defaultRetentionDays
 
+        package static let defaultRolloverMB = 50
+        package static let defaultRetentionDays = 14
+        package static let rolloverMBRange = 1...10_000
+        package static let retentionDaysRange = 1...365
         package static let defaultPasteChars = 4_000
         package static let defaultPasteLines = 60
         package static let pasteCharsRange = 500...100_000
@@ -630,6 +642,8 @@ package struct Config: Codable, Equatable {
         if c.chat.background == ChatBackground.customID, c.chat.customImage == nil { c.chat.background = ChatBackground.defaultID }
         c.chat.pasteAttachmentChars = min(Chat.pasteCharsRange.upperBound, max(Chat.pasteCharsRange.lowerBound, c.chat.pasteAttachmentChars))
         c.chat.pasteAttachmentLines = min(Chat.pasteLinesRange.upperBound, max(Chat.pasteLinesRange.lowerBound, c.chat.pasteAttachmentLines))
+        c.chat.sessionRolloverMB = min(Chat.rolloverMBRange.upperBound, max(Chat.rolloverMBRange.lowerBound, c.chat.sessionRolloverMB))
+        c.chat.sessionRetentionDays = min(Chat.retentionDaysRange.upperBound, max(Chat.retentionDaysRange.lowerBound, c.chat.sessionRetentionDays))
         if !Window.appearances.contains(c.window.appearance) { c.window.appearance = Window.systemAppearance }
         c.openIn = c.openIn.trimmingCharacters(in: .whitespacesAndNewlines)
         if c.openIn.isEmpty { c.openIn = Config().openIn }

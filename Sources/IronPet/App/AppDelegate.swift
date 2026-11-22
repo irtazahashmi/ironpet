@@ -182,6 +182,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pet.onChatToggle = { [weak self] in self?.toggleChat() }
         pet.onCapture = { [weak self] region in self?.captureScreen(region: region) }
         pet.chat = chat
+        // Once the app is up: delete old session transcripts past their retention, and move an oversized chat to a fresh session.
+        Task { [weak self] in
+            try? await Task.sleep(for: .seconds(20))
+            self?.chat.pruneOldSessions()
+            self?.chat.rolloverIfDue()
+        }
         pet.show()
         dockIcon.update(sprite: config.config.pet.sprite)
 

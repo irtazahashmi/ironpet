@@ -19,7 +19,9 @@
           "chat" : {
             "background" : "default",
             "pasteAttachmentChars" : 4000,
-            "pasteAttachmentLines" : 60
+            "pasteAttachmentLines" : 60,
+            "sessionRetentionDays" : 14,
+            "sessionRolloverMB" : 50
           },
           "desktopControl" : {
             "enabled" : false
@@ -164,7 +166,9 @@
           "chat" : {
             "background" : "default",
             "pasteAttachmentChars" : 4000,
-            "pasteAttachmentLines" : 60
+            "pasteAttachmentLines" : 60,
+            "sessionRetentionDays" : 14,
+            "sessionRolloverMB" : 50
           },
           "desktopControl" : {
             "enabled" : false
@@ -306,7 +310,9 @@
           "chat" : {
             "background" : "default",
             "pasteAttachmentChars" : 4000,
-            "pasteAttachmentLines" : 60
+            "pasteAttachmentLines" : 60,
+            "sessionRetentionDays" : 14,
+            "sessionRolloverMB" : 50
           },
           "desktopControl" : {
             "enabled" : false

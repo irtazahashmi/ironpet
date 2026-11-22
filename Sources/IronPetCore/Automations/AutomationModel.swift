@@ -167,8 +167,8 @@ package struct Automation: Codable, Equatable, Identifiable {
         /// A list of replies is allowed too. With `report` chat and no `quiet`, `NOTHING` and `NOTHING_NEW` mean nothing happened.
         package var quiet: QuietReplies?
         /// `prompt`: where it runs. `main` (alias `chat`, and the default) posts into the open chat. `new` starts a fresh agent
-        /// session every run. `own` keeps one thread for this automation and resumes it each run, starting a fresh one after
-        /// `AutomationSession.ownRunLimit` runs. `fork` starts from a copy of the main chat's agent session. `new`, `own` and
+        /// session every run. `own` keeps one thread for this automation and resumes it each run, moving to a fresh agent
+        /// session when the transcript passes `chat.sessionRolloverMB` (`AutomationSession`). `fork` starts from a copy of the main chat's agent session. `new`, `own` and
         /// `fork` have the agent's full tools minus `disallowedTools`.
         package var session: String?
         /// `prompt` with a background session: `bubble` shows the answer as a bubble, `chat` posts it to the main chat as a
