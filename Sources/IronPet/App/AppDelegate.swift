@@ -11,6 +11,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                              presence: MacPresenceSource(ignoredMicApps: { ConfigStore.shared.config.meetings.ignoredMicApps }))
     /// The presence source the away checks read. Test mode moves its idle time with `/test/idle`; the automation clock keeps the real one.
     private lazy var awayPresence = MacPresenceSource(ignoredMicApps: { ConfigStore.shared.config.meetings.ignoredMicApps })
+    /// Every client connected to the core: this app as the local client, and each paired phone with its event socket open.
+    private let clients = ClientRegistry()
     private lazy var voiceKey = VoiceKey(store: platform.secrets)
     /// The bot token's store. Memory in `--test-mode`, where a Keychain approval dialog would block an automated run.
     private lazy var telegramTokens: TelegramTokenStore = TelegramAPI.testMode ? MemoryTokenStore() : TelegramToken(secrets: platform.secrets)
@@ -293,13 +295,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Builds the automation service: the file, the clock and the places an automation can show or run something.
     private func setUpAutomations() {
+        // Before the engine and the away checks: they read the idle time from this client's session.
+        registerLocalClient()
         let store = AutomationStore(defaults: { [config] in
             AutomationMigration.defaults(from: config.config, sentryConfigured: AutomationDefaults.sentryConfigured)
         }, builtIns: AutomationDefaults.builtIns)
         HeartbeatRemoval.runOnce(store: store)
         let engine = AutomationEngine(env: .init(
             now: { [weak self] in Date().addingTimeInterval(self?.testClockOffset ?? 0) },
-            presence: platform.presence,
+            presence: SessionPresence(registry: clients, local: platform.presence),
             isAgentWorking: { [weak self] in
                 guard let self else { return false }
                 return self.chat.state == .running || self.store.sessions.values.contains { $0.status == .running }
@@ -322,13 +326,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         taskStore = tasks
         let service = AutomationService(store: store, engine: engine, database: database)
         let notificationStore = NotificationStore(database: database)
-        api = IronPetAPI(stores: .init(tasks: tasks, automations: service, signals: signals, bubbles: announcer.bubbles, notifications: notificationStore, sessions: self.store, chat: chat, meeting: platform.meetings, meetingLibrary: meetings, config: config, speech: platform.speech, petAssets: platform.pets, files: platform.files, usage: UsageStore.shared), events: events)
+        api = IronPetAPI(stores: .init(tasks: tasks, automations: service, signals: signals, bubbles: announcer.bubbles, notifications: notificationStore, sessions: self.store, chat: chat, meeting: platform.meetings, meetingLibrary: meetings, config: config, speech: platform.speech, petAssets: platform.pets, files: platform.files, usage: UsageStore.shared), events: events, clients: clients)
         pet.tasks = api.tasks
         pet.notifications = NotificationsModel(api: api.notifications, events: events)
         announcer.notifications = notificationStore
         announcer.openNotification = { [weak self] id in self?.pet.openNotification(id) }
         pet.alerts = api.alerts
         api.attach(assistant: assistant)
+        api.session.serverVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
         api.attach(memory: { [weak self] in self?.memoryServices })
         pet.agents = api.agents
         chatModel = ChatViewModel(api: api.chat, voiceAPI: api.voice, events: events)
@@ -644,6 +649,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         memory?.automationFinished(id: id, name: automation?.name ?? id, answer: answer, agent: agent, quiet: automation?.action.quietReplies ?? [])
     }
 
+    /// Registers this app as the local client, or refreshes its capabilities. They are the platform's real adapters, plus the desktop tools
+    /// once those exist. Screen capture and desktop control start after launch, so this runs again when each one attaches.
+    private func registerLocalClient() {
+        clients.registerLocal(name: Host.current().localizedName ?? "This Mac", kind: .mac, platform: platform,
+                              extra: desktop == nil ? [] : [.desktop])
+    }
+
     /// Builds screen capture on the shared database and applies the switch. With the switch off nothing starts.
     private func setUpScreenCapture(_ database: Database) {
         let captureStore = CaptureStore(database: database)
@@ -659,6 +671,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         capture = service
         platform.capture = service
         api.attach(capture: platform.capture)
+        registerLocalClient()
         settingsModel.capture = api.screen
         service.refreshModel()
         service.apply()
@@ -691,6 +704,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let service = DesktopService(dependencies)
         desktop = service
         api.attach(desktop: service)
+        registerLocalClient()
         settingsModel.desktopLog = { [weak self] in
             self?.activity?.events(in: DateInterval(start: Date().addingTimeInterval(-ActivityLog.retention), end: Date().addingTimeInterval(60)), kinds: [.desktopAction]).reversed() ?? []
         }
@@ -1077,6 +1091,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             control.screen = capture
             control.tasks = taskStore
             control.remote = remote
+            control.clients = clients
             control.chatModel = chatModel
             control.welcomeBack = welcomeBack
             control.setIdleSeconds = { [weak self] seconds in self?.awayPresence.idleOverride = seconds }
@@ -1314,7 +1329,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// automation clock's 30 s tick would leave the user waiting for the summary.
     private func setUpWelcomeBack(_ log: ActivityLog, tasks: TaskStore) {
         var env = WelcomeBack.Environment()
-        env.presence = awayPresence
+        env.presence = SessionPresence(registry: clients, local: awayPresence)
         let presence = Presence(
             meetingActive: { [weak self] in self.map { [.recording, .finishing, .summarizing].contains($0.meeting.phase) } ?? false },
             detectedCalls: { [weak self] in self?.callMonitor.flatMap { $0.isRunning ? $0.detector.activeApps : nil } },

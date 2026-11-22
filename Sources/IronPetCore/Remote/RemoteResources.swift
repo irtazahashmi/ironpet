@@ -92,7 +92,7 @@ package struct RemoteResources {
 
     /// One chat message from this device. It goes into the chat that is open, like any other client's, and is not read aloud.
     private func ask(_ text: String) async throws -> [String: Any] {
-        let result = try await api.chat.send(SendChatRequest(text: text, origin: ChatOrigin(client: "ios", ref: device)))
+        let result = try await api.chat.send(SendChatRequest(text: text, origin: ChatOrigin.ios(device: device)))
         return RemoteWire.object(RemoteSendResult(outcome: result.outcome.rawValue))
     }
 

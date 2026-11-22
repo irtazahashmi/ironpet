@@ -17,6 +17,8 @@ package struct APIError: Error, Codable, Equatable, LocalizedError {
         case conflict
         /// The part of the app that serves the call is off, missing a permission or not running.
         case unavailable
+        /// No connected client advertises the capability the call needs, such as a screenshot when only a phone is connected.
+        case unsupported
         /// Anything else, with the cause in `message`.
         case failed
     }
@@ -30,10 +32,13 @@ package struct APIError: Error, Codable, Equatable, LocalizedError {
     package static func invalid(_ message: String) -> APIError { APIError(code: .invalid, message: message) }
     package static func conflict(_ message: String) -> APIError { APIError(code: .conflict, message: message) }
     package static func unavailable(_ message: String) -> APIError { APIError(code: .unavailable, message: message) }
+    package static func unsupported(_ message: String) -> APIError { APIError(code: .unsupported, message: message) }
     package static func failed(_ message: String) -> APIError { APIError(code: .failed, message: message) }
 
     /// Wraps any error a store throws. An `APIError` passes through unchanged.
     package static func wrap(_ error: Error) -> APIError {
-        (error as? APIError) ?? APIError(code: .failed, message: error.localizedDescription)
+        if let error = error as? APIError { return error }
+        if error is CapabilityError { return APIError(code: .unsupported, message: error.localizedDescription) }
+        return APIError(code: .failed, message: error.localizedDescription)
     }
 }

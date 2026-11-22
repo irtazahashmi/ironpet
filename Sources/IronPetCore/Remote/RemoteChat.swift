@@ -67,7 +67,7 @@ package struct RemoteChat {
     package let device: String
     package let uploads: RemoteUploads
 
-    private var origin: ChatOrigin { ChatOrigin(client: "ios", ref: device) }
+    private var origin: ChatOrigin { ChatOrigin.ios(device: device) }
     private static func iso(_ date: Date) -> String { ISO8601DateFormatter().string(from: date) }
 
     // MARK: Reading

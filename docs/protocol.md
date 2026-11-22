@@ -18,7 +18,8 @@ The message format is the same on every transport. Only the framing differs.
 | WebSocket | Remote clients that want events | `GET /v1/events` streams the events below. |
 
 Status: the method table and the envelope exist in core PR 11 (`RPCDispatcher` and `JSONRPCRequest` and its siblings in IronPetKit).
-No transport serves them yet. The stdio host and the session handshake arrive with core PR 12.
+Core PR 12 adds the session handshake and serves it on the remote event socket. The stdio host executable comes later, and no other method is
+served over a transport yet.
 
 ## Envelope
 
@@ -39,10 +40,7 @@ Every message is a JSON-RPC 2.0 object. `jsonrpc` is always `"2.0"`.
 
 ## Handshake
 
-Implemented in core PR 12. The shape is fixed here so clients can be written against it. Until PR 12 a host has no `session.hello`, and a
-stdio client may send requests at once.
-
-`session.hello` is the first request on a connection:
+Implemented in core PR 12. `session.hello` is the first request on a connection:
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"session.hello","params":{
@@ -55,7 +53,7 @@ stdio client may send requests at once.
 |---|---|
 | `protocol` | The contract version the client speaks. This document is version 1. |
 | `client.name`, `client.version` | Who is calling, for the access log. |
-| `lastSeq` | Optional. The last event `seq` the client saw, so the host replays what it missed. |
+| `lastSeq` | Optional. The last event `seq` the client saw, so the host can say whether it missed any. |
 
 The result:
 
@@ -64,14 +62,63 @@ The result:
   "protocol":1,
   "server":{"name":"IronPetCore","version":"1.4.0"},
   "session":"b1c0...",
-  "capabilities":["tasks","alerts","agents","automations","chat","memory","settings","today"],
+  "capabilities":["agents","alerts","automations","bubbles","chat","meetings","notifications","session","settings","tasks","today"],
   "seq":130,
   "gap":false}}
 ```
 
-`capabilities` lists the facades this host serves. `seq` is the newest event number. `gap` is true when the host no longer held every event
-after `lastSeq`, so the client must read each area again. A `protocol` the host does not speak fails with `invalid` and
-`data: {"supported": [1]}`. Device identity and which capabilities a device may use are also part of core PR 12.
+`capabilities` lists the facades this host serves, in name order. It is not what the client can do for the host (see "Clients and capabilities").
+`memory` and `screen` appear once the host has attached them. `seq` is the newest event number. `gap` is true when the host no longer held every event
+after `lastSeq`, so the client must read each area again. Without `lastSeq`, `gap` is false.
+
+A `protocol` the host does not speak fails with `invalid` and `data: {"code": "invalid", "supported": [1]}`. A failed hello opens no session.
+
+### Over the remote event socket
+
+`GET /v1/events` is the connection of a paired phone. The host opens a session when the WebSocket upgrades, with the device's id and name and the
+kind `ios`, and ends it when the socket closes, whatever the reason. The phone may then send `session.hello` as a text frame, and gets the
+JSON-RPC response as a text frame between the events. The hello names the program in the session it already has, so it does not open a second
+one. A phone that never sends it still has a session and still gets the frames it got before. The socket takes no other method: any other
+request gets `Method not found`, and a frame longer than 16 KiB closes the socket.
+
+### Over stdio
+
+A host with no session of its own opens one when it gets `session.hello`. The stdio host executable comes after core PR 12, so no stdio client
+exists yet.
+
+## Clients and capabilities
+
+Each connected client has a `ClientSession`, a plain value:
+
+| Field | Meaning |
+|---|---|
+| `id` | The session's own id, new for each connection. |
+| `deviceID` | The paired device's id. The app that hosts the core is `local`. |
+| `name` | The device's name. |
+| `kind` | `mac`, `ios`, `cli` or `windows`. `mac` and `windows` are desktop clients. |
+| `capabilities` | Sorted names of what the client does when the host asks. |
+| `lastInputAt` | When the person last used the client's keyboard or mouse. Absent when the client does not say. |
+| `connectedAt` | When the session started. |
+| `subscriptions` | Event names the client wants. Empty means every event. |
+| `connection` | `inProcess` for the hosting app, `remote` for a device on a socket. |
+| `client` | The program and version from `session.hello`, once sent. |
+
+The hosting Mac app is a session from launch, with kind `mac`. Its capabilities are one for each platform adapter that is real: `screen` for screen capture, `presence`
+for idle and lock, `secrets`, `processes`, `log`, `appInfo`, `clock`, `meetings`, `speech`, `petAssets`, `files`, `openURL` and `audio`, plus `desktop` once the desktop tools exist. An adapter
+that is `Unsupported` adds nothing. A paired iPhone is a session of kind `ios` with no capabilities, for as long as its event socket is open.
+
+The host sends its own requests to clients through `CapabilityRouter`, and only to a client that advertises the capability. With none connected it fails with
+`unsupported` (-32006), naming the capability and the platform. Which client gets the request:
+
+1. A client of the chat turn's origin device that advertises the capability. `ChatOrigin` carries the device id as `device`.
+2. Otherwise the desktop client that advertises it and was active most recently, by `lastInputAt`, else by `connectedAt`.
+3. Otherwise, or when two desktop clients are equally recent, the router returns the candidates and sends nothing. The caller asks the user which one they mean.
+   Nothing is guessed.
+
+"My screen" is this rule with the `screen` capability. A phone has none, so a chat turn from a phone means the most recent desktop.
+
+The idle time that automations and the welcome-back summary read is the most recent `lastInputAt` of any desktop client. Lock, wake and microphone state stay with the machine they
+describe.
 
 ## Errors
 
@@ -88,8 +135,9 @@ A failed call returns `error` with `code`, `message` and `data`. `message` is fo
 | -32003 | `conflict` | The request is valid but the current state refuses it. | `{"code": "conflict"}` |
 | -32004 | `unavailable` | The part of the app that serves the call is off, missing a permission or not running. | `{"code": "unavailable"}` |
 | -32005 | `failed` | Anything else. A store error that is not an `APIError` also lands here. | `{"code": "failed"}` |
+| -32006 | `unsupported` | No connected client advertises the capability the call needs, such as a screenshot when only a phone is connected. | `{"code": "unsupported", "capability": "<name>", "platform": "<name>"}` |
 
-The five codes from -32001 to -32005 are `APIError.Code`. `data.code` repeats the `APIError` name, which is the string the Swift API and the REST
+The six codes from -32001 to -32006 are `APIError.Code`. The REST routes answer `unsupported` with status 501. `data.code` repeats the `APIError` name, which is the string the Swift API and the REST
 routes use. An `error` for a call that failed in Swift has the same `message` as the `APIError` the Swift caller sees.
 
 ## Events
@@ -222,7 +270,7 @@ The open chat with Ghost.
 | `chat.submitForm` | `UUIDParam` | `null` | `POST /v1/chat/forms/:id/submit` |
 | `chat.threads` | none | `[ChatThreadInfo]` | `GET /v1/chat/threads` |
 
-`chat.send` with an empty text and no `origin` returns `{"outcome": "ignored"}`. With an `origin` it fails with `invalid`. `chat.thread` returns a tuple in Swift, so it is not on the wire yet.
+`origin` is `{"client", "ref", "device"}`. `client` is the kind of sender such as `ios` or `telegram`, `ref` is its own id for the conversation, and `device` is the paired device's id when there is one. "My screen" in the turn means that device's screen (see "Clients and capabilities"). `chat.send` with an empty text and no `origin` returns `{"outcome": "ignored"}`. With an `origin` it fails with `invalid`. `chat.thread` returns a tuple in Swift, so it is not on the wire yet.
 
 ### `memory`
 
@@ -254,6 +302,16 @@ The morning brief and the evening recap.
 | `today.brief` | `BriefRequest` | `Brief` | `GET /v1/today` |
 
 `kind` is `brief` or `recap`. `weekdays` and `day` are optional.
+
+### `session`
+
+The handshake, and the clients connected to the host.
+
+| Method | Params | Result | REST route |
+|---|---|---|---|
+| `session.hello` | `HelloRequest` | `HelloResult` | none |
+
+`HelloRequest` and `HelloResult` are the objects in "Handshake", with `protocol` for the version. It needs a connection, so a transport with none gets `unavailable`.
 
 ### `bubbles`
 
@@ -302,7 +360,8 @@ Not yet on the wire. The assistant tools are reached through the local MCP endpo
 
 `DesktopAPI.callTool`, `openURL(_:browser:)`, `press(ref:)` and `key(app:key:)` drive other apps on the Mac. The tool call returns `DesktopOutput`, which can hold an image.
 
-Not yet on the wire. A call acts on the host Mac only, so a remote client needs the capability routing of core PR 12 first.
+Not yet on the wire. A call acts on the host Mac only. Core PR 12 adds the capability routing a remote client needs (see "Clients and capabilities"), but a desktop request
+does not use it yet.
 
 ### `pet`
 
@@ -314,7 +373,18 @@ Not yet on the wire. The requests and results are Codable, but the asset calls r
 
 `ScreenAPI.status`, `recent(limit:)`, `search(_:)`, `captureText(_:)`, `pause(for:)`, `resume()` and `clear()` read and control screen capture. `callTool` is the MCP form.
 
-Not yet on the wire. `status` and `seenApps()` return types that are not Codable. The REST routes `GET /v1/screen/status`, `/changes`, `/captures/:id`, `/search` and `POST /v1/screen/pause` serve it today.
+| Method | Params | Result | REST route |
+|---|---|---|---|
+| `screen.ingest` | `ScreenIngestRequest` | `ScreenIngestResult` | none |
+
+The reading methods are not yet on the wire. `status` and `seenApps()` return types that are not Codable. The REST routes `GET /v1/screen/status`, `/changes`, `/captures/:id`, `/search` and `POST /v1/screen/pause` serve them today.
+
+`screen.ingest` stores captures that a client took on its own screen. `params` is `{"captures": [...]}`, at most 50 of them. A capture is `app` (bundle id or package name),
+`appName`, `trigger` (a capture trigger such as `app_switch` or `idle`), `lines`, `redacted`, and optionally `title`, `url`, `inputLines` and `at`. Redaction stays on the
+client: a capture with `redacted: false` fails with `invalid`, and the host cannot check that the client did it. The host still runs its own redactor over what it
+stores, and applies pause and the app deny lists as it does for its own captures. The result counts `stored`, `unchanged` and `skipped` captures. It fails with `unavailable` until
+the host attaches screen capture, and with `unsupported` when the host's capture adapter stores nothing.
+The remote event socket does not serve it, because a device's `screen` scope allows reading captures, not writing them.
 
 ### `usage`
 

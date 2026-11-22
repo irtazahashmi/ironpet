@@ -1,0 +1,40 @@
+{
+  "cases" : [
+    {
+      "name" : "ingest before screen capture is attached is unavailable",
+      "request" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "method" : "screen.ingest",
+        "params" : {
+          "captures" : [
+            {
+              "app" : "com.example.editor",
+              "appName" : "Editor",
+              "lines" : [
+                "x"
+              ],
+              "redacted" : true,
+              "title" : "main.swift",
+              "trigger" : "idle"
+            }
+          ]
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32004,
+          "data" : {
+            "code" : "unavailable"
+          },
+          "message" : "screen capture is not available on this host"
+        },
+        "id" : 1,
+        "jsonrpc" : "2.0"
+      }
+    }
+  ],
+  "seed" : [
+
+  ]
+}

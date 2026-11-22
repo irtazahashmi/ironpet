@@ -16,6 +16,7 @@ package struct RemoteFailure: Error, Equatable {
         case .invalid: return 400
         case .conflict: return 409
         case .unavailable: return 503
+        case .unsupported: return 501
         case .failed: return 500
         }
     }

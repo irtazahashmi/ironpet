@@ -1,0 +1,323 @@
+{
+  "cases" : [
+    {
+      "capture" : {
+        "session" : "result.session"
+      },
+      "name" : "hello opens a session",
+      "request" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "method" : "session.hello",
+        "params" : {
+          "client" : {
+            "name" : "ironpet-cli",
+            "version" : "1.4.0"
+          },
+          "lastSeq" : 0,
+          "protocol" : 1
+        }
+      },
+      "response" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "capabilities" : [
+            "agents",
+            "alerts",
+            "automations",
+            "bubbles",
+            "chat",
+            "meetings",
+            "notifications",
+            "screen",
+            "session",
+            "settings",
+            "tasks",
+            "today"
+          ],
+          "gap" : false,
+          "protocol" : 1,
+          "seq" : 0,
+          "server" : {
+            "name" : "IronPetCore",
+            "version" : "0"
+          },
+          "session" : "$session"
+        }
+      }
+    },
+    {
+      "name" : "a second hello names the same session",
+      "request" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "method" : "session.hello",
+        "params" : {
+          "client" : {
+            "name" : "ironpet-cli",
+            "version" : "1.4.1"
+          },
+          "protocol" : 1
+        }
+      },
+      "response" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "capabilities" : [
+            "agents",
+            "alerts",
+            "automations",
+            "bubbles",
+            "chat",
+            "meetings",
+            "notifications",
+            "screen",
+            "session",
+            "settings",
+            "tasks",
+            "today"
+          ],
+          "gap" : false,
+          "protocol" : 1,
+          "seq" : 0,
+          "server" : {
+            "name" : "IronPetCore",
+            "version" : "0"
+          },
+          "session" : "$session"
+        }
+      }
+    },
+    {
+      "name" : "a seq from an earlier launch is a gap",
+      "request" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "method" : "session.hello",
+        "params" : {
+          "client" : {
+            "name" : "ironpet-cli",
+            "version" : "1.4.1"
+          },
+          "lastSeq" : 9999,
+          "protocol" : 1
+        }
+      },
+      "response" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "capabilities" : [
+            "agents",
+            "alerts",
+            "automations",
+            "bubbles",
+            "chat",
+            "meetings",
+            "notifications",
+            "screen",
+            "session",
+            "settings",
+            "tasks",
+            "today"
+          ],
+          "gap" : true,
+          "protocol" : 1,
+          "seq" : 0,
+          "server" : {
+            "name" : "IronPetCore",
+            "version" : "0"
+          },
+          "session" : "$session"
+        }
+      }
+    },
+    {
+      "name" : "an unknown protocol is invalid",
+      "request" : {
+        "id" : 4,
+        "jsonrpc" : "2.0",
+        "method" : "session.hello",
+        "params" : {
+          "client" : {
+            "name" : "ironpet-cli",
+            "version" : "1.4.1"
+          },
+          "protocol" : 2
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32002,
+          "data" : {
+            "code" : "invalid",
+            "supported" : [
+              1
+            ]
+          },
+          "message" : "protocol 2 is not supported"
+        },
+        "id" : 4,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "hello without a client is invalid params",
+      "request" : {
+        "id" : 5,
+        "jsonrpc" : "2.0",
+        "method" : "session.hello",
+        "params" : {
+          "protocol" : 1
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32602,
+          "data" : {
+            "field" : "client"
+          },
+          "message" : "params: client is missing"
+        },
+        "id" : 5,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "ingest stores redacted captures",
+      "request" : {
+        "id" : 6,
+        "jsonrpc" : "2.0",
+        "method" : "screen.ingest",
+        "params" : {
+          "captures" : [
+            {
+              "app" : "com.example.editor",
+              "appName" : "Editor",
+              "lines" : [
+                "Reviewing the diff"
+              ],
+              "redacted" : true,
+              "title" : "main.swift",
+              "trigger" : "idle"
+            },
+            {
+              "app" : "com.example.editor",
+              "appName" : "Editor",
+              "lines" : [
+
+              ],
+              "redacted" : true,
+              "title" : "main.swift",
+              "trigger" : "idle"
+            }
+          ]
+        }
+      },
+      "response" : {
+        "id" : 6,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "skipped" : 1,
+          "stored" : 1,
+          "unchanged" : 0
+        }
+      }
+    },
+    {
+      "name" : "ingest refuses a capture the client did not redact",
+      "request" : {
+        "id" : 7,
+        "jsonrpc" : "2.0",
+        "method" : "screen.ingest",
+        "params" : {
+          "captures" : [
+            {
+              "app" : "com.example.editor",
+              "appName" : "Editor",
+              "lines" : [
+                "token=abc"
+              ],
+              "redacted" : false,
+              "title" : "main.swift",
+              "trigger" : "idle"
+            }
+          ]
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32002,
+          "data" : {
+            "code" : "invalid"
+          },
+          "message" : "captures[0] is not redacted: the client redacts before it sends"
+        },
+        "id" : 7,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "ingest refuses an empty call",
+      "request" : {
+        "id" : 8,
+        "jsonrpc" : "2.0",
+        "method" : "screen.ingest",
+        "params" : {
+          "captures" : [
+
+          ]
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32002,
+          "data" : {
+            "code" : "invalid"
+          },
+          "message" : "captures is empty"
+        },
+        "id" : 8,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "ingest refuses an unknown trigger",
+      "request" : {
+        "id" : 9,
+        "jsonrpc" : "2.0",
+        "method" : "screen.ingest",
+        "params" : {
+          "captures" : [
+            {
+              "app" : "com.example.editor",
+              "appName" : "Editor",
+              "lines" : [
+                "x"
+              ],
+              "redacted" : true,
+              "title" : "main.swift",
+              "trigger" : "sneeze"
+            }
+          ]
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32002,
+          "data" : {
+            "code" : "invalid"
+          },
+          "message" : "captures[0].trigger \"sneeze\" is not a trigger"
+        },
+        "id" : 9,
+        "jsonrpc" : "2.0"
+      }
+    }
+  ],
+  "seed" : [
+    "screen"
+  ]
+}
