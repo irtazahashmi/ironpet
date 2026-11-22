@@ -131,6 +131,19 @@ final class ACPRuntimeTests: XCTestCase {
         XCTAssertEqual(ACPRuntime.resolve(adapter: "claude", path: path, bun: bun, spawner: POSIXProcessSpawner())?.kind, .bun)
     }
 
+    func testNodeThatNeverAnswersIsGivenUpOn() throws {
+        let bin = dir.appendingPathComponent("slow")
+        try FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        let node = bin.appendingPathComponent("node")
+        try "#!/bin/sh\nsleep 30\necho v22.0.0\n".write(to: node, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: node.path)
+        let started = Date()
+        let runtime = ACPRuntime.resolve(adapter: "claude", path: bin.path, bun: dir.appendingPathComponent("no-bun"),
+                                         spawner: POSIXProcessSpawner(), versionTimeout: 1)
+        XCTAssertNil(runtime)
+        XCTAssertLessThan(Date().timeIntervalSince(started), 10)
+    }
+
     func testNodeVersionParsing() {
         XCTAssertEqual(ACPRuntime.nodeMajor(fromVersionOutput: "v26.10.0\n"), 26)
         XCTAssertNil(ACPRuntime.nodeMajor(fromVersionOutput: "not node"))

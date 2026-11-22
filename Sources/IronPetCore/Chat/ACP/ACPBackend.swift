@@ -437,7 +437,9 @@ package final class ACPBackend {
         client = nil
         sessionReady = false
         timedOut = false
-        let launch = try Self.launch(for: agent, spawner: spawner)
+        let agent = agent, spawner = spawner
+        // `launch` runs `node --version`, which must not block the main actor.
+        let launch = try await Task.detached { try Self.launch(for: agent, spawner: spawner) }.value
         let transport = ACPProcessTransport(executable: launch.executable, arguments: launch.arguments, environment: launch.environment,
                                             directory: workspace, spawner: spawner)
         let client = ACPClient(transport: transport)
@@ -493,7 +495,7 @@ package final class ACPBackend {
         package let environment: [String: String]
     }
 
-    package static func launch(for agent: ACPAgent, spawner: ProcessSpawner) throws -> Launch {
+    nonisolated package static func launch(for agent: ACPAgent, spawner: ProcessSpawner) throws -> Launch {
         var env = LoginShell.environment()
         // Cursor and Claude Code run ironpet's status hooks for chats started here too. The hook script skips this run.
         env["IRONPET_ACP_RUN"] = "1"

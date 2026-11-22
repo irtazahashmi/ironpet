@@ -84,10 +84,30 @@ public struct ChatStepIcon: View {
 
     public var body: some View {
         switch ok {
-        case nil: ProgressView().controlSize(.mini).frame(width: 12, height: 12)
+        case nil: ChatStepSpinner().frame(width: 12, height: 12)
         case true?: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
         case false?: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
         }
+    }
+}
+
+/// A small rotating arc for a running step. An indeterminate `ProgressView` starts a threaded AppKit animation that parks a
+/// global dispatch worker for as long as it is on screen, so a transcript with many running steps used up the shared pool.
+/// This one is drawn by SwiftUI on the main thread.
+public struct ChatStepSpinner: View {
+    let size: CGFloat
+
+    public init(size: CGFloat = 10) { self.size = size }
+
+    public var body: some View {
+        TimelineView(.animation) { context in
+            let turn = context.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: 0.9) / 0.9
+            Circle()
+                .trim(from: 0, to: 0.7)
+                .stroke(Color.secondary, style: StrokeStyle(lineWidth: 1.5, lineCap: .round))
+                .rotationEffect(.degrees(turn * 360))
+        }
+        .frame(width: size, height: size)
     }
 }
 

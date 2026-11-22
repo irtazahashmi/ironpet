@@ -30,18 +30,28 @@ package struct ACPRuntime {
 
     /// The user's `node` if it is new enough, else a Bun downloaded earlier, else nil.
     package static func resolve(adapter: String, path: String = LoginShell.path, bun: URL = BunRuntime.executable,
-                        spawner: ProcessSpawner) -> ACPRuntime? {
-        if let node = LoginShell.find("node", path: path), let major = major(of: node, spawner: spawner), major >= minimumNodeMajor(adapter: adapter) {
+                        spawner: ProcessSpawner, versionTimeout: TimeInterval = 5) -> ACPRuntime? {
+        if let node = LoginShell.find("node", path: path), let major = major(of: node, spawner: spawner, timeout: versionTimeout), major >= minimumNodeMajor(adapter: adapter) {
             return ACPRuntime(kind: .node, executable: node)
         }
         if FileManager.default.isExecutableFile(atPath: bun.path) { return ACPRuntime(kind: .bun, executable: bun) }
         return nil
     }
 
-    private static func major(of node: URL, spawner: ProcessSpawner) -> Int? {
-        guard let process = try? spawner.spawn(ProcessSpec(executable: node.path, arguments: ["--version"], error: .null)) else { return nil }
+    /// Runs `node --version`. A node that does not answer within `timeout` is killed and counts as unusable.
+    private static func major(of node: URL, spawner: ProcessSpawner, timeout: TimeInterval) -> Int? {
+        guard let process = try? spawner.spawn(ProcessSpec(executable: node.path, arguments: ["--version"], error: .null, ownProcessGroup: true)) else { return nil }
+        // The timer runs on its own thread, so a saturated dispatch pool cannot delay it.
+        let finished = DispatchSemaphore(value: 0)
+        let timer = Thread {
+            if finished.wait(timeout: .now() + timeout) == .timedOut, process.isRunning {
+                process.signalGroup(SIGKILL)
+            }
+        }
+        timer.start()
         let data = process.output?.readDataToEndOfFile() ?? Data()
         process.waitUntilExit()
+        finished.signal()
         return nodeMajor(fromVersionOutput: String(decoding: data, as: UTF8.self))
     }
 
