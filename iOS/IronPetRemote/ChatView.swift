@@ -16,17 +16,24 @@ struct ChatView: View {
     @State private var showFiles = false
     @State private var photos: [PhotosPickerItem] = []
     @State private var focused = false
+    @State private var find = ChatFindState()
+
+    /// Changes when the query or the transcript does, so the matches are found again.
+    private var findKey: String {
+        "\(find.query)-\(find.isOpen)-\(model.displayItems.count)-\(model.displayItems.last?.text?.utf16.count ?? 0)"
+    }
 
     var body: some View {
         NavigationStack {
             VStack(spacing: 0) {
+                if find.isOpen { ChatFindBar(find: find) }
                 if let message = model.errorMessage {
                     Label(message, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.vertical, 6)
                         .accessibilityIdentifier("chat-error")
                 }
                 // The composer floats over the transcript, so the background shows through the glass.
-                Transcript(model: model, avatar: avatar)
+                Transcript(model: model, find: find, avatar: avatar)
                     .glassBottomBar {
                         VStack(spacing: 6) {
                             if let notice = model.snapshot?.notice {
@@ -54,12 +61,15 @@ struct ChatView: View {
                     }
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
+                    Button { find.open() } label: { Image(systemName: "magnifyingglass") }
+                        .accessibilityLabel("Find in chat").accessibilityIdentifier("chat-find-button")
                     Button { showSettings = true } label: { Image(systemName: "slider.horizontal.3") }
                         .accessibilityLabel("Chat settings").accessibilityIdentifier("chat-settings-button")
                     Button { showThreads = true } label: { Image(systemName: "clock.arrow.circlepath") }
                         .accessibilityLabel("Chats").accessibilityIdentifier("threads-button")
                 }
             }
+            .onChange(of: findKey) { find.update(model.displayItems) }
             .sheet(isPresented: $showThreads) { ThreadsSheet(model: model, avatar: avatar) }
             .sheet(isPresented: $showSettings) { ChatSettingsSheet(model: model) }
             .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
@@ -109,6 +119,7 @@ private final class FollowTracker {
 
 private struct Transcript: View {
     let model: ChatModel
+    let find: ChatFindState
     var avatar: CGImage?
     @Environment(VoiceModel.self) private var voice: VoiceModel?
     /// The follow logic keeps its last measurements in a reference, so a scroll frame does not invalidate the view. Only a change of
@@ -146,7 +157,8 @@ private struct Transcript: View {
                                                 toggleExpand: { id in if !expandedMessages.insert(id).inserted { expandedMessages.remove(id) } },
                                                 outbox: model.outbox, onRetry: { id in Task { await model.retry(id) } },
                                                 onReply: { model.replyTo = $0 },
-                                                readAloud: { item in voice.flatMap { ReadAloud(item: item, voice: $0) } })
+                                                readAloud: { item in voice.flatMap { ReadAloud(item: item, voice: $0) } },
+                                                highlights: find.highlights)
                         }
                         if showsTyping { TypingRow(started: model.snapshot?.runStarted, avatar: avatar) }
                         ForEach(model.approvals) { ApprovalCard(approval: $0, model: model) }
@@ -168,7 +180,7 @@ private struct Transcript: View {
             .softBottomEdge()
             .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame in
                 viewport = frame
-                if pinned { proxy.scrollTo("bottom", anchor: .bottom) }
+                if pinned, !find.isOpen { proxy.scrollTo("bottom", anchor: .bottom) }
             }
             .onPreferenceChange(EndPositionKey.self) { position in
                 tracker.state.measure(contentHeight: position.contentHeight, viewportHeight: viewport.height,
@@ -200,7 +212,13 @@ private struct Transcript: View {
                 lastItemID = last?.id
                 tracker.state.contentArrived(readerSent: readerSent)
                 publish()
-                if tracker.state.pinned { proxy.scrollTo("bottom", anchor: .bottom) }
+                if tracker.state.pinned, !find.isOpen { proxy.scrollTo("bottom", anchor: .bottom) }
+            }
+            // Stepping to a match scrolls to its message. A long message the reader has not opened opens, so the match is on screen.
+            .onChange(of: find.current) { _, match in
+                guard let match else { return }
+                if model.displayItems.first(where: { $0.id == match.itemID })?.kind == "user" { expandedMessages.insert(match.itemID) }
+                withAnimation { proxy.scrollTo(match.itemID, anchor: .center) }
             }
             .accessibilityIdentifier("transcript")
         }
@@ -221,6 +239,7 @@ private struct TranscriptGroupView: View {
     var onReply: (RemoteChatItem) -> Void = { _ in }
     /// Nil in a saved thread, whose messages the Mac cannot read from the open chat.
     var readAloud: (RemoteChatItem) -> ReadAloud? = { _ in nil }
+    var highlights: [String: RemoteChatFind.RowHighlight] = [:]
 
     var body: some View {
         switch group {
@@ -230,7 +249,7 @@ private struct TranscriptGroupView: View {
             VStack(alignment: .trailing, spacing: 2) {
                 MessageRow(item: item, photo: item.fileName.flatMap { photos[$0] }, images: images, avatar: avatar, expanded: expanded.contains(item.id),
                            onToggleExpand: { toggleExpand(item.id) }, onReply: item.canReply && !OutgoingMessage.isPending(item.id) ? { onReply(item) } : nil,
-                           readAloud: item.kind == "assistant" ? readAloud(item) : nil)
+                           readAloud: item.kind == "assistant" ? readAloud(item) : nil, find: highlights[item.id])
                 if let message = outbox.first(where: { $0.itemID == item.id }) { OutgoingStatus(message: message, onRetry: { onRetry(message.id) }) }
             }
         }
@@ -285,12 +304,14 @@ struct MessageRow: View {
     var onToggleExpand: () -> Void = {}
     var onReply: (() -> Void)?
     var readAloud: ReadAloud?
+    /// The highlights of Find in chat for this message. Nil outside a search.
+    var find: RemoteChatFind.RowHighlight?
 
     var body: some View {
         Group {
             switch item.row {
-            case .user(let text): UserBubble(item: item, text: text, expanded: expanded, onToggleExpand: onToggleExpand)
-            case .assistant(let text): AssistantBubble(item: item, text: text, avatar: avatar, readAloud: readAloud)
+            case .user(let text): UserBubble(item: item, text: text, expanded: expanded, onToggleExpand: onToggleExpand, find: find)
+            case .assistant(let text): AssistantBubble(item: item, text: text, avatar: avatar, readAloud: readAloud, find: find)
             case .tool: ToolStepsRow(steps: [item])
             case .error(let text): ErrorRow(text: text)
             case .notice(let text): NoticeRow(notice: ChatNotice(text))
