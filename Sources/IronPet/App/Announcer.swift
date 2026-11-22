@@ -75,6 +75,25 @@ final class Announcer {
                ], onTap: open, macOnly: true)
     }
 
+    /// A job or automation session asked for permission. The bubble has one button per option the agent offered, with the agent's
+    /// labels, and a notification goes out whether or not system notifications are on, because the run is waiting.
+    func backgroundPermission(_ request: BackgroundPermissions.Request, answer: @escaping (String) -> Void) {
+        bubbles.show(Self.backgroundPermissionBubble(request, answer: answer, openChat: { [weak self] in self?.openChat() }))
+        chime()
+        notifier.announceApproval(id: request.id, title: request.heading, detail: request.detail)
+    }
+
+    static func backgroundPermissionBubble(_ request: BackgroundPermissions.Request, answer: @escaping (String) -> Void,
+                                           openChat: @escaping () -> Void) -> BubbleDraft {
+        let actions = request.options.map { option in
+            BubbleDraft.Button("option:\(option.id)", option.name, style: option.allows ? .primary : option.kind.hasPrefix("reject") ? .destructive : .normal) {
+                answer(option.id)
+            }
+        }
+        return BubbleDraft(id: approvalID(request.id), symbol: "hand.raised.fill", tint: .orange, title: request.heading,
+                           body: String(request.detail.prefix(240)), actions: actions, macOnly: true)
+    }
+
     /// An unknown Telegram user sent /start. Allow adds them; nothing else about them reaches the chat.
     func telegramPairing(_ request: TelegramBridge.Pending, allow: @escaping () -> Void, deny: @escaping () -> Void) {
         bubbles.show(Self.telegramPairingBubble(request, allow: allow, deny: deny))
@@ -409,5 +428,5 @@ final class Announcer {
         NSSound(named: "Pop")?.play()
     }
 
-    private static func approvalID(_ id: UUID) -> String { "approval:\(id.uuidString)" }
+    static func approvalID(_ id: UUID) -> String { "approval:\(id.uuidString)" }
 }

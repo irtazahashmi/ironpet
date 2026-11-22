@@ -111,4 +111,23 @@ final class ChatModelsTests: XCTestCase {
         XCTAssertEqual(try XCTUnwrap(server.requests.last).json["allow"] as? Bool, true)
         XCTAssertTrue(server.chat.approvals.isEmpty)
     }
+
+    func testChatOptionsDecodeAndAChangeEncodesOnlyWhatItSets() throws {
+        let raw = #"{"title":"t","options":{"agents":[{"id":"claude","name":"Claude Code"}],"models":[{"id":"m1","name":"One"}],"folders":[{"id":"/a/web","name":"web"}],"folder":"/a/web","modes":[{"id":"default","name":"Default","detail":"Asks first"},{"id":"plan","name":"Plan"}],"mode":"plan"}}"#
+        let snapshot = try JSONDecoder().decode(RemoteChatSnapshot.self, from: Data(raw.utf8))
+        XCTAssertEqual(snapshot.options.agents.map(\.id), ["claude"])
+        XCTAssertEqual(snapshot.options.models.map(\.name), ["One"])
+        XCTAssertEqual(snapshot.options.folder, "/a/web")
+        XCTAssertEqual(snapshot.options.modes.map(\.id), ["default", "plan"])
+        XCTAssertEqual(snapshot.options.modes.first?.detail, "Asks first")
+        XCTAssertEqual(snapshot.options.mode, "plan")
+        let old = try JSONDecoder().decode(RemoteChatSnapshot.self, from: Data(#"{"title":"t"}"#.utf8))
+        XCTAssertEqual(old.options, RemoteChatOptions(), "a Mac without the options still decodes")
+
+        XCTAssertEqual(RemoteChatOptionsChange(mode: "plan").json as NSDictionary, ["mode": "plan"])
+        XCTAssertEqual(RemoteChatOptionsChange(model: .some(nil)).json as NSDictionary, ["model": NSNull()])
+        XCTAssertEqual(RemoteChatOptionsChange(model: .some("m1")).json as NSDictionary, ["model": "m1"])
+        XCTAssertEqual(RemoteChatOptionsChange(noProject: true).json as NSDictionary, ["no_project": true])
+        XCTAssertTrue(RemoteChatOptionsChange().json.isEmpty)
+    }
 }

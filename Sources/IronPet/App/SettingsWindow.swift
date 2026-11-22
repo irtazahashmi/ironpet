@@ -708,7 +708,7 @@ private struct VoiceModeSettings: View {
         } header: {
             Text("Conversation")
         } footer: {
-            Text("Press the shortcut and talk. \(name) answers out loud and keeps listening until you say bye, press Esc, or stay quiet for the time above; talking over \(name) cuts it off. The microphone is on only during a conversation. What you say goes to the voice server, then to the chat's agent, and the reply goes back to the voice server to be spoken. Longer work goes to background jobs, which run under Auto: anything destructive still waits for you to click Allow, and a spoken yes never approves it. With Wispr Flow, its dictation is sent as soon as it lands and the app you were in gets focus back at the end. Voice mode doesn't listen or speak during calls and meeting recordings.")
+            Text("Press the shortcut and talk. \(name) answers out loud and keeps listening until you say bye, press Esc, or stay quiet for the time above; talking over \(name) cuts it off. The microphone is on only during a conversation. What you say goes to the voice server, then to the chat's agent, and the reply goes back to the voice server to be spoken. Longer work goes to background jobs. Anything the agent asks permission for waits for you to answer the alert, and a spoken yes never approves it. With Wispr Flow, its dictation is sent as soon as it lands and the app you were in gets focus back at the end. Voice mode doesn't listen or speak during calls and meeting recordings.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

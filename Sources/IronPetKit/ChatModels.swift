@@ -212,6 +212,69 @@ public struct RemoteChatAgent: Codable, Equatable, Hashable, Sendable {
     public init(id: String, name: String) { self.id = id; self.name = name }
 }
 
+/// What the chat settings offer, and what is chosen now.
+public struct RemoteChatOptions: Codable, Equatable, Sendable {
+    public struct Choice: Codable, Equatable, Hashable, Identifiable, Sendable {
+        public var id: String
+        public var name: String
+        /// What the choice does, for a mode. Nil for an agent, model or folder.
+        public var detail: String?
+        public init(id: String, name: String, detail: String? = nil) { self.id = id; self.name = name; self.detail = detail }
+    }
+
+    public var agents: [Choice]
+    public var models: [Choice]
+    /// The Mac's recent folders. An id is the path the Mac takes back.
+    public var folders: [Choice]
+    /// The folder the chat works in, or nil for no project.
+    public var folder: String?
+    /// The permission modes the agent advertises, in the agent's order. Empty when the agent has none, or no session has started.
+    public var modes: [Choice]
+    /// The id of the mode in force, one of `modes`.
+    public var mode: String?
+
+    enum CodingKeys: String, CodingKey { case agents, models, folders, folder, modes, mode }
+
+    public init(agents: [Choice] = [], models: [Choice] = [], folders: [Choice] = [], folder: String? = nil, modes: [Choice] = [], mode: String? = nil) {
+        self.agents = agents; self.models = models; self.folders = folders; self.folder = folder; self.modes = modes; self.mode = mode
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        agents = try c.decodeIfPresent(Lossy<Choice>.self, forKey: .agents)?.elements ?? []
+        models = try c.decodeIfPresent(Lossy<Choice>.self, forKey: .models)?.elements ?? []
+        folders = try c.decodeIfPresent(Lossy<Choice>.self, forKey: .folders)?.elements ?? []
+        folder = try c.decodeIfPresent(String.self, forKey: .folder)
+        modes = try c.decodeIfPresent(Lossy<Choice>.self, forKey: .modes)?.elements ?? []
+        mode = try c.decodeIfPresent(String.self, forKey: .mode)
+    }
+}
+
+/// One change to the chat settings. Leave a field out to keep it.
+public struct RemoteChatOptionsChange: Equatable, Sendable {
+    public var agent: String?
+    /// `.some(nil)` returns to the agent's default model.
+    public var model: String??
+    public var folder: String?
+    public var noProject = false
+    /// The id of one of the agent's modes.
+    public var mode: String?
+
+    public init(agent: String? = nil, model: String?? = nil, folder: String? = nil, noProject: Bool = false, mode: String? = nil) {
+        self.agent = agent; self.model = model; self.folder = folder; self.noProject = noProject; self.mode = mode
+    }
+
+    var json: [String: Any] {
+        var body: [String: Any] = [:]
+        if let agent { body["agent"] = agent }
+        if let model { body["model"] = model ?? NSNull() }
+        if let folder { body["folder"] = folder }
+        if noProject { body["no_project"] = true }
+        if let mode { body["mode"] = mode }
+        return body
+    }
+}
+
 /// A list that skips an element that cannot be decoded instead of failing the whole list.
 struct Lossy<Element: Decodable>: Decodable {
     var elements: [Element]
@@ -247,9 +310,10 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
     public var approvals: [RemoteApproval]
     public var forms: [RemoteForm]
     public var queue: [RemoteQueued]
+    public var options: RemoteChatOptions
 
     enum CodingKeys: String, CodingKey {
-        case title, state, running, activity, agent, model, notice, items, approvals, forms, queue
+        case title, state, running, activity, agent, model, notice, items, approvals, forms, queue, options
         case runStarted = "run_started"
         case threadID = "thread_id"
         case folderLabel = "folder_label"
@@ -257,7 +321,9 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
 
     public init(threadID: String? = nil, title: String = "New chat", state: String = "idle", running: Bool = false, activity: String? = nil,
                 folderLabel: String = "demo-app", agent: RemoteChatAgent = RemoteChatAgent(id: "claude", name: "Claude Code"), model: String? = nil,
-                runStarted: Date? = nil, notice: String? = nil, items: [RemoteChatItem] = [], approvals: [RemoteApproval] = [], forms: [RemoteForm] = [], queue: [RemoteQueued] = []) {
+                runStarted: Date? = nil, notice: String? = nil, items: [RemoteChatItem] = [], approvals: [RemoteApproval] = [], forms: [RemoteForm] = [], queue: [RemoteQueued] = [],
+                options: RemoteChatOptions = RemoteChatOptions()) {
+        self.options = options
         self.threadID = threadID; self.title = title; self.state = state; self.running = running; self.activity = activity
         self.runStarted = runStarted
         self.folderLabel = folderLabel; self.agent = agent; self.model = model; self.notice = notice; self.items = items
@@ -280,6 +346,7 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
         approvals = try c.decodeIfPresent(Lossy<RemoteApproval>.self, forKey: .approvals)?.elements ?? []
         forms = try c.decodeIfPresent(Lossy<RemoteForm>.self, forKey: .forms)?.elements ?? []
         queue = try c.decodeIfPresent(Lossy<RemoteQueued>.self, forKey: .queue)?.elements ?? []
+        options = (try? c.decodeIfPresent(RemoteChatOptions.self, forKey: .options)) ?? RemoteChatOptions()
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -298,6 +365,7 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
         try c.encode(approvals, forKey: .approvals)
         try c.encode(forms, forKey: .forms)
         try c.encode(queue, forKey: .queue)
+        try c.encode(options, forKey: .options)
     }
 }
 

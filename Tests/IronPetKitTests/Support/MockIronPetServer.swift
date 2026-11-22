@@ -558,6 +558,11 @@ extension MockIronPetServer {
         case (4, "messages") where get:
             guard let item = chat.items.first(where: { $0.id == parts[3] }) else { fail(connection, 404, "not_found", "no message"); return true }
             respond(connection, 200, item)
+        case (3, "options") where request.method == "PATCH":
+            // Only `mode` is acted on: it must be one the chat advertises, as on the Mac, and then it is the mode in force.
+            guard let mode = request.json["mode"] as? String else { respond(connection, 200, Data("{\"changed\":true}".utf8)); return true }
+            lock.lock(); let known = _chat.options.modes.contains { $0.id == mode }; if known { _chat.options.mode = mode }; lock.unlock()
+            if known { respond(connection, 200, Data("{\"changed\":true}".utf8)) } else { fail(connection, 400, "invalid", "choose one of the modes the agent offers") }
         case (3, "threads") where get: respond(connection, 200, ChatThreadListResponse(threads: chatThreads))
         case (4, "threads") where get:
             lock.lock(); let items = _threadItems[parts[3]]; lock.unlock()

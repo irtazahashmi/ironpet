@@ -112,7 +112,7 @@ final class TestControl {
             if let raw = body["model"] as? String { chat.model = raw.isEmpty ? nil : raw }
             if body["noProject"] as? Bool == true { chat.useNoProject() }
             if let path = body["workspace"] as? String { chat.use(URL(fileURLWithPath: path)) }
-            if let auto = body["auto"] as? Bool { chat.autoMode = auto }
+            if let mode = body["mode"] as? String { chat.setMode(mode) }
             chatModel.input = body["prompt"] as? String ?? ""
             chatModel.send()
         case ("POST", "/test/chat/stub"):
@@ -721,7 +721,12 @@ final class TestControl {
         return Self.encode([
             "state": state,
             "activity": chat.activity ?? "",
-            "approvals": chat.approvals.map { ["title": $0.title, "detail": $0.detail] },
+            "approvals": chat.approvals.map { approval -> [String: Any] in
+                ["title": approval.title, "detail": approval.detail,
+                 "options": approval.options.map { ["id": $0.id, "name": $0.name, "kind": $0.kind] }]
+            },
+            "mode": chat.agentMode ?? "",
+            "modes": chat.agentModes.map(\.id),
             "items": items,
             "visible": chat.isVisible,
             "workspace": chat.workspace?.path ?? "",

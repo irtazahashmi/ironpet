@@ -39,6 +39,14 @@ package struct AuthMethod: Identifiable, Hashable {
     }
 }
 
+/// A permission mode the agent advertises in `session/new`. ironpet offers exactly these and adds none.
+package struct AgentMode: Equatable, Sendable {
+    package let id: String
+    package let name: String
+    package let detail: String?
+    package init(id: String, name: String, detail: String? = nil) { self.id = id; self.name = name; self.detail = detail }
+}
+
 package enum AgentEvent {
     case session(String)
     case models(current: String?, [ChatModel])
@@ -57,14 +65,42 @@ package enum AgentEvent {
     case finished(error: String?)
 }
 
+/// One answer the agent offers in `session/request_permission`: `optionId`, a label, and a kind (`allow_once`, `allow_always`,
+/// `reject_once`, `reject_always`, or whatever else the agent defines).
+package struct PermissionOption: Codable, Equatable, Sendable, Identifiable {
+    package var id: String
+    package var name: String
+    package var kind: String
+
+    package init(id: String, name: String, kind: String = "") {
+        self.id = id
+        self.name = name
+        self.kind = kind
+    }
+
+    package init?(json: JSON) {
+        guard let id = json["optionId"] as? String else { return nil }
+        self.init(id: id, name: json["name"] as? String ?? id, kind: json["kind"] as? String ?? "")
+    }
+
+    package var allows: Bool { kind.hasPrefix("allow") }
+}
+
 package struct ApprovalDecision {
-    package init(allow: Bool, message: String) {
+    package init(allow: Bool, message: String, optionID: String? = nil) {
         self.allow = allow
         self.message = message
+        self.optionID = optionID
     }
 
     package let allow: Bool
     package let message: String
+    /// The option the user chose. Sent back as it is, so an option ironpet has no name for still works.
+    package let optionID: String?
+
+    package static func choose(_ option: PermissionOption) -> ApprovalDecision {
+        ApprovalDecision(allow: option.allows, message: "Chose \(option.name) in ironpet", optionID: option.id)
+    }
 
     package static let allow = ApprovalDecision(allow: true, message: "Approved in ironpet")
     package static func deny(_ message: String = "The user denied this in ironpet") -> ApprovalDecision {
@@ -186,6 +222,10 @@ package final class ACPBackend {
 
     /// Called when a prompt goes out, the first moment a message can join the turn.
     package var onPromptSent: (() -> Void)?
+    /// Reports the agent's current permission mode and every mode it advertises, at session start and when either changes.
+    package var onModes: ((_ current: String?, _ modes: [AgentMode]) -> Void)?
+    /// The mode the user picked for this agent in the chat. Applied when a session starts, and when `setMode` is called.
+    package var preferredMode: String?
 
     /// Called when the agent asks to run something. Answer once.
     package var onPermission: ((ACPToolCall, @escaping (ApprovalDecision) -> Void) -> Void)?
@@ -212,6 +252,8 @@ package final class ACPBackend {
     private var models: [ChatModel] = []
     private var currentModel: String?
     private var modelConfigID: String?
+    private var modeID: String?
+    private var modes: [AgentMode] = []
     private var timedOut = false
     /// The session's cumulative cost as the agent last reported it in a `usage_update`. ACP reports cost for the whole session,
     /// so one turn's cost is the difference from where it stood when the turn began.
@@ -582,7 +624,7 @@ package final class ACPBackend {
                         freshSession = false
                         forkOutcome = .forked
                         emit(.session(id))
-                        await useAskingMode(result)
+                        await readSessionModes(result, when: "session/fork")
                         readModels(result)
                         return
                     }
@@ -602,7 +644,7 @@ package final class ACPBackend {
                 var load = params
                 load["sessionId"] = existing
                 let result = try await guarded(client, seconds: 60) { try await client.request("session/load", load) }
-                await useAskingMode(result)
+                await readSessionModes(result, when: "session/load")
                 readModels(result)
                 sessionReady = true
                 freshSession = false
@@ -624,31 +666,53 @@ package final class ACPBackend {
         sessionReady = true
         freshSession = true
         emit(.session(id))
-        await useAskingMode(result)
+        await readSessionModes(result, when: "session/new")
         readModels(result)
     }
 
-    /// Modes that approve tools without asking. Auto mode belongs to ironpet: the agent stays in a mode that asks, and
-    /// ironpet answers its requests, so a "bypass permissions" default in the user's own agent settings must not apply.
-    package nonisolated static let permissiveModes: Set<String> = ["bypassPermissions", "acceptEdits", "yolo", "autoEdit", "full-access", "dontAsk"]
-
-    /// The mode to switch to, or nil to leave the session alone.
-    package nonisolated static func askingMode(current: String?, available: [String]) -> String? {
-        guard let current else { return nil }
-        let permissive = permissiveModes.contains(current) || (current == "auto" && available.contains("default"))
-        guard permissive else { return nil }
-        return ["default", "auto"].first { available.contains($0) && $0 != current }
+    /// The mode to switch to at session start, or nil to leave the session in the mode the agent started in. Only the user's pick
+    /// from the chat switches it, and only when the agent still advertises it. Jobs and automations have no pick and keep the agent's own mode.
+    package nonisolated static func startMode(current: String?, available: [String], preferred: String?) -> String? {
+        guard let preferred, preferred != current, available.contains(preferred) else { return nil }
+        return preferred
     }
 
-    private func useAskingMode(_ result: JSON) async {
-        guard let client, let sessionID, let block = result["modes"] as? JSON,
-              let target = Self.askingMode(current: block["currentModeId"] as? String,
-                                           available: (block["availableModes"] as? [JSON] ?? []).compactMap { $0["id"] as? String }) else { return }
-        do {
-            _ = try await client.request("session/set_mode", ["sessionId": sessionID, "modeId": target])
-        } catch {
-            NSLog("ironpet: could not switch \(agent.name) to its asking mode \(target): \(error.localizedDescription). It may run tools without asking.")
+    private func readSessionModes(_ result: JSON, when event: String) async {
+        let block = result["modes"] as? JSON
+        modeID = block?["currentModeId"] as? String
+        modes = (block?["availableModes"] as? [JSON] ?? []).compactMap { item in
+            guard let id = item["id"] as? String else { return nil }
+            return AgentMode(id: id, name: item["name"] as? String ?? id, detail: item["description"] as? String)
         }
+        let target = Self.startMode(current: modeID, available: modes.map(\.id), preferred: preferredMode)
+        var failure: String?
+        if let target, let client, let sessionID {
+            do {
+                _ = try await client.request("session/set_mode", ["sessionId": sessionID, "modeId": target])
+                modeID = target
+            } catch {
+                failure = error.localizedDescription
+            }
+        }
+        let line = "\(agent.name) \(event): mode \(block?["currentModeId"] as? String ?? "none")" + (target.map { " -> \($0)" } ?? " kept")
+            + ", now \(modeID ?? "none"), \(modes.count) advertised" + (failure.map { ", set_mode failed: \($0). It may run tools without asking." } ?? "")
+        NSLog("ironpet: \(line)")
+        ChatLog.note(line)
+        onModes?(modeID, modes)
+    }
+
+    /// The user picked a mode for this agent. Saved by the caller; applied here at once when a session is open.
+    package func setMode(_ id: String) async {
+        preferredMode = id
+        guard let client, let sessionID, sessionReady, modes.contains(where: { $0.id == id }), id != modeID else { return }
+        do {
+            _ = try await client.request("session/set_mode", ["sessionId": sessionID, "modeId": id])
+            modeID = id
+            ChatLog.note("\(agent.name): mode set to \(id) by the user")
+        } catch {
+            NSLog("ironpet: could not switch \(agent.name) to mode \(id): \(error.localizedDescription)")
+        }
+        onModes?(modeID, modes)
     }
 
     private func readModels(_ result: JSON) {
@@ -728,6 +792,12 @@ package final class ACPBackend {
             emit(.commands(SlashCommand.parse(update["availableCommands"] as? [JSON] ?? [])))
             return
         }
+        // So is the permission mode: the agent can change it itself.
+        if update["sessionUpdate"] as? String == "current_mode_update", let id = update["currentModeId"] as? String {
+            modeID = id
+            onModes?(modeID, modes)
+            return
+        }
         // The session's running cost is state too: a reload replays it, and the replayed total is the baseline for new turns.
         if update["sessionUpdate"] as? String == "usage_update", let cost = update["cost"] as? JSON,
            let amount = (cost["amount"] as? NSNumber)?.doubleValue, let currency = cost["currency"] as? String {
@@ -780,6 +850,7 @@ package final class ACPBackend {
             call = merged
         }
         let options = params["options"] as? [JSON] ?? []
+        call.permissionOptions = options.compactMap(PermissionOption.init(json:))
         guard let onPermission else { return respond(.success(Self.outcome(.deny("ironpet is not ready"), options: options))) }
         let token = UUID()
         pendingPermissions[token] = respond
@@ -803,8 +874,12 @@ package final class ACPBackend {
         }
     }
 
-    /// Picks the offered option that matches the decision: allow_once or reject_once first.
+    /// The option the user chose, when the agent offered it. Otherwise the offered option that matches an allow or deny: allow_once or
+    /// reject_once first.
     package nonisolated static func outcome(_ decision: ApprovalDecision, options: [JSON]) -> JSON {
+        if let chosen = decision.optionID, options.contains(where: { $0["optionId"] as? String == chosen }) {
+            return ["outcome": ["outcome": "selected", "optionId": chosen]]
+        }
         let wanted = decision.allow ? ["allow_once", "allow_always"] : ["reject_once", "reject_always"]
         for kind in wanted {
             if let option = options.first(where: { $0["kind"] as? String == kind }), let id = option["optionId"] as? String {

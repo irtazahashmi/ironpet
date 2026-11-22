@@ -226,8 +226,8 @@ package final class RPCDispatcher {
         package var enabled: Bool
     }
 
-    package struct SetAutoMode: Codable, Equatable {
-        package var on: Bool
+    package struct SetMode: Codable, Equatable {
+        package var id: String
     }
 
     package struct MemoryCall: Codable, Equatable {
@@ -303,7 +303,7 @@ package final class RPCDispatcher {
         addVoid("chat.answerForm", "POST /v1/chat/forms/:id", params: "AnswerFormRequest") { (p: AnswerFormRequest) in try await chat.answerForm(p) }
         addVoid("chat.submitForm", "POST /v1/chat/forms/:id/submit", params: "UUIDParam") { (p: UUIDParam) in try await chat.submitForm(p.id) }
         addVoid("chat.skipForm", "POST /v1/chat/forms/:id/skip", params: "UUIDParam") { (p: UUIDParam) in try await chat.skipForm(p.id) }
-        addVoid("chat.setAutoMode", "none", params: "SetAutoMode") { (p: SetAutoMode) in await chat.setAutoMode(p.on) }
+        addVoid("chat.setMode", "none", params: "SetMode") { (p: SetMode) in await chat.setMode(p.id) }
     }
 
     private func registerMemory() {

@@ -44,34 +44,32 @@ final class ChatResetTests: XCTestCase {
                    items: [.init(kind: .user("old"))], agent: session.agent.id)
     }
 
-    func testS1NewChatClearsAndKeepsAuto() async {
-        await chatted()
-        session.autoMode = true
-        session.newChat()
-        XCTAssertTrue(session.items.isEmpty)
-        XCTAssertNil(session.threadID)
-        XCTAssertTrue(session.autoMode)
-    }
-
-    func testS1AutoSurvivesNewChatAndRelaunch() async {
+    func testS1PickedModeSurvivesNewChatAndRelaunch() async {
         let defaults = UserDefaults.standard
-        let keys = ["chatAutoMode", "chatThread", "chatDraft", "chatAttachments"]
+        let keys = ["chatThread", "chatDraft", "chatAttachments", "chatMode.cursor", "chatMode.claude-acp"]
         let saved = keys.map { ($0, defaults.object(forKey: $0)) }
         defer { for (key, value) in saved { defaults.set(value, forKey: key) } }
         defaults.removeObject(forKey: "chatThread")
         let first = ChatSession(restore: true)
-        first.autoMode = true
+        let key = "chatMode.\(first.agent.id)"
+        defaults.removeObject(forKey: key)
+        first.receiveModes(current: "default", modes: [AgentMode(id: "default", name: "Default"), AgentMode(id: "plan", name: "Plan")])
+        first.setMode("plan")
         first.newChat()
-        XCTAssertTrue(defaults.bool(forKey: "chatAutoMode"), "a new chat must not overwrite the saved Auto value")
+        XCTAssertEqual(defaults.string(forKey: key), "plan", "a new chat must not overwrite the saved pick")
         let relaunched = ChatSession(restore: true)
-        XCTAssertTrue(relaunched.autoMode)
+        XCTAssertEqual(relaunched.pickedMode, "plan")
+        defaults.removeObject(forKey: key)
+        XCTAssertNil(ChatSession(restore: true).pickedMode, "without a pick the agent's own default applies")
     }
 
-    func testS2OpenThreadKeepsAuto() async {
-        session.autoMode = true
+    func testS2OpenThreadKeepsThePickedMode() async {
+        let key = "chatMode.\(session.agent.id)"
+        defer { UserDefaults.standard.removeObject(forKey: key) }
+        UserDefaults.standard.set("plan", forKey: key)
         session.open(thread())
         XCTAssertEqual(session.threadID, "t2")
-        XCTAssertTrue(session.autoMode)
+        XCTAssertEqual(session.pickedMode, "plan")
     }
 
     func testS3FailedTurnKeepsTranscriptAndThread() async {
@@ -106,7 +104,6 @@ final class ChatResetTests: XCTestCase {
 
     func testS4TelegramWhileBusyQueuesWithoutClearing() async {
         await chatted()
-        session.autoMode = true
         h.model.input = "busy"
         await h.model.sendNow()
         await settle()
@@ -118,7 +115,6 @@ final class ChatResetTests: XCTestCase {
         session.cancel(from: .telegram(chat: 7))
         XCTAssertEqual(session.userQueueCount, 0)
         XCTAssertEqual(session.items.count, count)
-        XCTAssertTrue(session.autoMode)
         XCTAssertFalse(log.contains { $0.hasPrefix("chat cleared") })
     }
 

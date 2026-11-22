@@ -114,8 +114,13 @@ def relaunch(test_mode, env=None):
     time.sleep(1.5)
 
 
-def run_chat(prompt, backend="cursor", auto=False, workspace=WS, **extra):
-    call("POST", "/test/chat", {"newChat": True, "backend": backend, "workspace": workspace, "auto": auto, "prompt": prompt, **extra})
+def run_chat(prompt, backend="cursor", mode=None, workspace=WS, **extra):
+    """`mode` is one of the agent's own mode ids (for Claude Code: default, plan, acceptEdits, auto, bypassPermissions). None keeps
+    the mode the agent starts in, which is the one the user configured in that agent."""
+    body = {"newChat": True, "backend": backend, "workspace": workspace, "prompt": prompt, **extra}
+    if mode:
+        body["mode"] = mode
+    call("POST", "/test/chat", body)
 
 
 def wait_approval_or_end(timeout=180):
@@ -356,22 +361,42 @@ def scenario_runtime():
     relaunch(test_mode=True)
 
 
-def scenario_auto():
-    """S10: in Auto mode `ls` runs without a card and `rm -rf` still asks."""
+def scenario_modes():
+    """S10: the agent's own mode decides what asks. IronPet judges no command text.
+
+    In `default` mode Claude Code asks before `rm -rf ./junk`: the card carries the agent's own options and ironpet adds no
+    "destructive" wording. In `bypassPermissions` the agent never asks, so the same command runs with no card."""
     fresh_workspace()
     os.makedirs(os.path.join(WS, "junk"))
-    run_chat("Run these two shell commands one at a time: first `ls`, then `rm -rf ./junk`. "
-             "If a command is denied, do not retry; just say so.", "claude", auto=True)
+    run_chat("Run the shell command `rm -rf ./junk`. If it is denied, do not retry; just say so.", "claude", mode="default")
     c = wait_approval_or_end()
-    title = c["approvals"][0]["title"] if c and c["approvals"] else ""
-    ran_ls = any(i["kind"] == "tool" and i["text"].startswith("Ran `ls") for i in (c or {"items": []})["items"])
-    shot("auto-destructive-card")
-    if title:
+    card = c["approvals"][0] if c and c["approvals"] else None
+    title = card["title"] if card else ""
+    options = card["options"] if card else []
+    shot("modes-default-card")
+    modes = c["modes"] if c else []
+    if card:
         call("POST", "/test/approve", {"allow": False})
     end = wait_end()
-    ok = "destructive" in title.lower() and ran_ls and os.path.isdir(os.path.join(WS, "junk"))
-    record("S10 Auto mode: ls runs without a card, rm -rf still asks", ok,
-           f"card='{title}' ls_ran_first={ran_ls} junk_kept={os.path.isdir(os.path.join(WS, 'junk'))} state={end and end['state']}")
+    kept = os.path.isdir(os.path.join(WS, "junk"))
+    record("S10 default mode: rm -rf asks, with the agent's own options and no ironpet wording",
+           bool(card) and "destructive" not in title.lower() and len(options) >= 2 and any(o["kind"].startswith("reject") for o in options) and kept
+           and "default" in modes,
+           f"card='{title}' options={[(o['id'], o['kind']) for o in options]} modes={modes} junk_kept={kept} state={end and end['state']}")
+
+    if "bypassPermissions" not in modes:
+        return record("S10 bypassPermissions: no card", False, f"the agent did not advertise bypassPermissions (modes={modes})")
+    fresh_workspace()
+    os.makedirs(os.path.join(WS, "junk"))
+    run_chat("Run the shell command `rm -rf ./junk`, then say done.", "claude", mode="bypassPermissions")
+    c = wait_approval_or_end()
+    asked = bool(c and c["approvals"])
+    if asked:
+        call("POST", "/test/approve", {"allow": False})
+    end = wait_end()
+    gone = not os.path.isdir(os.path.join(WS, "junk"))
+    record("S10 bypassPermissions: the agent does not ask, so ironpet shows no card and the command runs", not asked and gone,
+           f"asked={asked} junk_removed={gone} mode={end and end['mode']} state={end and end['state']}")
 
 
 def scenario_picker():
@@ -1522,8 +1547,8 @@ def tasks_state():
 
 
 def run_task_turn(prompt, new_chat):
-    """One chat turn in Auto mode. Cards for the task tools are allowed, anything else is denied."""
-    body = {"prompt": prompt, "auto": True}
+    """One chat turn. Cards for the task tools are allowed, anything else is denied."""
+    body = {"prompt": prompt}
     if new_chat:
         body.update({"newChat": True, "backend": TASKS_AGENT, "workspace": WS})
     call("POST", "/test/chat", body)
@@ -1998,7 +2023,7 @@ def scenario_memory():
 
 
 SCENARIOS = {"cursor": scenario_cursor, "cursor-session": scenario_cursor_session, "claude": scenario_claude, "codex": scenario_codex, "agents": scenario_agents,
-             "asks": scenario_asks, "runtime": scenario_runtime, "auto": scenario_auto, "picker": scenario_picker,
+             "asks": scenario_asks, "runtime": scenario_runtime, "modes": scenario_modes, "picker": scenario_picker,
              "iterm": scenario_iterm_claude, "capture": scenario_capture, "summaries": scenario_summaries,
              "notification": scenario_notification_approval, "mcp": scenario_mcp,
              "sentry": scenario_sentry_mcp, "setup": scenario_setup, "settings": scenario_settings,

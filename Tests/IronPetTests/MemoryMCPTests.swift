@@ -141,7 +141,7 @@ final class MemoryMCPTests: XCTestCase {
         XCTAssertFalse(AutomationSession.decision(for: moveIn).allow, "a move into the memory folder counts")
         XCTAssertTrue(AutomationPrompt.decision(for: ACPToolCall(id: "2", title: "Read", kind: "read", paths: ["/tmp/x"])).allow)
         let otherEdit = ACPToolCall(id: "2", title: "Edit", kind: "edit", paths: ["/tmp/work/app.swift"])
-        XCTAssertTrue(AutomationSession.decision(for: otherEdit).allow, "other non-destructive edits run in an automation's session")
+        XCTAssertFalse(AutomationSession.decision(for: otherEdit).allow, "an edit outside the memory folder is not answered without asking")
     }
 
     func testScreenIsLeftOutWhenCaptureHasNoData() async throws {

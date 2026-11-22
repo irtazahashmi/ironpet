@@ -198,7 +198,7 @@ package final class FrontDesk: FrontDeskTalking {
     /// Anything else that would need an approval belongs in a background job, where the user can see it and click Allow.
     package nonisolated static func decision(for call: ACPToolCall) -> ApprovalDecision {
         if let mcp = call.mcp, mcp.server == "ironpet", AssistantMCP.jobControl.contains(mcp.tool) { return .allow }
-        switch ApprovalRules.policy(for: call, auto: false) {
+        switch ApprovalRules.policy(for: call) {
         case .allow: return .allow
         case .ask: return .deny("Voice mode cannot run this itself. Tell the user you will start a background job for it, then start one with jobs_start and full instructions.")
         }

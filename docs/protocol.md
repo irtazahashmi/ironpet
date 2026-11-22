@@ -262,7 +262,7 @@ The open chat with Ghost.
 | `chat.newChat` | none | `null` | `POST /v1/chat/new` |
 | `chat.openThread` | `ID` | `null` | `POST /v1/chat/open/:id` |
 | `chat.send` | `SendChatRequest` | `ChatSendResult` | `POST /v1/chat/current/messages` |
-| `chat.setAutoMode` | `SetAutoMode` | `null` | none |
+| `chat.setMode` | `SetMode` | `null` | none |
 | `chat.skipForm` | `UUIDParam` | `null` | `POST /v1/chat/forms/:id/skip` |
 | `chat.snapshot` | none | `ChatSnapshot` | `GET /v1/chat/current` |
 | `chat.status` | none | `ChatStatus` | none |
@@ -467,6 +467,7 @@ audio, or an area that is not on the wire yet.
 | `POST /v1/chat/current/stop` | `chat.stop` |
 | `POST /v1/chat/open/:id` | `chat.openThread` |
 | `POST /v1/chat/new` | `chat.newChat` |
+| `PATCH /v1/chat/options` | `chat.setAgent`, `chat.setModel`, `chat.useFolder`, `chat.useNoProject`, `chat.setMode` |
 | `POST /v1/chat/approvals/:id` | `chat.decide` |
 | `POST /v1/chat/forms/:id` | `chat.answerForm` |
 | `POST /v1/chat/forms/:id/submit` | `chat.submitForm` |
