@@ -20,6 +20,8 @@ public struct TaskLink: Codable, Equatable, Hashable, Sendable {
     public var kind: String
     public var ref: String
     public var label: String?
+
+    public init(kind: String, ref: String, label: String? = nil) { self.kind = kind; self.ref = ref; self.label = label }
 }
 
 /// A task as `TaskJSON.json(_:)` writes it on the Mac: snake_case keys, ISO 8601 dates, empty fields left out.
@@ -36,17 +38,22 @@ public struct RemoteTask: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var labels: [String: String]
     public var created: Date
     public var updated: Date
+    /// What made the task, as the agent recorded it: a JSON object, or text when it is not JSON.
+    public var sourceRef: RemoteJSON?
 
     enum CodingKeys: String, CodingKey {
         case id, title, notes, status, source, due, closed, links, labels, created, updated
         case waitingOn = "waiting_on"
+        case sourceRef = "source_ref"
     }
 
     public init(id: String, title: String, notes: String = "", status: TaskStatus = .backlog, source: String = "user", due: Date? = nil,
                 closed: Date? = nil, waitingOn: String? = nil, links: [TaskLink] = [], labels: [String: String] = [:],
-                created: Date = Date(timeIntervalSince1970: 1_700_000_000), updated: Date = Date(timeIntervalSince1970: 1_700_000_000)) {
+                created: Date = Date(timeIntervalSince1970: 1_700_000_000), updated: Date = Date(timeIntervalSince1970: 1_700_000_000),
+                sourceRef: RemoteJSON? = nil) {
         self.id = id; self.title = title; self.notes = notes; self.status = status; self.source = source; self.due = due
         self.closed = closed; self.waitingOn = waitingOn; self.links = links; self.labels = labels; self.created = created; self.updated = updated
+        self.sourceRef = sourceRef
     }
 
     public init(from decoder: Decoder) throws {
@@ -63,6 +70,7 @@ public struct RemoteTask: Codable, Equatable, Hashable, Identifiable, Sendable {
         labels = try c.decodeIfPresent([String: String].self, forKey: .labels) ?? [:]
         created = try c.decode(Date.self, forKey: .created)
         updated = try c.decode(Date.self, forKey: .updated)
+        sourceRef = try c.decodeIfPresent(RemoteJSON.self, forKey: .sourceRef)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -79,6 +87,7 @@ public struct RemoteTask: Codable, Equatable, Hashable, Identifiable, Sendable {
         if !labels.isEmpty { try c.encode(labels, forKey: .labels) }
         try c.encode(created, forKey: .created)
         try c.encode(updated, forKey: .updated)
+        try c.encodeIfPresent(sourceRef, forKey: .sourceRef)
     }
 
     /// Only the user can take the next step. A task waiting on someone else never counts, whatever its status.
@@ -129,17 +138,20 @@ public struct RemoteSuggestion: Codable, Equatable, Hashable, Identifiable, Send
     public var notes: String
     public var url: String?
     public var waitingOn: String?
+    public var sourceRef: RemoteJSON?
 
     enum CodingKeys: String, CodingKey {
         case id, title, created, origin, due, notes, url
         case originDetail = "origin_detail"
         case waitingOn = "waiting_on"
+        case sourceRef = "source_ref"
     }
 
     public init(id: String, title: String, created: Date = Date(timeIntervalSince1970: 1_700_000_000), origin: String = "meeting",
-                originDetail: String? = nil, due: String? = nil, notes: String = "", url: String? = nil, waitingOn: String? = nil) {
+                originDetail: String? = nil, due: String? = nil, notes: String = "", url: String? = nil, waitingOn: String? = nil,
+                sourceRef: RemoteJSON? = nil) {
         self.id = id; self.title = title; self.created = created; self.origin = origin; self.originDetail = originDetail
-        self.due = due; self.notes = notes; self.url = url; self.waitingOn = waitingOn
+        self.due = due; self.notes = notes; self.url = url; self.waitingOn = waitingOn; self.sourceRef = sourceRef
     }
 
     public init(from decoder: Decoder) throws {
@@ -153,6 +165,7 @@ public struct RemoteSuggestion: Codable, Equatable, Hashable, Identifiable, Send
         notes = try c.decodeIfPresent(String.self, forKey: .notes) ?? ""
         url = try c.decodeIfPresent(String.self, forKey: .url)
         waitingOn = try c.decodeIfPresent(String.self, forKey: .waitingOn)
+        sourceRef = try c.decodeIfPresent(RemoteJSON.self, forKey: .sourceRef)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -166,6 +179,7 @@ public struct RemoteSuggestion: Codable, Equatable, Hashable, Identifiable, Send
         if !notes.isEmpty { try c.encode(notes, forKey: .notes) }
         try c.encodeIfPresent(url, forKey: .url)
         try c.encodeIfPresent(waitingOn, forKey: .waitingOn)
+        try c.encodeIfPresent(sourceRef, forKey: .sourceRef)
     }
 }
 

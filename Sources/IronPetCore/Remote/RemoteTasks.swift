@@ -1,4 +1,5 @@
 import Foundation
+import IronPetKit
 
 /// A failure a route reports. `message` is the API's or the validator's text, unchanged.
 package struct RemoteFailure: Error, Equatable {
@@ -38,8 +39,8 @@ package struct RemoteFailure: Error, Equatable {
     }
 }
 
-/// The task and suggestion routes, as calls on `IronPetAPI`. They take and return JSON objects with the same keys as the MCP tools and the
-/// `IronPet tasks` command (snake_case, ISO 8601 dates). The device is the author, so each task event says `remote:<device id>`.
+/// The task and suggestion routes, as calls on `IronPetAPI`. They take JSON objects with the same keys as the MCP tools and the
+/// `IronPet tasks` command (snake_case, ISO 8601 dates), and answer with the `IronPetKit` types the phone decodes. The device is the author, so each task event says `remote:<device id>`.
 @MainActor
 package struct RemoteTasks {
     package init(api: IronPetAPI, by: String) {
@@ -74,15 +75,13 @@ package struct RemoteTasks {
             labels[String(pair[..<colon])] = String(pair[pair.index(after: colon)...])
         }
         request.labels = try TaskValidator.labels(labels)
-        return ["tasks": tasks.list(request).map(TaskJSON.json)]
+        return RemoteWire.object(TaskListResponse(tasks: tasks.list(request).map { RemoteTask($0) }))
     }
 
     package func get(_ id: String) throws -> [String: Any] {
         try available()
         let detail = try tasks.get(id)
-        var object = TaskJSON.json(detail.task)
-        object["history"] = detail.history.map(TaskJSON.json)
-        return object
+        return RemoteWire.object(RemoteTaskDetail(task: RemoteTask(detail.task), history: detail.history.map { RemoteTaskEvent($0) }))
     }
 
     package func create(_ args: [String: Any]) throws -> [String: Any] {
@@ -93,7 +92,7 @@ package struct RemoteTasks {
             source: try TaskValidator.source(args["source"], default: .user), due: try TaskValidator.due(args["due"]),
             links: try TaskValidator.links(args["links"]), waitingOn: try TaskValidator.waitingOn(args["waiting_on"]),
             sourceRef: nil, labels: try TaskValidator.labels(args["labels"]), by: by))
-        return TaskJSON.json(item)
+        return RemoteWire.object(RemoteTask(item))
     }
 
     package func update(_ id: String, _ args: [String: Any]) throws -> [String: Any] {
@@ -112,7 +111,7 @@ package struct RemoteTasks {
         request.removeLabels = try TaskValidator.labelKeys(args["remove_labels"])
         if args.keys.contains("waiting_on") { request.waitingOn = try TaskValidator.waitingOn(args["waiting_on"]) ?? "" }
         request.note = try args["note"].map { try TaskValidator.notes($0) }
-        return TaskJSON.json(try tasks.update(request))
+        return RemoteWire.object(RemoteTask(try tasks.update(request)))
     }
 
     /// Closing needs a note that says what shows the task is done, as it does for an agent.
@@ -120,21 +119,21 @@ package struct RemoteTasks {
         try available()
         let target = try tasks.get(id).task
         let note = try TaskJSON.requiredNote(args["note"], for: "say what shows the task is done")
-        return TaskJSON.json(try tasks.close(CloseTaskRequest(id: target.id, note: note, by: by)))
+        return RemoteWire.object(RemoteTask(try tasks.close(CloseTaskRequest(id: target.id, note: note, by: by))))
     }
 
     package func delete(_ id: String) throws -> [String: Any] {
         try available()
         let item = try tasks.get(id).task
         try tasks.delete(DeleteTaskRequest(id: item.id, by: by))
-        return ["deleted": item.id]
+        return RemoteWire.object(RemoteDeleted(deleted: item.id))
     }
 
     // MARK: Suggestions
 
     package func suggestions() throws -> [String: Any] {
         try available()
-        return ["suggestions": tasks.suggestions.map(TaskJSON.json)]
+        return RemoteWire.object(SuggestionListResponse(suggestions: tasks.suggestions.map { RemoteSuggestion($0) }))
     }
 
     package func accept(_ id: String, _ args: [String: Any]) throws -> [String: Any] {
@@ -145,12 +144,12 @@ package struct RemoteTasks {
         if let raw = args["notes"], !(raw is NSNull) { request.notes = try TaskValidator.notes(raw) }
         if let raw = args["status"], !(raw is NSNull) { request.status = try TaskValidator.status(raw) }
         request.note = try args["note"].map { try TaskValidator.notes($0) }
-        return TaskJSON.json(try tasks.accept(request))
+        return RemoteWire.object(RemoteTask(try tasks.accept(request)))
     }
 
     package func reject(_ id: String, _ args: [String: Any]) throws -> [String: Any] {
         try available()
         try tasks.reject(RejectSuggestionRequest(id: id, note: try args["note"].map { try TaskValidator.notes($0) }, by: by))
-        return ["rejected": id]
+        return RemoteWire.object(RemoteRejected(rejected: id))
     }
 }

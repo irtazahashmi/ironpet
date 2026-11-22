@@ -248,3 +248,49 @@ public struct AssetManifestResponse: Codable, Equatable, Sendable {
     public var assets: [RemoteAsset]
     public init(assets: [RemoteAsset]) { self.assets = assets }
 }
+
+// MARK: Acknowledgements
+
+// The one-field answers of the action routes. Each names what the call changed.
+
+/// `POST /v1/pet/tricks/<name>`.
+public struct RemoteTrickResult: Codable, Equatable, Sendable {
+    public var performed: String
+    public init(performed: String) { self.performed = performed }
+}
+
+/// `POST /v1/bubbles/<id>/actions/<action>`.
+public struct RemoteBubblePress: Codable, Equatable, Sendable {
+    public var pressed: String
+    public init(pressed: String) { self.pressed = pressed }
+}
+
+/// `POST /v1/agents/<id>/acknowledge`.
+public struct RemoteAcknowledged: Codable, Equatable, Sendable {
+    public var acknowledged: String
+    public init(acknowledged: String) { self.acknowledged = acknowledged }
+}
+
+/// `POST /v1/alerts/<id>/dismiss`.
+public struct RemoteDismissed: Codable, Equatable, Sendable {
+    public var dismissed: String
+    public init(dismissed: String) { self.dismissed = dismissed }
+}
+
+/// `POST /v1/alerts/dismiss-all`: how many alerts were dismissed.
+public struct RemoteDismissedCount: Codable, Equatable, Sendable {
+    public var dismissed: Int
+    public init(dismissed: Int) { self.dismissed = dismissed }
+}
+
+/// `DELETE /v1/tasks/<id>`.
+public struct RemoteDeleted: Codable, Equatable, Sendable {
+    public var deleted: String
+    public init(deleted: String) { self.deleted = deleted }
+}
+
+/// `POST /v1/suggestions/<id>/reject`.
+public struct RemoteRejected: Codable, Equatable, Sendable {
+    public var rejected: String
+    public init(rejected: String) { self.rejected = rejected }
+}
