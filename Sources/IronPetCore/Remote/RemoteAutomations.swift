@@ -101,7 +101,7 @@ package struct RemoteAutomations {
         let text = (args["text"] as? String ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { throw RemoteFailure.invalid("text is empty") }
         guard text.count <= 4000 else { throw RemoteFailure.invalid("text is longer than 4000 characters") }
-        let result = try await api.chat.send(SendChatRequest(text: AutomationAgentPrompts.newAutomation(text), origin: ChatOrigin(client: "ios", ref: device)))
+        let result = try await api.chat.send(SendChatRequest(text: AutomationAgentPrompts.newAutomation(text), origin: ChatOrigin.ios(device: device)))
         return ["outcome": result.outcome.rawValue]
     }
 

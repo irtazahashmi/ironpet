@@ -101,9 +101,13 @@ final class RemoteServer {
     nonisolated static let maxBody = 1 << 20
     nonisolated static let maxHeaders = 64 << 10
     nonisolated static let uploadRoute = "/v1/uploads"
+    /// The longest message the event socket reads from a device.
+    nonisolated static let maxSocketMessage = 16 << 10
 
     let service: RemoteService
     private let api: IronPetAPI
+    /// Answers `session.hello` on the event socket. Nothing else of the method table is reachable through a socket.
+    private let rpc: RPCDispatcher
     private let uploads: RemoteUploads
     /// How often one message's `chat.item` event may reach a socket.
     var itemInterval: Duration = .milliseconds(100)
@@ -119,6 +123,7 @@ final class RemoteServer {
 
     init(api: IronPetAPI, service: RemoteService, uploads: RemoteUploads? = nil) {
         self.api = api
+        self.rpc = RPCDispatcher(api: api)
         self.service = service
         self.uploads = uploads ?? RemoteUploads()
     }
@@ -632,6 +637,7 @@ final class RemoteServer {
     private func addEventSocket(to router: Router<RemoteContext>) {
         let service = service
         let api = api
+        let rpc = rpc
         let interval = itemInterval
         router.ws("/v1/events", shouldUpgrade: { request, _ in
             // The same checks as REST, without counting a failure: a refused upgrade falls through to the REST router, which counts it once.
@@ -648,6 +654,12 @@ final class RemoteServer {
             let (frames, send) = AsyncStream<String>.makeStream(bufferingPolicy: .bufferingNewest(2000))
             guard let socket = service.openSocket(device: device.id, close: { send.finish() }) else { return }
             defer { service.socketClosed(socket) }
+            // An open event socket is a connected phone: it is a session until the socket closes.
+            let connection = await MainActor.run { () -> RPCConnection in
+                let session = api.clients.connect(deviceID: device.id, name: device.name, kind: .ios, connection: .remote)
+                return RPCConnection(deviceID: device.id, name: device.name, kind: .ios, connection: .remote, sessionID: session.id)
+            }
+            defer { Task { @MainActor in if let id = connection.sessionID { api.clients.disconnect(id) } } }
             let (subscription, throttle) = await MainActor.run { () -> (APIEventBus.Subscription, RemoteEventThrottle) in
                 let bus = api.events
                 send.yield(Self.text(["kind": "hello", "seq": bus.lastSeq]))
@@ -660,9 +672,16 @@ final class RemoteServer {
             }
             defer { Task { @MainActor in subscription.cancel(); throttle.cancel() } }
             // Reading keeps the library answering pings. A close from the device or a revoke ends the stream and with it the socket.
+            // The one request a socket takes is `session.hello`. Anything else gets "method not found" from the dispatcher.
             await withTaskGroup(of: Void.self) { group in
                 group.addTask {
-                    do { for try await _ in inbound {} } catch {}
+                    do {
+                        for try await message in inbound.messages(maxSize: Self.maxSocketMessage) {
+                            guard case .text(let text) = message else { continue }
+                            let reply = await rpc.handle(line: Data(text.utf8), connection: connection, allowed: ["session.hello"])
+                            send.yield(String(decoding: reply, as: UTF8.self))
+                        }
+                    } catch {}
                     send.finish()
                 }
                 group.addTask {

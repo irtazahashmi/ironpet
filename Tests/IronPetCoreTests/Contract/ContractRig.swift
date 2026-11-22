@@ -16,7 +16,10 @@ final class ContractRig {
     /// Values the golden file captured from earlier responses, by name.
     var variables: [String: String] = [:]
 
-    /// `seed` names the state a fixture starts from: `alerts`, `agents`, `memory`, `asks`.
+    /// What the transport knows about the caller. A fixture is a client that connected over stdio, so `session.hello` has a connection.
+    let connection = RPCConnection(deviceID: "contract-cli", name: "Contract test", kind: .cli, connection: .inProcess)
+
+    /// `seed` names the state a fixture starts from: `alerts`, `agents`, `memory`, `asks`, `screen`, `screenUnsupported`.
     init(seed: [String] = []) throws {
         TestMemory.isolate()
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-contract-\(UUID().uuidString)")
@@ -53,6 +56,8 @@ final class ContractRig {
             api.alerts.askHandler = { _ in }
             api.agents.askHandler = { _ in }
         }
+        if seed.contains("screen") { api.attach(capture: ContractCaptureControl(supported: true)) }
+        if seed.contains("screenUnsupported") { api.attach(capture: ContractCaptureControl(supported: false)) }
         if seed.contains("memory") {
             let memory = MemoryMCP.Services(store: FileMemoryStore(directory: directory.appendingPathComponent("memory")), index: nil)
             api.attach(memory: { memory })
@@ -76,7 +81,7 @@ final class ContractRig {
     /// Sends one request line through the stdio path and returns the decoded response, normalised for comparison.
     func send(_ request: RemoteJSON, captures: [String: String] = [:]) async throws -> RemoteJSON {
         let line = try JSONEncoder().encode(substitute(request))
-        let raw = await dispatcher.handle(line: line)
+        let raw = await dispatcher.handle(line: line, connection: connection)
         let response = try JSONDecoder().decode(RemoteJSON.self, from: raw)
         for (name, path) in captures {
             if case .string(let value)? = Self.value(at: path, in: response) { variables[name] = value }
@@ -135,5 +140,33 @@ final class ContractRig {
             }
         }
         return current
+    }
+}
+
+/// A capture adapter for the contract tests. It stores nothing: it counts what `screen.ingest` sends and says what it did, so a golden
+/// file does not depend on the platform the test runs on.
+final class ContractCaptureControl: CaptureControl, @unchecked Sendable { // Touched from one test at a time.
+    let supported: Bool
+    @MainActor let model = CaptureStatusModel()
+
+    init(supported: Bool) { self.supported = supported }
+
+    var isSupported: Bool { supported }
+    func refreshModel() {}
+    func pause(for seconds: TimeInterval) throws {}
+    func pauseUntilTomorrow() throws {}
+    func resume() throws {}
+    func clearCaptures() throws {}
+    func recentCaptures(limit: Int) -> [StoredCapture] { [] }
+    func searchCaptures(_ query: String, app: String?, since: Date?, until: Date?, limit: Int) -> [CaptureHit] { [] }
+    func captureText(_ id: Int64) -> String? { nil }
+    func seenApps() -> [(bundleId: String, name: String, captures: Int)] { [] }
+    func callTool(_ name: String, _ args: [String: Any]) -> Result<Any, ScreenMCP.Failure> { .failure(ScreenMCP.Failure(message: "not used")) }
+
+    /// Captures with no lines count as skipped, as a real store reports an empty one. The rest are stored.
+    func ingest(_ captures: [ClientCapture]) throws -> ScreenIngestResult {
+        guard supported else { throw CapabilityError.unsupported(capability: "CaptureControl.ingest", platform: "contract-test") }
+        let empty = captures.filter { $0.lines.isEmpty }.count
+        return ScreenIngestResult(stored: captures.count - empty, unchanged: 0, skipped: empty)
     }
 }

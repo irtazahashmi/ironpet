@@ -52,7 +52,7 @@ final class RemoteVoiceSocketTests: XCTestCase {
         let task = socket(token: token)
         try await task.send(.string(VoiceClientMessage.ttsEnable(true).json))
         try await Task.sleep(for: .milliseconds(200))
-        chat.onTurn?(ChatOrigin(client: ChatOrigin.iosClient, ref: deviceID), .finished("One reply."))
+        chat.onTurn?(ChatOrigin.ios(device: deviceID), .finished("One reply."))
         var texts: [String] = []
         var frames: [Data] = []
         while texts.count < 2 || frames.isEmpty {

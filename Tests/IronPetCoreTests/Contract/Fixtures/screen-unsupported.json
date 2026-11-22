@@ -1,0 +1,42 @@
+{
+  "cases" : [
+    {
+      "name" : "ingest on a host that stores no captures is unsupported",
+      "request" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "method" : "screen.ingest",
+        "params" : {
+          "captures" : [
+            {
+              "app" : "com.example.editor",
+              "appName" : "Editor",
+              "lines" : [
+                "x"
+              ],
+              "redacted" : true,
+              "title" : "main.swift",
+              "trigger" : "idle"
+            }
+          ]
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32006,
+          "data" : {
+            "capability" : "CaptureControl.ingest",
+            "code" : "unsupported",
+            "platform" : "contract-test"
+          },
+          "message" : "CaptureControl.ingest is not available on contract-test"
+        },
+        "id" : 1,
+        "jsonrpc" : "2.0"
+      }
+    }
+  ],
+  "seed" : [
+    "screenUnsupported"
+  ]
+}
