@@ -156,7 +156,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             guard let self else { return }
             if backgroundPermissions.has(id) { backgroundPermissions.answer(id, allow: allow) } else { chat.decide(id: id, allow: allow) }
         }
-        backgroundPermissions.observe(raised: { [weak self] request in
+        _ = backgroundPermissions.observe(raised: { [weak self] request in
             self?.announcer.backgroundPermission(request) { option in self?.backgroundPermissions.answer(request.id, optionID: option) }
         }, resolved: { [weak self] id, _ in self?.announcer.clearApproval(id: id) })
         announcer.automationAction = { [weak self] ids, snooze in self?.automations.notificationAction(ids: ids, snooze: snooze) }
