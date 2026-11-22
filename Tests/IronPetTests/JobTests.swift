@@ -79,8 +79,9 @@ final class JobTests: XCTestCase {
     private var database: Database!
     private var tasks: TaskStore!
     private var agents: [FakeJobAgent] = []
-    private var asked: [(id: String, title: String, decide: (Bool) -> Void)] = []
-    private var cleared: [String] = []
+    private var signals: SignalStore!
+    private var permissions: BackgroundPermissions!
+    private var raised: [BackgroundPermissions.Request] = []
 
     override func setUp() async throws {
         folder = FileManager.default.temporaryDirectory.appendingPathComponent("jobs-\(UUID().uuidString)")
@@ -91,8 +92,10 @@ final class JobTests: XCTestCase {
         database = Database.open(path: nil, migrations: TaskStore.migrations + JobService.migrations).database
         tasks = TaskStore(database: database)
         agents = []
-        asked = []
-        cleared = []
+        signals = SignalStore()
+        permissions = BackgroundPermissions(signals: signals, timeout: { 600 })
+        raised = []
+        _ = permissions.observe(raised: { [unowned self] in raised.append($0) }, resolved: { _, _ in })
     }
 
     override func tearDown() async throws {
@@ -111,8 +114,7 @@ final class JobTests: XCTestCase {
             agents.append(agent)
             return agent
         }
-        service.askApproval = { [unowned self] id, _, title, _, decide in asked.append((id, title, decide)) }
-        service.clearApproval = { [unowned self] id in cleared.append(id) }
+        service.permissions = permissions
         return service
     }
 
@@ -327,38 +329,80 @@ final class JobTests: XCTestCase {
         XCTAssertEqual(jobs.job(job.id)?.state, .done)
     }
 
-    func testDestructiveCommandWaitsForAClick() async throws {
-        let call = ACPToolCall(id: "1", title: "Run", kind: "execute", rawInput: ["command": "rm -rf build"])
-        let jobs = service { $0.permission = call }
-        let job = try jobs.start(title: "Clean", prompt: "Clean the build", folder: folder)
-        await until { asked.count == 1 }
-        XCTAssertEqual(jobs.job(job.id)?.state, .needsApproval)
-        XCTAssertEqual(jobs.job(job.id)?.agentSession?.status, .needsInput)
+    private static let options = [PermissionOption(id: "yes", name: "Yes, once", kind: "allow_once"),
+                                  PermissionOption(id: "always", name: "Always in this folder", kind: "allow_always"),
+                                  PermissionOption(id: "no", name: "No", kind: "reject_once")]
 
-        asked[0].decide(false)
-        await until { jobs.job(job.id)?.state == .done }
-        XCTAssertEqual(agents[0].decisions.map(\.allow), [false])
-        XCTAssertTrue(cleared.isEmpty, "an answered bubble is already gone")
+    private func command(_ text: String = "swift test") -> ACPToolCall {
+        var call = ACPToolCall(id: "1", title: "Bash", kind: "execute", rawInput: ["command": text], toolName: "Bash")
+        call.permissionOptions = Self.options
+        return call
     }
 
-    func testSafeCommandRunsWithoutAsking() async throws {
-        let call = ACPToolCall(id: "1", title: "Run", kind: "execute", rawInput: ["command": "swift test"])
-        let jobs = service { $0.permission = call }
+    func testARequestRaisesAnAlertAndTheAnswerResumesTheJob() async throws {
+        let jobs = service { $0.permission = self.command() }
+        let job = try jobs.start(title: "Test", prompt: "Run the tests", folder: folder)
+        await until { raised.count == 1 }
+        XCTAssertEqual(jobs.job(job.id)?.state, .needsApproval)
+        XCTAssertEqual(jobs.job(job.id)?.agentSession?.status, .needsInput)
+        XCTAssertEqual(raised[0].source, "Job \"Test\"")
+        XCTAssertEqual(raised[0].tool, "Bash")
+        XCTAssertEqual(raised[0].options.map(\.id), ["yes", "always", "no"], "the agent's own options, in its order")
+        XCTAssertEqual(signals.signals.map(\.id), [BackgroundPermissions.alertID(raised[0].id)], "the alerts list shows it")
+        XCTAssertTrue(signals.signals[0].title.contains("Test"))
+
+        XCTAssertTrue(permissions.answer(raised[0].id, optionID: "always"))
+        await until { jobs.job(job.id)?.state == .done }
+        XCTAssertEqual(agents[0].decisions.map(\.optionID), ["always"], "the chosen option id goes back")
+        XCTAssertTrue(signals.signals.isEmpty, "answering takes the alert down")
+    }
+
+    func testAnOptionTheAgentDidNotOfferIsRefused() async throws {
+        let jobs = service { $0.permission = self.command() }
+        _ = try jobs.start(title: "Test", prompt: "Run the tests", folder: folder)
+        await until { raised.count == 1 }
+        XCTAssertFalse(permissions.answer(raised[0].id, optionID: "made-up"))
+        XCTAssertEqual(permissions.pending.count, 1)
+        permissions.answer(raised[0].id, allow: false)
+    }
+
+    func testAllowAndDenyFromAPhoneOrTelegramPickTheOnceOptions() async throws {
+        let jobs = service { $0.permission = self.command() }
+        let job = try jobs.start(title: "Test", prompt: "Run the tests", folder: folder)
+        await until { raised.count == 1 }
+        permissions.answer(raised[0].id, allow: true)
+        await until { jobs.job(job.id)?.state == .done }
+        XCTAssertEqual(agents[0].decisions.map(\.optionID), ["yes"])
+    }
+
+    func testAnUnansweredRequestIsRejectedAfterTheTimeoutAndRecorded() async throws {
+        permissions.timeout = { 0.05 }
+        let jobs = service { $0.permission = self.command() }
         let job = try jobs.start(title: "Test", prompt: "Run the tests", folder: folder)
         await until { jobs.job(job.id)?.state == .done }
-        XCTAssertTrue(asked.isEmpty)
+        XCTAssertEqual(agents[0].decisions.map(\.optionID), ["no"], "the agent's reject_once option")
+        let notes = tasks.history(try XCTUnwrap(jobs.job(job.id)?.task)).map(\.detail)
+        XCTAssertTrue(notes.contains("permission timed out: Bash"), "\(notes)")
+        XCTAssertTrue(signals.signals.isEmpty)
+    }
+
+    func testAReadRunsWithoutAnAlert() async throws {
+        let jobs = service { $0.permission = ACPToolCall(id: "1", title: "Read", kind: "read", paths: ["/tmp/x"]) }
+        _ = try jobs.start(title: "Test", prompt: "Read it", folder: folder)
+        await until { agents.first?.decisions.count == 1 }
+        XCTAssertTrue(raised.isEmpty)
         XCTAssertEqual(agents[0].decisions.map(\.allow), [true])
     }
 
-    func testStoppingAJobDeniesItsWaitingApproval() async throws {
-        let call = ACPToolCall(id: "1", title: "Run", kind: "execute", rawInput: ["command": "git push --force"])
-        let jobs = service { $0.permission = call }
+    func testStoppingAJobDeniesItsWaitingRequest() async throws {
+        let jobs = service { $0.permission = self.command("git push --force") }
         let job = try jobs.start(title: "Push", prompt: "Push it", folder: folder)
-        await until { asked.count == 1 }
+        await until { raised.count == 1 }
         try jobs.stop(job.id)
         await until { jobs.job(job.id)?.state == .stopped }
-        XCTAssertEqual(cleared, [asked[0].id])
         XCTAssertEqual(agents[0].decisions.map(\.allow), [false])
+        XCTAssertTrue(permissions.pending.isEmpty)
+        XCTAssertTrue(signals.signals.isEmpty)
     }
 
     func testFollowUpRunsAfterTheCurrentTurnInTheSameSession() async throws {

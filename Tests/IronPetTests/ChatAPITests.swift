@@ -252,10 +252,12 @@ final class ChatAPITests: XCTestCase {
         XCTAssertFalse(options.agent.id.isEmpty)
         XCTAssertEqual(options.folder, FileManager.default.temporaryDirectory.path)
         await api.chat.setModel("fast")
-        await api.chat.setAutoMode(true)
+        session.receiveModes(current: "default", modes: [AgentMode(id: "default", name: "Default", detail: "Asks first"), AgentMode(id: "plan", name: "Plan")])
         options = await api.chat.options()
         XCTAssertEqual(options.model, "fast")
-        XCTAssertTrue(options.autoMode)
+        XCTAssertEqual(options.modes.map(\.id), ["default", "plan"])
+        XCTAssertEqual(options.modes.first?.detail, "Asks first")
+        XCTAssertEqual(options.mode, "default")
         XCTAssertTrue(seen.contains { $0.kind == .chatState && $0.id == "options" })
         do { try await api.chat.setAgent("no-such-agent"); XCTFail("picked a missing agent") } catch { XCTAssertEqual((error as? APIError)?.code, .notFound) }
         do { try await api.chat.useFolder("/definitely/not/here"); XCTFail("picked a missing folder") } catch { XCTAssertEqual((error as? APIError)?.code, .invalid) }
