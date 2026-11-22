@@ -7,7 +7,7 @@ struct PetLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: PetActivityAttributes.self) { context in
             HStack(spacing: 12) {
-                Image(systemName: "pawprint.fill").font(.title2)
+                Image(systemName: SharedSymbols.pet).font(.title2)
                 VStack(alignment: .leading, spacing: 2) {
                     Text(context.state.name).font(.headline)
                     Text(context.state.moodLabel).font(.subheadline)
@@ -27,7 +27,7 @@ struct PetLiveActivity: Widget {
         } dynamicIsland: { context in
             DynamicIsland {
                 DynamicIslandExpandedRegion(.leading) {
-                    Label(context.state.name, systemImage: "pawprint.fill")
+                    Label(context.state.name, systemImage: SharedSymbols.pet)
                 }
                 DynamicIslandExpandedRegion(.trailing) {
                     if context.state.badge > 0 {
@@ -38,7 +38,7 @@ struct PetLiveActivity: Widget {
                     Text(context.state.moodLabel).font(.headline)
                 }
             } compactLeading: {
-                Image(systemName: "pawprint.fill")
+                Image(systemName: SharedSymbols.pet)
             } compactTrailing: {
                 if context.state.badge > 0 {
                     Text("\(context.state.badge)")
@@ -46,7 +46,7 @@ struct PetLiveActivity: Widget {
                     Text(String(context.state.moodLabel.prefix(4)))
                 }
             } minimal: {
-                Image(systemName: "pawprint.fill")
+                Image(systemName: SharedSymbols.pet)
             }
         }
     }

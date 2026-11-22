@@ -8,69 +8,73 @@ struct PhoneSettingsView: View {
 
     var body: some View {
         Form {
-            if let message = model.errorMessage {
-                Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).accessibilityIdentifier("settings-error")
-            }
-            if let config = model.config {
-                Section("Reminders") {
-                    Toggle("Pause reminders", isOn: binding(config.reminders.paused) { ["reminders": ["paused": $0]] })
-                        .accessibilityIdentifier("reminders-paused")
+            Group {
+                if let message = model.errorMessage {
+                    Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("settings-error")
                 }
-                Section("Tasks") {
-                    Toggle("Remind me when a task is due", isOn: binding(config.tasks.dueReminders) { ["tasks": ["dueReminders": $0]] })
-                    Toggle("Suggest tasks after meetings", isOn: binding(config.tasks.meetingSuggestions) { ["tasks": ["meetingSuggestions": $0]] })
-                }
-                if let voice { VoiceSettingsSection(voice: voice) }
-                Section("Ghost") {
-                    Toggle("Welcome-back summary", isOn: binding(config.welcomeBack.enabled) { ["welcomeBack": ["enabled": $0]] })
-                    Toggle("Read replies aloud", isOn: binding(config.speech.enabled) { ["speech": ["enabled": $0]] })
-                }
-                Section {
-                    if config.meetings.enabled {
-                        Button("Turn off meeting transcripts", role: .destructive) { Task { await model.patch(["meetings": ["enabled": false]]) } }
-                            .accessibilityIdentifier("meetings-off")
-                    } else {
-                        LabeledContent("Meeting transcripts", value: "Off")
+                if let config = model.config {
+                    Section("Reminders") {
+                        Toggle("Pause reminders", isOn: binding(config.reminders.paused) { ["reminders": ["paused": $0]] })
+                            .accessibilityIdentifier("reminders-paused")
                     }
-                    if config.screenCapture.enabled {
-                        Button("Turn off screen capture", role: .destructive) { Task { await model.patch(["screenCapture": ["enabled": false]]) } }
-                            .accessibilityIdentifier("screen-off")
-                    } else {
-                        LabeledContent("Screen capture", value: "Off")
+                    Section("Tasks") {
+                        Toggle("Remind me when a task is due", isOn: binding(config.tasks.dueReminders) { ["tasks": ["dueReminders": $0]] })
+                        Toggle("Suggest tasks after meetings", isOn: binding(config.tasks.meetingSuggestions) { ["tasks": ["meetingSuggestions": $0]] })
                     }
-                } header: {
-                    Text("Privacy")
-                } footer: {
-                    Text("These can be turned off here and turned on only on the Mac.")
-                }
-            }
-            if !model.pets.isEmpty {
-                Section("Pet") {
-                    ForEach(model.pets) { pet in
-                        Button {
-                            Task { await model.select(pet) }
-                        } label: {
-                            HStack {
-                                Text(pet.name).foregroundStyle(.primary)
-                                Spacer()
-                                if pet.selected { Image(systemName: "checkmark").foregroundStyle(.tint) }
-                            }
+                    if let voice { VoiceSettingsSection(voice: voice) }
+                    Section("Ghost") {
+                        Toggle("Welcome-back summary", isOn: binding(config.welcomeBack.enabled) { ["welcomeBack": ["enabled": $0]] })
+                        Toggle("Read replies aloud", isOn: binding(config.speech.enabled) { ["speech": ["enabled": $0]] })
+                    }
+                    Section {
+                        if config.meetings.enabled {
+                            Button("Turn off meeting transcripts", role: .destructive) { Task { await model.patch(["meetings": ["enabled": false]]) } }
+                                .accessibilityIdentifier("meetings-off")
+                        } else {
+                            LabeledContent("Meeting transcripts", value: "Off")
                         }
-                        .accessibilityIdentifier("pet-\(pet.id)")
+                        if config.screenCapture.enabled {
+                            Button("Turn off screen capture", role: .destructive) { Task { await model.patch(["screenCapture": ["enabled": false]]) } }
+                                .accessibilityIdentifier("screen-off")
+                        } else {
+                            LabeledContent("Screen capture", value: "Off")
+                        }
+                    } header: {
+                        Text("Privacy")
+                    } footer: {
+                        Text("These can be turned off here and turned on only on the Mac.")
                     }
                 }
-            }
-            if let usage = model.usage {
-                Section("Usage, last \(usage.days) days") {
-                    if usage.rows.isEmpty { Text("Nothing recorded").foregroundStyle(.secondary) }
-                    ForEach(usage.rows) { row in
-                        LabeledContent("\(row.feature) · \(row.model)", value: "\(row.requests) requests")
+                if !model.pets.isEmpty {
+                    Section("Pet") {
+                        ForEach(model.pets) { pet in
+                            Button {
+                                Task { await model.select(pet) }
+                            } label: {
+                                HStack {
+                                    Text(pet.name).foregroundStyle(.primary)
+                                    Spacer()
+                                    if pet.selected { Image(systemName: SharedSymbols.allow).foregroundStyle(.tint) }
+                                }
+                            }
+                            .accessibilityIdentifier("pet-\(pet.id)")
+                        }
                     }
-                    if usage.hasCost { LabeledContent("Cost today", value: usage.todayCost.formatted(.number.precision(.fractionLength(2)))) }
                 }
-            }
+                if let usage = model.usage {
+                    Section("Usage, last \(usage.days) days") {
+                        if usage.rows.isEmpty { Text("Nothing recorded").foregroundStyle(.secondary) }
+                        ForEach(usage.rows) { row in
+                            LabeledContent("\(row.feature) · \(row.model)", value: "\(row.requests) requests")
+                        }
+                        if usage.hasCost { LabeledContent("Cost today", value: usage.todayCost.formatted(.number.precision(.fractionLength(2)))) }
+                    }
+                }
+        
+            }.listRowBackground(SharedTheme.card)
         }
         .navigationTitle("Settings")
+        .themedScreen()
         .refreshable { await model.refresh() }
         .task { model.start() }
     }

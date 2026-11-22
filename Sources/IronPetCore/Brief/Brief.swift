@@ -1,4 +1,5 @@
 import Foundation
+import enum IronPetKit.SharedSymbols
 
 /// The morning brief or the end-of-day recap: sections of items, each of which opens something. Built by `BriefBuilder`
 /// from data on this Mac only.
@@ -214,7 +215,7 @@ package enum BriefBuilder {
         for meeting in input.meetings.filter({ $0.date >= since && $0.date <= now }).sorted(by: { $0.date < $1.date }) {
             for (index, text) in meeting.openItems.enumerated() where !done.contains(ActionItems.normalized(text)) {
                 let target: Brief.Target = openTasks[ActionItems.normalized(text)].map { .task($0) } ?? .meeting(meeting.id)
-                meetingItems.append(.init(id: "meeting:\(meeting.id):\(index)", symbol: "person.2", title: text,
+                meetingItems.append(.init(id: "meeting:\(meeting.id):\(index)", symbol: SharedSymbols.meetings, title: text,
                                           subtitle: meetingLabel(meeting, now: now, calendar: calendar), target: target))
             }
         }
@@ -255,7 +256,7 @@ package enum BriefBuilder {
         let turns = today.filter { $0.kind == .sessionDone || $0.kind == .sessionFailed }
         let failed = turns.filter { $0.kind == .sessionFailed }.count
         let turnItems = turns.enumerated().map { index, event in
-            Brief.Item(id: "turn:\(event.ref):\(index)", symbol: event.kind == .sessionFailed ? "xmark.octagon.fill" : "checkmark.circle.fill",
+            Brief.Item(id: "turn:\(event.ref):\(index)", symbol: event.kind == .sessionFailed ? "xmark.octagon.fill" : SharedSymbols.done,
                        title: event.title, subtitle: [event.kind == .sessionFailed ? "Failed" : nil, event.agent, event.detail]
                         .compactMap { $0 }.joined(separator: " · "),
                        target: .session(id: event.ref, workspace: event.workspace, bundleID: event.bundleID, iterm: event.iterm))
@@ -272,7 +273,7 @@ package enum BriefBuilder {
 
         let meetings = input.meetings.filter { window.contains($0.date) }.sorted { $0.date < $1.date }
         let meetingItems = meetings.map { m in
-            Brief.Item(id: "held:\(m.id)", symbol: "waveform", title: m.preview.isEmpty ? "Meeting" : m.preview,
+            Brief.Item(id: "held:\(m.id)", symbol: SharedSymbols.meetings, title: m.preview.isEmpty ? "Meeting" : m.preview,
                        subtitle: meetingLabel(m, now: now, calendar: calendar), target: .meeting(m.id))
         }
 
@@ -364,7 +365,7 @@ package enum BriefBuilder {
 
     private static func sessionItem(_ s: AgentSession) -> Brief.Item {
         let state = s.status == .needsInput ? "\(s.source.displayName) needs input" : "\(s.source.displayName) failed"
-        return Brief.Item(id: "session:\(s.id)", symbol: s.status == .needsInput ? "hand.raised.fill" : "xmark.octagon.fill",
+        return Brief.Item(id: "session:\(s.id)", symbol: s.status == .needsInput ? SharedSymbols.approval : "xmark.octagon.fill",
                           title: s.workspaceName, subtitle: [state, s.summary].compactMap { $0 }.joined(separator: " · "),
                           target: .session(id: s.id, workspace: s.origin.workspace, bundleID: s.origin.ownerBundleID,
                                            iterm: s.isInIterm ? s.origin.itermSessionID : nil))

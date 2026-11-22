@@ -46,7 +46,7 @@ struct PetStatusWidgetView: View {
             ZStack {
                 AccessoryWidgetBackground()
                 VStack(spacing: 2) {
-                    Image(systemName: "pawprint.fill").font(.headline)
+                    Image(systemName: SharedSymbols.pet).font(.headline)
                     if entry.snapshot.badge > 0 {
                         Text("\(entry.snapshot.badge)").font(.caption2.bold())
                     }
@@ -55,7 +55,7 @@ struct PetStatusWidgetView: View {
             .accessibilityLabel("\(entry.snapshot.name), \(entry.snapshot.moodLabel)")
         case .accessoryRectangular:
             VStack(alignment: .leading, spacing: 2) {
-                Label(entry.snapshot.name, systemImage: "pawprint.fill").font(.headline)
+                Label(entry.snapshot.name, systemImage: SharedSymbols.pet).font(.headline)
                 Text(entry.snapshot.moodLabel).font(.caption)
                 if entry.snapshot.badge > 0 {
                     Text("\(entry.snapshot.badge) need you").font(.caption2)
@@ -63,7 +63,7 @@ struct PetStatusWidgetView: View {
             }
         case .systemMedium:
             HStack(spacing: 16) {
-                Image(systemName: "pawprint.fill").font(.system(size: 36)).foregroundStyle(.secondary)
+                Image(systemName: SharedSymbols.pet).font(.system(size: 36)).foregroundStyle(.secondary)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(entry.snapshot.name).font(.headline)
                     Text(entry.snapshot.moodLabel).font(.title3.weight(.semibold))
@@ -78,7 +78,7 @@ struct PetStatusWidgetView: View {
             .padding(.horizontal, 4)
         default:
             VStack(alignment: .leading, spacing: 8) {
-                Image(systemName: "pawprint.fill").font(.title2).foregroundStyle(.secondary)
+                Image(systemName: SharedSymbols.pet).font(.title2).foregroundStyle(.secondary)
                 Spacer(minLength: 0)
                 Text(entry.snapshot.name).font(.headline)
                 Text(entry.snapshot.moodLabel).font(.subheadline.weight(.semibold))

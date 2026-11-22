@@ -13,7 +13,7 @@ struct SystemNoticeRow: View {
     var body: some View {
         ChatSystemRow(expanded: expanded, canExpand: !notice.detail.isEmpty, label: Text(notice.label),
                       toggle: { withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() } },
-                      icon: { Image(systemName: "gearshape") },
+                      icon: { Image(systemName: SharedSymbols.settings) },
                       detail: {
             Text((try? AttributedString(markdown: notice.detail, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(notice.detail))
                 .font(.system(size: 12))
@@ -21,7 +21,7 @@ struct SystemNoticeRow: View {
                 .textSelection(.enabled)
                 .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                .background(SharedTheme.card, in: RoundedRectangle(cornerRadius: 8))
                 .padding(.top, 2)
         })
     }

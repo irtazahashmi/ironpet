@@ -1,11 +1,12 @@
 import Foundation
+import enum IronPetKit.SharedSymbols
 
 extension TaskLink {
     package var symbol: String {
         switch kind {
         case .url: return "safari"
         case .file: return "folder"
-        case .thread: return "bubble.left.and.bubble.right"
+        case .thread: return SharedSymbols.chat
         case .session: return "arrow.up.forward.app"
         }
     }

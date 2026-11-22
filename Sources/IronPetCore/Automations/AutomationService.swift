@@ -1,4 +1,5 @@
 import Foundation
+import enum IronPetKit.SharedSymbols
 
 /// What an automation shows: one bubble, plus optionally a macOS notification.
 package struct AutomationNotice {
@@ -173,7 +174,7 @@ package final class AutomationService {
             reviewApprovals()
         }
         store.onInvalid = { [weak self] message in
-            self?.post(AutomationNotice(id: "automations-invalid", symbol: "exclamationmark.triangle.fill", tint: .warn,
+            self?.post(AutomationNotice(id: "automations-invalid", symbol: SharedSymbols.warning, tint: .warn,
                                           title: "automations.json has a problem",
                                           body: message + ". The last good list stays active.", expires: 60))
         }
@@ -325,7 +326,7 @@ package final class AutomationService {
         let detail = approvalDetail(a)
         let kind = a.action.type == "prompt" ? "prompt" : "command"
         post(AutomationNotice(
-            id: Self.approvalID(a.id), symbol: "hand.raised.fill", tint: .warn,
+            id: Self.approvalID(a.id), symbol: SharedSymbols.approval, tint: .warn,
             title: "Allow \"\(a.name)\"?", subtitle: "Created by \(a.createdBy). It wants to run this \(kind).",
             body: detail.count > 1500 ? String(detail.prefix(1500)) + "\n(\(detail.count - 1500) more characters not shown)" : detail,
             buttons: [.init(title: "Approve", primary: true) { [weak self] in self?.approve(a.id) },
@@ -673,7 +674,7 @@ package final class AutomationService {
         }
         // Several new items from one poll must not replace each other's bubble, so a poll item adds a short tag to the id.
         let bubbleID = fire.item == nil ? "automation:\(a.id)" : Self.itemBubbleID(a.id, item: fire.item, fallback: title + "\n" + body)
-        post(AutomationNotice(id: bubbleID, symbol: ok ? (p.symbol ?? "bell.fill") : "exclamationmark.triangle.fill",
+        post(AutomationNotice(id: bubbleID, symbol: ok ? (p.symbol ?? "bell.fill") : SharedSymbols.warning,
                                 tint: ok ? .info : .bad, title: title,
                                 subtitle: fire.agentWorking && a.trigger.type == "interval" ? "Your agent is still working, good moment for it." : nil,
                                 body: body.isEmpty ? nil : body, buttons: list, expires: p.expiresSeconds ?? (a.trigger.type == "interval" ? 180 : 45),
@@ -856,7 +857,7 @@ package final class AutomationService {
                                         notificationType: .backgroundResult, detail: answer))
             case .failure(let error):
                 record(a.id, "failed", error.message)
-                post(AutomationNotice(id: "automation:\(a.id):prompt", symbol: "exclamationmark.triangle.fill", tint: .bad, title: "\(title) failed",
+                post(AutomationNotice(id: "automation:\(a.id):prompt", symbol: SharedSymbols.warning, tint: .bad, title: "\(title) failed",
                                         body: error.message, expires: 45, automationIDs: [a.id]))
             }
         }

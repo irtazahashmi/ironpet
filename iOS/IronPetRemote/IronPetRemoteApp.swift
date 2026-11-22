@@ -102,17 +102,18 @@ struct MainTabs: View {
     var body: some View {
         TabView(selection: $tab) {
             PetView(model: pet, today: today, app: model, client: client, open: open)
-                .tabItem { Label("Pet", systemImage: "pawprint.fill") }.tag(AppTab.pet)
+                .tabItem { Label("Pet", systemImage: AppTab.pet.symbol) }.tag(AppTab.pet)
             ChatView(model: chat, backgroundID: pet.backgroundID, backgroundImage: pet.backgroundImage, avatar: PetAvatar.face(of: pet.atlas))
-                .tabItem { Label("Chat", systemImage: "bubble.left.and.bubble.right") }.badge(chat.approvals.count + chat.forms.count).tag(AppTab.chat)
+                .tabItem { Label("Chat", systemImage: AppTab.chat.symbol) }.badge(chat.approvals.count + chat.forms.count).tag(AppTab.chat)
             TasksView(model: tasks)
-                .tabItem { Label("Tasks", systemImage: "checklist") }.tag(AppTab.tasks)
+                .tabItem { Label("Tasks", systemImage: AppTab.tasks.symbol) }.tag(AppTab.tasks)
             AgentsView(model: agents)
-                .tabItem { Label("Agents", systemImage: "terminal") }.tag(AppTab.agents)
+                .tabItem { Label("Agents", systemImage: AppTab.agents.symbol) }.tag(AppTab.agents)
             MoreView(alerts: alerts, automations: automations, meetings: meetings, screen: screen, settings: phoneSettings, path: $morePath)
-                .tabItem { Label("More", systemImage: "ellipsis.circle") }.badge(alerts.alerts.count + automations.automations.filter(\.waitsForApproval).count)
+                .tabItem { Label("More", systemImage: AppTab.more.symbol) }.badge(alerts.alerts.count + automations.automations.filter(\.waitsForApproval).count)
                 .tag(AppTab.more)
         }
+        .themedTabBar()
         .environment(voice)
         // The Mac's accent colour, when it has one. `nil` leaves the app's own tint, the system blue.
         .tint(pet.accent)

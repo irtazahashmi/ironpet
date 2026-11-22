@@ -1,4 +1,5 @@
 import AppKit
+import enum IronPetKit.SharedSymbols
 import Combine
 import IronPetCore
 import SwiftUI
@@ -262,11 +263,11 @@ enum NotificationText {
     static func symbol(_ kind: NotificationLink.Kind) -> String {
         switch kind {
         case .url: return "link"
-        case .file: return "doc"
+        case .file: return SharedSymbols.file
         case .thread: return "bubble.left"
-        case .session: return "person.2"
-        case .task: return "checklist"
-        case .alert: return "bell"
+        case .session: return SharedSymbols.agents
+        case .task: return SharedSymbols.tasks
+        case .alert: return SharedSymbols.alerts
         }
     }
 }

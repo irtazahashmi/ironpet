@@ -1,4 +1,5 @@
 import AppKit
+import IronPetKit
 import IronPetCore
 import SwiftUI
 
@@ -25,15 +26,15 @@ enum IronPetSection: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
-        case .chat: return "bubble.left.and.bubble.right"
-        case .agents: return "person.2"
-        case .alerts: return "bell"
+        case .chat: return SharedSymbols.chat
+        case .agents: return SharedSymbols.agents
+        case .alerts: return SharedSymbols.alerts
         case .notifications: return "tray"
-        case .tasks: return "checklist"
-        case .transcripts: return "waveform"
-        case .screen: return "rectangle.dashed.badge.record"
+        case .tasks: return SharedSymbols.tasks
+        case .transcripts: return SharedSymbols.meetings
+        case .screen: return SharedSymbols.screen
         case .actions: return "sparkles"
-        case .automations: return "clock.badge.checkmark"
+        case .automations: return SharedSymbols.automations
         case .today: return "sun.horizon"
         }
     }
@@ -293,7 +294,7 @@ struct IronPetWindowView: View {
         }
         .safeAreaInset(edge: .bottom, spacing: 0) {
             Button(action: actions.onSettings) {
-                Label("Settings", systemImage: "gearshape")
+                Label("Settings", systemImage: SharedSymbols.settings)
                     .labelStyle(.ironPetSidebar)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .contentShape(Rectangle())
@@ -329,7 +330,7 @@ struct IronPetWindowView: View {
             }
             Spacer(minLength: 0)
             Button(action: { model.clearRailTip(); actions.onSettings() }) {
-                Image(systemName: "gearshape").font(.system(size: 21)).frame(width: 40, height: 38).contentShape(Rectangle())
+                Image(systemName: SharedSymbols.settings).font(.system(size: 21)).frame(width: 40, height: 38).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
             .foregroundStyle(.secondary)
@@ -506,7 +507,7 @@ extension View {
 /// How much of the material the sidebar and the headers use: half, so the pattern behind the window shows through the
 /// glass instead of blurring away.
 enum IronPetGlass {
-    static let strength = 0.5
+    static let strength = SharedTheme.chromeStrength
 }
 
 /// The glass strip used by every section's header and by the chat header: a material with a hairline below it.

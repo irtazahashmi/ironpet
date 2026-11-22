@@ -32,6 +32,7 @@ struct PairingView: View {
                 .padding()
             }
             .navigationTitle("IronPet")
+            .themedScreen()
             .navigationBarTitleDisplayMode(.inline)
             .sheet(isPresented: $scanning) {
                 ScannerSheet { code in
@@ -45,7 +46,7 @@ struct PairingView: View {
 
     private var hero: some View {
         VStack(spacing: 12) {
-            Image(systemName: "pawprint.fill")
+            Image(systemName: SharedSymbols.pet)
                 .font(.system(size: 56, weight: .medium))
                 .foregroundStyle(.primary)
                 .frame(width: 96, height: 96)
@@ -143,7 +144,7 @@ struct PairingView: View {
             .accessibilityIdentifier("pairing-denied")
         case .failed(let message):
             statusCard {
-                Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.red)
+                Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.red)
             }
             .accessibilityIdentifier("pairing-error")
         }

@@ -15,16 +15,8 @@ struct TasksView: View {
         NavigationStack {
             content
             .navigationTitle("Tasks")
-            .toolbar {
-                ToolbarItem(placement: .topBarTrailing) {
-                    Picker("View", selection: $modeRaw) {
-                        ForEach(TasksViewMode.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
-                    }
-                    .pickerStyle(.segmented)
-                    .frame(width: 150)
-                    .accessibilityIdentifier("tasks-view-mode")
-                }
-            }
+            .themedScreen()
+            .toolbar { modeToolbar }
             .navigationDestination(for: RemoteTask.self) { TaskDetailView(model: model, task: $0) }
             .alert("Waiting on whom?", isPresented: Binding(get: { holdingTask != nil }, set: { if !$0 { holdingTask = nil } })) {
                 TextField("Name", text: $holder).accessibilityIdentifier("waiting-name-field")
@@ -39,6 +31,29 @@ struct TasksView: View {
         .task { model.start() }
     }
 
+    private var modePicker: some View {
+        Picker("View", selection: $modeRaw) {
+            ForEach(TasksViewMode.allCases, id: \.rawValue) { Text($0.title).tag($0.rawValue) }
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 150)
+        .accessibilityIdentifier("tasks-view-mode")
+    }
+
+    /// On iOS 26 the system draws a glass capsule behind every toolbar item. The segmented control already has its own outline,
+    /// so the shared background is hidden there; otherwise the two outlines stack.
+    @ToolbarContentBuilder private var modeToolbar: some ToolbarContent {
+        #if compiler(>=6.2)
+        if #available(iOS 26, *) {
+            ToolbarItem(placement: .topBarTrailing) { modePicker }.sharedBackgroundVisibility(.hidden)
+        } else {
+            ToolbarItem(placement: .topBarTrailing) { modePicker }
+        }
+        #else
+        ToolbarItem(placement: .topBarTrailing) { modePicker }
+        #endif
+    }
+
     @ViewBuilder private var content: some View {
         if mode == .board { board } else { list }
     }
@@ -46,12 +61,15 @@ struct TasksView: View {
     private var board: some View {
         VStack(spacing: 0) {
             if let message = model.errorMessage {
-                Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).font(.footnote)
+                Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).font(.footnote)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).accessibilityIdentifier("tasks-error")
             }
             if !model.suggestions.isEmpty {
                 List {
-                    Section { ForEach(model.suggestions) { SuggestionRow(suggestion: $0, model: model) } } header: { header("Suggestions", id: "suggestions") }
+                    Group {
+                        Section { ForEach(model.suggestions) { SuggestionRow(suggestion: $0, model: model) } } header: { header("Suggestions", id: "suggestions") }
+                
+                    }.listRowBackground(SharedTheme.card)
                 }
                 .frame(maxHeight: 230)
             }
@@ -70,33 +88,36 @@ struct TasksView: View {
 
     private var list: some View {
             List {
-                if let message = model.errorMessage {
-                    Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).accessibilityIdentifier("tasks-error")
-                }
-                if !model.suggestions.isEmpty {
-                    Section { ForEach(model.suggestions) { SuggestionRow(suggestion: $0, model: model) } } header: { header("Suggestions", id: "suggestions") }
-                }
-                taskSection("Needs you", id: "needs-you", model.needsYou)
-                taskSection("In progress", id: "in-progress", model.inProgress)
-                taskSection("Backlog", id: "backlog", model.backlog)
-                taskSection("Waiting on others", id: "waiting", model.waiting)
-                if !model.done.isEmpty {
-                    Section {
-                        Button { withAnimation { showDone.toggle() } } label: {
-                            HStack {
-                                Image(systemName: "chevron.right").rotationEffect(.degrees(showDone ? 90 : 0)).foregroundStyle(.secondary)
-                                Text("Done (\(model.done.count))").font(.headline)
-                            }
-                        }
-                        .foregroundStyle(.primary)
-                        .accessibilityIdentifier("section-done")
-                        .accessibilityValue(showDone ? "Expanded" : "Collapsed")
-                        if showDone { ForEach(model.done) { row($0) } }
+                Group {
+                    if let message = model.errorMessage {
+                        Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("tasks-error")
                     }
-                }
-                if model.loaded, model.tasks.isEmpty, model.suggestions.isEmpty {
-                    ContentUnavailableView("No tasks", systemImage: "checklist", description: Text("Tasks you add on the Mac show up here."))
-                }
+                    if !model.suggestions.isEmpty {
+                        Section { ForEach(model.suggestions) { SuggestionRow(suggestion: $0, model: model) } } header: { header("Suggestions", id: "suggestions") }
+                    }
+                    taskSection("Needs you", id: "needs-you", model.needsYou)
+                    taskSection("In progress", id: "in-progress", model.inProgress)
+                    taskSection("Backlog", id: "backlog", model.backlog)
+                    taskSection("Waiting on others", id: "waiting", model.waiting)
+                    if !model.done.isEmpty {
+                        Section {
+                            Button { withAnimation { showDone.toggle() } } label: {
+                                HStack {
+                                    Image(systemName: SharedSymbols.chevron).rotationEffect(.degrees(showDone ? 90 : 0)).foregroundStyle(.secondary)
+                                    Text("Done (\(model.done.count))").font(.headline)
+                                }
+                            }
+                            .foregroundStyle(.primary)
+                            .accessibilityIdentifier("section-done")
+                            .accessibilityValue(showDone ? "Expanded" : "Collapsed")
+                            if showDone { ForEach(model.done) { row($0) } }
+                        }
+                    }
+                    if model.loaded, model.tasks.isEmpty, model.suggestions.isEmpty {
+                        ContentUnavailableView("No tasks", systemImage: SharedSymbols.tasks, description: Text("Tasks you add on the Mac show up here."))
+                    }
+            
+                }.listRowBackground(SharedTheme.card)
             }
             .refreshable { await model.reload() }
     }
@@ -220,7 +241,7 @@ private struct BoardColumnView: View {
         }
         .padding(10)
         .frame(maxHeight: .infinity, alignment: .top)
-        .background(RoundedRectangle(cornerRadius: 12).fill(Color(.secondarySystemBackground)))
+        .background(RoundedRectangle(cornerRadius: 12).fill(SharedTheme.card))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(macAccent, lineWidth: targeted ? 2 : 0))
         .dropDestination(for: String.self) { ids, _ in
             for id in ids { onDrop(id, column) }
@@ -246,7 +267,7 @@ private struct BoardCard: View {
         .multilineTextAlignment(.leading)
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(10)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color(.systemBackground)))
+        .background(RoundedRectangle(cornerRadius: 8).fill(SharedTheme.window))
         .contentShape(Rectangle())
     }
 

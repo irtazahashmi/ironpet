@@ -98,7 +98,7 @@ private struct CodeBlock: View {
                     copied = true
                     DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) { copied = false }
                 } label: {
-                    Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc")
+                    Label(copied ? "Copied" : "Copy", systemImage: copied ? SharedSymbols.allow : SharedSymbols.copy)
                         .font(.system(size: 10.5))
                 }
                 .buttonStyle(.borderless)

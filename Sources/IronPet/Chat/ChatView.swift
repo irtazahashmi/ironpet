@@ -137,7 +137,7 @@ struct ChatView: View {
 
     /// Project, agent, model and dictation live behind one button, so the header and composer stay clear.
     private var settingsButton: some View {
-        Button { showSettings.toggle() } label: { Image(systemName: "slider.horizontal.3").font(.system(size: 13)) }
+        Button { showSettings.toggle() } label: { Image(systemName: SharedSymbols.chatOptions).font(.system(size: 13)) }
             .buttonStyle(CircleHoverIconStyle())
             .help("Chat settings")
             .popover(isPresented: $showSettings, arrowEdge: .bottom) { settingsPopover }
@@ -166,7 +166,7 @@ struct ChatView: View {
                 Button {
                     session.newChat()
                     showSettings = false
-                } label: { Label("New chat", systemImage: "square.and.pencil") }
+                } label: { Label("New chat", systemImage: SharedSymbols.newChat) }
                 .buttonStyle(.borderedProminent)
                 .pointerCursor()
                 historyMenu
@@ -214,14 +214,14 @@ struct ChatView: View {
                     if thread.isAutomationRun {
                         Label("\(thread.automationName ?? thread.title) — automation run", systemImage: "gearshape.2")
                     } else if thread.voice == true {
-                        Label(thread.title, systemImage: "mic.fill")
+                        Label(thread.title, systemImage: SharedSymbols.microphoneActive)
                     } else {
                         Text("\(thread.title) — \(URL(fileURLWithPath: thread.workspace).lastPathComponent)")
                     }
                 }
             }
         } label: {
-            Label("Previous chats", systemImage: "clock.arrow.circlepath")
+            Label("Previous chats", systemImage: SharedSymbols.history)
         }
         .menuStyle(.button)
         .menuIndicator(.hidden)
@@ -291,9 +291,9 @@ struct ChatView: View {
         HStack(spacing: 14) {
             // With voice notes on, the voice shortcut is ironpet's own; otherwise it is Wispr Flow's fn.
             if let voiceKey = VoiceController.hotkey(in: config.config).flatMap(Shortcut.display) {
-                hint("mic.fill", keys: [voiceKey], config.config.voice.holdToTalk ? "hold to talk" : "press to talk")
+                hint(SharedSymbols.microphoneActive, keys: [voiceKey], config.config.voice.holdToTalk ? "hold to talk" : "press to talk")
             } else {
-                hint("mic.fill", keys: ["fn"], "talk")
+                hint(SharedSymbols.microphoneActive, keys: ["fn"], "talk")
             }
             hint("macwindow", keys: ["⇧⌥⌘G"], "window")
             hint("crop", keys: ["⌃⌥⌘G"], "region")
@@ -358,7 +358,7 @@ struct ChatView: View {
                         follow.jumpedToLatest()
                         scrollToEnd(proxy)
                     } label: {
-                        Label("Jump to latest", systemImage: "arrow.down")
+                        Label("Jump to latest", systemImage: SharedSymbols.jumpToLatest)
                             .font(.system(size: 11.5, weight: .medium))
                             .padding(.horizontal, 12)
                             .padding(.vertical, 6)
@@ -677,7 +677,7 @@ struct ChatView: View {
                 Button {
                     askAbout(ask.item)
                 } label: {
-                    Label("Ask about this", systemImage: "arrowshape.turn.up.left")
+                    Label("Ask about this", systemImage: SharedSymbols.reply)
                         .font(.system(size: 11.5, weight: .medium))
                         .padding(.horizontal, 10)
                         .padding(.vertical, 5)
@@ -786,7 +786,7 @@ struct ChatView: View {
                 SystemNoticeRow(text: text)
             case .error(let text):
                 VStack(alignment: .leading, spacing: 8) {
-                    Label { ChatFind.text(AttributedString(text), segment: 0, find: highlights[item.id]) } icon: { Image(systemName: "exclamationmark.triangle.fill") }
+                    Label { ChatFind.text(AttributedString(text), segment: 0, find: highlights[item.id]) } icon: { Image(systemName: SharedSymbols.warning) }
                         .font(.system(size: 12))
                         .foregroundStyle(.red)
                     if session.voiceRetryItem == item.id {
@@ -805,7 +805,7 @@ struct ChatView: View {
 
     private func approvalCard(_ approval: ChatApprovalInfo) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(approval.title, systemImage: "hand.raised.fill")
+            Label(approval.title, systemImage: SharedSymbols.approval)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.orange)
             if !approval.detail.isEmpty {
@@ -833,13 +833,13 @@ struct ChatView: View {
             } else {
                 HStack {
                     Button { session.decide(approval, allow: true) } label: {
-                        Label("Allow", systemImage: "checkmark").frame(minWidth: 70)
+                        Label("Allow", systemImage: SharedSymbols.allow).frame(minWidth: 70)
                     }
                     .buttonStyle(.borderedProminent)
                     .pointerCursor()
                     .keyboardShortcut(.return, modifiers: .command)
                     Button { session.decide(approval, allow: false) } label: {
-                        Label("Deny", systemImage: "xmark").frame(minWidth: 70)
+                        Label("Deny", systemImage: SharedSymbols.deny).frame(minWidth: 70)
                     }
                     .buttonStyle(.bordered)
                     .pointerCursor()
@@ -923,14 +923,14 @@ struct ChatView: View {
         GlassGroup {
             HStack(alignment: .bottom, spacing: 8) {
                 if !voiceActive {
-                    Button(action: chooseFiles) { Image(systemName: "paperclip") }
+                    Button(action: chooseFiles) { Image(systemName: SharedSymbols.attach) }
                         .buttonStyle(GlassCircleButtonStyle())
                         .help("Attach files")
                 }
                 composerField
                 if !voiceActive {
                     if config.config.voice.enabled {
-                        Button { session.voice.start() } label: { Image(systemName: "mic") }
+                        Button { session.voice.start() } label: { Image(systemName: SharedSymbols.microphone) }
                             .buttonStyle(GlassCircleButtonStyle())
                             .help("Record a voice note")
                     }
@@ -976,9 +976,9 @@ struct ChatView: View {
     @ViewBuilder
     private var inlineSendButton: some View {
         if session.isRunning, !session.canSend {
-            capsuleButton("stop.fill", fill: .red, foreground: .white, help: "Stop (Esc)", action: session.stop)
+            capsuleButton(SharedSymbols.stop, fill: .red, foreground: .white, help: "Stop (Esc)", action: session.stop)
         } else {
-            capsuleButton("arrow.up", fill: session.canSend ? Color.accentColor : Color.primary.opacity(0.1),
+            capsuleButton(SharedSymbols.send, fill: session.canSend ? Color.accentColor : Color.primary.opacity(0.1),
                           foreground: session.canSend ? .white : Color.secondary,
                           help: session.isRunning ? "Queue (Enter)" : "Send (Enter)", action: session.send)
                 .disabled(!session.canSend)
@@ -992,7 +992,7 @@ struct ChatView: View {
                 HStack(spacing: 4) {
                     ReplyQuote(reply: reply)
                     Button { session.replyingTo = nil } label: {
-                        Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                        Image(systemName: SharedSymbols.removeAttachment).foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
                     .help("Cancel reply (Esc)")
@@ -1009,7 +1009,7 @@ struct ChatView: View {
                         Thumbnail(path: url.path, height: 48)
                             .overlay(alignment: .topTrailing) {
                                 Button { session.attachments.removeAll { $0 == url } } label: {
-                                    Image(systemName: "xmark.circle.fill").foregroundStyle(.white, .black.opacity(0.6))
+                                    Image(systemName: SharedSymbols.removeAttachment).foregroundStyle(.white, .black.opacity(0.6))
                                 }
                                 .buttonStyle(.plain)
                                 .pointerCursor()
@@ -1068,12 +1068,12 @@ struct ChatView: View {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(session.queue) { message in
                     HStack(spacing: 6) {
-                        Image(systemName: "clock").font(.system(size: 10)).foregroundStyle(.secondary)
+                        Image(systemName: SharedSymbols.sentAt).font(.system(size: 10)).foregroundStyle(.secondary)
                         Text(message.text.isEmpty ? "Screenshot" : (message.text.components(separatedBy: .newlines).first ?? message.text))
                             .font(.system(size: 12))
                             .lineLimit(1)
                         if !message.files.isEmpty {
-                            Label("\(message.files.count)", systemImage: "photo")
+                            Label("\(message.files.count)", systemImage: SharedSymbols.photo)
                                 .font(.system(size: 10))
                                 .foregroundStyle(.secondary)
                         }
@@ -1084,7 +1084,7 @@ struct ChatView: View {
                                 .foregroundStyle(.secondary)
                         }
                         Button { session.removeQueued(message.id) } label: {
-                            Image(systemName: "xmark.circle.fill").foregroundStyle(.secondary)
+                            Image(systemName: SharedSymbols.removeAttachment).foregroundStyle(.secondary)
                         }
                         .buttonStyle(.plain)
                         .pointerCursor()
@@ -1118,7 +1118,7 @@ struct ChatView: View {
         Menu {
             ForEach(session.agents) { agent in
                 Button { session.setAgent(agent) } label: {
-                    if session.agent == agent { Label(agent.name, systemImage: "checkmark") } else { Text(agent.name) }
+                    if session.agent == agent { Label(agent.name, systemImage: SharedSymbols.allow) } else { Text(agent.name) }
                 }
             }
         } label: {
@@ -1135,7 +1135,7 @@ struct ChatView: View {
                 Button {
                     session.mode = mode.id
                 } label: {
-                    if session.mode == mode.id { Label(mode.name, systemImage: "checkmark") } else { Text(mode.name) }
+                    if session.mode == mode.id { Label(mode.name, systemImage: SharedSymbols.allow) } else { Text(mode.name) }
                 }
                 .help(mode.detail ?? "")
             }
@@ -1158,7 +1158,7 @@ struct ChatView: View {
             Button {
                 session.model = nil
             } label: {
-                if session.model == nil { Label("Default (agent setting)", systemImage: "checkmark") } else { Text("Default (agent setting)") }
+                if session.model == nil { Label("Default (agent setting)", systemImage: SharedSymbols.allow) } else { Text("Default (agent setting)") }
             }
             Divider()
             ForEach(families, id: \.0) { family, models in
@@ -1181,7 +1181,7 @@ struct ChatView: View {
         Button {
             session.model = model.id
         } label: {
-            if session.model == model.id { Label(model.name, systemImage: "checkmark") } else { Text(model.name) }
+            if session.model == model.id { Label(model.name, systemImage: SharedSymbols.allow) } else { Text(model.name) }
         }
     }
 
@@ -1221,7 +1221,7 @@ private struct ReplyButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: "arrowshape.turn.up.left").font(.system(size: 10))
+            Image(systemName: SharedSymbols.reply).font(.system(size: 10))
         }
         .buttonStyle(.plain)
         .help("Reply")
@@ -1314,23 +1314,23 @@ private struct UserBubble: View {
             HStack(spacing: 4) {
                 ReplyButton(visible: hovering, action: onReply)
                 if source == ChatOrigin.telegramClient {
-                    Image(systemName: "paperplane.fill").font(.system(size: 9))
+                    Image(systemName: SharedSymbols.sourceTelegram).font(.system(size: 9))
                     Text("Telegram").font(.system(size: 10))
                 }
                 if source == ChatOrigin.automationClient {
-                    Image(systemName: "clock.arrow.circlepath").font(.system(size: 9))
+                    Image(systemName: SharedSymbols.sourceAutomation).font(.system(size: 9))
                     Text("Automation").font(.system(size: 10))
                 }
                 if source == ChatOrigin.jobClient {
-                    Image(systemName: "shippingbox.fill").font(.system(size: 9))
+                    Image(systemName: SharedSymbols.sourceJob).font(.system(size: 9))
                     Text("Background job").font(.system(size: 10))
                 }
                 if source == ChatOrigin.voiceClient {
-                    Image(systemName: "mic.fill").font(.system(size: 9))
+                    Image(systemName: SharedSymbols.sourceVoice).font(.system(size: 9))
                     Text("Voice").font(.system(size: 10))
                 }
                 if source == ChatOrigin.iosClient {
-                    Image(systemName: "iphone").font(.system(size: 9))
+                    Image(systemName: SharedSymbols.sourceIPhone).font(.system(size: 9))
                     Text(ChatOrigin.badge(for: source)?.label ?? "").font(.system(size: 10))
                 }
                 if let date { Text(timeFormatter.string(from: date)).font(.system(size: 10)) }
@@ -1378,7 +1378,7 @@ private struct SpeakButton: View {
         let visible = hovering || state.speaking
         let label = state.speaking ? "Stop reading" : "Read aloud"
         Button(action: state.toggle) {
-            Image(systemName: state.speaking ? "stop.circle.fill" : "speaker.wave.2").font(.system(size: 10))
+            Image(systemName: state.speaking ? SharedSymbols.stopSpeaking : SharedSymbols.speak).font(.system(size: 10))
                 .foregroundStyle(state.speaking ? AnyShapeStyle(Color.accentColor) : AnyShapeStyle(.tertiary))
         }
         .buttonStyle(.plain)
@@ -1748,7 +1748,7 @@ struct PetAvatar: View {
             if let image = Self.image(sprite: config.config.pet.sprite) {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
             } else {
-                Image(systemName: "pawprint.fill").foregroundStyle(.secondary)
+                Image(systemName: SharedSymbols.pet).foregroundStyle(.secondary)
             }
         }
         .frame(width: size, height: size)
@@ -1797,7 +1797,7 @@ private struct PickerRow: View {
                     }
                 }
                 Spacer(minLength: 4)
-                Image(systemName: "chevron.right")
+                Image(systemName: SharedSymbols.chevron)
                     .font(.system(size: 10, weight: .semibold))
                     .foregroundStyle(.tertiary)
                     .opacity(hovering ? 1 : 0.5)
@@ -1817,7 +1817,7 @@ private struct SettingsCard<Content: View>: View {
     @ViewBuilder let content: Content
     var body: some View {
         VStack(spacing: 0) { content }
-            .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 10))
+            .background(SharedTheme.card, in: RoundedRectangle(cornerRadius: 10))
             .overlay(RoundedRectangle(cornerRadius: 10).strokeBorder(Color.primary.opacity(0.08)))
     }
 }

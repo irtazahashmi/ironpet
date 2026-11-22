@@ -277,7 +277,7 @@ private struct SessionRow: View {
     private var actions: some View {
         HStack(spacing: 8) {
             if session.status == .done || session.status == .failed {
-                IconButton(symbol: "xmark", help: "Dismiss", action: onDismiss)
+                IconButton(symbol: SharedSymbols.deny, help: "Dismiss", action: onDismiss)
             }
             IconButton(symbol: "arrow.up.forward.app", help: Editors.label(for: session),
                        action: onJump)
@@ -312,7 +312,7 @@ private struct SignalRow: View {
                     HStack(spacing: 6) {
                         Text(signal.label).font(.caption.weight(.semibold)).foregroundStyle(Self.color(signal))
                         if hovering {
-                            IconButton(symbol: "xmark", help: "Dismiss", action: onDismiss)
+                            IconButton(symbol: SharedSymbols.deny, help: "Dismiss", action: onDismiss)
                         } else {
                             Text(signal.date, style: .relative)
                                 .font(.caption2.monospacedDigit())
@@ -341,9 +341,9 @@ private struct StatusIcon: View {
         case .running:
             ChatStepSpinner(size: 13)
         case .needsInput:
-            Image(systemName: "hand.raised.fill").foregroundStyle(status.tint).symbolEffect(.pulse)
+            Image(systemName: SharedSymbols.approval).foregroundStyle(status.tint).symbolEffect(.pulse)
         case .done:
-            Image(systemName: "checkmark.circle.fill").foregroundStyle(status.tint)
+            Image(systemName: SharedSymbols.done).foregroundStyle(status.tint)
         case .failed:
             Image(systemName: "xmark.octagon.fill").foregroundStyle(status.tint)
         case .idle:
@@ -402,7 +402,7 @@ private struct ActivityLabel: View {
         .foregroundStyle(status == .needsInput ? AnyShapeStyle(status.tint) : AnyShapeStyle(.secondary))
         .padding(.horizontal, 7)
         .padding(.vertical, 3)
-        .background(RoundedRectangle(cornerRadius: 5).fill(Color.primary.opacity(0.05)))
+        .background(RoundedRectangle(cornerRadius: 5).fill(SharedTheme.card))
     }
 
     static func symbol(for tool: String) -> String {
@@ -411,11 +411,11 @@ private struct ActivityLabel: View {
         if ["shell", "bash", "terminal"].contains(where: name.contains) { return "terminal" }
         if ["edit", "write", "replace", "delete", "notebook"].contains(where: name.contains) { return "pencil" }
         if ["read", "view"].contains(where: name.contains) { return "doc.text" }
-        if ["grep", "glob", "search", "find", "ls"].contains(where: name.contains) { return "magnifyingglass" }
+        if ["grep", "glob", "search", "find", "ls"].contains(where: name.contains) { return SharedSymbols.find }
         if ["web", "fetch"].contains(where: name.contains) { return "globe" }
-        if ["task", "agent"].contains(where: name.contains) { return "person.2" }
-        if name.contains("todo") { return "checklist" }
-        return "gearshape"
+        if ["task", "agent"].contains(where: name.contains) { return SharedSymbols.agents }
+        if name.contains("todo") { return SharedSymbols.tasks }
+        return SharedSymbols.settings
     }
 }
 
@@ -523,9 +523,9 @@ extension AgentStatus {
 
     var symbol: String {
         switch self {
-        case .needsInput: return "hand.raised.fill"
+        case .needsInput: return SharedSymbols.approval
         case .failed: return "xmark.octagon.fill"
-        case .done: return "checkmark.circle.fill"
+        case .done: return SharedSymbols.done
         case .running: return "circle.dotted"
         case .idle: return "circle"
         }

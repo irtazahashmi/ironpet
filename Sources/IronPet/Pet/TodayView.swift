@@ -1,5 +1,6 @@
 import AppKit
 import IronPetCore
+import IronPetKit
 import SwiftUI
 
 /// The Today section: the morning brief or the day's recap, one row per thing to look at. A row opens its task, session,
@@ -82,7 +83,7 @@ private struct BriefRow: View {
                 leading: { ListRowIcon(symbol: item.symbol, color: tint) },
                 extra: { EmptyView() },
                 trailing: { hovering in
-                    Image(systemName: "chevron.right")
+                    Image(systemName: SharedSymbols.chevron)
                         .font(.system(size: 10, weight: .semibold))
                         .foregroundStyle(.tertiary)
                         .opacity(hovering ? 1 : 0)

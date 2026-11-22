@@ -1,4 +1,5 @@
 import AppKit
+import enum IronPetKit.SharedSymbols
 import IronPetCore
 import SwiftUI
 
@@ -58,7 +59,7 @@ private struct ScreenSettingsBody: View {
         Section("Status") {
             LabeledContent("Accessibility") {
                 if model.accessibility {
-                    Label("Allowed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                    Label("Allowed", systemImage: SharedSymbols.done).foregroundStyle(.green)
                 } else {
                     Button("Allow in System Settings…") {
                         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")!)
@@ -99,7 +100,7 @@ private struct ScreenSettingsBody: View {
             if capture.ocr {
                 LabeledContent("Screen Recording") {
                     if model.screenRecording {
-                        Label("Allowed", systemImage: "checkmark.circle.fill").foregroundStyle(.green)
+                        Label("Allowed", systemImage: SharedSymbols.done).foregroundStyle(.green)
                     } else {
                         Button("Allow…") { ScreenCapture.requestPermission() }
                     }

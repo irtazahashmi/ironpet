@@ -74,7 +74,7 @@ struct ChatFindBar: View {
 
     var body: some View {
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+            Image(systemName: SharedSymbols.find).foregroundStyle(.secondary)
             TextField("Find in chat", text: $find.query)
                 .focused($focused)
                 .submitLabel(.search)

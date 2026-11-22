@@ -1,4 +1,5 @@
 import Foundation
+import enum IronPetKit.SharedSymbols
 
 /// Where a task stands. The agent moves tasks between these; the user only marks them done.
 package enum TaskStatus: String, CaseIterable, Codable {
@@ -25,8 +26,8 @@ package enum TaskSource: String, CaseIterable, Codable {
         switch self {
         case .chat: return "bubble.left"
         case .telegram: return "paperplane"
-        case .meeting: return "person.2"
-        case .automation: return "clock.badge.checkmark"
+        case .meeting: return SharedSymbols.meetings
+        case .automation: return SharedSymbols.automations
         case .cli: return "terminal"
         case .agent: return "sparkles"
         case .user: return "person"

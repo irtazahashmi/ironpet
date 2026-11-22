@@ -61,7 +61,7 @@ struct ChatBackgroundView: View {
     var scale: CGFloat = 1
 
     var body: some View {
-        ChatBackgroundPicture(id: id, customImage: customImage, fallback: Color(nsColor: .windowBackgroundColor), scale: scale)
+        ChatBackgroundPicture(id: id, customImage: customImage, fallback: SharedTheme.window, scale: scale)
     }
 
     private var customImage: Image? {
@@ -77,7 +77,7 @@ struct ChatBackdrop: View {
 
     var body: some View {
         ZStack {
-            Color(nsColor: .windowBackgroundColor)
+            SharedTheme.window
             ChatBackgroundView(id: store.config.chat.background, customFile: store.config.chat.customImage)
         }
         .ignoresSafeArea()

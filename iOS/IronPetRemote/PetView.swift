@@ -19,7 +19,7 @@ struct PetView: View {
             ScrollView {
                 VStack(spacing: 20) {
                     if let message = model.errorMessage {
-                        Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).accessibilityIdentifier("pet-error")
+                        Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("pet-error")
                     }
                     hero
                     ForEach(model.bubbles) { BubbleCard(bubble: $0, model: model) }
@@ -29,10 +29,11 @@ struct PetView: View {
                 .padding()
             }
             .navigationTitle(model.pet?.name ?? "Pet")
+            .themedScreen()
             .refreshable { await model.refresh(); await today.refresh() }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
-                    Button { showDevice = true } label: { Image(systemName: "gearshape") }
+                    Button { showDevice = true } label: { Image(systemName: SharedSymbols.settings) }
                         .accessibilityLabel("Device").accessibilityIdentifier("device-button")
                 }
             }
@@ -45,7 +46,7 @@ struct PetView: View {
     private var hero: some View {
         ZStack(alignment: .bottom) {
             ChatBackgroundPicture(id: model.backgroundID, customImage: model.backgroundImage.map(Image.init(uiImage:)),
-                                  fallback: Color(.secondarySystemBackground))
+                                  fallback: SharedTheme.window)
                 .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
                 .overlay {
                     RoundedRectangle(cornerRadius: 24, style: .continuous)
@@ -194,7 +195,7 @@ struct TodayList: View {
                     if tab == nil { Text("Open on the Mac").font(.footnote).foregroundStyle(.secondary) }
                 }
                 Spacer()
-                if tab != nil { Image(systemName: "chevron.right").foregroundStyle(.tertiary) }
+                if tab != nil { Image(systemName: SharedSymbols.chevron).foregroundStyle(.tertiary) }
             }
             .padding(10)
             .frame(maxWidth: .infinity, alignment: .leading)

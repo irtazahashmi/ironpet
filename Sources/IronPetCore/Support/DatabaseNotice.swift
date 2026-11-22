@@ -1,4 +1,5 @@
 import Foundation
+import enum IronPetKit.SharedSymbols
 
 /// What the user sees when `ironpet.db` could not be opened and ironpet runs on an in-memory stand-in.
 package enum DatabaseNotice {
@@ -10,7 +11,7 @@ package enum DatabaseNotice {
         guard let reason = database.unavailableReason else { return nil }
         let path = database.unavailablePath?.path ?? "ironpet.db"
         return Signal(id: alertID, title: "\(reason)\nFile: \(path)", subtitle: path, url: nil,
-                      label: "ironpet can't open its database", symbol: "exclamationmark.triangle.fill", mood: .failed, ask: nil)
+                      label: "ironpet can't open its database", symbol: SharedSymbols.warning, mood: .failed, ask: nil)
     }
 
     /// The error that tasks tools and the CLI return instead of an empty list.

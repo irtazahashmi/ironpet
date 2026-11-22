@@ -1,4 +1,5 @@
 import IronPetCore
+import enum IronPetKit.SharedSymbols
 import SwiftUI
 
 /// The Telegram accordion of Settings → Integrations.
@@ -158,7 +159,7 @@ struct IntegrationAccordion<Content: View>: View {
                     withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() }
                 } label: {
                     HStack(spacing: 8) {
-                        Image(systemName: "chevron.right")
+                        Image(systemName: SharedSymbols.chevron)
                             .font(.system(size: 11, weight: .semibold))
                             .rotationEffect(.degrees(expanded ? 90 : 0))
                             .frame(width: 12)

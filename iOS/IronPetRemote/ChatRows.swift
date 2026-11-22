@@ -113,7 +113,7 @@ private struct CodeBlock: View {
                     copied = true
                     Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
                 } label: {
-                    Label(copied ? "Copied" : "Copy", systemImage: copied ? "checkmark" : "doc.on.doc").font(.system(size: 10.5 * ChatMetrics.scale))
+                    Label(copied ? "Copied" : "Copy", systemImage: copied ? SharedSymbols.allow : SharedSymbols.copy).font(.system(size: 10.5 * ChatMetrics.scale))
                 }
                 .buttonStyle(.borderless).foregroundStyle(.secondary)
                 .accessibilityIdentifier("copy-code")
@@ -201,11 +201,11 @@ struct OriginBadge {
 
     init?(origin: String?) {
         switch origin {
-        case "telegram": self.init(symbol: "paperplane.fill", label: "Telegram")
-        case "automation": self.init(symbol: "clock.arrow.circlepath", label: "Automation")
-        case "job": self.init(symbol: "shippingbox.fill", label: "Background job")
-        case "voice": self.init(symbol: "mic.fill", label: "Voice")
-        case "ios": self.init(symbol: "iphone", label: "iPhone")
+        case "telegram": self.init(symbol: SharedSymbols.sourceTelegram, label: "Telegram")
+        case "automation": self.init(symbol: SharedSymbols.sourceAutomation, label: "Automation")
+        case "job": self.init(symbol: SharedSymbols.sourceJob, label: "Background job")
+        case "voice": self.init(symbol: SharedSymbols.sourceVoice, label: "Voice")
+        case "ios": self.init(symbol: SharedSymbols.sourceIPhone, label: "iPhone")
         default: return nil
         }
     }
@@ -328,7 +328,7 @@ private struct SpeakButton: View {
     var body: some View {
         let label = readAloud.active ? "Stop reading" : "Read aloud"
         Button(action: readAloud.toggle) {
-            Image(systemName: readAloud.active ? "stop.circle.fill" : "speaker.wave.2")
+            Image(systemName: readAloud.active ? SharedSymbols.stopSpeaking : SharedSymbols.speak)
                 .font(.system(size: 12 * scale))
                 .foregroundStyle(readAloud.active ? AnyShapeStyle(macAccent) : AnyShapeStyle(.tertiary))
                 .frame(minWidth: 28, minHeight: 28)
@@ -350,7 +350,7 @@ struct PetAvatar: View {
             if let image {
                 Image(decorative: image, scale: 1).resizable().aspectRatio(contentMode: .fit)
             } else {
-                Image(systemName: "pawprint.fill").foregroundStyle(.secondary)
+                Image(systemName: SharedSymbols.pet).foregroundStyle(.secondary)
             }
         }
         .frame(width: size, height: size)
@@ -404,11 +404,11 @@ struct NoticeRow: View {
         ChatSystemRow(expanded: expanded, canExpand: !notice.detail.isEmpty, scale: scale, identifier: "notice-label",
                       label: Text(notice.label),
                       toggle: { withAnimation(.easeInOut(duration: 0.15)) { expanded.toggle() } },
-                      icon: { Image(systemName: "gearshape") },
+                      icon: { Image(systemName: SharedSymbols.settings) },
                       detail: {
             Text(ChatMarkdown.inline(notice.detail)).font(.system(size: 12 * scale)).foregroundStyle(.secondary).textSelection(.enabled)
                 .padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 8))
+                .background(SharedTheme.card, in: RoundedRectangle(cornerRadius: 8))
                 .padding(.top, 2)
                 .accessibilityIdentifier("notice-detail")
         })
@@ -421,7 +421,7 @@ struct ErrorRow: View {
     @ScaledMetric(relativeTo: .caption) private var scale = ChatMetrics.scale
 
     var body: some View {
-        Label(text, systemImage: "exclamationmark.triangle.fill").font(.system(size: 12 * scale)).foregroundStyle(.red)
+        Label(text, systemImage: SharedSymbols.warning).font(.system(size: 12 * scale)).foregroundStyle(.red)
             .padding(10).frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.red.opacity(0.1), in: RoundedRectangle(cornerRadius: 10))
     }
@@ -488,7 +488,7 @@ struct JumpToLatestButton: View {
 
     var body: some View {
         Button(action: action) {
-            Label("Jump to latest", systemImage: "arrow.down")
+            Label("Jump to latest", systemImage: SharedSymbols.jumpToLatest)
                 .font(.system(size: 11.5 * scale, weight: .medium))
                 .padding(.horizontal, 12).padding(.vertical, 6)
                 .chromeGlass(in: Capsule())

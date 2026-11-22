@@ -1,4 +1,5 @@
 import AVFoundation
+import enum IronPetKit.SharedSymbols
 import IronPetCore
 import SwiftUI
 
@@ -109,7 +110,7 @@ private struct SpeakerRow: View {
         VStack(alignment: .leading, spacing: 5) {
             HStack(spacing: 8) {
                 Button { clips.toggle(speaker) } label: {
-                    Image(systemName: clips.playing == speaker.id ? "stop.fill" : "play.fill")
+                    Image(systemName: clips.playing == speaker.id ? SharedSymbols.stop : "play.fill")
                 }
                 .buttonStyle(.borderless)
                 .disabled(speaker.clip == nil)
@@ -140,7 +141,7 @@ private struct SpeakerRow: View {
                 Menu {
                     Button("Ignore") { try? meetings.dismissSpeaker(DismissSpeakerRequest(speaker: speaker.id, mixed: false)) }
                     Button("Two people mixed") { try? meetings.dismissSpeaker(DismissSpeakerRequest(speaker: speaker.id, mixed: true)) }
-                } label: { Image(systemName: "ellipsis.circle") }
+                } label: { Image(systemName: SharedSymbols.more) }
                     .menuStyle(.borderlessButton).fixedSize()
             }
             if showNames, !matches.isEmpty, !matches.contains(name) {

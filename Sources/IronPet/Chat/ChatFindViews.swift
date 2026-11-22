@@ -1,4 +1,5 @@
 import IronPetCore
+import enum IronPetKit.SharedSymbols
 import SwiftUI
 
 extension ChatFind {
@@ -43,7 +44,7 @@ struct FindBar: View {
 
     var body: some View {
         HStack(spacing: 6) {
-            Image(systemName: "magnifyingglass").font(.system(size: 11)).foregroundStyle(.secondary)
+            Image(systemName: SharedSymbols.find).font(.system(size: 11)).foregroundStyle(.secondary)
             TextField(Self.placeholder, text: $query)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12.5))
@@ -68,7 +69,7 @@ struct FindBar: View {
                 .pointerCursor()
                 .help("Next match (Return)")
                 .disabled(!hasMatches)
-            Button(action: close) { Image(systemName: "xmark") }
+            Button(action: close) { Image(systemName: SharedSymbols.deny) }
                 .pointerCursor()
                 .help("Close (Esc)")
         }

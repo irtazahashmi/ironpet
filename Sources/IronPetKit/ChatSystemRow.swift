@@ -49,7 +49,7 @@ public struct ChatSystemRow<Icon: View, Detail: View>: View {
                     icon.frame(width: ChatSystemRowMetrics.iconColumn * scale)
                     label.lineLimit(1).truncationMode(.middle)
                     if canExpand {
-                        Image(systemName: "chevron.right")
+                        Image(systemName: SharedSymbols.chevron)
                             .font(.system(size: ChatSystemRowMetrics.chevronSize * scale, weight: .semibold))
                             .rotationEffect(.degrees(expanded ? 90 : 0))
                             .opacity(hovering || expanded ? 1 : 0.6)
@@ -85,8 +85,8 @@ public struct ChatStepIcon: View {
     public var body: some View {
         switch ok {
         case nil: ChatStepSpinner().frame(width: 12, height: 12)
-        case true?: Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
-        case false?: Image(systemName: "xmark.circle.fill").foregroundStyle(.red)
+        case true?: Image(systemName: SharedSymbols.done).foregroundStyle(.green)
+        case false?: Image(systemName: SharedSymbols.removeAttachment).foregroundStyle(.red)
         }
     }
 }
