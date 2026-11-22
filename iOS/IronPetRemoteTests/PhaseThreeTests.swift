@@ -174,3 +174,45 @@ final class ChatModelTests: XCTestCase {
         XCTAssertEqual(String(text.characters), "The fixture is stale.")
     }
 }
+
+/// The agent's own permission modes in the chat settings: the phone lists what the agent advertises and sends the picked id back.
+@MainActor
+final class ChatModeTests: XCTestCase {
+    var server: MockIronPetServer!
+
+    override func setUpWithError() throws {
+        server = MockIronPetServer()
+        try server.start()
+    }
+
+    override func tearDown() { server.stop() }
+
+    private func started() async -> ChatModel {
+        let client = IronPetClient(endpoint: ServerEndpoint(baseURL: server.baseURL), token: server.token)
+        let events = SharedEventSource(EventConnection(client: client, backoff: .init(initial: .milliseconds(20), maximum: .milliseconds(100))))
+        let model = ChatModel(client: client, events: events, onUnauthorized: {})
+        model.start()
+        await waitUntil { model.loaded && model.snapshot != nil }
+        return model
+    }
+
+    func testPickingAModeSendsItsIdAndTheModelShowsTheOneInForce() async throws {
+        server.chat.options.modes = [.init(id: "default", name: "Default"), .init(id: "acceptEdits", name: "Accept edits"), .init(id: "plan", name: "Plan")]
+        server.chat.options.mode = "default"
+        let model = await started()
+        XCTAssertEqual(model.snapshot?.options.modes.map(\.id), ["default", "acceptEdits", "plan"])
+        XCTAssertEqual(model.snapshot?.options.mode, "default")
+        let done = await model.setOptions(RemoteChatOptionsChange(mode: "plan"))
+        XCTAssertTrue(done)
+        XCTAssertEqual(try XCTUnwrap(server.requests.last { $0.line == "PATCH /v1/chat/options" }).json["mode"] as? String, "plan")
+        XCTAssertEqual(model.snapshot?.options.mode, "plan", "the sheet shows what the Mac now reports")
+        model.stop()
+    }
+
+    func testAnAgentWithoutModesSendsNoneAndTheModelStillLoads() async {
+        let model = await started()
+        XCTAssertEqual(model.snapshot?.options.modes, [])
+        XCTAssertNil(model.snapshot?.options.mode)
+        model.stop()
+    }
+}
