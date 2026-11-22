@@ -39,6 +39,7 @@ public enum APIPath {
     public static let chatStop = "/v1/chat/current/stop"
     public static func chatOpen(_ id: String) -> String { "/v1/chat/open/\(id)" }
     public static let chatNew = "/v1/chat/new"
+    public static let chatOptions = "/v1/chat/options"
     public static func chatApproval(_ id: String) -> String { "/v1/chat/approvals/\(id)" }
     public static func chatForm(_ id: String) -> String { "/v1/chat/forms/\(id)" }
     public static func chatFormSubmit(_ id: String) -> String { "/v1/chat/forms/\(id)/submit" }

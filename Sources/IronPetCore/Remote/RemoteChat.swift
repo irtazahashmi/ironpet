@@ -86,7 +86,67 @@ package struct RemoteChat {
         if let activity = status.activity { object["activity"] = activity }
         if let started = status.runStartedAt { object["run_started"] = Self.iso(started) }
         if let notice = Self.notice(options) { object["notice"] = notice }
+        object["options"] = Self.json(options)
         return object
+    }
+
+    /// What the chat settings sheet on the phone offers. A folder's `id` is its path, which `setOptions` accepts back.
+    private static func json(_ options: ChatOptions) -> [String: Any] {
+        var object: [String: Any] = [
+            "agents": options.agents.map { ["id": $0.id, "name": $0.name] },
+            "models": options.models.map { ["id": $0.id, "name": $0.name] },
+            "folders": options.recentFolders.map { ["id": $0, "name": ($0 as NSString).lastPathComponent] },
+            "auto_mode": options.autoMode
+        ]
+        // No `folder` means no project, so the scratch folder the Mac uses for general questions is left out.
+        if let folder = options.folder, folder != ChatSession.scratchWorkspace.path { object["folder"] = folder }
+        return object
+    }
+
+    // MARK: Settings
+
+    /// `{agent?, model?, folder?, no_project?, auto_mode?}`, the same choices as the Mac's chat settings, applied through the same API.
+    /// `model: null` returns to the agent's default. The agent, model and folder cannot change while a turn runs, as on the Mac, and the
+    /// folder must be one the Mac chat already lists. Everything is checked before anything changes.
+    package func setOptions(_ body: [String: Any]) async throws -> [String: Any] {
+        let options = await api.chat.options()
+        var agent: String?, folder: String?
+        if let raw = body["agent"] {
+            guard let id = raw as? String, options.agents.contains(where: { $0.id == id }) else { throw RemoteFailure.invalid("no such agent") }
+            agent = id
+        }
+        let changesModel = body.keys.contains("model")
+        let model = body["model"] as? String
+        if changesModel, !(body["model"] is NSNull), model == nil { throw RemoteFailure.invalid("model must be a model id or null") }
+        if let raw = body["folder"] {
+            guard let path = raw as? String, options.recentFolders.contains(path) else { throw RemoteFailure.invalid("choose one of the Mac's recent folders") }
+            folder = path
+        }
+        let noProject = body["no_project"] as? Bool == true
+        if body["no_project"] != nil, body["no_project"] as? Bool == nil { throw RemoteFailure.invalid("no_project must be true or false") }
+        if folder != nil, noProject { throw RemoteFailure.invalid("choose a folder or no project, not both") }
+        var auto: Bool?
+        if let raw = body["auto_mode"] {
+            guard let flag = raw as? Bool else { throw RemoteFailure.invalid("auto_mode must be true or false") }
+            auto = flag
+        }
+        if let model {
+            // A model belongs to an agent, so it is checked against the list of the agent that will run it.
+            let target = agent ?? options.agent.id
+            let offered = target == options.agent.id ? options.models.map(\.id) : AgentCatalog.agent(id: target).map { ChatSession.cachedModels(for: $0).map(\.id) } ?? []
+            guard offered.contains(model) else { throw RemoteFailure.invalid("this agent does not offer that model") }
+        }
+        if agent != nil || changesModel || folder != nil || noProject {
+            if await api.chat.status().running {
+                throw RemoteFailure(status: 409, code: "conflict", message: "The agent is working. Stop it first, or wait for it to finish.")
+            }
+        }
+        if let agent { try await api.chat.setAgent(agent) }
+        if changesModel { await api.chat.setModel(model) }
+        if let folder { try await api.chat.useFolder(folder) }
+        if noProject { await api.chat.useNoProject() }
+        if let auto { await api.chat.setAutoMode(auto) }
+        return ["changed": true]
     }
 
     /// What the Mac chat waits for that only the Mac can do.
