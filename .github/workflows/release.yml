@@ -1,0 +1,298 @@
+name: Release
+
+# Builds the downloadable Mac app and attaches it to a DRAFT GitHub Release for you to review and publish.
+# Run it by pushing a tag on main (git tag v0.1.0 && git push origin v0.1.0) or from the Actions tab on main.
+#
+# Signing is optional. With these secrets, stored in the `release` environment and NOT as repository secrets (see the
+# environment note below), the DMG is signed with a Developer ID and notarized by Apple:
+#   MACOS_CERT_P12      base64 of the "Developer ID Application" certificate exported as .p12
+#   MACOS_CERT_PASSWORD the password you gave that .p12
+#   NOTARY_KEY_P8       base64 of an App Store Connect API key (.p8)
+#   NOTARY_KEY_ID       that key's ID
+#   NOTARY_ISSUER_ID    the issuer ID shown above the keys in App Store Connect
+# Without them the workflow still runs and produces IronPet-<version>-unsigned.dmg. With the certificate but without the
+# notary secrets (or with a certificate that does not validate) it fails, rather than ship a weaker file.
+# See CONTRIBUTING.md > Releasing the Mac app.
+#
+# Three jobs, so that no job that runs third-party code holds the signing secrets or can write to the repository:
+#   mac      builds, signs and notarizes with contents: read, in the `release` environment. The keychain and key files are
+#            deleted and the DMG is uploaded as an artifact before the job ends.
+#   check    has no secrets and no environment. It opens the uploaded DMG and runs the CI bundle checks on the app inside,
+#            which starts the bundled adapters (third-party npm code), on a runner that never held a signing secret.
+#   publish  has contents: write, checks out nothing and runs no repository code. It only turns the artifact into a draft,
+#            and only after mac and check both passed.
+# It never runs for pull requests, so a fork cannot reach the secrets. The actions are pinned to commits, because these jobs
+# hold the secrets and the write token; ci.yml, which holds neither, uses tags.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to build, without the v (for example 0.1.0). Run from main.
+        required: true
+
+permissions:
+  contents: read
+
+# One run per version, whether it came from a tag or from the Actions tab.
+concurrency:
+  group: release-${{ github.event_name == 'workflow_dispatch' && format('v{0}', inputs.version) || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  mac:
+    # Deleting a tag also triggers a push event; there is nothing to build then.
+    if: ${{ !github.event.deleted }}
+    runs-on: macos-15
+    timeout-minutes: 60
+    # The signing secrets belong to this environment, not to the repository. A repository secret would reach any workflow
+    # a writer pushes on any branch, whatever this file checks. The environment admits only main and v* tags, but a writer
+    # can still push a v* tag on a commit with an edited copy of this file (the checks in here would be the edited ones),
+    # so it is only a gate together with the two protections CONTRIBUTING.md > Releasing the Mac app requires before the
+    # first secret is added: a tag ruleset that limits who may create v* tags, and a required reviewer on the environment.
+    environment: release
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+      skip: ${{ steps.version.outputs.skip }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0 # to tell whether a tag is on main
+          persist-credentials: false # nothing later needs the token, so it must not sit in .git/config
+
+      - name: Work out the version
+        id: version
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$GITHUB_EVENT_NAME" = "workflow_dispatch" ]; then
+            version="$INPUT_VERSION"
+            # A run from another branch would put that branch's code into the release.
+            if [ "$GITHUB_REF" != "refs/heads/main" ]; then
+              echo "error: run this workflow from main (it was started on $GITHUB_REF)" >&2
+              exit 1
+            fi
+          else
+            version="${REF_NAME#v}"
+            if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+              echo "error: tag $REF_NAME is not on main; releases are built from main only" >&2
+              exit 1
+            fi
+          fi
+          # [[ =~ ]] sees the whole string; grep would accept a second line smuggled into the input.
+          if ! [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][0-9A-Za-z.]+)?$ ]]; then
+            echo "error: the version is not like 0.1.0 or 0.1.0-beta.1" >&2
+            exit 1
+          fi
+          tag="v$version"
+
+          # A tag that already points somewhere else would make the release's source differ from its binary.
+          # Only "no such tag" counts as no tag: any other failure (a 5xx, a rate limit) must stop the run, not pass it.
+          if out=$(gh api "repos/$GITHUB_REPOSITORY/commits/$tag" --jq .sha 2>&1); then
+            tagged="$out"
+          elif [[ $out == *"No commit found"* ]]; then
+            tagged=""
+          else
+            echo "error: could not look up $tag: $out" >&2
+            exit 1
+          fi
+          if [ -n "$tagged" ] && [ "$tagged" != "$GITHUB_SHA" ]; then
+            echo "error: $tag already points at $tagged, not at $GITHUB_SHA; bump the version" >&2
+            exit 1
+          fi
+
+          # One lookup, and only "release not found" counts as no release. A failure inside `[ ]` would otherwise read as
+          # "published" and quietly skip a tag build.
+          published=false
+          if state=$(gh release view "$tag" --json isDraft -q .isDraft 2>&1); then
+            if [ "$state" != "true" ]; then published=true; fi
+          elif [[ $state != *"release not found"* ]]; then
+            echo "error: could not look up release $tag: $state" >&2
+            exit 1
+          fi
+
+          skip=false
+          if [ "$published" = "true" ]; then
+            if [ "$GITHUB_EVENT_NAME" = "push" ]; then
+              # Publishing a draft that a manual run made creates its tag, which lands here.
+              echo "::notice::$tag is already published; nothing to build"
+              skip=true
+            else
+              echo "error: release $tag is already published; bump the version instead of rebuilding it" >&2
+              exit 1
+            fi
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+          echo "skip=$skip" >> "$GITHUB_OUTPUT"
+
+      # The toolchain CI's image defaults to today. A newer one links the app to Swift libraries that macOS 14 and 15 do not
+      # have, and release_mac.sh stops when it sees that.
+      - name: Select Xcode 16.4
+        if: steps.version.outputs.skip != 'true'
+        run: |
+          sudo xcode-select -s /Applications/Xcode_16.4.app
+          xcodebuild -version
+          swift --version
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        if: steps.version.outputs.skip != 'true'
+        with:
+          node-version: 22
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        if: steps.version.outputs.skip != 'true'
+        with:
+          bun-version: 1.4.4
+
+      - name: Import the Developer ID certificate
+        if: steps.version.outputs.skip != 'true'
+        env:
+          CERT_P12: ${{ secrets.MACOS_CERT_P12 }}
+          CERT_PASSWORD: ${{ secrets.MACOS_CERT_PASSWORD }}
+        run: |
+          set -euo pipefail
+          if [ -z "$CERT_P12" ]; then
+            echo "No MACOS_CERT_P12 secret: the build will be unsigned"
+            exit 0
+          fi
+          keychain="$RUNNER_TEMP/release.keychain-db"
+          keychain_password=$(uuidgen)
+          echo "::add-mask::$keychain_password"
+          ( umask 077; printf '%s' "$CERT_P12" | base64 --decode > "$RUNNER_TEMP/cert.p12" )
+          security create-keychain -p "$keychain_password" "$keychain"
+          # Recorded at once, so the cleanup step removes the keychain even if a later command here fails.
+          echo "KEYCHAIN_PATH=$keychain" >> "$GITHUB_ENV"
+          security set-keychain-settings -lut 3600 "$keychain"
+          security unlock-keychain -p "$keychain_password" "$keychain"
+          # Only codesign may use the key without a prompt.
+          security import "$RUNNER_TEMP/cert.p12" -k "$keychain" -P "$CERT_PASSWORD" -T /usr/bin/codesign
+          rm -f "$RUNNER_TEMP/cert.p12"
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$keychain_password" "$keychain" >/dev/null
+          # Put the new keychain first on the search list, keeping the runner's own.
+          existing=$(security list-keychains -d user | tr -d '"')
+          # shellcheck disable=SC2086
+          security list-keychains -d user -s "$keychain" $existing
+          security find-identity -p codesigning -v "$keychain" | sed 's/^ *[0-9]*) [0-9A-F]* //'
+
+      - name: Build, sign, notarize and package
+        if: steps.version.outputs.skip != 'true'
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+          NOTARY_KEY_B64: ${{ secrets.NOTARY_KEY_P8 }}
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+        run: |
+          set -euo pipefail
+          if [ -n "$NOTARY_KEY_B64" ]; then
+            export NOTARY_KEY_FILE="$RUNNER_TEMP/notary.p8"
+            ( umask 077; printf '%s' "$NOTARY_KEY_B64" | base64 --decode > "$NOTARY_KEY_FILE" )
+          fi
+          unset NOTARY_KEY_B64 # the build below (SwiftPM, npm, bun) needs the key file at most, not a second copy
+          # A certificate was imported, so a signed and notarized build is the only acceptable result.
+          if [ -n "${KEYCHAIN_PATH:-}" ]; then export IRONPET_REQUIRE_NOTARIZED=1; fi
+          ./scripts/release_mac.sh "$VERSION" "$GITHUB_RUN_NUMBER"
+
+      # Straight after packaging, so the key files and the keychain are gone before the artifact is uploaded.
+      - name: Remove the temporary keychain and key
+        if: always()
+        run: |
+          rm -f "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/cert.p12"
+          if [ -n "${KEYCHAIN_PATH:-}" ]; then security delete-keychain "$KEYCHAIN_PATH" || true; fi
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        if: steps.version.outputs.skip != 'true'
+        with:
+          name: release-dist
+          path: dist
+          if-no-files-found: error
+          retention-days: 7
+
+  # The CI bundle checks, on the file that will ship, in a job that never held a signing or notary secret. The bundled
+  # adapters are third-party code and get started here, so this must not be the job that had the secrets in memory.
+  check:
+    needs: mac
+    if: needs.mac.outputs.skip != 'true'
+    runs-on: macos-15
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 22
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-dist
+          path: dist
+
+      - name: Check the app inside the DMG
+        run: |
+          set -euo pipefail
+          (cd dist && shasum -a 256 -c IronPet-*.dmg.sha256)
+          mount="$RUNNER_TEMP/dmg"
+          mkdir -p "$mount"
+          hdiutil attach dist/IronPet-*.dmg -nobrowse -readonly -mountpoint "$mount" >/dev/null
+          trap 'hdiutil detach "$mount" -quiet || true' EXIT
+          # A writable copy, because the adapter check starts the adapters from the app's own folder.
+          mkdir "$RUNNER_TEMP/app"
+          ditto "$mount/IronPet.app" "$RUNNER_TEMP/app/IronPet.app"
+          app="$RUNNER_TEMP/app/IronPet.app"
+          test -f "$app/Contents/Resources/spritesheet.png"
+          codesign --verify --strict --verbose=2 "$app"
+          ./scripts/check_adapters.sh "$app"
+
+  publish:
+    needs: [mac, check]
+    if: needs.mac.outputs.skip != 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # the only job that can write; it checks out nothing and runs none of the repository's code
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-dist
+          path: dist
+
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: v${{ needs.mac.outputs.version }}
+          VERSION: ${{ needs.mac.outputs.version }}
+        run: |
+          set -euo pipefail
+          # Only "release not found" means there is no release yet. Any other failure (a 5xx, a rate limit) must stop the
+          # run, or a second draft would be made for a tag that already has one.
+          if state=$(gh release view "$TAG" --json isDraft -q .isDraft 2>&1); then
+            # The build took a while: someone may have published this release since the version step looked.
+            if [ "$state" != "true" ]; then
+              echo "error: release $TAG was published while this run was building; bump the version" >&2
+              exit 1
+            fi
+            # A rerun replaces a draft's files and notes, so the draft reads the same however often it was built.
+            for asset in $(gh release view "$TAG" --json assets -q '.assets[].name'); do
+              gh release delete-asset "$TAG" "$asset" --yes
+            done
+            gh release upload "$TAG" dist/IronPet-*.dmg dist/IronPet-*.dmg.sha256
+            gh release edit "$TAG" --title "IronPet $VERSION" --notes-file dist/notes.md --target "$GITHUB_SHA"
+          elif [[ $state == *"release not found"* ]]; then
+            gh release create "$TAG" dist/IronPet-*.dmg dist/IronPet-*.dmg.sha256 \
+              --draft --target "$GITHUB_SHA" --title "IronPet $VERSION" --notes-file dist/notes.md
+          else
+            echo "error: could not look up release $TAG: $state" >&2
+            exit 1
+          fi
+          echo "Draft release: $(gh release view "$TAG" --json url -q .url)" | tee -a "$GITHUB_STEP_SUMMARY"

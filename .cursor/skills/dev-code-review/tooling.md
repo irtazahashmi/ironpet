@@ -10,6 +10,7 @@ Everything that builds, installs, tests, or packages the app. These files run on
 | `sidecar/package.json`, `package-lock.json` | Pinned adapter versions (`@agentclientprotocol/claude-agent-acp`, `codex-acp`, `pi-acp`) | Hand, with `npm install` updating the lockfile |
 | `sidecar/out/`, `sidecar/node_modules/` | Bundled `.mjs` output and dependencies | `scripts/bundle.sh` only; gitignored |
 | `scripts/bundle.sh` | Release build of `build/IronPet.app`: binary, icon, pinned mermaid, adapters (`bun build`), sprite sheet, ad-hoc signing | Hand |
+| `scripts/release_mac.sh` | The downloadable build: `bundle.sh` with the version, Developer ID hardened signing when an identity exists, the DMG, notarization and stapling when notary credentials exist, the `.sha256`, `dist/` | Hand |
 | `scripts/install.sh` | Preflight checks, signing identity, bundle, install to `/Applications`, restart | Hand |
 | `scripts/uninstall.sh` | Removes hooks (through the binary's `--uninstall`), login item, app, Keychain items, preferences; asks before `~/.ironpet` and the identity | Hand |
 | `scripts/make_signing_identity.sh` | The local self-signed `ironpet-dev` identity | Hand |
@@ -19,8 +20,8 @@ Everything that builds, installs, tests, or packages the app. These files run on
 | `scripts/screenshots.sh` | Renders the README screenshots from sample data (`--render-previews`) | Hand |
 | `scripts/configure_sentry.sh` | Sentry host, org, projects and token (to the Keychain) | Hand |
 | `tools/make_wolf.swift`, `make_icon.swift`, `preview_cells.swift` | Ghost's sprite sheet and the app icon, drawn in code | Hand |
-| `Resources/` | App icon, `mermaid.html` | Hand (`icon-1024.png` and `AppIcon.icns` from `make_icon.swift`) |
-| `.github/workflows/ci.yml`, `.github/ISSUE_TEMPLATE/` | CI and issue templates | Hand |
+| `Resources/` | App icon, `mermaid.html`, `IronPet.entitlements` (the hardened-runtime entitlements of release builds) | Hand (`icon-1024.png` and `AppIcon.icns` from `make_icon.swift`) |
+| `.github/workflows/ci.yml`, `.github/workflows/release.yml`, `.github/ISSUE_TEMPLATE/` | CI, the release build and issue templates | Hand |
 
 ## Rules to check
 
@@ -32,6 +33,8 @@ Everything that builds, installs, tests, or packages the app. These files run on
 - **e2e.** A scenario restores every file it changes (`config.json`, hook files, setup state) even on failure, drives the app through `/test/*` or the accessibility tree rather than private state, and is registered in `SCENARIOS`. A scenario that needs extra services or spends a lot of agent quota goes in `OPT_IN`. A scenario that can leave the user's config or hooks changed is **High**.
 - **Generators.** `gen_agent_catalog.py` output is committed together with any change to the script, and the generated file keeps its `Do not edit by hand` header. Sprite changes are made in `tools/make_wolf.swift`, and `bundle.sh` still writes `Contents/Resources/spritesheet.png` (CI checks it exists).
 - **CI.** The workflow keeps `permissions: contents: read`, pinned toolchain versions (Node 22, Bun), `swift build`, `swift test`, the bundle with `codesign --verify` and `check_adapters.sh`, and the script syntax checks. A `changes` job skips Mac / iOS / scripts runners when those paths are untouched (docs-only PRs); push to `main` always runs everything, and the required `build` check treats a correctly skipped Mac job as success. Removing a gate is **High** unless the PR says why.
+
+- **Release workflow.** `release.yml` never triggers on `pull_request` or `pull_request_target` (forks must not reach the signing secrets); has `contents: read` at workflow level and `contents: write` only on the `publish` job, which checks out nothing, runs no repository or third-party code and needs both `mac` and `check`; the bundled adapters (third-party code) start only in the `check` job, which has no secrets and no environment and works on the uploaded DMG; keeps the actions pinned to commits; reads the secrets through the `release` environment (named on the `mac` job only), never as repository secrets, and relies on the tag ruleset and required reviewer that CONTRIBUTING.md asks for, because the environment's `main` and `v*` limit alone does not stop a writer's tag with an edited workflow (a change that adds a job or step with `environment: release`, or moves build steps that run third-party code into `mac`, is a finding); builds with the Xcode CI's image defaults to (an `@rpath` Swift library missing from the bundle is a failure); passes tag, version and secrets through `env:` and never interpolates them into a script; deletes the temporary keychain and key file in an `always()` step before the artifact is uploaded; creates drafts and refuses to touch a published release, re-checking right before it writes; runs only for tags and manual runs on `main`. A secret echoed, written to the repo or an artifact, or a trigger that runs on untrusted code is **Critical**. A new entitlement in `Resources/IronPet.entitlements` is reviewed like a permission and needs a `SECURITY.md` line.
 
 ## Skills to open
 

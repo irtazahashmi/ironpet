@@ -1,7 +1,16 @@
 #!/bin/bash
 # Builds build/IronPet.app (release, ad-hoc signed).
+# IRONPET_VERSION and IRONPET_BUILD set the bundle's version and build number (release_mac.sh passes them).
+# IRONPET_HARDENED=1 signs with the hardened runtime and Resources/IronPet.entitlements, which notarization needs.
 set -euo pipefail
 cd "$(dirname "$0")/.."
+
+VERSION="${IRONPET_VERSION:-0.1.0}"
+BUILD="${IRONPET_BUILD:-1}"
+# These go into a plist, so keep them to characters that cannot break out of it.
+case "$VERSION$BUILD" in
+  *[!0-9A-Za-z.+-]*) echo "error: IRONPET_VERSION and IRONPET_BUILD may only contain letters, digits and . + -" >&2; exit 1 ;;
+esac
 
 swift build -c release
 APP=build/IronPet.app
@@ -67,8 +76,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundleExecutable</key><string>IronPet</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
+  <key>CFBundleShortVersionString</key><string>@VERSION@</string>
+  <key>CFBundleVersion</key><string>@BUILD@</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSAppleEventsUsageDescription</key><string>ironpet switches to the iTerm tab where an agent is waiting.</string>
@@ -77,6 +86,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
+sed -i '' "s/@VERSION@/$VERSION/; s/@BUILD@/$BUILD/" "$APP/Contents/Info.plist"
 
 # IRONPET_SIGN_IDENTITY=- forces ad-hoc signing, e.g. when the keychain would prompt for the ironpet-dev key.
 IDENTITY="${IRONPET_SIGN_IDENTITY:-}"
@@ -84,5 +94,10 @@ if [ -z "$IDENTITY" ]; then
   IDENTITY="-"
   if security find-identity -p codesigning 2>/dev/null | grep -q '"ironpet-dev"'; then IDENTITY="ironpet-dev"; fi
 fi
-codesign --force --sign "$IDENTITY" --timestamp=none "$APP"
+if [ "${IRONPET_HARDENED:-}" = "1" ]; then
+  # A secure timestamp from Apple's server is part of what notarization checks, so this needs network.
+  codesign --force --sign "$IDENTITY" --options runtime --timestamp --entitlements Resources/IronPet.entitlements "$APP"
+else
+  codesign --force --sign "$IDENTITY" --timestamp=none "$APP"
+fi
 echo "Built $APP"
