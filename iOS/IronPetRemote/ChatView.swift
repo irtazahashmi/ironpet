@@ -121,7 +121,7 @@ private struct Transcript: View {
 
     /// Changes whenever something arrives that a reader at the end should see: a message, streamed text, a card or the working row.
     private var contentKey: String {
-        "\(model.items.count)-\(model.items.last?.text?.utf16.count ?? 0)-\(model.approvals.count)-\(model.forms.count)-\(model.queue.count)-\(showsTyping)"
+        "\(model.displayItems.count)-\(model.displayItems.last?.text?.utf16.count ?? 0)-\(model.approvals.count)-\(model.forms.count)-\(model.queue.count)-\(showsTyping)"
     }
 
     private func publish() {
@@ -129,7 +129,7 @@ private struct Transcript: View {
         if newBelow != tracker.state.newBelow { newBelow = tracker.state.newBelow }
     }
 
-    private var showsTyping: Bool { model.running && model.approvals.isEmpty && model.forms.isEmpty }
+    private var showsTyping: Bool { (model.running || model.awaitingReply) && model.approvals.isEmpty && model.forms.isEmpty }
 
     var body: some View {
         ScrollViewReader { proxy in
@@ -137,9 +137,10 @@ private struct Transcript: View {
                 // The end marker sits outside the lazy stack, so it keeps reporting its position while the rows around it are not built.
                 VStack(spacing: 0) {
                     LazyVStack(alignment: .leading, spacing: 10) {
-                        ForEach(RemoteTranscriptGroup.make(model.items)) { group in
+                        ForEach(RemoteTranscriptGroup.make(model.displayItems)) { group in
                             TranscriptGroupView(group: group, photos: model.sentPhotos, avatar: avatar, expanded: expandedMessages,
                                                 toggleExpand: { id in if !expandedMessages.insert(id).inserted { expandedMessages.remove(id) } },
+                                                outbox: model.outbox, onRetry: { id in Task { await model.retry(id) } },
                                                 onReply: { model.replyTo = $0 },
                                                 readAloud: { item in voice.flatMap { ReadAloud(item: item, voice: $0) } })
                         }
@@ -209,6 +210,8 @@ private struct TranscriptGroupView: View {
     var avatar: CGImage?
     var expanded: Set<String> = []
     var toggleExpand: (String) -> Void = { _ in }
+    var outbox: [OutgoingMessage] = []
+    var onRetry: (UUID) -> Void = { _ in }
     var onReply: (RemoteChatItem) -> Void = { _ in }
     /// Nil in a saved thread, whose messages the Mac cannot read from the open chat.
     var readAloud: (RemoteChatItem) -> ReadAloud? = { _ in nil }
@@ -218,9 +221,33 @@ private struct TranscriptGroupView: View {
         case .tools(let steps):
             ToolStepsRow(steps: steps)
         case .item(let item):
-            MessageRow(item: item, photo: item.fileName.flatMap { photos[$0] }, avatar: avatar, expanded: expanded.contains(item.id),
-                       onToggleExpand: { toggleExpand(item.id) }, onReply: item.canReply ? { onReply(item) } : nil,
-                       readAloud: item.kind == "assistant" ? readAloud(item) : nil)
+            VStack(alignment: .trailing, spacing: 2) {
+                MessageRow(item: item, photo: item.fileName.flatMap { photos[$0] }, avatar: avatar, expanded: expanded.contains(item.id),
+                           onToggleExpand: { toggleExpand(item.id) }, onReply: item.canReply && !OutgoingMessage.isPending(item.id) ? { onReply(item) } : nil,
+                           readAloud: item.kind == "assistant" ? readAloud(item) : nil)
+                if let message = outbox.first(where: { $0.itemID == item.id }) { OutgoingStatus(message: message, onRetry: { onRetry(message.id) }) }
+            }
+        }
+    }
+}
+
+/// Under a message the Mac has not confirmed: "Sending…" while it is on its way, or the error and a Retry button when it failed.
+private struct OutgoingStatus: View {
+    let message: OutgoingMessage
+    let onRetry: () -> Void
+
+    var body: some View {
+        switch message.state {
+        case .sending, .sent:
+            Text("Sending…").font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("outgoing-sending")
+        case .failed(let reason):
+            HStack(spacing: 6) {
+                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
+                Text(reason).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
+                Button("Retry", action: onRetry).font(.caption2.weight(.semibold)).accessibilityIdentifier("outgoing-retry")
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("outgoing-failed")
         }
     }
 }
