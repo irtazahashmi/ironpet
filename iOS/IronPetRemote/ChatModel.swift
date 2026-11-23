@@ -92,6 +92,9 @@ final class ChatModel: SocketModel {
     /// Photos this phone sent, by the name the Mac saved them under, so the transcript shows a thumbnail instead of a chip.
     private(set) var sentPhotos: [String: Data] = [:]
     @ObservationIgnored private var pastedCount = 0
+    @ObservationIgnored private var pickedCount = 0
+    /// Why the last upload failed, while the composer holds the attachments again. The composer shows it with a Retry.
+    private(set) var uploadFailure: String?
     /// Screenshots and attached images the Mac holds, fetched by the id of their message.
     @ObservationIgnored lazy var images = ChatImages(client: client)
 
@@ -197,6 +200,26 @@ final class ChatModel: SocketModel {
     /// thread, then added with a thumbnail. Returns false when it was refused, with `errorMessage` saying why.
     @discardableResult
     func attachPastedImage(_ raw: Data) async -> Bool {
+        pastedCount += 1
+        return await attachImage(raw, name: "pasted-image-\(pastedCount)")
+    }
+
+    /// Photos from the picker. Each loader returns the photo's bytes. A photo that cannot be loaded is reported, and the others still
+    /// attach. The picker hands over HEIC and full-size originals, so they go through the same conversion as a pasted image.
+    func attachPhotos(_ loaders: [@Sendable () async throws -> Data?]) async {
+        var failed = 0
+        for load in loaders {
+            guard let raw = try? await load(), !raw.isEmpty else { failed += 1; continue }
+            pickedCount += 1
+            // The limit or an unreadable image sets its own message, which matters more than the load count.
+            if await !attachImage(raw, name: "photo-\(pickedCount)") { return }
+        }
+        if failed > 0 {
+            errorMessage = failed == 1 ? "A photo could not be loaded. Try picking it again." : "\(failed) photos could not be loaded. Try picking them again."
+        }
+    }
+
+    private func attachImage(_ raw: Data, name: String) async -> Bool {
         guard attachments.filter(\.isImage).count < Self.maxPendingImages else {
             errorMessage = "You can attach up to \(Self.maxPendingImages) images to one message."
             return false
@@ -206,26 +229,29 @@ final class ChatModel: SocketModel {
             errorMessage = "That image could not be read."
             return false
         }
-        // The paste may have been the fifth while the first was still converting.
+        // The next one may have been added while this one was still converting.
         guard attachments.filter(\.isImage).count < Self.maxPendingImages else {
             errorMessage = "You can attach up to \(Self.maxPendingImages) images to one message."
             return false
         }
-        pastedCount += 1
-        var pending = PendingAttachment(fileName: "pasted-image-\(pastedCount).\(image.fileExtension)", contentType: image.contentType, data: image.data, isImage: true)
+        var pending = PendingAttachment(fileName: "\(name).\(image.fileExtension)", contentType: image.contentType, data: image.data, isImage: true)
         pending.preview = PastedImage.thumbnail(from: image.data)
         attachments.append(pending)
         errorMessage = nil
         return true
     }
 
-    func removeAttachment(_ attachment: PendingAttachment) { attachments.removeAll { $0 == attachment } }
+    func removeAttachment(_ attachment: PendingAttachment) {
+        attachments.removeAll { $0 == attachment }
+        if attachments.isEmpty { uploadFailure = nil }
+    }
 
     /// Clears the composer and shows the message in the transcript at once, then uploads the attachments one by one and sends the message
     /// with their ids. When an upload fails nothing is sent, and the text, the attachments and the reply come back. When the send
     /// fails or the Mac does not answer in time, the message stays in the transcript marked failed, and `retry` sends it again.
     func send() async {
         guard canSend else { return }
+        uploadFailure = nil
         sending = true
         defer { sending = false }
         PhoneHopLog.mark("phone.send")
@@ -253,6 +279,8 @@ final class ChatModel: SocketModel {
         for attachment in pending {
             guard let upload = await run({ try await self.client.upload(attachment.data, fileName: attachment.fileName, contentType: attachment.contentType) }) else {
                 outbox.removeAll { $0.id == outgoing }
+                // `run` already put the reason in `errorMessage`. A sign-out leaves none, and then there is nothing to retry.
+                uploadFailure = errorMessage.map { "The upload failed. \($0)" }
                 return restore()
             }
             ids.append(upload.id)
