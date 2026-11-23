@@ -707,10 +707,14 @@ final class RemoteServer {
                 let gap = since.map { bus.replay(after: $0).gap } ?? false
                 if gap { send.yield(Self.text(["kind": "resync", "seq": bus.lastSeq])) }
                 // A streamed reply changes one message many times a second. The phone reads it again on each event, so it gets at most
-                // one `chat.item` per message per interval, and the last one after the stream pauses.
+                // one `chat.item` per message per interval, and the last one after the stream pauses. Each carries the message text as it is at that moment.
                 let throttle = RemoteEventThrottle(interval: interval) {
                     if $0.kind == .chatItem { HopLog.mark("mac.push") }
-                    send.yield(Self.text(Self.describe($0)))
+                    var frame = Self.describe($0)
+                    // The changed message rides along, so the phone does not read it again. An older phone ignores the key.
+                    if $0.kind == .chatItem, let id = $0.id.flatMap(UUID.init(uuidString:)), let item = api.chat.currentItem(id),
+                       let inline = RemoteChat.inlineJSON(item) { frame["item"] = inline }
+                    send.yield(Self.text(frame))
                 }
                 return (bus.subscribe(after: gap ? nil : since) { throttle.push($0) }, throttle)
             }
