@@ -144,13 +144,15 @@ final class VoiceSendTests: XCTestCase {
         PhoneHopLog.tap = { hops.append($0) }
         defer { PhoneHopLog.tap = nil }
         let (chat, voice, channel) = await rig()
+        // The push only reaches the phone once its event socket is open.
+        await poll { self.server.openSocketCount > 0 }
         await voice.micTapped()
         await voice.micTapped()
         let id = try XCTUnwrap(streamID(channel))
         voice.handle(.text(VoiceServerMessage.transcript(id: id, text: "marked").json))
         server.pushUserItem(text: "marked", origin: "ios")
         await poll { chat.outbox.isEmpty }
-        XCTAssertTrue(hops.contains("phone.item"))
+        XCTAssertTrue(hops.contains("phone.item") || hops.contains("phone.event"), "the pushed item is marked, whether it came inline or was read again")
         XCTAssertTrue(hops.contains("phone.confirmed"))
         chat.stop()
     }
