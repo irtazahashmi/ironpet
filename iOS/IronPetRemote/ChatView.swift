@@ -26,6 +26,10 @@ struct ChatView: View {
     @Environment(VoiceModel.self) private var voice: VoiceModel?
 
     var body: some View {
+        content.chatTextSize()
+    }
+
+    private var content: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 if find.isOpen { ChatFindBar(find: find) }

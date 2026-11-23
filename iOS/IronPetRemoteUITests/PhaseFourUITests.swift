@@ -122,6 +122,8 @@ final class PhaseFourUITests: XCTestCase {
         let patched = NSPredicate { _, _ in self.server.config.reminders.paused }
         let result = XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: patched, object: nil)], timeout: 10)
         XCTAssertEqual(result, .completed, "requests: \(server.requests.map(\.line)) value: \(String(describing: toggle.value))")
+        // The Chat text size section sits first, so the privacy rows are further down than the first screen.
+        for _ in 0..<4 where !app.buttons["meetings-off"].exists { app.swipeUp() }
         XCTAssertFalse(app.switches["meetings-enabled"].exists, "the phone has no switch that turns meetings on")
         XCTAssertTrue(app.buttons["meetings-off"].exists)
         attach("settings")
