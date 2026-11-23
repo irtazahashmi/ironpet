@@ -203,11 +203,11 @@ final class VoiceModel {
         pump = nil
         PhoneHopLog.mark("phone.voice.upload.start")
         do {
-            if let last = framer.flush() {
-                recorded.append(last)
-                try await channel.send(binary: last)
-            }
+            let last = framer.flush()
+            if let last { recorded.append(last) }
+            // Kept before the first send that can fail, so Retry has the audio after any upload error.
             if streamMode == .send { retained[id] = recorded }
+            if let last { try await channel.send(binary: last) }
             try await channel.send(text: VoiceClientMessage.end(id: id).json)
         } catch {
             fail("The Mac is not reachable.")
@@ -228,7 +228,11 @@ final class VoiceModel {
 
     /// Sends the audio of a failed voice message again, from the first frame. A second call while the first runs does nothing.
     func resend(_ id: String) async {
-        guard state == .idle, let frames = retained[id] else { return }
+        guard state == .idle, let frames = retained[id] else {
+            // The pending message is already in the sending state. Without this it would stay there.
+            if state == .idle { onSend(.failed(id: id, reason: "The recording is gone. Record it again.")) }
+            return
+        }
         errorMessage = nil
         // The state changes before the first await, so a second tap finds the model busy.
         state = .transcribing

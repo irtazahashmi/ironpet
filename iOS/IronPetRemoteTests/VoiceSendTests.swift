@@ -139,6 +139,22 @@ final class VoiceSendTests: XCTestCase {
         chat.stop()
     }
 
+    func testThePushedVoiceItemIsMarkedOnThePhone() async throws {
+        var hops: [String] = []
+        PhoneHopLog.tap = { hops.append($0) }
+        defer { PhoneHopLog.tap = nil }
+        let (chat, voice, channel) = await rig()
+        await voice.micTapped()
+        await voice.micTapped()
+        let id = try XCTUnwrap(streamID(channel))
+        voice.handle(.text(VoiceServerMessage.transcript(id: id, text: "marked").json))
+        server.pushUserItem(text: "marked", origin: "ios")
+        await poll { chat.outbox.isEmpty }
+        XCTAssertTrue(hops.contains("phone.item"))
+        XCTAssertTrue(hops.contains("phone.confirmed"))
+        chat.stop()
+    }
+
     func testASilentRecordingLeavesNoPendingItem() async throws {
         let (chat, voice, channel) = await rig()
         await voice.micTapped()
