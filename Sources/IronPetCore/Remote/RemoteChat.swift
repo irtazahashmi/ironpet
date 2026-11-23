@@ -232,6 +232,19 @@ package struct RemoteChat {
         return ["outcome": Self.name(result.outcome)]
     }
 
+    /// A message the phone sent over the event socket. The phone made `clientID`, so a second frame with the same id returns the first
+    /// ack and sends nothing. `body` is the same object `send` takes.
+    package func send(clientID: String, _ body: [String: Any], ledger: RemoteSendLedger) async throws -> RemoteSendAck {
+        guard UUID(uuidString: clientID) != nil else { throw RemoteFailure.invalid("client_id must be a UUID") }
+        return try await ledger.once(device: device, clientID: clientID) {
+            let outcome = try await send(body)["outcome"] as? String ?? ChatSendOutcome.sent.rawValue
+            // A message that started a turn is the newest user item. A queued one has no item until its turn comes.
+            let itemID = outcome == ChatSendOutcome.sent.rawValue
+                ? await api.chat.messages().last { if case .user = $0.kind { true } else { false } }?.id.uuidString : nil
+            return RemoteSendAck(clientID: clientID, outcome: outcome, itemID: itemID, seq: api.events.lastSeq)
+        }
+    }
+
     /// The quote of a user or assistant message, as the Mac builds it. A tool step, a screenshot or an error cannot be replied to.
     private func replyTo(_ id: UUID, selection: String?) async throws -> ChatReply {
         let item: ChatItem

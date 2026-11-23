@@ -248,10 +248,12 @@ public final class IronPetClient: @unchecked Sendable {
 
     public func chatThread(id: String) async throws -> RemoteChatThreadDetail { try await get(RemoteChatThreadDetail.self, APIPath.chatThread(id)) }
 
-    /// Sends a message into the chat the Mac has open. `uploadIDs` come from `upload`.
+    /// Sends a message into the chat the Mac has open. `uploadIDs` come from `upload`. `clientID` is a UUID the phone made for this message.
     @discardableResult
-    public func sendMessage(text: String, uploadIDs: [String] = [], reply: RemoteReplyRef? = nil) async throws -> RemoteSendResult {
+    public func sendMessage(text: String, uploadIDs: [String] = [], reply: RemoteReplyRef? = nil, clientID: String? = nil) async throws -> RemoteSendResult {
         var body: [String: Any] = ["text": text]
+        // The Mac dedupes on the client id, so a send that is repeated over HTTPS after the socket lost its ack creates one message.
+        if let clientID { body["client_id"] = clientID }
         if !uploadIDs.isEmpty { body["upload_ids"] = uploadIDs }
         if let reply {
             var quote: [String: Any] = ["item_id": reply.itemID]

@@ -81,6 +81,21 @@ JSON-RPC response as a text frame between the events. The hello names the progra
 one. A phone that never sends it still has a session and still gets the frames it got before. The socket takes no other method: any other
 request gets `Method not found`, and a frame longer than 16 KiB closes the socket.
 
+A phone also sends a chat message as a text frame, so a typed message needs no HTTPS request. The Mac announces this in its first frame,
+`{"kind":"hello","seq":n,"capabilities":["chat.send"]}`. A phone does not send the frame to a Mac whose hello lacks the capability, and uses
+`POST /v1/chat/current/messages` instead.
+
+The frames are:
+
+- Phone to Mac: `{"kind":"chat.send","client_id":"<UUID the phone made>","text":"...","reply":{"item_id","selection_text"?}?}`.
+- Mac to phone, taken: `{"kind":"chat.ack","client_id","outcome","item_id"?,"seq"}`, where `outcome` is the same word `POST /v1/chat/current/messages` returns.
+- Mac to phone, refused: `{"kind":"chat.nack","client_id","code","message"}`, for a bad `client_id` or an empty text. The message was not sent.
+
+`item_id` is the new user message, and is absent when the message waits in the queue. `seq` is the event bus position when the Mac took
+the message. The Mac keeps the last 512 acks for each device by `client_id`. A second `chat.send` with the same id, or `POST
+/v1/chat/current/messages` with `client_id` in its body, returns the first outcome and creates no message. A refused send is not kept, so
+its retry runs again. Attachments still go through `POST /v1/uploads` and the HTTPS send.
+
 ### Over stdio
 
 A host with no session of its own opens one when it gets `session.hello`. The stdio host executable comes after core PR 12, so no stdio client

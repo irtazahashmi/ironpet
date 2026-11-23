@@ -112,6 +112,8 @@ final class RemoteServer {
     /// Answers `session.hello` on the event socket. Nothing else of the method table is reachable through a socket.
     private let rpc: RPCDispatcher
     private let uploads: RemoteUploads
+    /// The messages phones sent over the event socket, so a resend creates nothing.
+    private let sends = RemoteSendLedger()
     /// How often one message's `chat.item` event may reach a socket.
     var itemInterval: Duration = .milliseconds(100)
     private var tasks: [Task<Void, Never>] = []
@@ -528,7 +530,12 @@ final class RemoteServer {
         router.post("/v1/chat/current/messages") { [self] request, context in
             HopLog.mark("mac.receive")
             let body = try await Self.object(request, context)
-            let response = await self.chat(context) { try await $0.send(body) }
+            let sends = self.sends
+            // A phone that sends a client id gets the same dedupe as on the socket, so a retry over HTTPS after a lost ack creates nothing.
+            let response = await self.chat(context) {
+                guard let clientID = body["client_id"] as? String else { return try await $0.send(body) }
+                return ["outcome": try await $0.send(clientID: clientID, body, ledger: sends).outcome]
+            }
             HopLog.mark("mac.transcript")
             return response
         }
@@ -696,6 +703,7 @@ final class RemoteServer {
         let service = service
         let api = api
         let rpc = rpc
+        let uploads = uploads, sends = sends
         let interval = itemInterval
         router.ws("/v1/events", shouldUpgrade: { request, _ in
             // The same checks as REST, without counting a failure: a refused upgrade falls through to the REST router, which counts it once.
@@ -720,7 +728,7 @@ final class RemoteServer {
             defer { Task { @MainActor in if let id = connection.sessionID { api.clients.disconnect(id) } } }
             let (subscription, throttle) = await MainActor.run { () -> (APIEventBus.Subscription, RemoteEventThrottle) in
                 let bus = api.events
-                send.yield(Self.text(["kind": "hello", "seq": bus.lastSeq]))
+                send.yield(Self.text(["kind": "hello", "seq": bus.lastSeq, "capabilities": Self.socketCapabilities]))
                 let gap = since.map { bus.replay(after: $0).gap } ?? false
                 if gap { send.yield(Self.text(["kind": "resync", "seq": bus.lastSeq])) }
                 // A streamed reply changes one message many times a second. The phone reads it again on each event, so it gets at most
@@ -743,6 +751,11 @@ final class RemoteServer {
                     do {
                         for try await message in inbound.messages(maxSize: Self.maxSocketMessage) {
                             guard case .text(let text) = message else { continue }
+                            if let frame = Self.chatSendFrame(text) {
+                                // The send runs on its own task, so one slow message does not hold up the next frame or a ping.
+                                Task { send.yield(await Self.answer(frame, api: api, device: device.id, uploads: uploads, sends: sends)) }
+                                continue
+                            }
                             let reply = await rpc.handle(line: Data(text.utf8), connection: connection, allowed: ["session.hello"])
                             send.yield(String(decoding: reply, as: UTF8.self))
                         }
@@ -758,6 +771,39 @@ final class RemoteServer {
                 group.cancelAll()
             }
         }
+    }
+
+    /// What the hello frame announces. `chat.send` means the socket takes a `chat.send` frame and answers it with `chat.ack`.
+    nonisolated static let socketCapabilities = ["chat.send"]
+
+    /// The frame when `text` is a `chat.send` frame: `{"kind":"chat.send","client_id","text","reply"?}`.
+    private nonisolated static func chatSendFrame(_ text: String) -> [String: Any]? {
+        guard let object = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any], object["kind"] as? String == "chat.send" else { return nil }
+        return object
+    }
+
+    /// The `chat.ack` frame for a sent message, or a `chat.nack` with the reason. Both carry the phone's `client_id`.
+    private nonisolated static func answer(_ frame: [String: Any], api: IronPetAPI, device: String, uploads: RemoteUploads, sends: RemoteSendLedger) async -> String {
+        let clientID = frame["client_id"] as? String ?? ""
+        HopLog.mark("mac.recv")
+        var body: [String: Any] = ["text": frame["text"] as? String ?? ""]
+        if let reply = frame["reply"] { body["reply"] = reply }
+        do {
+            let ack = try await MainActor.run { RemoteChat(api: api, device: device, uploads: uploads) }.send(clientID: clientID, body, ledger: sends)
+            var object: [String: Any] = ["kind": "chat.ack", "client_id": ack.clientID, "outcome": ack.outcome, "seq": ack.seq]
+            if let item = ack.itemID { object["item_id"] = item }
+            HopLog.mark("mac.ack")
+            return text(object)
+        } catch {
+            let failure = errorResponseParts(error)
+            return text(["kind": "chat.nack", "client_id": clientID, "code": failure.code, "message": failure.message])
+        }
+    }
+
+    private nonisolated static func errorResponseParts(_ error: Error) -> (code: String, message: String) {
+        if let failure = error as? RemoteFailure { return (failure.code, failure.message) }
+        if let failure = error as? APIError { return ("failed", String(describing: failure)) }
+        return ("failed", "internal error")
     }
 
     // MARK: Voice socket
