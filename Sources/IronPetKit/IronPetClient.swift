@@ -143,6 +143,10 @@ public final class IronPetClient: @unchecked Sendable {
         try await get(TaskListResponse.self, APIPath.tasks, query: includeDone ? [URLQueryItem(name: "include_done", value: "1")] : []).tasks
     }
 
+    public func taskFilters() async throws -> [QuickFilter] { try await get(QuickFilterListResponse.self, APIPath.taskFilters).filters }
+
+    public func deleteTaskFilter(id: String) async throws { _ = try await perform(request("DELETE", APIPath.taskFilter(id))) }
+
     public func task(id: String) async throws -> RemoteTaskDetail { try await get(RemoteTaskDetail.self, APIPath.task(id)) }
 
     public func suggestions() async throws -> [RemoteSuggestion] { try await get(SuggestionListResponse.self, APIPath.suggestions).suggestions }

@@ -101,7 +101,7 @@ package final class IronPetAPI {
         session = SessionAPI(clients: registry, events: events) { served() }
         stores.tasks.events = events
         stores.automations.store.events = events
-        tasks = TasksAPI(store: stores.tasks)
+        tasks = TasksAPI(store: stores.tasks, config: stores.config)
         automations = AutomationsAPI(service: stores.automations)
         stores.signals.events = events
         stores.bubbles.events = events

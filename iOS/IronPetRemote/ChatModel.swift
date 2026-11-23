@@ -415,6 +415,16 @@ final class ChatModel: SocketModel {
         if !delivered, outgoing == nil { restore() }
     }
 
+    /// Sends `text` as its own message and leaves the composer, its attachments and its reply as they are. The Tasks tab uses it for
+    /// the quick filter prompts. A failure shows on the message in the chat, with Retry.
+    func sendPrompt(_ text: String) async {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return }
+        let message = OutgoingMessage(id: UUID(), text: text, date: Date(), state: .sending, known: userItemIDs, reply: nil)
+        outbox.append(message)
+        await deliver(message.id, text: text, uploadIDs: [], reply: nil, photos: [:])
+    }
+
     /// Sends a failed message again. The state changes before the first await, so a second tap does nothing.
     func retry(_ id: UUID) async {
         guard let index = outbox.firstIndex(where: { $0.id == id }), outbox[index].isFailed else { return }

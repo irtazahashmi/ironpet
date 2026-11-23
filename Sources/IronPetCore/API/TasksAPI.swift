@@ -1,4 +1,5 @@
 import Foundation
+import IronPetKit
 #if canImport(Combine)
 import Combine
 #endif
@@ -200,13 +201,31 @@ package final class TasksAPI {
     /// Fires before anything this API reads changes.
     package let changes = ChangeSignal()
     private let store: TaskStore
+    /// Where quick filters are saved (`tasks.quickFilters` in `config.json`). Nil keeps them in memory, as tests and previews do.
+    private let config: ConfigStore?
+    private var memoryFilters: [QuickFilter] = []
     private var forwarding: [ChangeToken] = []
 
-    package init(store: TaskStore) {
+    package init(store: TaskStore, config: ConfigStore? = nil) {
         self.store = store
+        self.config = config
         forwarding = [
             store.changes.observe { [weak self] in self?.changes.send() },
         ]
+        if let config {
+            forwarding.append(config.changes.observe { [weak self] in self?.changes.send() })
+        }
+    }
+
+    var quickFilterStorage: [QuickFilter] { config?.config.tasks.quickFilters ?? memoryFilters }
+
+    func setQuickFilterStorage(_ filters: [QuickFilter]) {
+        guard let config else {
+            changes.send()
+            memoryFilters = filters
+            return
+        }
+        config.update { $0.tasks.quickFilters = filters }
     }
 
     // MARK: Reading

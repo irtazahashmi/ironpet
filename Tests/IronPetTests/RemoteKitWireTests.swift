@@ -102,6 +102,29 @@ final class RemoteKitWireTests: XCTestCase {
         XCTAssertEqual(deleted.json as NSDictionary, ["deleted": id] as NSDictionary)
     }
 
+    func testQuickFilterRoutesServeTheChipsAndRemoveOne() async throws {
+        // Filters live in config.json, so saving one fires settings.changed and the controller matches the server to the settings.
+        // Turn the remote API on at the port the harness listens on first, so that match leaves the server as it is.
+        let port = h.port
+        h.api.settings.update { $0.remote.enabled = true; $0.remote.port = port }
+        await h.controller.settled()
+        try h.api.tasks.upsertQuickFilter(id: nil, name: "Epic", query: ["label": ["project": "epic"]])
+        try h.api.tasks.upsertQuickFilter(id: nil, name: "Needs me", query: ["status": "needs_you"])
+        await h.controller.settled()
+        let none = try await h.request("GET", "/v1/task-filters")
+        XCTAssertEqual(none.status, 401, "device token auth, like the other routes")
+        let list = try await get("/v1/task-filters")
+        let decoded = try lossless(QuickFilterListResponse.self, list, "GET /v1/task-filters")
+        XCTAssertEqual(decoded.filters.map(\.name), ["Epic", "Needs me"])
+        XCTAssertNotNil(decoded.filters.first?.node)
+
+        let missing = try await h.request("DELETE", "/v1/task-filters/ghost", token: token)
+        XCTAssertEqual(missing.status, 404)
+        let removed = try await h.request("DELETE", "/v1/task-filters/epic", token: token)
+        XCTAssertEqual(removed.status, 200)
+        XCTAssertEqual(h.api.tasks.quickFilters.map(\.id), ["needs-me"])
+    }
+
     func testSuggestionRoutesDecodeIntoKitTypesAndKeepTheirJSON() async throws {
         h.api.tasks.suggest(SuggestTaskRequest(draft: .init(key: "k", title: "Review PR", due: nil), kind: .pr, sourceRef: "pr:1"))
         h.api.tasks.suggest(SuggestTaskRequest(draft: .init(key: "k2", title: "Send notes", due: "Friday"), kind: .pr, sourceRef: "{\"pr\":2}"))

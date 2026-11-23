@@ -130,6 +130,19 @@ package struct RemoteTasks {
         return RemoteWire.object(RemoteDeleted(deleted: item.id))
     }
 
+    // MARK: Quick filters
+
+    /// The saved filters in chip order. They live in `config.json`, so they are served even when the task database is unavailable.
+    package func filters() -> [String: Any] {
+        RemoteWire.object(QuickFilterListResponse(filters: tasks.quickFilters))
+    }
+
+    /// Removing is the one change the phone makes itself. Adding and editing go through the chat agent.
+    package func deleteFilter(_ id: String) throws -> [String: Any] {
+        try tasks.deleteQuickFilter(id)
+        return RemoteWire.object(RemoteDeleted(deleted: id))
+    }
+
     // MARK: Suggestions
 
     package func suggestions() throws -> [String: Any] {

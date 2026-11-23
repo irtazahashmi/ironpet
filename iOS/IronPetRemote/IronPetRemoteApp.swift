@@ -105,7 +105,10 @@ struct MainTabs: View {
                 .tabItem { Label("Pet", systemImage: AppTab.pet.symbol) }.tag(AppTab.pet)
             ChatView(model: chat, backgroundID: pet.backgroundID, backgroundImage: pet.backgroundImage, avatar: PetAvatar.face(of: pet.atlas))
                 .tabItem { Label("Chat", systemImage: AppTab.chat.symbol) }.badge(chat.approvals.count + chat.forms.count).tag(AppTab.chat)
-            TasksView(model: tasks)
+            TasksView(model: tasks, onAsk: { [chat] text in
+                tab = .chat
+                Task { await chat.sendPrompt(text) }
+            })
                 .tabItem { Label("Tasks", systemImage: AppTab.tasks.symbol) }.tag(AppTab.tasks)
             AgentsView(model: agents)
                 .tabItem { Label("Agents", systemImage: AppTab.agents.symbol) }.tag(AppTab.agents)

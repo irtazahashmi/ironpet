@@ -137,7 +137,7 @@ enum PreviewRenderer {
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks")
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks-light", scheme: .light)
         for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
-            render(TaskBoardView(columns: TaskBoard.columns(tasks.all, label: nil, query: ""), onOpen: { _ in }, onDrop: { _, _ in })
+            render(TaskBoardView(columns: TaskBoard.columns(tasks.all, filter: nil, query: ""), onOpen: { _ in }, onDrop: { _, _ in })
                 .frame(width: 1240, height: 520).panel(), to: dir, "tasks-board" + suffix, scheme: scheme)
         }
         if let sample = tasks.all.first {
@@ -688,7 +688,11 @@ enum PreviewRenderer {
                                             url: URL(string: "https://mail.google.com/mail/u/0/#inbox/1"))],
                       automation: "gmail-watch", name: "Gmail watcher")
         clock = Date()
-        return TasksAPI(store: store)
+        let api = TasksAPI(store: store)
+        _ = try? api.upsertQuickFilter(id: nil, name: "Open", query: ["not": ["status": "done"]])
+        _ = try? api.upsertQuickFilter(id: nil, name: "Needs me", query: ["status": "needs_you"])
+        _ = try? api.upsertQuickFilter(id: nil, name: "Due soon", query: ["and": [["due": ["before": "2099-01-01"]], ["not": ["status": "done"]]]])
+        return api
     }
 
     private static var sampleSignals: [Signal] {

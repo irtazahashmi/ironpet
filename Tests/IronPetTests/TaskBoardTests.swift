@@ -1,6 +1,7 @@
 import XCTest
 @testable import IronPet
 @testable import IronPetCore
+import enum IronPetKit.QuickFilterNode
 
 @MainActor
 final class TaskBoardTests: XCTestCase {
@@ -18,7 +19,11 @@ final class TaskBoardTests: XCTestCase {
     }
 
     private func ids(_ column: TaskColumn, label: String? = nil, query: String = "") -> [String] {
-        (TaskBoard.columns(api.all, label: label, query: query, now: clock)[column] ?? []).map(\.title)
+        let filter = label.map { pair -> QuickFilterNode in
+            let parts = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            return .label(key: parts[0], value: parts[1])
+        }
+        return (TaskBoard.columns(api.all, filter: filter, query: query, now: clock)[column] ?? []).map(\.title)
     }
 
     // S1

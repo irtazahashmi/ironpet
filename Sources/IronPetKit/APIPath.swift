@@ -8,6 +8,9 @@ public enum APIPath {
     public static let tasks = "/v1/tasks"
     public static func task(_ id: String) -> String { "/v1/tasks/\(id)" }
     public static func closeTask(_ id: String) -> String { "/v1/tasks/\(id)/close" }
+    /// Saved quick filters for the task list. A Mac older than this feature answers 404, and the phone then shows no chips.
+    public static let taskFilters = "/v1/task-filters"
+    public static func taskFilter(_ id: String) -> String { "/v1/task-filters/\(id)" }
     public static let suggestions = "/v1/suggestions"
     public static func acceptSuggestion(_ id: String) -> String { "/v1/suggestions/\(id)/accept" }
     /// The Mac calls Skip "reject".
