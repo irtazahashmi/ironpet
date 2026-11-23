@@ -849,6 +849,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             (hotkeys.chat, 1, { [weak self] in self?.toggleChat() }),
             (hotkeys.captureWindow, 2, { [weak self] in self?.captureScreen(region: false) }),
             (hotkeys.captureRegion, 3, { [weak self] in self?.captureScreen(region: true) }),
+            (hotkeys.copyVersion, 12, { [weak self] in self?.copyVersion(nil) }),
         ]
         var failed: Set<String> = []
         for (text, id, action) in bindings where !text.isEmpty {
@@ -1549,7 +1550,39 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         login.state = LoginItem.isEnabled ? .on : .off
         let settings = NSMenuItem(title: "Settings…", action: #selector(showSettings(_:)), keyEquivalent: ",")
         for item in [system, login, settings] { item.target = self }
-        return [meetingMenuItem(), captureMenuItem(), settings, automationsMenuItem(), integrationsMenuItem(), system, login].compactMap { $0 }
+        return [meetingMenuItem(), captureMenuItem(), settings, automationsMenuItem(), integrationsMenuItem(), system, login]
+            .compactMap { $0 } + versionMenuItems()
+    }
+
+    private static let appVersion = AppVersion(info: Bundle.main.infoDictionary)
+
+    /// A disabled line with the version, then "Copy version" with its shortcut, if one is set.
+    private func versionMenuItems() -> [NSMenuItem] {
+        let line = NSMenuItem(title: Self.appVersion.label, action: nil, keyEquivalent: "")
+        line.isEnabled = false
+        let shortcut = Shortcut.display(config.config.hotkeys.copyVersion)
+        let copy = NSMenuItem(title: shortcut.map { "Copy version  \($0)" } ?? "Copy version", action: #selector(copyVersion(_:)), keyEquivalent: "")
+        copy.target = self
+        return [.separator(), line, copy]
+    }
+
+    @objc func copyVersion(_ sender: Any?) {
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(Self.appVersion.copyText, forType: .string)
+    }
+
+    @objc private func showAbout(_ sender: Any?) {
+        let version = Self.appVersion
+        var options: [NSApplication.AboutPanelOptionKey: Any] = [
+            .applicationName: "ironpet",
+            .applicationVersion: version.isDev ? "\(version.version) dev" : version.version,
+        ]
+        if let build = version.build { options[.version] = build }
+        if let commit = version.commit {
+            options[.credits] = NSAttributedString(string: "Commit \(commit)", attributes: [.font: NSFont.systemFont(ofSize: 11)])
+        }
+        NSApp.activate(ignoringOtherApps: true)
+        NSApp.orderFrontStandardAboutPanel(options: options)
     }
 
     private func integrationsMenuItem() -> NSMenuItem {
@@ -1643,6 +1676,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let appItem = NSMenuItem()
         main.addItem(appItem)
         let appMenu = NSMenu()
+        let about = NSMenuItem(title: "About IronPet", action: #selector(showAbout(_:)), keyEquivalent: "")
+        about.target = self
+        let copy = NSMenuItem(title: "Copy version", action: #selector(copyVersion(_:)), keyEquivalent: "")
+        copy.target = self
+        appMenu.addItem(about)
+        appMenu.addItem(copy)
+        appMenu.addItem(.separator())
         let settings = NSMenuItem(title: "Settings…", action: #selector(showSettings(_:)), keyEquivalent: ",")
         settings.target = self
         appMenu.addItem(settings)
