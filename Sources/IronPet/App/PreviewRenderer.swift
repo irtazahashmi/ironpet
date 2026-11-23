@@ -4,7 +4,7 @@ import IronPetCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// `--render-previews <dir> [--sprite <sheet.png>]`: renders the main UI with made-up sample data to PNGs, plus an
+/// `--render-previews <dir> [--sprite <sheet.png>] [--background <id>]`: renders the main UI with made-up sample data to PNGs, plus an
 /// animated `pet.gif` of Ghost reacting to an agent, for checking the design without clicking through it and for the
 /// README (`scripts/screenshots.sh`).
 /// Nothing here reads your sessions, alerts or chats.
@@ -18,6 +18,9 @@ enum PreviewRenderer {
         // Default settings (the pet is called Ghost), whatever is in your config.json.
         var config = Config()
         config.pet.sprite = sprite
+        if let id = arguments.firstIndex(of: "--background").flatMap({ arguments.count > $0 + 1 ? arguments[$0 + 1] : nil }) {
+            config.chat.background = id
+        }
         ConfigStore.shared.usePreview(config)
         let atlas = Atlas.loadDefault(sprite: sprite)
         let name = config.pet.name
@@ -74,6 +77,7 @@ enum PreviewRenderer {
                 .frame(width: 780, height: 560).panel()
         }
         render(list(sessions, tasks: tasks, on: .chat), to: dir, "window-chat")
+        render(list(sessions, tasks: tasks, on: .chat), to: dir, "window-chat-light", scheme: .light)
         render(list(sessions, tasks: tasks, on: .transcripts), to: dir, "transcripts")
         // The same section mid-run: the row and the header show the stage, and Regenerate is disabled for the other meeting.
         meetingLibrary.regenerator.loadPreview(active: "2026-11-16-0930", .transcribing(chunk: 2, of: 5))
