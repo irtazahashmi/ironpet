@@ -427,6 +427,8 @@ audio, or an area that is not on the wire yet.
 | `PATCH /v1/tasks/:id` | `tasks.update` |
 | `POST /v1/tasks/:id/close` | `tasks.close` |
 | `DELETE /v1/tasks/:id` | `tasks.delete` |
+| `GET /v1/task-filters` | none |
+| `DELETE /v1/task-filters/:id` | none |
 | `GET /v1/suggestions` | `tasks.suggestions` |
 | `POST /v1/suggestions/:id/accept` | `tasks.accept` |
 | `POST /v1/suggestions/:id/reject` | `tasks.reject` |

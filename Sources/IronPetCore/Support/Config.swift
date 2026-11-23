@@ -1,4 +1,5 @@
 import Foundation
+import IronPetKit
 #if canImport(Combine)
 import Combine
 #endif
@@ -316,10 +317,11 @@ package struct Config: Codable, Equatable {
     }
 
     package struct Tasks: Codable, Equatable {
-        package init(meetingSuggestions: Bool = true, dueReminders: Bool = true, keepDoneDays: Int = 30) {
+        package init(meetingSuggestions: Bool = true, dueReminders: Bool = true, keepDoneDays: Int = 30, quickFilters: [QuickFilter] = []) {
             self.meetingSuggestions = meetingSuggestions
             self.dueReminders = dueReminders
             self.keepDoneDays = keepDoneDays
+            self.quickFilters = quickFilters
         }
 
         /// After a meeting summary, offer the action items that belong to "Me" as tasks. Nothing is added without a click.
@@ -328,6 +330,8 @@ package struct Config: Codable, Equatable {
         package var dueReminders = true
         /// Done tasks older than this many days are deleted, with their history.
         package var keepDoneDays = 30
+        /// Saved queries the Tasks list offers as chips. The chat agent writes them through `task_filters_upsert`.
+        package var quickFilters: [QuickFilter] = []
     }
 
     /// Background jobs: work an agent hands off to its own agent session (`jobs_start`), each with a task in the Tasks section.

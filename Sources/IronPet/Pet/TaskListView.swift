@@ -2,6 +2,9 @@ import AppKit
 import enum IronPetKit.SharedTheme
 import enum IronPetKit.SharedSymbols
 import IronPetCore
+import struct IronPetKit.QuickFilter
+import enum IronPetKit.QuickFilterPrompt
+import enum IronPetKit.QuickFilterNode
 import SwiftUI
 
 /// The Tasks section of the ironpet window. The agent owns the list; here the user can only mark a task done, delete it,
@@ -19,8 +22,12 @@ struct TaskListView: View {
     @State private var showDone = false
     @State private var message = ""
     @State private var highlighted: String?
-    /// The label the list is filtered by, as `key=value`. Nil shows every task.
-    @State private var labelFilter: String?
+    /// The id of the quick filter the list is narrowed by. Nil is the "All" chip.
+    @State private var selectedFilter: String?
+    /// The Add or Edit sheet, until the user sends or cancels.
+    @State private var filterRequest: QuickFilterRequest?
+    /// The filter the user asked to remove, until they confirm.
+    @State private var removingFilter: QuickFilter?
     @State private var nav = TaskNavigation()
     /// The suggestion open in full. Suggestions have no page of their own in the store, so they get a simple one.
     @State private var suggestionNav = ListNavigation<String>()
@@ -38,7 +45,7 @@ struct TaskListView: View {
     static func content(unavailable: Bool, isEmpty: Bool) -> Content { !isEmpty ? .list : unavailable ? .unavailable : .empty }
 
     var body: some View {
-        ListScreen(title: IronPetSection.tasks.title, search: $search, detailOpen: nav.opened != nil || suggestionNav.opened != nil, trailing: { viewModePicker; labelFilterMenu }) {
+        ListScreen(title: IronPetSection.tasks.title, search: $search, detailOpen: nav.opened != nil || suggestionNav.opened != nil, trailing: { viewModePicker }) {
             // The list stays in the hierarchy under the detail page so its scroll position survives opening a task.
             ZStack {
                 listPage
@@ -55,6 +62,20 @@ struct TaskListView: View {
                         .transition(.opacity)
                 }
             }
+            .sheet(item: $filterRequest) { request in
+                QuickFilterRequestSheet(request: request, petName: petName) { text in
+                    onTellGhost(request.prompt(text))
+                    filterRequest = nil
+                } onCancel: { filterRequest = nil }
+            }
+            .confirmationDialog("Remove the quick filter \"\(removingFilter?.name ?? "")\"?", isPresented: removingShown, titleVisibility: .visible) {
+                Button("Remove", role: .destructive) {
+                    if let filter = removingFilter { remove(filter) }
+                }
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("Tasks are not changed.")
+            }
             .alert("Waiting on whom?", isPresented: holdingAlertShown) {
                 TextField("Name", text: $holder)
                 Button("Cancel", role: .cancel) {}
@@ -63,6 +84,24 @@ struct TaskListView: View {
                 Text("The task moves to Waiting on others.")
             }
         }
+    }
+
+    private var removingShown: Binding<Bool> {
+        Binding(get: { removingFilter != nil }, set: { if !$0 { removingFilter = nil } })
+    }
+
+    /// The chosen filter's query, or nil for "All". A filter that was removed or that this build cannot read counts as "All".
+    private var activeFilter: QuickFilterNode? { selectedFilter.flatMap { tasks.quickFilter($0)?.node } }
+
+    /// The chip to highlight. A filter the agent removed meanwhile leaves "All" highlighted, which is what the list shows.
+    private var shownFilter: Binding<String?> {
+        Binding(get: { selectedFilter.flatMap { id in QuickFilter.chips(tasks.quickFilters).contains { $0.id == id } ? id : nil } },
+                set: { selectedFilter = $0 })
+    }
+
+    private func remove(_ filter: QuickFilter) {
+        try? tasks.deleteQuickFilter(filter.id)
+        if selectedFilter == filter.id { selectedFilter = nil }
     }
 
     private var holdingAlertShown: Binding<Bool> {
@@ -94,7 +133,15 @@ struct TaskListView: View {
                 DatabaseBanner(reason: reason)
             }
             let content = Self.content(unavailable: tasks.unavailable != nil, isEmpty: tasks.suggestions.isEmpty && tasks.all.isEmpty)
-            let columns = Self.columns(tasks.all, label: labelFilter, query: search)
+            let columns = Self.columns(tasks.all, filter: activeFilter, query: search)
+            if content == .list || !tasks.quickFilters.isEmpty {
+                QuickFilterBar(filters: QuickFilter.chips(tasks.quickFilters), selection: shownFilter,
+                               onAdd: { filterRequest = .add },
+                               onEdit: { filterRequest = .edit($0) },
+                               onRemove: { removingFilter = $0 },
+                               onMove: { filter, step in try? tasks.moveQuickFilter(filter.id, by: step) })
+                Divider()
+            }
             let nothingShown = suggestionRows.isEmpty && columns.isEmpty
             if content == .unavailable {
                 Spacer()
@@ -147,17 +194,17 @@ struct TaskListView: View {
         }
     }
 
-    private static func columns(_ tasks: [TaskItem], label: String?, query: String) -> [TaskColumn: [TaskItem]] {
-        TaskBoard.columns(tasks, label: label, query: query)
+    private static func columns(_ tasks: [TaskItem], filter: QuickFilterNode?, query: String) -> [TaskColumn: [TaskItem]] {
+        TaskBoard.columns(tasks, filter: filter, query: query)
     }
 
-    /// A task shows when it has the chosen label and its title or notes contain the search text.
+    /// A task shows when it matches the chosen quick filter and its title or notes contain the search text.
     func matches(_ task: TaskItem) -> Bool {
-        Self.matches(task, label: labelFilter, query: search)
+        Self.matches(task, filter: activeFilter, query: search)
     }
 
-    static func matches(_ task: TaskItem, label: String?, query: String) -> Bool {
-        if let label, !task.labels.contains(where: { "\($0.key)=\($0.value)" == label }) { return false }
+    static func matches(_ task: TaskItem, filter: QuickFilterNode?, query: String, now: Date = Date()) -> Bool {
+        if let filter, !filter.matches(task, now: now) { return false }
         return ListSearch.matches(query, in: [task.title, task.notes])
     }
 
@@ -174,35 +221,6 @@ struct TaskListView: View {
         .fixedSize()
         .accessibilityLabel("Show tasks as a list or a board")
         .help("Show the tasks as a list or as a board of columns")
-    }
-
-    /// A menu of the labels in use, in the title row. Picking one shows only tasks with it; the chip clears it.
-    @ViewBuilder private var labelFilterMenu: some View {
-        let labels = tasks.allLabels
-        if !labels.isEmpty || labelFilter != nil {
-            HStack(spacing: 6) {
-                Menu {
-                    ForEach(labels.map { "\($0.key)=\($0.value)" }, id: \.self) { label in
-                        Button(label) { labelFilter = label }
-                    }
-                } label: {
-                    Label(labelFilter == nil ? "Filter by label" : "Label", systemImage: "tag")
-                }
-                .menuStyle(.borderlessButton)
-                .fixedSize()
-                .accessibilityLabel("Filter by label")
-                if let labelFilter {
-                    Button { self.labelFilter = nil } label: {
-                        Label(labelFilter, systemImage: SharedSymbols.removeAttachment)
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Capsule().fill(Color.accentColor.opacity(0.2)))
-                    .accessibilityLabel("Clear label filter \(labelFilter)")
-                }
-            }
-            .font(.caption)
-        }
     }
 
     @ViewBuilder private var suggestions: some View {

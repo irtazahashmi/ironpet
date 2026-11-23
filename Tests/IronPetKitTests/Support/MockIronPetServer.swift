@@ -29,6 +29,8 @@ final class MockIronPetServer: @unchecked Sendable {
     private var sockets: [NWConnection] = []
     private var _tasks: [RemoteTask]
     private var _suggestions: [RemoteSuggestion]
+    private var _taskFilters: [QuickFilter] = []
+    private var _taskFiltersSupported = true
     private var _requests: [Recorded] = []
     private var _outcome: PairingOutcome = .allow
     private var _pendingPolls = 1
@@ -133,6 +135,10 @@ final class MockIronPetServer: @unchecked Sendable {
 
     var requests: [Recorded] { lock.lock(); defer { lock.unlock() }; return _requests }
     var tasks: [RemoteTask] { get { lock.lock(); defer { lock.unlock() }; return _tasks } set { lock.lock(); _tasks = newValue; lock.unlock() } }
+    /// The saved quick filters `GET /v1/task-filters` serves. `DELETE /v1/task-filters/:id` removes one and publishes `settings.changed`.
+    var taskFilters: [QuickFilter] { get { lock.lock(); defer { lock.unlock() }; return _taskFilters } set { lock.lock(); _taskFilters = newValue; lock.unlock() } }
+    /// False answers the filter routes with 404, as a Mac older than quick filters does.
+    var taskFiltersSupported: Bool { get { lock.lock(); defer { lock.unlock() }; return _taskFiltersSupported } set { lock.lock(); _taskFiltersSupported = newValue; lock.unlock() } }
     var suggestions: [RemoteSuggestion] { get { lock.lock(); defer { lock.unlock() }; return _suggestions } set { lock.lock(); _suggestions = newValue; lock.unlock() } }
     var outcome: PairingOutcome { get { lock.lock(); defer { lock.unlock() }; return _outcome } set { lock.lock(); _outcome = newValue; lock.unlock() } }
     /// How many polls answer `pending` before the outcome.
@@ -381,6 +387,17 @@ final class MockIronPetServer: @unchecked Sendable {
             respond(connection, 200, Data(#"{"revoked":true}"#.utf8))
         case ("GET", 2) where parts[1] == "events": upgrade(request, connection)
         case ("GET", 2) where parts[1] == "tasks": respond(connection, 200, TaskListResponse(tasks: tasks))
+        case ("GET", 2) where parts[1] == "task-filters":
+            guard taskFiltersSupported else { return fail(connection, 404, "not_found", "not found") }
+            respond(connection, 200, QuickFilterListResponse(filters: taskFilters))
+        case ("DELETE", 3) where parts[1] == "task-filters":
+            lock.lock()
+            let known = _taskFiltersSupported && _taskFilters.contains { $0.id == parts[2] }
+            _taskFilters.removeAll { $0.id == parts[2] }
+            lock.unlock()
+            guard known else { return fail(connection, 404, "not_found", "no quick filter \(parts[2])") }
+            respond(connection, 200, RemoteDeleted(deleted: parts[2]))
+            publish(RemoteEvent.settingsChanged)
         case ("GET", 2) where parts[1] == "suggestions": respond(connection, 200, SuggestionListResponse(suggestions: suggestions))
         case ("GET", 3) where parts[1] == "tasks": detail(parts[2], connection)
         case ("PATCH", 3) where parts[1] == "tasks": patch(parts[2], request, connection)

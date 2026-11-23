@@ -338,6 +338,13 @@ final class RemoteServer {
             let id = Self.parameter(context, "id")
             return try await self.call(context) { try $0.delete(id) }
         }
+        router.get("/v1/task-filters") { [self] _, context in
+            try await self.call(context) { $0.filters() }
+        }
+        router.delete("/v1/task-filters/:id") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return try await self.call(context) { try $0.deleteFilter(id) }
+        }
         router.get("/v1/suggestions") { [self] _, context in
             try await self.call(context) { try $0.suggestions() }
         }
