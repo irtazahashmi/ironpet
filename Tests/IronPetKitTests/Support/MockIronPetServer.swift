@@ -58,6 +58,7 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _uploadNames: [String: String] = [:]
     private var _uploadDelay: TimeInterval = 0
     private var _sendFails = false
+    private var _chatReadFailures = 0
     private var _sendDelay: TimeInterval = 0
     private var _sendPushesFirst = false
     private var _legacyEvents = false
@@ -194,6 +195,9 @@ final class MockIronPetServer: @unchecked Sendable {
     var chatImageRequests: Int { lock.lock(); defer { lock.unlock() }; return _chatImageHits }
     /// The next sends answer 500 while this is true.
     var sendFails: Bool { get { lock.lock(); defer { lock.unlock() }; return _sendFails } set { lock.lock(); _sendFails = newValue; lock.unlock() } }
+    /// How many of the next chat reads (the whole chat or one message) answer 503, as a Mac that is busy or out of reach does through a proxy. `Int.max` is an outage, and 0 ends it. A dropped
+    /// connection is not used because URLSession sends a dropped GET again by itself.
+    var chatReadFailures: Int { get { lock.lock(); defer { lock.unlock() }; return _chatReadFailures } set { lock.lock(); _chatReadFailures = newValue; lock.unlock() } }
     /// Seconds the Mac takes to answer a send after it has recorded the message.
     var sendDelay: TimeInterval { get { lock.lock(); defer { lock.unlock() }; return _sendDelay } set { lock.lock(); _sendDelay = newValue; lock.unlock() } }
     /// Push the `chat.item` event before the answer to the send, as a fast socket can.
@@ -616,6 +620,13 @@ extension MockIronPetServer {
             return true
         }
         guard parts[1] == "chat" else { return false }
+        if get, (parts.count == 3 && parts[2] == "current") || (parts.count == 4 && parts[2] == "messages") {
+            lock.lock()
+            let drop = _chatReadFailures > 0
+            if drop, _chatReadFailures != Int.max { _chatReadFailures -= 1 }
+            lock.unlock()
+            if drop { fail(connection, 503, "unavailable", "the Mac could not answer"); return true }
+        }
         switch (parts.count, parts.dropFirst(2).first ?? "") {
         case (3, "current") where get: respond(connection, 200, chat)
         case (4, "messages") where get:
