@@ -383,11 +383,10 @@ final class VoiceModel {
                 streamID = nil
                 state = .idle
                 if streamMode == .send {
+                    retained[id] = nil
                     if text.isEmpty {
-                        retained[id] = nil
                         onSend(.discarded(id: id))
                     } else {
-                        retained[id] = nil
                         awaitingChat.insert(id)
                         onSend(.transcribed(id: id, text: text))
                     }
