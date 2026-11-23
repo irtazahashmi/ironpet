@@ -367,7 +367,7 @@ does not use it yet.
 
 `PetAPI.state()` returns `PetState` (`mood`, `badge`). Also `tricks()`, `perform(_:)`, `pets()`, `selectPet(_:)`, `backgroundList()`, `selectBackground(_:)`, `manifest()` and `assetData(_:)`.
 
-Not yet on the wire. The requests and results are Codable, but the asset calls return `Data`, which JSON-RPC would carry as base64, and REST serves it as bytes (`GET /v1/assets/:sha256`). The REST routes `GET /v1/pet`, `POST /v1/pet/tricks/:name`, `GET /v1/settings/pets`, `POST /v1/settings/pet` and `GET /v1/assets/manifest` serve it today.
+Not yet on the wire. The requests and results are Codable, but the asset calls return `Data`, which JSON-RPC would carry as base64, and REST serves it as bytes (`GET /v1/assets/:sha256`). The REST routes `GET /v1/pet`, `POST /v1/pet/tricks/:name`, `GET /v1/settings/pets`, `POST /v1/settings/pet`, `POST /v1/settings/background` and `GET /v1/assets/manifest` serve it today. `POST /v1/settings/background` takes one JPEG, PNG or HEIC image of up to 20 MiB as the raw body, makes it the custom chat background and answers with the settings. The Mac checks the kind from the bytes and answers 415 for another kind and 413 for a larger body. The phone downloads the image from `GET /v1/assets/:sha256` (id `chat.background`), at most 2400 px on the long side.
 
 ### `screen`
 
@@ -458,6 +458,7 @@ audio, or an area that is not on the wire yet.
 | `PATCH /v1/settings` | `settings.patch` |
 | `GET /v1/settings/pets` | none |
 | `POST /v1/settings/pet` | none |
+| `POST /v1/settings/background` | none |
 | `GET /v1/usage` | none |
 | `GET /v1/chat/current` | `chat.snapshot` |
 | `GET /v1/chat/messages/:id` | none |

@@ -155,6 +155,21 @@ final class MockIronPetServer: @unchecked Sendable {
         lock.unlock()
     }
 
+    /// The custom chat background the Mac serves as `chat.background`, as if it was picked on the Mac. The hash is the image's SHA-256.
+    @discardableResult
+    func setBackgroundImage(_ data: Data) -> String {
+        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        lock.lock()
+        _assetData[hash] = data
+        _assets.removeAll { $0.id == "chat.background" }
+        _assets.append(RemoteAsset(id: "chat.background", kind: "background", name: "custom.jpg", sha256: hash, bytes: data.count, contentType: "image/jpeg"))
+        _p4.config.chat.background = "custom"
+        _pet.background = "custom"
+        _pet.backgroundAsset = "chat.background"
+        lock.unlock()
+        return hash
+    }
+
     /// The chat the Mac has open, as `GET /v1/chat/current` answers it. Change it, then `publish` the event a real Mac would.
     var chat: RemoteChatSnapshot { get { lock.lock(); defer { lock.unlock() }; return _chat } set { lock.lock(); _chat = newValue; lock.unlock() } }
     var chatThreads: [RemoteChatThread] { get { lock.lock(); defer { lock.unlock() }; return _chatThreads } set { lock.lock(); _chatThreads = newValue; lock.unlock() } }
@@ -876,6 +891,11 @@ extension MockIronPetServer {
                 var denied: String?
                 if let reminders = json["reminders"] as? [String: Any], let paused = reminders["paused"] as? Bool { _p4.config.reminders.paused = paused }
                 if let speech = json["speech"] as? [String: Any], let on = speech["enabled"] as? Bool { _p4.config.speech.enabled = on }
+                // A background picked on the phone changes the Mac's config, so the pet resource every phone reads follows.
+                if let chat = json["chat"] as? [String: Any], let background = chat["background"] as? String {
+                    _p4.config.chat.background = background
+                    _pet.background = background
+                }
                 if let meetings = json["meetings"] as? [String: Any] { if meetings["enabled"] as? Bool == false { _p4.config.meetings.enabled = false } else { denied = "meetings.enabled" } }
                 if json["voice"] != nil { denied = "voice.baseUrl" }
                 let config = _p4.config
@@ -885,6 +905,25 @@ extension MockIronPetServer {
                 publish(RemoteEvent.settingsChanged)
                 return
             }
+        }
+        if parts.count == 3, parts[2] == "background", method == "POST" {
+            // The Mac keeps the image as the custom background and tells every phone, this one included.
+            let isImage = request.body.starts(with: [0xFF, 0xD8, 0xFF]) || request.body.starts(with: [0x89, 0x50, 0x4E, 0x47])
+            guard isImage else { return fail(connection, 415, "unsupported_type", "the background must be a JPEG, PNG or HEIC image") }
+            let hash = SHA256.hash(data: request.body).map { String(format: "%02x", $0) }.joined()
+            lock.lock()
+            _assetData[hash] = request.body
+            _assets.removeAll { $0.id == "chat.background" }
+            _assets.append(RemoteAsset(id: "chat.background", kind: "background", name: "custom.jpg", sha256: hash, bytes: request.body.count, contentType: "image/jpeg"))
+            _p4.config.chat.background = "custom"
+            _pet.background = "custom"
+            _pet.backgroundAsset = "chat.background"
+            let config = _p4.config
+            lock.unlock()
+            respond(connection, 200, config)
+            publish(RemoteEvent.assetsChanged)
+            publish(RemoteEvent.settingsChanged)
+            return
         }
         if parts.count == 3, parts[2] == "pets", method == "GET" { lock.lock(); let pets = _p4.pets; lock.unlock(); return respond(connection, 200, PetChoiceListResponse(pets: pets)) }
         if parts.count == 3, parts[2] == "pet", method == "POST" {

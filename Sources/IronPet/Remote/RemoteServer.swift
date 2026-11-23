@@ -65,8 +65,8 @@ struct RemoteGate: RouterMiddleware {
         if headerBytes > RemoteServer.maxHeaders {
             return RemoteServer.error(431, "headers_too_large", "request headers are too large")
         }
-        // Only the upload route takes a body past 1 MiB.
-        let limit = Self.template(context.endpointPath) == RemoteServer.uploadRoute ? RemoteUploads.maxBytes : RemoteServer.maxBody
+        // Only the upload routes take a body past 1 MiB.
+        let limit = RemoteServer.largeBodyRoutes.contains(Self.template(context.endpointPath) ?? "") ? RemoteUploads.maxBytes : RemoteServer.maxBody
         if let length = request.headers[.contentLength].flatMap(Int.init), length > limit {
             return RemoteServer.error(413, "too_large", "request body is larger than \(limit) bytes")
         }
@@ -101,6 +101,9 @@ final class RemoteServer {
     nonisolated static let maxBody = 1 << 20
     nonisolated static let maxHeaders = 64 << 10
     nonisolated static let uploadRoute = "/v1/uploads"
+    nonisolated static let backgroundRoute = "/v1/settings/background"
+    /// The routes that take a body past 1 MiB.
+    nonisolated static let largeBodyRoutes: Set<String> = [uploadRoute, backgroundRoute]
     /// The longest message the event socket reads from a device.
     nonisolated static let maxSocketMessage = 16 << 10
 
@@ -473,6 +476,13 @@ final class RemoteServer {
         router.post("/v1/settings/pet") { [self] request, context in
             let body = try await Self.object(request, context)
             return await self.phoneFour(context) { api, _ in try await RemotePhoneSettings(api: api).selectPet(body) }
+        }
+        // One image as the raw body, up to 20 MiB: JPEG, PNG or HEIC. It becomes the custom chat background of the Mac and every phone.
+        router.post("/v1/settings/background") { [self] request, context in
+            guard context.device != nil else { return Self.error(401, "unauthorized", "unauthorized") }
+            let buffer = try await request.body.collect(upTo: RemoteUploads.maxBytes)
+            let data = Data(buffer.readableBytesView)
+            return await self.phoneFour(context) { api, _ in try await RemotePhoneSettings(api: api).uploadBackground(data) }
         }
         router.get("/v1/usage") { [self] request, context in
             let range = Self.query(request)["range"]?.first
