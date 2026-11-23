@@ -1,5 +1,7 @@
 import IronPetKit
+import PhotosUI
 import SwiftUI
+import UIKit
 
 /// The settings the Mac lets the phone change. Where data goes (voice server, Telegram, hooks) and the approval rules stay on the Mac.
 struct PhoneSettingsView: View {
@@ -45,6 +47,7 @@ struct PhoneSettingsView: View {
                         Text("These can be turned off here and turned on only on the Mac.")
                     }
                 }
+                if let config = model.config { BackgroundSection(model: model, current: config.chat.background) }
                 if !model.pets.isEmpty {
                     Section("Pet") {
                         ForEach(model.pets) { pet in
@@ -82,4 +85,80 @@ struct PhoneSettingsView: View {
     private func binding(_ value: Bool, patch: @escaping (Bool) -> [String: Any]) -> Binding<Bool> {
         Binding(get: { value }, set: { next in Task { await model.patch(patch(next)) } })
     }
+}
+
+/// The chat background, as the Mac's Settings offers it: Default, the built-ins and a custom image. A choice is sent to the Mac, which
+/// tells every phone and itself. A photo from the library is uploaded to the Mac and becomes the custom image for all of them.
+private struct BackgroundSection: View {
+    let model: PhoneSettingsModel
+    let current: String
+    @Environment(\.macBackground) private var background
+    @State private var photo: PhotosPickerItem?
+
+    var body: some View {
+        Section {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    choice(ChatBackgrounds.defaultID, "Default")
+                    ForEach(ChatBackgrounds.builtIns) { choice($0.id, $0.name) }
+                    if current == ChatBackgrounds.customID { choice(ChatBackgrounds.customID, "Custom image") }
+                }
+                .padding(.vertical, 4)
+            }
+            photoPicker
+        } header: {
+            Text("Chat background")
+        } footer: {
+            Text("The same background shows on the Mac and on this phone. A photo is sent to the Mac.")
+        }
+    }
+
+    @ViewBuilder private var photoPicker: some View {
+        #if DEBUG
+        if ProcessInfo.processInfo.arguments.contains("--stub-photo") {
+            // A simulator has no photos to pick, so UI tests send a generated one through the same upload.
+            Button { Task { await model.uploadBackground(Self.samplePhoto) } } label: { Label("Choose a photo", systemImage: "photo") }
+                .accessibilityIdentifier("background-photo")
+        } else { realPicker }
+        #else
+        realPicker
+        #endif
+    }
+
+    private var realPicker: some View {
+        PhotosPicker(selection: $photo, matching: .images) { Label("Choose a photo", systemImage: "photo") }
+            .accessibilityIdentifier("background-photo")
+            .onChange(of: photo) { _, item in
+                guard let item else { return }
+                photo = nil
+                Task { if let data = try? await item.loadTransferable(type: Data.self) { await model.uploadBackground(data) } }
+            }
+    }
+
+    private func choice(_ id: String, _ title: String) -> some View {
+        let selected = current == id
+        return Button { Task { await model.patch(["chat": ["background": id]]) } } label: {
+            VStack(spacing: 4) {
+                ChatBackgroundPicture(id: id, customImage: background.image.map(Image.init(uiImage:)), fallback: SharedTheme.window, scale: 0.45)
+                    .frame(width: 76, height: 52)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(selected ? Color.accentColor : Color.primary.opacity(0.15), lineWidth: selected ? 2.5 : 1))
+                Text(title).font(.caption).lineLimit(1).foregroundStyle(selected ? Color.primary : Color.secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(title) background")
+        .accessibilityAddTraits(selected ? .isSelected : [])
+        .accessibilityIdentifier("background-\(id)")
+    }
+
+    #if DEBUG
+    private static var samplePhoto: Data {
+        let renderer = UIGraphicsImageRenderer(size: CGSize(width: 64, height: 48))
+        return renderer.jpegData(withCompressionQuality: 0.9) { context in
+            UIColor.systemTeal.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 64, height: 48))
+        }
+    }
+    #endif
 }

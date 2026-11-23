@@ -278,6 +278,7 @@ private struct GeneralSettings: View {
                 ShortcutRow(title: "Open chat", path: \.chat, model: model)
                 ShortcutRow(title: "Ask about front window", path: \.captureWindow, model: model)
                 ShortcutRow(title: "Ask about a region", path: \.captureRegion, model: model)
+                ShortcutRow(title: "Copy version", path: \.copyVersion, model: model)
             }
             Section("App") {
                 Picker("Appearance", selection: Binding(
@@ -411,7 +412,7 @@ private struct ShortcutRow: View {
                 message = "Use ⌘, ⌥ or ⌃ (Shift alone isn't enough), or a function key."
                 return nil
             }
-            let others = [\Config.Hotkeys.chat, \.captureWindow, \.captureRegion, \.voice, \.meeting, \.voiceMode].filter { $0 != path }
+            let others = [\Config.Hotkeys.chat, \.captureWindow, \.captureRegion, \.voice, \.meeting, \.voiceMode, \.copyVersion].filter { $0 != path }
             if others.contains(where: { Shortcut(store.config.hotkeys[keyPath: $0]) == shortcut }) {
                 message = "\(shortcut.display) is already used for another action."
                 return nil

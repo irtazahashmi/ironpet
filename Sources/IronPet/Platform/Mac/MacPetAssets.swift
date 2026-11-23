@@ -41,10 +41,14 @@ struct MacPetAssets: PetAssets {
 
     func folderSignature() -> [String] {
         PetFolderSignature(folder: libraryFolder).items + (bundledFolder.map { PetFolderSignature(folder: $0).items } ?? [])
-            + ((try? FileManager.default.contentsOfDirectory(atPath: backgroundsFolder.path)) ?? []).sorted().map { "bg|\($0)" }
+            + ((try? FileManager.default.contentsOfDirectory(atPath: backgroundsFolder.path)) ?? []).filter { !$0.hasPrefix(".") }.sorted().map { "bg|\($0)" }
     }
 
     func importBackground(from source: URL, replacing: String?) throws -> String {
         try ChatBackground.importImage(from: source, into: backgroundsFolder, replacing: replacing)
+    }
+
+    func phoneBackground(named name: String) -> URL? {
+        ChatBackground.phoneCopy(of: name, in: backgroundsFolder)
     }
 }

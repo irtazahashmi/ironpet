@@ -181,6 +181,23 @@ final class PhaseFourTests: XCTestCase {
         XCTAssertEqual(model.meetings.count, 2)
     }
 
+    /// A cancelled first load (a restarted `.task`, a second reload) is no error and no empty list. The load after it fills the list.
+    func testACancelledFirstLoadShowsNoErrorAndNoEmptyState() async throws {
+        let model = meetings()
+        await model.gate.unlock()
+        let first = Task { await model.refresh() }
+        first.cancel()
+        await first.value
+        XCTAssertNil(model.errorMessage)
+        XCTAssertFalse(model.showsEmptyState)
+        XCTAssertFalse(model.loaded)
+
+        await model.refresh()
+        XCTAssertNil(model.errorMessage)
+        XCTAssertFalse(model.showsEmptyState)
+        XCTAssertEqual(model.meetings.count, 2)
+    }
+
     func testAListTheClientCannotDecodeShowsTheErrorNotTheEmptyState() async throws {
         server.brokenRoutes = ["/v1/meetings": 200]
         let model = meetings()

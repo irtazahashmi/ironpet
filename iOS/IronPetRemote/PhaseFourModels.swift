@@ -270,6 +270,16 @@ final class PhoneSettingsModel: SocketModel {
         if done != nil { await reload() }
     }
 
+    /// Sends a photo from the library as the Mac's custom chat background. The photo is made a JPEG of at most 2048 px first, so a
+    /// large HEIC does not cross the relay in full and no location data leaves the phone.
+    func uploadBackground(_ photo: Data) async {
+        guard let image = PastedImage.normalize(data: photo) else {
+            errorMessage = "That photo could not be read."
+            return
+        }
+        if let fresh = await run({ try await self.client.uploadBackground(image.data, contentType: image.contentType) }) { config = fresh }
+    }
+
     func setUsageDays(_ days: Int) async {
         usageDays = days
         if let fresh = await run({ try await self.client.usage(days: days) }) { usage = fresh }
