@@ -114,6 +114,7 @@ struct MainTabs: View {
                 .tag(AppTab.more)
         }
         .themedTabBar()
+        .environment(\.macBackground, MacBackground(id: pet.backgroundID, image: pet.backgroundImage))
         .environment(voice)
         // The Mac's accent colour, when it has one. `nil` leaves the app's own tint, the system blue.
         .tint(pet.accent)

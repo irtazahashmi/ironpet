@@ -213,7 +213,7 @@ final class ChatParityUITests: XCTestCase {
     }
 
     // S5
-    func testAnErrorReplyShowsAsTheRedCardAndALostConnectionAsTheBanner() {
+    func testAnErrorReplyShowsAsTheRedCardAndAFailedSendAsARowWithRetry() {
         server.chat.items = [RemoteChatItem(id: "e-user", kind: "user", date: Date(), text: "run it"),
                              RemoteChatItem(id: "e-error", kind: "error", date: Date(), text: "The agent stopped: it could not reach the model.")]
         server.chat.state = "failed"
@@ -222,13 +222,15 @@ final class ChatParityUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["The agent stopped: it could not reach the model."].waitForExistence(timeout: 20))
         XCTAssertTrue(app.staticTexts["Failed"].exists || app.staticTexts["chat-subtitle"].exists || any("chat-subtitle").label.contains("Failed"))
         attach("error-reply")
-        // The Mac goes away: the next request fails and the banner says so.
+        // The Mac goes away: the failed send shows on its own row with Retry, and no banner repeats it.
         server.stop()
         let input = app.textViews["chat-input"]
         input.tap()
         input.typeText("hello?")
         app.buttons["send-button"].tap()
-        XCTAssertTrue(any("chat-error").waitForExistence(timeout: 20), "a failed request shows the banner")
+        XCTAssertTrue(any("outgoing-retry").waitForExistence(timeout: 20), "a failed send shows Retry on its row")
+        XCTAssertFalse(any("chat-error").exists, "no banner for a failed send")
+        XCTAssertFalse(any("chat-connection-lost").exists)
         attach("connection-lost")
     }
 }

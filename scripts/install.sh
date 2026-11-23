@@ -81,7 +81,7 @@ fi
 
 bold "Building (this takes a minute the first time)"
 mkdir -p build
-if ! ./scripts/bundle.sh > build/install.log 2>&1; then
+if ! IRONPET_DEV=1 ./scripts/bundle.sh > build/install.log 2>&1; then
   tail -30 build/install.log >&2
   fail "Build failed; the full log is in build/install.log"
 fi
