@@ -66,6 +66,17 @@ package struct TaskLinkRow: Equatable {
         }
     }
 
+    /// The link's address as stored, shown under its title.
+    package var reference: String { link.ref }
+
+    /// "repo #123" when the link is a GitHub pull request URL (github.com or an enterprise host), otherwise nil.
+    package var pullRequestKey: String? {
+        guard link.kind == .url, let url = URL(string: link.ref), let host = url.host?.lowercased(), host.contains("github") else { return nil }
+        let parts = url.pathComponents.filter { $0 != "/" }
+        guard parts.count >= 4, parts[2] == "pull", Int(parts[3]) != nil else { return nil }
+        return "\(parts[1]) #\(parts[3])"
+    }
+
     package enum Action: Equatable {
         case openURL(URL)
         case revealFile(URL)
@@ -86,6 +97,14 @@ package struct TaskLinkRow: Equatable {
         case .thread: return .openThread(link.ref)
         case .session: return .openSession(link.ref)
         }
+    }
+}
+
+extension TaskItem {
+    /// The `project` label, trimmed, or nil when it is missing or blank.
+    package var projectLabel: String? {
+        let value = labels["project"]?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return value?.isEmpty == false ? value : nil
     }
 }
 

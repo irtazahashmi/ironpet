@@ -4,7 +4,8 @@ import enum IronPetKit.SharedSymbols
 import IronPetCore
 import SwiftUI
 
-/// A task in full: large title, status, due date and waiting-on controls, notes as markdown, links, labels and, collapsed, the origin and history.
+/// A task in full, one card per section: chips and title, a summary of status, due date, waiting on, project and source, then
+/// notes, links, labels and history. The toolbar in the top bar holds the same actions as the iPhone's menu.
 struct TaskDetailPage: View {
     @ObservedObject var tasks: TasksAPI
     let id: String
@@ -13,11 +14,11 @@ struct TaskDetailPage: View {
 
     @State private var title = ""
     @State private var waiting = ""
+    @State private var editingWaiting = false
     @State private var editingNotes = false
     @State private var draft = ""
     @State private var confirmingDone = false
     @State private var closingNote = ""
-    @State private var showDetails = false
     @State private var events: [TaskEvent] = []
     @State private var error: String?
     @FocusState private var titleFocused: Bool
@@ -26,26 +27,33 @@ struct TaskDetailPage: View {
     var body: some View {
         if let task = tasks.task(id) {
             VStack(spacing: 0) {
-                backBar
+                topBar(task)
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 18) {
+                    VStack(alignment: .leading, spacing: 16) {
                         header(task)
+                            .padding(14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .cardMaterial()
                         if confirmingDone { doneCard }
-                        if let error { Text(error).font(.callout).foregroundStyle(.red) }
+                        if let error {
+                            Text(error).font(.callout).foregroundStyle(.red)
+                                .padding(10).frame(maxWidth: .infinity, alignment: .leading).cardMaterial()
+                        }
+                        summary(task)
                         notes(task)
                         if !task.links.isEmpty { links(task) }
                         labels(task)
-                        details(task)
+                        history
                     }
                     .padding(.horizontal, ListScreenMetrics.gutter + 4)
                     .padding(.vertical, 14)
                     .listColumn()
                 }
             }
-            .onAppear { sync(task) }
+            .onAppear { sync(task); events = tasks.history(id) }
             .onChange(of: task.title) { if !titleFocused { title = task.title } }
             .onChange(of: task.waitingOn) { if !waitingFocused { waiting = task.waitingOn ?? "" } }
-            .onChange(of: task.updated) { if showDetails { events = tasks.history(id) } }
+            .onChange(of: task.updated) { events = tasks.history(id) }
             .onExitCommand(perform: goBack)
         } else {
             // The task was deleted while it was open.
@@ -56,6 +64,7 @@ struct TaskDetailPage: View {
     private func sync(_ task: TaskItem) {
         title = task.title
         waiting = task.waitingOn ?? ""
+        editingWaiting = false
     }
 
     /// Esc while editing the notes leaves the editor first, so a draft is not lost by accident.
@@ -63,12 +72,53 @@ struct TaskDetailPage: View {
         if editingNotes { editingNotes = false } else { onBack() }
     }
 
-    private var backBar: some View { ListBackBar(section: "Tasks", onBack: goBack) }
+    // MARK: Top bar
+
+    private func topBar(_ task: TaskItem) -> some View {
+        HStack(spacing: 6) {
+            Button(action: goBack) { Label("Tasks", systemImage: "chevron.left") }
+                .buttonStyle(.borderless)
+                .keyboardShortcut(.cancelAction)
+                .accessibilityLabel("Back to Tasks")
+                .help("Back to the list (Esc)")
+            Spacer()
+            Button { startNote(task) } label: { Label("Add note", systemImage: "square.and.pencil") }
+                .help("Add to the notes")
+            Menu {
+                ForEach(TaskStatus.allCases.filter { $0 != task.status }, id: \.self) { status in
+                    Button(status.title) { changeStatus(to: status, task) }
+                }
+            } label: { Label("Status", systemImage: "arrow.triangle.2.circlepath") }
+                .menuIndicator(.hidden)
+                .fixedSize()
+                .help("Change the status")
+            if task.status != .done {
+                Button { closingNote = ""; confirmingDone = true } label: { Label("Close with a note", systemImage: "checkmark.circle") }
+                    .help("Mark done and say what shows it")
+            }
+            if let first = task.links.first {
+                Button { onOpen(first) } label: { Text("Open \(TaskLinkRow(link: first).pullRequestKey.map { _ in "PR" } ?? "link")") + Text(" \u{2197}") }
+                    .buttonStyle(.borderedProminent)
+                    .help(first.help)
+            }
+        }
+        .controlSize(.small)
+        .padding(.horizontal, ListScreenMetrics.gutter - 2)
+        .padding(.vertical, 6)
+        .background(.bar)
+    }
+
+    private func startNote(_ task: TaskItem) {
+        let existing = task.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+        draft = existing.isEmpty ? "" : existing + "\n\n"
+        editingNotes = true
+    }
 
     // MARK: Header
 
     private func header(_ task: TaskItem) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
+        VStack(alignment: .leading, spacing: 8) {
+            chips(task)
             TextField("Title", text: $title, axis: .vertical)
                 .textFieldStyle(.plain)
                 .font(.system(size: 24, weight: .bold))
@@ -76,22 +126,16 @@ struct TaskDetailPage: View {
                 .onSubmit { commitTitle(task) }
                 .onChange(of: titleFocused) { if !titleFocused { commitTitle(task) } }
                 .accessibilityLabel("Task title")
-            HStack(spacing: 14) {
-                statusPicker(task)
-                DuePicker(due: task.due, disabled: task.status == .done) { new in attempt { _ = try TaskEdits.setDue(new, of: id, in: tasks) } }
-                HStack(spacing: 4) {
-                    Image(systemName: "person.badge.clock").foregroundStyle(.secondary).accessibilityHidden(true)
-                    TextField("Waiting on", text: $waiting)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 130)
-                        .focused($waitingFocused)
-                        .onSubmit { commitWaiting(task) }
-                        .onChange(of: waitingFocused) { if !waitingFocused { commitWaiting(task) } }
-                        .accessibilityLabel("Waiting on")
-                }
-                Spacer(minLength: 0)
-            }
-            .font(.system(size: 13))
+            Text("Created \(TaskDetail.time(task.created))")
+                .font(.system(size: 12)).foregroundStyle(.secondary)
+        }
+    }
+
+    private func chips(_ task: TaskItem) -> some View {
+        HStack(spacing: 8) {
+            if let project = task.projectLabel { Chip(text: project, tint: .purple) }
+            Chip(text: task.waitingLabel ?? task.status.title, tint: .orange)
+            if let key = task.links.lazy.compactMap({ TaskLinkRow(link: $0).pullRequestKey }).first { Chip(text: key, tint: .gray) }
         }
     }
 
@@ -129,7 +173,8 @@ struct TaskDetailPage: View {
             }
         }
         .padding(12)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.06)))
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .cardMaterial()
     }
 
     private func finishDone() {
@@ -143,8 +188,13 @@ struct TaskDetailPage: View {
     }
 
     private func commitWaiting(_ task: TaskItem) {
-        guard waiting.trimmingCharacters(in: .whitespacesAndNewlines) != (task.waitingOn ?? "") else { return }
+        let trimmed = waiting.trimmingCharacters(in: .whitespacesAndNewlines)
+        if trimmed == (task.waitingOn ?? "") {
+            if trimmed.isEmpty { editingWaiting = false }
+            return
+        }
         attempt({ _ = try TaskEdits.setWaitingOn(waiting, of: id, in: tasks) }, onFail: { waiting = task.waitingOn ?? "" })
+        if trimmed.isEmpty { editingWaiting = false }
     }
 
     private func attempt(_ work: () throws -> Void, onFail: () -> Void = {}) {
@@ -154,35 +204,89 @@ struct TaskDetailPage: View {
         }
     }
 
-    // MARK: Notes
+    // MARK: Summary
 
-    @ViewBuilder private func notes(_ task: TaskItem) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("Notes").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
-                Spacer()
-                if editingNotes {
-                    Button("Cancel") { editingNotes = false }
-                    Button("Save") { saveNotes() }.keyboardShortcut("s", modifiers: .command).buttonStyle(.borderedProminent)
+    private func summary(_ task: TaskItem) -> some View {
+        VStack(spacing: 0) {
+            SummaryRow(label: "Status", symbol: "circle.lefthalf.filled") { statusPicker(task) }
+            Divider()
+            SummaryRow(label: "Due", symbol: "calendar") {
+                if task.due != nil {
+                    DuePicker(due: task.due, disabled: task.status == .done) { new in attempt { _ = try TaskEdits.setDue(new, of: id, in: tasks) } }
                 } else {
-                    Button(task.notes.isEmpty ? "Add notes" : "Edit") { draft = task.notes; editingNotes = true }
+                    NoneWithSet(action: "Set date", disabled: task.status == .done) {
+                        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))
+                        attempt { _ = try TaskEdits.setDue(tomorrow, of: id, in: tasks) }
+                    }
                 }
             }
-            .controlSize(.small)
+            Divider()
+            SummaryRow(label: "Waiting on", symbol: "person.badge.clock") {
+                if task.waitingOn != nil || editingWaiting {
+                    TextField("Waiting on", text: $waiting)
+                        .textFieldStyle(.roundedBorder)
+                        .frame(width: 180)
+                        .focused($waitingFocused)
+                        .onAppear { if editingWaiting { waitingFocused = true } }
+                        .onSubmit { commitWaiting(task) }
+                        .onChange(of: waitingFocused) { if !waitingFocused { commitWaiting(task) } }
+                        .accessibilityLabel("Waiting on")
+                } else {
+                    NoneWithSet(action: "Set") { editingWaiting = true }
+                }
+            }
+            Divider()
+            SummaryRow(label: "Project", symbol: "house") {
+                if let project = task.projectLabel {
+                    Text(project).textSelection(.enabled)
+                } else {
+                    NoneWithSetLabel(others: otherLabels, own: task.labels) { key, value in
+                        TaskLabelEditing.add(key: key, value: value, to: id, in: tasks)
+                    }
+                }
+            }
+            Divider()
+            SummaryRow(label: "Source", symbol: "arrow.turn.down.right") {
+                Text(sourceText(task)).textSelection(.enabled).multilineTextAlignment(.trailing)
+            }
+        }
+        .cardMaterial()
+    }
+
+    private var otherLabels: [[String: String]] { tasks.items.filter { $0.id != id }.map(\.labels) }
+
+    private func sourceText(_ task: TaskItem) -> String {
+        let origin = TaskDetail.originFields(task.sourceRef).first?.value
+        return [task.source.rawValue, origin].compactMap { $0 }.joined(separator: ", ")
+    }
+
+    // MARK: Notes
+
+    private func notes(_ task: TaskItem) -> some View {
+        CardSection(title: "Notes", trailing: {
             if editingNotes {
-                TextEditor(text: $draft)
-                    .font(.system(size: 14, design: .monospaced))
-                    .frame(minHeight: 220)
-                    .scrollContentBackground(.hidden)
-                    .padding(8)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(SharedTheme.card))
-                    .accessibilityLabel("Notes as markdown")
-                Text("Markdown. \(draft.utf8.count) of \(TaskValidator.maxNotes) bytes.")
-                    .font(.caption).foregroundStyle(draft.utf8.count > TaskValidator.maxNotes ? .red : .secondary)
-            } else if task.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Text("No notes.").font(.system(size: 14)).foregroundStyle(.secondary)
+                Button("Cancel") { editingNotes = false }
+                Button("Save") { saveNotes() }.keyboardShortcut("s", modifiers: .command).buttonStyle(.borderedProminent)
             } else {
-                MarkdownView(text: task.notes.trimmingCharacters(in: .whitespacesAndNewlines), size: 14)
+                Button(task.notes.isEmpty ? "Add notes" : "Edit") { draft = task.notes; editingNotes = true }
+                    .buttonStyle(.link)
+            }
+        }) {
+            if editingNotes {
+                VStack(alignment: .leading, spacing: 6) {
+                    TextEditor(text: $draft)
+                        .font(.system(size: 14, design: .monospaced))
+                        .frame(minHeight: 220)
+                        .scrollContentBackground(.hidden)
+                        .accessibilityLabel("Notes as markdown")
+                    Text("Markdown. \(draft.utf8.count) of \(TaskValidator.maxNotes) bytes.")
+                        .font(.caption).foregroundStyle(draft.utf8.count > TaskValidator.maxNotes ? .red : .secondary)
+                }
+                .padding(12)
+            } else if task.notes.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Text("No notes.").font(.system(size: 14)).foregroundStyle(.secondary).padding(12)
+            } else {
+                MarkdownView(text: task.notes.trimmingCharacters(in: .whitespacesAndNewlines), size: 14).padding(12)
             }
         }
     }
@@ -196,22 +300,25 @@ struct TaskDetailPage: View {
     // MARK: Links
 
     private func links(_ task: TaskItem) -> some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text("Links").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
-            ForEach(Array(task.links.map(TaskLinkRow.init).enumerated()), id: \.offset) { _, row in
-                Button { onOpen(row.link) } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: row.symbol).frame(width: 18).foregroundStyle(.secondary)
-                        Text(row.title).lineLimit(1).truncationMode(.middle)
-                        Spacer(minLength: 0)
+        CardSection(title: "Links") {
+            let rows = Array(task.links.map(TaskLinkRow.init).enumerated())
+            ForEach(rows, id: \.offset) { index, row in
+                if index > 0 { Divider() }
+                HStack(spacing: 10) {
+                    Image(systemName: row.symbol).frame(width: 28, height: 28)
+                        .background(RoundedRectangle(cornerRadius: 7).fill(Color.primary.opacity(0.07)))
+                        .accessibilityHidden(true)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(row.pullRequestKey.map { "PR \($0.split(separator: " ").last ?? "")" } ?? row.title).font(.system(size: 13.5))
+                        Text(row.reference).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                     }
-                    .font(.system(size: 14))
-                    .padding(.vertical, 4)
-                    .contentShape(Rectangle())
+                    Spacer(minLength: 8)
+                    Button { onOpen(row.link) } label: { Text("Open \u{2197}") }
+                        .buttonStyle(.link)
+                        .help(row.link.help)
+                        .accessibilityLabel(row.link.help)
                 }
-                .buttonStyle(.plain)
-                .help(row.link.help)
-                .accessibilityLabel(row.link.help)
+                .padding(.horizontal, 14).padding(.vertical, 9)
             }
         }
     }
@@ -219,54 +326,87 @@ struct TaskDetailPage: View {
     // MARK: Labels
 
     private func labels(_ task: TaskItem) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Labels").font(.system(size: 13, weight: .semibold)).foregroundStyle(.secondary)
+        CardSection(title: "Labels") {
             ChipFlow(spacing: 6) {
                 ForEach(task.labels.sorted { $0.key < $1.key }, id: \.key) { key, value in
                     HStack(spacing: 4) {
-                        Text("\(key)=\(value)").textSelection(.enabled)
+                        Text("\(key): \(value)").textSelection(.enabled)
                         Button { attempt { _ = try tasks.update(UpdateTaskRequest(id: id, removeLabels: [key])) } } label: { Image(systemName: SharedSymbols.deny).font(.system(size: 9, weight: .bold)) }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Remove label \(key)")
                             .help("Remove \(key)")
                     }
-                    .font(.system(size: 12))
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(Capsule().fill(Color.primary.opacity(0.08)))
+                    .font(.system(size: 12, weight: .semibold))
+                    .padding(.horizontal, 9).padding(.vertical, 3)
+                    .background(Capsule().fill(Color.purple.opacity(0.18)))
                 }
-                AddLabelButton(others: tasks.items.filter { $0.id != id }.map(\.labels), own: task.labels) { key, value in
+                AddLabelButton(others: otherLabels, own: task.labels) { key, value in
                     TaskLabelEditing.add(key: key, value: value, to: id, in: tasks)
                 }
             }
+            .padding(.horizontal, 14).padding(.vertical, 10)
         }
     }
 
-    // MARK: Footer
+    // MARK: History
 
-    private func details(_ task: TaskItem) -> some View {
-        DisclosureGroup(isExpanded: $showDetails) {
-            let detail = TaskDetail(task: task, history: events)
-            VStack(alignment: .leading, spacing: 4) {
-                ForEach(Array(detail.fields.filter { !["Status", "Waiting", "Due"].contains($0.label) }.enumerated()), id: \.offset) { _, field in
-                    HStack(alignment: .top, spacing: 8) {
-                        Text(field.label).foregroundStyle(.secondary).frame(width: 90, alignment: .leading)
-                        Text(field.value).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+    private var history: some View {
+        CardSection(title: "History") {
+            if events.isEmpty {
+                Text("No history yet.").font(.system(size: 13)).foregroundStyle(.secondary).padding(14)
+            } else {
+                VStack(spacing: 0) {
+                    ForEach(Array(events.enumerated()), id: \.offset) { index, event in
+                        if index > 0 { Divider() }
+                        HStack(alignment: .top, spacing: 12) {
+                            Circle().fill(Color.secondary.opacity(0.6)).frame(width: 8, height: 8).padding(.top, 5).accessibilityHidden(true)
+                            Text(TaskDetail.time(event.at)).font(.system(size: 11.5)).foregroundStyle(.secondary).frame(width: 110, alignment: .leading)
+                            (Text(event.kind.rawValue.capitalized) + Text(" \(event.detail), by \(event.by)").foregroundStyle(.secondary))
+                                .font(.system(size: 13))
+                                .textSelection(.enabled)
+                                .fixedSize(horizontal: false, vertical: true)
+                            Spacer(minLength: 0)
+                        }
+                        .padding(.vertical, 8)
                     }
                 }
-                if !events.isEmpty {
-                    Text("History").fontWeight(.semibold).padding(.top, 6)
-                    ForEach(Array(events.enumerated()), id: \.offset) { _, event in
-                        Text("\(TaskDetail.time(event.at)), \(event.by): \(event.detail)")
-                            .foregroundStyle(.secondary).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
-                    }
-                }
+                .padding(.horizontal, 14).padding(.vertical, 4)
             }
-            .font(.caption)
-            .padding(.top, 6)
-        } label: {
-            Text("Details").font(.caption).foregroundStyle(.secondary)
         }
-        .onChange(of: showDetails) { if showDetails { events = tasks.history(id) } }
+    }
+}
+
+// MARK: - Task-specific pieces
+
+private struct NoneWithSet: View {
+    var word = "None"
+    let action: String
+    var disabled = false
+    let perform: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("\(word) \u{00B7}").foregroundStyle(.secondary)
+            Button(action, action: perform).buttonStyle(.link).disabled(disabled)
+        }
+    }
+}
+
+private struct NoneWithSetLabel: View {
+    let others: [[String: String]]
+    let own: [String: String]
+    let onAdd: (String, String) -> String?
+    @State private var shown = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Text("None \u{00B7}").foregroundStyle(.secondary)
+            Button("Set") { shown = true }
+                .buttonStyle(.link)
+                .popover(isPresented: $shown, arrowEdge: .bottom) {
+                    LabelPopover(others: others, own: own, initialKey: "project", onAdd: onAdd) { shown = false }
+                }
+        }
     }
 }
 
@@ -329,6 +469,7 @@ private struct AddLabelButton: View {
 struct LabelPopover: View {
     let others: [[String: String]]
     let own: [String: String]
+    var initialKey = ""
     let onAdd: (String, String) -> String?
     let onDone: () -> Void
     @State private var key = ""
@@ -367,7 +508,7 @@ struct LabelPopover: View {
         .textFieldStyle(.roundedBorder)
         .padding(12)
         .frame(width: 260)
-        .onAppear { field = .key }
+        .onAppear { if key.isEmpty { key = initialKey }; field = key.isEmpty ? .key : .value }
         .onChange(of: key) { error = nil }
     }
 

@@ -141,8 +141,8 @@ enum PreviewRenderer {
                 .frame(width: 1240, height: 520).panel(), to: dir, "tasks-board" + suffix, scheme: scheme)
         }
         if let sample = tasks.all.first {
-            render(TaskDetailPage(tasks: tasks, id: sample.id, onBack: {}, onOpen: { _ in }).frame(width: 760, height: 640).panel(), to: dir, "task-detail")
-            render(TaskDetailPage(tasks: tasks, id: sample.id, onBack: {}, onOpen: { _ in }).frame(width: 760, height: 640).panel(), to: dir, "task-detail-light", scheme: .light)
+            render(TaskDetailPage(tasks: tasks, id: sample.id, onBack: {}, onOpen: { _ in }).frame(width: 760, height: 1000).panel(), to: dir, "task-detail")
+            render(TaskDetailPage(tasks: tasks, id: sample.id, onBack: {}, onOpen: { _ in }).frame(width: 760, height: 1000).panel(), to: dir, "task-detail-light", scheme: .light)
         }
         render(LabelPopover(others: [["merge": "auto", "repo": "app"], ["merge": "manual"]], own: [:], onAdd: { _, _ in nil }, onDone: {})
             .frame(width: 260).padding(8).panel(), to: dir, "task-label-popover")
@@ -667,7 +667,7 @@ enum PreviewRenderer {
             notes: "## Why now\n\nThe canary has been **green for an hour**. Steps:\n\n- check the `rate_limit` dashboard\n- read https://example.com/runbook\n- ask ops@example.com if unsure\n\nSee [the PR](https://github.com/you/api-server/pull/17).",
             links: [TaskLink(kind: .url, ref: "https://github.com/you/api-server/pull/17", label: "PR #17"),
                     TaskLink(kind: .thread, ref: "t1", label: nil), TaskLink(kind: .file, ref: "/Users/you/notes/deploy.md", label: nil)])
-        _ = try? store.update(store.ordered[0].id, addLabels: ["merge": "auto", "repo": "api-server"], by: "agent:mcp")
+        _ = try? store.update(store.ordered[0].id, addLabels: ["merge": "auto", "repo": "api-server", "project": "payments"], by: "agent:mcp")
         add("Fix the flaky login test", .inProgress, .chat, ago: 1500, due: today.addingTimeInterval(-day),
             links: [TaskLink(kind: .session, ref: "3", label: nil), TaskLink(kind: .thread, ref: "t1", label: nil)])
         add("Make the settings page work on mobile", .inProgress, .telegram, ago: 3 * 3600,
