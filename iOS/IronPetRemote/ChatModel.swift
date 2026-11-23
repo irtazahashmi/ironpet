@@ -48,6 +48,23 @@ struct OutgoingMessage: Identifiable, Equatable {
     var item: RemoteChatItem { RemoteChatItem(id: itemID, kind: "user", date: date, origin: "ios", text: text) }
 }
 
+/// Plain wording for a failed request. URLSession's own text ("The request timed out.", "The network connection was lost.") never reaches the chat.
+enum PlainError {
+    static let unreachable = "Can't reach your Mac."
+
+    static func message(for error: Error) -> String {
+        if let client = error as? ClientError {
+            switch client {
+            case .transport: return unreachable
+            default: return client.errorDescription ?? unreachable
+            }
+        }
+        if error is URLError { return unreachable }
+        if let known = error as? SendTimedOut { return known.errorDescription ?? unreachable }
+        return "Something went wrong. Try again."
+    }
+}
+
 private struct SendTimedOut: LocalizedError {
     var errorDescription: String? { "The Mac did not answer in time." }
 }
@@ -94,6 +111,16 @@ final class ChatModel: SocketModel {
     @ObservationIgnored private var pastedCount = 0
     /// Screenshots and attached images the Mac holds, fetched by the id of their message.
     @ObservationIgnored lazy var images = ChatImages(client: client)
+    /// True after a run of failed background reads (3 tries, or 10 s since the first). Shows one banner with Retry, and clears when a read works.
+    private(set) var connectionLost = false
+    @ObservationIgnored var bannerAfterTries = 3
+    @ObservationIgnored var bannerAfter: Duration = .seconds(10)
+    /// The wait before the first quiet retry. Each failure doubles it, up to 8 times this.
+    @ObservationIgnored var retryBase: Duration = .seconds(1)
+    @ObservationIgnored private var readFailures = 0
+    @ObservationIgnored private var firstReadFailure: ContinuousClock.Instant?
+    /// The one pending quiet retry. A failure while it waits does not start another.
+    @ObservationIgnored private var quietRetry: Task<Void, Never>?
 
     var approvals: [RemoteApproval] { snapshot?.approvals ?? [] }
     var forms: [RemoteForm] { snapshot?.forms ?? [] }
@@ -145,14 +172,62 @@ final class ChatModel: SocketModel {
 
     override func reload() async { await fetch() }
 
-    /// Reads the whole chat. Returns false when the read failed.
+    override func stop() {
+        quietRetry?.cancel()
+        quietRetry = nil
+        super.stop()
+    }
+
+    override func message(for error: Error) -> String { PlainError.message(for: error) }
+
+    /// Reads the whole chat. Returns false when the read failed. A failure retries quietly, and only a run of them shows the banner.
     @discardableResult
     private func fetch() async -> Bool {
-        guard let fresh = await run({ try await self.client.chat() }) else { return false }
-        snapshot = fresh
-        items = fresh.items
-        reconcile()
-        return true
+        do {
+            let fresh = try await client.chat()
+            snapshot = fresh
+            items = fresh.items
+            errorMessage = nil
+            readSucceeded()
+            quietRetry?.cancel()
+            quietRetry = nil
+            reconcile()
+            return true
+        } catch ClientError.unauthorized {
+            onUnauthorized()
+        } catch is CancellationError {
+        } catch {
+            if !Task.isCancelled { readFailed() }
+        }
+        return false
+    }
+
+    /// The Retry button: reads now instead of waiting for the next quiet retry.
+    func retryNow() async {
+        quietRetry?.cancel()
+        quietRetry = nil
+        await fetch()
+    }
+
+    private func readSucceeded() {
+        readFailures = 0
+        firstReadFailure = nil
+        connectionLost = false
+    }
+
+    private func readFailed() {
+        readFailures += 1
+        let first = firstReadFailure ?? .now
+        firstReadFailure = first
+        if readFailures >= bannerAfterTries || ContinuousClock.now - first >= bannerAfter { connectionLost = true }
+        guard quietRetry == nil else { return }
+        let delay = retryBase * (1 << min(readFailures - 1, 3))
+        quietRetry = Task { [weak self] in
+            try? await Task.sleep(for: delay)
+            guard !Task.isCancelled, let self else { return }
+            self.quietRetry = nil
+            await self.fetch()
+        }
     }
 
     override func handle(_ event: RemoteEvent) async {
@@ -172,6 +247,7 @@ final class ChatModel: SocketModel {
             let item = try await client.chatMessage(id: id)
             if let index = items.firstIndex(where: { $0.id == id }) { items[index] = item } else { items.append(item) }
             PhoneHopLog.mark("phone.item")
+            readSucceeded()
             reconcile()
         } catch ClientError.unauthorized {
             onUnauthorized()
@@ -179,7 +255,7 @@ final class ChatModel: SocketModel {
             await reload()
         } catch is CancellationError {
         } catch {
-            errorMessage = error.localizedDescription
+            if !Task.isCancelled { readFailed() }
         }
     }
 
@@ -292,9 +368,8 @@ final class ChatModel: SocketModel {
             mark(.failed("The send was cancelled."))
             return false
         } catch {
-            // The banner stays as before, and the failed row under the message carries the same reason with its Retry.
-            errorMessage = error.localizedDescription
-            mark(.failed(error.localizedDescription))
+            // The failed row under the message carries the reason and its Retry. No banner repeats it.
+            mark(.failed(PlainError.message(for: error)))
             return false
         }
         sentPhotos.merge(photos) { _, new in new }
@@ -374,7 +449,7 @@ final class ChatModel: SocketModel {
         } catch ClientError.unauthorized {
             onUnauthorized()
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = PlainError.message(for: error)
         }
         return false
     }

@@ -29,6 +29,15 @@ struct ChatView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 if find.isOpen { ChatFindBar(find: find) }
+                if model.connectionLost {
+                    HStack {
+                        Label("Can't reach your Mac. Retrying…", systemImage: SharedSymbols.warning).font(.footnote).foregroundStyle(.orange)
+                        Spacer()
+                        Button("Retry") { Task { await model.retryNow() } }.font(.footnote.weight(.semibold)).accessibilityIdentifier("chat-retry")
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.vertical, 6)
+                    .accessibilityIdentifier("chat-connection-lost")
+                }
                 if let message = model.errorMessage {
                     Label(message, systemImage: SharedSymbols.warning).font(.footnote).foregroundStyle(.orange)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.vertical, 6)
