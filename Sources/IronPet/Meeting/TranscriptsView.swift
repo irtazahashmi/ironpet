@@ -106,27 +106,24 @@ struct TranscriptsView: View {
         if let meeting = selected {
             VStack(alignment: .leading, spacing: 0) {
                 ListBackBar(section: "Transcripts", onBack: { selection = nil })
-                // At the narrowest window the Ask label would be cut, so it falls back to its icon.
-                ViewThatFits(in: .horizontal) {
-                    toolbar(meeting, askLabel: true)
-                    toolbar(meeting, askLabel: false)
-                }
-                .controlSize(.small)
-                .padding(.horizontal, ListScreenMetrics.gutter)
-                .padding(.vertical, 8)
-                .listColumn()
-                Divider()
                 ScrollView {
-                    Group {
-                        if let text, !text.isEmpty {
-                            MarkdownView(text: text, size: 13)
-                        } else {
-                            Text(page == .summary ? "No summary for this meeting." : "No transcript for this meeting.")
-                                .foregroundStyle(.secondary)
+                    VStack(alignment: .leading, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            Text(Self.title(meeting)).font(.system(size: 20, weight: .bold)).textSelection(.enabled)
+                            // At the narrowest window the Ask label would be cut, so it falls back to its icon.
+                            ViewThatFits(in: .horizontal) {
+                                toolbar(meeting, askLabel: true)
+                                toolbar(meeting, askLabel: false)
+                            }
+                            .controlSize(.small)
                         }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .cardMaterial()
+                        TranscriptTextCard(title: page.rawValue, text: text)
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .padding(16)
+                    .padding(.horizontal, ListScreenMetrics.gutter + 4)
+                    .padding(.vertical, 14)
                     .listColumn()
                 }
                 if let message = error ?? meetings.regenerationErrors[meeting.id] {
@@ -211,6 +208,26 @@ struct TranscriptsView: View {
             selection = nil
         } catch {
             self.error = (error as? APIError)?.message ?? error.localizedDescription
+        }
+    }
+}
+
+/// The summary or the transcript of a meeting, as one card. It says so when there is nothing to show.
+struct TranscriptTextCard: View {
+    let title: String
+    let text: String?
+
+    var body: some View {
+        CardSection(title: title) {
+            Group {
+                if let text, !text.isEmpty {
+                    MarkdownView(text: text, size: 13)
+                } else {
+                    Text("No \(title.lowercased()) for this meeting.").foregroundStyle(.secondary)
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 }
