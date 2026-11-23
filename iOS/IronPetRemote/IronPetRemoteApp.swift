@@ -12,6 +12,7 @@ struct IronPetRemoteApp: App {
         if ProcessInfo.processInfo.arguments.contains("--reset-credentials") {
             store.delete()
             UserDefaults.standard.removeObject(forKey: TasksViewMode.key)
+            UserDefaults.standard.removeObject(forKey: QuickFilterSelection.key)
         }
         #endif
         _model = State(initialValue: AppModel(store: store))

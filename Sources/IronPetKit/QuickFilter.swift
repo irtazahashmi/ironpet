@@ -293,3 +293,23 @@ extension RemoteJSON {
         return (try? encoder.encode(self)).flatMap { String(data: $0, encoding: .utf8) } ?? "null"
     }
 }
+
+/// The quick filter the Tasks list is narrowed by, kept in UserDefaults so it survives leaving the screen and a relaunch.
+/// Each device keeps its own pick. Nil is the "All" chip.
+public enum QuickFilterSelection {
+    public static let key = "tasksQuickFilter"
+
+    public static func load(_ defaults: UserDefaults = .standard) -> String? {
+        defaults.string(forKey: key).flatMap { $0.isEmpty ? nil : $0 }
+    }
+
+    public static func save(_ id: String?, _ defaults: UserDefaults = .standard) {
+        if let id, !id.isEmpty { defaults.set(id, forKey: key) } else { defaults.removeObject(forKey: key) }
+    }
+
+    /// `id` when a chip with that id exists, otherwise nil. A removed filter falls back to "All".
+    public static func valid(_ id: String?, in filters: [QuickFilter]) -> String? {
+        guard let id, QuickFilter.chips(filters).contains(where: { $0.id == id }) else { return nil }
+        return id
+    }
+}

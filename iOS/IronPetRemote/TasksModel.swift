@@ -13,16 +13,22 @@ final class TasksModel {
     private(set) var filters: [QuickFilter] = []
     /// False once the Mac answered 404 to the filter route.
     private(set) var filtersSupported = true
-    /// The chosen filter's id. Nil is "All". An id the Mac no longer has counts as "All".
-    var selectedFilterID: String?
+    /// The chosen filter's id. Nil is "All". An id the Mac no longer has counts as "All" and is cleared on the next reload.
+    /// Saved on this phone, so it survives a relaunch.
+    var selectedFilterID: String? {
+        didSet { if selectedFilterID != oldValue { QuickFilterSelection.save(selectedFilterID, defaults) } }
+    }
 
     @ObservationIgnored let client: IronPetClient
     @ObservationIgnored private let events: any EventSignalSource
     @ObservationIgnored private let onUnauthorized: () -> Void
     @ObservationIgnored private var listener: Task<Void, Never>?
+    @ObservationIgnored private let defaults: UserDefaults
 
-    init(client: IronPetClient, events: (any EventSignalSource)? = nil, onUnauthorized: @escaping () -> Void) {
+    init(client: IronPetClient, events: (any EventSignalSource)? = nil, defaults: UserDefaults = .standard, onUnauthorized: @escaping () -> Void) {
         self.client = client
+        self.defaults = defaults
+        self.selectedFilterID = QuickFilterSelection.load(defaults)
         self.events = events ?? EventConnection(client: client)
         self.onUnauthorized = onUnauthorized
     }
