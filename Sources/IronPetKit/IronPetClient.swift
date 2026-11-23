@@ -92,6 +92,9 @@ public final class IronPetClient: @unchecked Sendable {
     func performWithResponse(_ request: URLRequest) async throws -> (data: Data, response: HTTPURLResponse) {
         let data: Data, response: URLResponse
         do { (data, response) = try await session.data(for: request) } catch {
+            // A request the app cancelled is not a transport failure. Only the calling task's own cancellation counts: URLSession also
+            // reports a rejected certificate pin as `.cancelled`, and that must stay a visible transport error.
+            if error is CancellationError || ((error as? URLError)?.code == .cancelled && Task.isCancelled) { throw CancellationError() }
             throw ClientError.transport(error.localizedDescription)
         }
         guard let http = response as? HTTPURLResponse else { throw ClientError.invalidResponse }
