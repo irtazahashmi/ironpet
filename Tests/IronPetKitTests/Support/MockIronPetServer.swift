@@ -193,6 +193,12 @@ final class MockIronPetServer: @unchecked Sendable {
     var sendDelay: TimeInterval { get { lock.lock(); defer { lock.unlock() }; return _sendDelay } set { lock.lock(); _sendDelay = newValue; lock.unlock() } }
     /// Push the `chat.item` event before the answer to the send, as a fast socket can.
     var sendPushesFirst: Bool { get { lock.lock(); defer { lock.unlock() }; return _sendPushesFirst } set { lock.lock(); _sendPushesFirst = newValue; lock.unlock() } }
+    /// Adds a user message as the Mac's chat would after a voice transcript, and pushes its `chat.item` event.
+    func pushUserItem(text: String, origin: String) {
+        let id = UUID().uuidString.lowercased()
+        lock.lock(); _chat.items.append(RemoteChatItem(id: id, kind: "user", date: Date(), origin: origin, text: text)); lock.unlock()
+        _ = publish(RemoteEvent.chatItem, id: id)
+    }
     /// The bytes of an upload by id.
     func uploaded(_ id: String) -> Data? { lock.lock(); defer { lock.unlock() }; return _uploads[id] }
 

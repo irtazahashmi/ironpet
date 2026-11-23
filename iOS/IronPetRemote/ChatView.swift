@@ -270,7 +270,10 @@ private struct OutgoingStatus: View {
     var body: some View {
         switch message.state {
         case .sending, .sent:
-            Text("Sending…").font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("outgoing-sending")
+            // A voice message shows "Transcribing…" in its bubble until the text arrives.
+            if !message.isTranscribing {
+                Text("Sending…").font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("outgoing-sending")
+            }
         case .failed(let reason):
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)

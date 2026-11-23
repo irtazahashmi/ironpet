@@ -757,7 +757,11 @@ final class RemoteServer {
             let (frames, send) = AsyncStream<RemoteVoice.Output>.makeStream(bufferingPolicy: .unbounded)
             guard let socket = service.openSocket(device: device.id, kind: RemoteService.voiceSocket, close: { send.finish() }) else { return }
             defer { service.socketClosed(socket) }
-            let voice = await MainActor.run { RemoteVoice(api: api, device: device.id) { send.yield($0) } }
+            let voice = await MainActor.run { () -> RemoteVoice in
+                let voice = RemoteVoice(api: api, device: device.id) { send.yield($0) }
+                voice.hop = { HopLog.mark($0) }
+                return voice
+            }
             defer { Task { @MainActor in voice.close() } }
             await withTaskGroup(of: Void.self) { group in
                 group.addTask {
