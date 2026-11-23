@@ -158,7 +158,9 @@ final class TranscriptFollowTests: XCTestCase {
     }
 
     func testScrolledUpStaysPutWhileReplyStreams() throws {
-        let (session, panel) = open()
+        // The rendered window is the newest 150 items. In `hugeThread` that is one 800 pt run of tool steps, too short to scroll
+        // up in, so this uses turns whose rows have a height of their own.
+        let (session, panel) = open(items: mixedThread(turns: 200))
         wheel(panel, toFraction: 0.5)
         let before = position(panel)
         snapshot(panel, "scrolledup-before")
@@ -212,6 +214,79 @@ final class TranscriptFollowTests: XCTestCase {
         print("FOLLOW resumed: bottom gap \(after.bottom)")
         panel.close()
         XCTAssertLessThan(after.bottom, 60, "did not resume following after scrolling to the bottom")
+    }
+
+    /// Questions, tool rows and long replies, so rows have different heights.
+    private func mixedThread(turns: Int) -> [ChatSession.Item] {
+        let long = (0..<6).map { "Sentence \($0) of a long reply that wraps across several lines in the chat column." }.joined(separator: " ")
+        var items: [ChatSession.Item] = []
+        for i in 0..<turns {
+            items.append(.init(kind: .user("Question \(i) \(long)")))
+            for j in 0..<(i % 3 + 1) { items.append(.init(kind: .tool("Ran `step \(i)-\(j)`", ok: true))) }
+            items.append(.init(kind: .assistant(long + "\n\n" + long)))
+        }
+        return items
+    }
+
+    private func open(items: [ChatSession.Item]) -> (ChatSession, IronPetPanel) {
+        let session = ChatSession(restore: false)
+        session.items = items
+        let panel = IronPetPanel.chat(session)
+        panel.setContentSize(CGSize(width: 520, height: 640))
+        panel.orderFrontRegardless()
+        spin(3)
+        return (session, panel)
+    }
+
+    /// S1: rows appended and updated while the view is at the end must not move it, and the content height must not
+    /// jump, which is what moved the offset when the transcript was a lazy stack.
+    func testPinnedViewStaysAtTheEndWhileRowsAreAppendedAndUpdated() throws {
+        let (session, panel) = open(items: mixedThread(turns: 30))
+        session.items.append(.init(kind: .tool("Ran `ls`", ok: true)))
+        spin(1)
+        var worstAbove: CGFloat = 0
+        var lastHeight: CGFloat?
+        var biggestChange: CGFloat = 0
+        let end = Date().addingTimeInterval(6)
+        var tick = 0
+        while Date() < end {
+            tick += 1
+            if tick % 6 == 0 { session.items.append(.init(kind: .tool("Ran `bg \(tick)`", ok: true))) }
+            session.items[session.items.count - 1].kind = .tool("Ran \(tick % 7 + 1) commands", ok: tick % 2 == 0)
+            RunLoop.main.run(mode: .default, before: Date().addingTimeInterval(0.05))
+            worstAbove = max(worstAbove, position(panel).bottom)
+            if let height = scrollView(panel)?.documentView?.bounds.height {
+                if let last = lastHeight { biggestChange = max(biggestChange, abs(height - last)) }
+                lastHeight = height
+            }
+        }
+        panel.close()
+        XCTAssertLessThan(worstAbove, 60, "the view left the end while rows updated")
+        // The oldest row leaves the window as new ones arrive, which is at most one turn. A lazy stack moved by thousands.
+        XCTAssertLessThan(biggestChange, 1500, "the content height jumped while rows updated")
+    }
+
+    /// Reaching the top of the rendered rows loads the next page of older ones and keeps the reader on the same row: the
+    /// offset grows by the height the new rows added.
+    func testScrollingToTheTopLoadsOlderRowsAndKeepsTheReadersRow() throws {
+        let (_, panel) = open(items: mixedThread(turns: 200))
+        let scroll = try XCTUnwrap(scrollView(panel))
+        let startHeight = try XCTUnwrap(scroll.documentView).bounds.height
+        var grown: (before: CGFloat, after: CGFloat)?
+        for _ in 0..<120 {
+            let before = try XCTUnwrap(scroll.documentView).bounds.height
+            guard let cg = CGEvent(scrollWheelEvent2Source: nil, units: .pixel, wheelCount: 1, wheel1: 500, wheel2: 0, wheel3: 0),
+                  let event = NSEvent(cgEvent: cg) else { break }
+            scroll.scrollWheel(with: event)
+            spin(0.1)
+            let after = try XCTUnwrap(scroll.documentView).bounds.height
+            if after > before + 2000 { grown = (before, after); break }
+        }
+        let heights = try XCTUnwrap(grown, "older rows were not loaded at the top (content stayed \(Int(startHeight)) pt)")
+        spin(0.8)
+        let offset = position(panel).top
+        panel.close()
+        XCTAssertEqual(offset, heights.after - heights.before, accuracy: 400, "the reader was not kept on the row they were reading")
     }
 
     func testSendingJumpsToBottom() throws {

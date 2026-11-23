@@ -43,6 +43,8 @@ struct ChatView: View {
     @State private var lastViewportHeight: CGFloat = 0
     /// How many of the newest items the transcript renders. A resumed session can hold thousands.
     @State private var shownItems = TranscriptGroup.pageSize
+    @State private var loadingEarlier = false
+    @State private var offsetFromTop: CGFloat = 0
     /// Long user messages the reader expanded. View state only, not saved with the thread.
     @State private var expandedMessages: Set<UUID> = []
     @State private var findQuery = ""
@@ -313,9 +315,12 @@ struct ChatView: View {
     private var transcript: some View {
         ScrollViewReader { proxy in
             ScrollView {
-                LazyVStack(alignment: .leading, spacing: 10) {
+                // A plain stack: a lazy stack estimates the height of rows it has not laid out, and with the reply text an AppKit
+                // view whose height is only known once shown, every row appended at the end made it re-estimate and move the
+                // offset. The window is small, so every row in it has an exact height.
+                VStack(alignment: .leading, spacing: 10) {
                     if hiddenItems > 0 {
-                        Button("Show earlier messages (\(hiddenItems))") { shownItems += TranscriptGroup.pageSize }
+                        Button("Show earlier messages (\(hiddenItems))") { loadEarlier(proxy) }
                             .buttonStyle(.plain)
                             .pointerCursor()
                             .font(.system(size: 11.5))
@@ -398,6 +403,28 @@ struct ChatView: View {
             .onChange(of: jumpTick) { if let request = jumpTick { jump(to: request.target, proxy) } }
             // A new chat or another thread starts with the default window again.
             .onChange(of: session.items.first?.id) { shownItems = TranscriptGroup.pageSize }
+            // A reader who scrolled up keeps the same first row when rows arrive; at the end the window slides.
+            .onChange(of: session.items.count) { old, new in if new > old, !follow.pinned { shownItems += new - old } }
+        }
+    }
+
+    /// Reaching the top of the rendered rows adds the next page of older ones, and puts the reader back on the row they
+    /// were looking at, because the new rows push it down. Rows shorter than two viewports have the "Show earlier" button
+    /// in view already, so a reader near their top is not moved.
+    private func loadEarlierIfAtTop(_ proxy: ScrollViewProxy) {
+        guard hiddenItems > 0, !follow.pinned, !resizing, !loadingEarlier, offsetFromTop < 120, lastContentHeight > lastViewportHeight * 2 else { return }
+        loadEarlier(proxy)
+    }
+
+    private func loadEarlier(_ proxy: ScrollViewProxy) {
+        guard hiddenItems > 0 else { return }
+        let anchor = topRowID ?? groupedItems.first?.id
+        loadingEarlier = true
+        shownItems += TranscriptGroup.pageSize
+        // The new rows exist after this render; put the anchor row back at the top, then allow the next page.
+        DispatchQueue.main.async {
+            if let anchor { scrollActivity.noteProgrammaticScroll(); proxy.scrollTo(anchor, anchor: .top) }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { loadingEarlier = false }
         }
     }
 
@@ -411,6 +438,8 @@ struct ChatView: View {
         lastContentHeight = metrics.contentHeight
         lastViewportHeight = metrics.viewportHeight
         checkBlank(proxy)
+        offsetFromTop = metrics.contentHeight - metrics.viewportHeight - metrics.distanceFromBottom
+        loadEarlierIfAtTop(proxy)
         // While a width change re-wraps the rows, the offset moves because the heights do, not because the reader scrolled.
         follow.geometryChanged(distanceFromBottom: Double(metrics.distanceFromBottom), userDriven: userDriven && !resizing)
         // Rows below the viewport only have estimated heights, so the end moves as they are measured.
@@ -614,7 +643,7 @@ struct ChatView: View {
         let needed = session.items.count - position
         if needed > shownItems {
             shownItems = needed + TranscriptGroup.pageSize / 3
-            // The older rows join the lazy stack on the next render, so scroll once they exist.
+            // The older rows join the stack on the next render, so scroll once they exist.
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) { scrollToMatch(match, proxy) }
             return
         }
@@ -1621,8 +1650,8 @@ enum TranscriptGroup {
     case item(ChatItem)
     case tools([ChatItem])
 
-    /// Items rendered at first, and added by each "Show earlier" press.
-    static let pageSize = 300
+    /// Items rendered at first, and added each time the reader reaches the top of the rendered rows.
+    static let pageSize = 150
 
     var id: UUID {
         switch self {
