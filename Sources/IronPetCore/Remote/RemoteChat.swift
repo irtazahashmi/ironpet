@@ -361,6 +361,20 @@ package struct RemoteChat {
         return true
     }
 
+    /// The most text of one message a `chat.item` event carries. A longer message makes the phone read it with a GET.
+    package nonisolated static let maxInlineTextBytes = 16 * 1024
+
+    /// The message as the socket sends it inside a `chat.item` event, so the phone needs no read. Nil for a message the phone must
+    /// read itself: one with a file or a form, or text over `maxInlineTextBytes`.
+    package static func inlineJSON(_ item: ChatItem) -> [String: Any]? {
+        switch item.kind {
+        case .user(let text), .assistant(let text), .error(let text), .tool(let text, _), .notice(let text):
+            guard text.utf8.count <= maxInlineTextBytes else { return nil }
+            return json(item)
+        case .screenshot, .form: return nil
+        }
+    }
+
     package static func json(_ item: ChatItem) -> [String: Any] {
         var object: [String: Any] = ["id": item.id.uuidString]
         if let date = item.date { object["date"] = iso(date) }

@@ -139,6 +139,32 @@ final class RemoteChatTests: XCTestCase {
         XCTAssertEqual(full.json["text"] as? String, text)
     }
 
+    func testAChatItemFrameCarriesTheMessageTextAndAnOverlongOneDoesNot() async throws {
+        _ = try await post("/v1/chat/current/messages", ["text": "stream"])
+        await settle()
+        let socket = socket()
+        defer { socket.cancel(with: .goingAway, reason: nil) }
+        _ = try await socket.receive()   // hello
+        deliver[0](.assistant("short reply"))
+        let short = try await nextItemFrame(socket)
+        XCTAssertEqual((short["item"] as? [String: Any])?["text"] as? String, "short reply")
+        XCTAssertEqual((short["item"] as? [String: Any])?["id"] as? String, short["id"] as? String)
+        try await Task.sleep(for: .milliseconds(150))
+        deliver[0](.assistant(String(repeating: "x", count: RemoteChat.maxInlineTextBytes + 1)))
+        let long = try await nextItemFrame(socket)
+        XCTAssertNil(long["item"], "text over the cap is read with a GET")
+        XCTAssertNotNil(long["id"])
+    }
+
+    private func nextItemFrame(_ socket: URLSessionWebSocketTask) async throws -> [String: Any] {
+        while true {
+            guard case .string(let text) = try await socket.receive(),
+                  let object = try JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any],
+                  object["kind"] as? String == "chat.item", object["id"] != nil else { continue }
+            return object
+        }
+    }
+
     func testTheThrottleKeepsTheLastEventAfterABurst() async throws {
         var sent: [APIEvent] = []
         let throttle = RemoteEventThrottle(interval: .milliseconds(50)) { sent.append($0) }

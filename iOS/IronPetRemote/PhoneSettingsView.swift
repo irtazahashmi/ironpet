@@ -23,7 +23,6 @@ struct PhoneSettingsView: View {
                         Toggle("Remind me when a task is due", isOn: binding(config.tasks.dueReminders) { ["tasks": ["dueReminders": $0]] })
                         Toggle("Suggest tasks after meetings", isOn: binding(config.tasks.meetingSuggestions) { ["tasks": ["meetingSuggestions": $0]] })
                     }
-                    BackgroundSection(model: model, current: config.chat.background)
                     if let voice { VoiceSettingsSection(voice: voice) }
                     Section("Ghost") {
                         Toggle("Welcome-back summary", isOn: binding(config.welcomeBack.enabled) { ["welcomeBack": ["enabled": $0]] })
@@ -48,6 +47,7 @@ struct PhoneSettingsView: View {
                         Text("These can be turned off here and turned on only on the Mac.")
                     }
                 }
+                if let config = model.config { BackgroundSection(model: model, current: config.chat.background) }
                 if !model.pets.isEmpty {
                     Section("Pet") {
                         ForEach(model.pets) { pet in

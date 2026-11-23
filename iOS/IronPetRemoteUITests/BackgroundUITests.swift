@@ -42,7 +42,18 @@ final class BackgroundUITests: XCTestCase {
         let row = app.buttons["more-settings"]
         XCTAssertTrue(row.waitForExistence(timeout: 10))
         row.tap()
-        XCTAssertTrue(any("background-default").waitForExistence(timeout: 20))
+        XCTAssertTrue(app.switches["reminders-paused"].waitForExistence(timeout: 20))
+        reveal("background-default")
+    }
+
+    /// The picker sits below the privacy switches, and a form draws only the rows near the screen. Scrolls until the row is there.
+    private func reveal(_ id: String) {
+        var swipes = 0
+        while !(any(id).exists && any(id).isHittable), swipes < 8 {
+            app.swipeUp()
+            swipes += 1
+        }
+        XCTAssertTrue(any(id).exists, "\(id) is on the settings screen")
     }
 
     private func attach(_ name: String) {
@@ -58,7 +69,8 @@ final class BackgroundUITests: XCTestCase {
         XCTAssertEqual(result, .completed, message)
     }
 
-    private static func photo(width: Int = 240, height: Int = 360) -> Data {
+    /// A different picture each run. The app keeps downloaded files by hash between runs, so a repeated picture would never be fetched.
+    private static func photo(width: Int = 240 + Int.random(in: 0..<60), height: Int = 360) -> Data {
         UIGraphicsImageRenderer(size: CGSize(width: width, height: height)).jpegData(withCompressionQuality: 0.9) { context in
             UIColor.systemOrange.setFill()
             context.fill(CGRect(x: 0, y: 0, width: width, height: height))
@@ -93,6 +105,7 @@ final class BackgroundUITests: XCTestCase {
     func testPickingABuiltInInSettingsChangesTheMacAndTheChat() {
         pair()
         openSettings()
+        reveal("background-paws")
         any("background-paws").tap()
         waitFor("the phone patches the Mac's chat.background") { self.server.config.chat.background == "paws" }
         XCTAssertTrue(any("screen-background-paws").waitForExistence(timeout: 10), "the settings screen draws it too")
@@ -107,6 +120,7 @@ final class BackgroundUITests: XCTestCase {
     func testPickingAPhotoUploadsItToTheMacAndItBecomesTheCustomBackground() {
         pair()
         openSettings()
+        reveal("background-photo")
         any("background-photo").tap()
         waitFor("the photo reaches the Mac") { self.server.requests.contains { $0.line == "POST /v1/settings/background" } }
         let upload = server.requests.first { $0.line == "POST /v1/settings/background" }

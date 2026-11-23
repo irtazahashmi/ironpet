@@ -68,10 +68,13 @@ class SocketModel {
             onUnauthorized()
         } catch is CancellationError {
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = message(for: error)
         }
         return nil
     }
+
+    /// The text `run` shows for a failed request. A subclass that must not show URLSession's wording replaces it.
+    func message(for error: Error) -> String { error.localizedDescription }
 }
 
 /// The tabs of the app. Alerts, Automations, Meetings, Screen and Settings sit behind More.
