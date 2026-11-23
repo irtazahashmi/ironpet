@@ -159,4 +159,32 @@ final class TaskDetailPageTests: XCTestCase {
         try TaskEdits.setTitle("New title", of: id, in: api)
         XCTAssertEqual(store.task(id)?.title, "New title")
     }
+
+    // Card layout: header chips and summary values
+
+    func testPullRequestKeyComesFromGitHubPullLinks() {
+        let pr = TaskLinkRow(link: TaskLink(kind: .url, ref: "https://github.example.com/online-web/player-experience/pull/4318", label: nil))
+        XCTAssertEqual(pr.pullRequestKey, "player-experience #4318")
+        XCTAssertEqual(pr.reference, "https://github.example.com/online-web/player-experience/pull/4318")
+        XCTAssertNil(TaskLinkRow(link: TaskLink(kind: .url, ref: "https://github.com/a/b/issues/3", label: nil)).pullRequestKey)
+        XCTAssertNil(TaskLinkRow(link: TaskLink(kind: .url, ref: "https://example.com/a/b/pull/3", label: nil)).pullRequestKey)
+        XCTAssertNil(TaskLinkRow(link: TaskLink(kind: .thread, ref: "t", label: nil)).pullRequestKey)
+    }
+
+    func testProjectLabelIgnoresBlankValues() throws {
+        let id = try make(labels: ["project": " epic "])
+        XCTAssertEqual(store.task(id)?.projectLabel, "epic")
+        XCTAssertNil(try store.task(make("Other"))?.projectLabel)
+    }
+
+    func testDueAndWaitingOnCanBeSetFromNone() throws {
+        let id = try make()
+        XCTAssertNil(store.task(id)?.due)
+        XCTAssertNil(store.task(id)?.waitingOn)
+        let due = Calendar.current.startOfDay(for: Date()).addingTimeInterval(86_400 * 2)
+        try TaskEdits.setDue(due, of: id, in: api)
+        try TaskEdits.setWaitingOn("Sam", of: id, in: api)
+        XCTAssertEqual(store.task(id)?.due, due)
+        XCTAssertEqual(store.task(id)?.waitingOn, "Sam")
+    }
 }
