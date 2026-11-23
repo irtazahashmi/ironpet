@@ -8,9 +8,13 @@ cd "$(dirname "$0")/.."
 
 VERSION="${IRONPET_VERSION:-$(tr -d '[:space:]' < VERSION)}"
 BUILD="${IRONPET_BUILD:-1}"
+# The short commit goes into Info.plist as IronPetGitCommit. IRONPET_DEV=1 (scripts/install.sh sets it) marks a local build.
+COMMIT="${IRONPET_COMMIT:-$(git rev-parse --short HEAD 2>/dev/null || true)}"
+DEV_PLIST=""
+if [ "${IRONPET_DEV:-}" = "1" ]; then DEV_PLIST="<key>IronPetDevBuild</key><true/>"; fi
 # These go into a plist, so keep them to characters that cannot break out of it.
-case "$VERSION$BUILD" in
-  *[!0-9A-Za-z.+-]*) echo "error: IRONPET_VERSION and IRONPET_BUILD may only contain letters, digits and . + -" >&2; exit 1 ;;
+case "$VERSION$BUILD$COMMIT" in
+  *[!0-9A-Za-z.+-]*) echo "error: IRONPET_VERSION, IRONPET_BUILD and IRONPET_COMMIT may only contain letters, digits and . + -" >&2; exit 1 ;;
 esac
 
 swift build -c release
@@ -79,6 +83,8 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>@VERSION@</string>
   <key>CFBundleVersion</key><string>@BUILD@</string>
+  <key>IronPetGitCommit</key><string>@COMMIT@</string>
+  @DEV@
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSAppleEventsUsageDescription</key><string>ironpet switches to the iTerm tab where an agent is waiting.</string>
@@ -87,7 +93,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
 </dict>
 </plist>
 PLIST
-sed -i '' "s/@VERSION@/$VERSION/; s/@BUILD@/$BUILD/" "$APP/Contents/Info.plist"
+sed -i '' "s/@VERSION@/$VERSION/; s/@BUILD@/$BUILD/; s/@COMMIT@/$COMMIT/; s|@DEV@|$DEV_PLIST|" "$APP/Contents/Info.plist"
 
 # IRONPET_SIGN_IDENTITY=- forces ad-hoc signing, e.g. when the keychain would prompt for the ironpet-dev key.
 IDENTITY="${IRONPET_SIGN_IDENTITY:-}"

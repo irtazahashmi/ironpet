@@ -33,6 +33,7 @@
             "captureRegion" : "cmd+opt+ctrl+g",
             "captureWindow" : "cmd+opt+shift+g",
             "chat" : "cmd+opt+g",
+            "copyVersion" : "",
             "meeting" : "",
             "voice" : "cmd+opt+v",
             "voiceMode" : "cmd+opt+ctrl+v"
@@ -114,7 +115,10 @@
           "tasks" : {
             "dueReminders" : true,
             "keepDoneDays" : 30,
-            "meetingSuggestions" : true
+            "meetingSuggestions" : true,
+            "quickFilters" : [
+
+            ]
           },
           "telegram" : {
             "allowedUsers" : [
@@ -181,6 +185,7 @@
             "captureRegion" : "cmd+opt+ctrl+g",
             "captureWindow" : "cmd+opt+shift+g",
             "chat" : "cmd+opt+g",
+            "copyVersion" : "",
             "meeting" : "",
             "voice" : "cmd+opt+v",
             "voiceMode" : "cmd+opt+ctrl+v"
@@ -262,7 +267,10 @@
           "tasks" : {
             "dueReminders" : true,
             "keepDoneDays" : 30,
-            "meetingSuggestions" : true
+            "meetingSuggestions" : true,
+            "quickFilters" : [
+
+            ]
           },
           "telegram" : {
             "allowedUsers" : [
@@ -326,6 +334,7 @@
             "captureRegion" : "cmd+opt+ctrl+g",
             "captureWindow" : "cmd+opt+shift+g",
             "chat" : "cmd+opt+g",
+            "copyVersion" : "",
             "meeting" : "",
             "voice" : "cmd+opt+v",
             "voiceMode" : "cmd+opt+ctrl+v"
@@ -407,7 +416,10 @@
           "tasks" : {
             "dueReminders" : true,
             "keepDoneDays" : 30,
-            "meetingSuggestions" : true
+            "meetingSuggestions" : true,
+            "quickFilters" : [
+
+            ]
           },
           "telegram" : {
             "allowedUsers" : [

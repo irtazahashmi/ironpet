@@ -71,7 +71,7 @@ extension TasksModel {
         return result
     }
 
-    var boardColumns: [BoardColumn: [RemoteTask]] { Self.boardColumns(tasks) }
+    var boardColumns: [BoardColumn: [RemoteTask]] { Self.boardColumns(visibleTasks) }
 
     /// A card was dropped on `column`. Each case is one request, except a waiting task closed from the board, which clears who it
     /// waits on first. The update calls are the ones the detail page uses.

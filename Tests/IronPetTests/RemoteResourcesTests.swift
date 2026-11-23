@@ -351,4 +351,116 @@ final class RemoteResourcesTests: XCTestCase {
         try h.api.pet.select(PetEntry(id: fox.path, name: "Fox", url: fox, atlas: try XCTUnwrap(Atlas.load(fox))))
         XCTAssertEqual(seen.filter { $0.kind == .assetsChanged }.count, 0, "the same pet again changes nothing")
     }
+
+    // MARK: Chat background from the phone
+
+    private func picture(width: Int, height: Int, type: String = "public.jpeg") throws -> Data {
+        let rep = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8, samplesPerPixel: 4,
+                                                 hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        let kind: NSBitmapImageRep.FileType = type == "public.png" ? .png : .jpeg
+        return try XCTUnwrap(rep.representation(using: kind, properties: [:]))
+    }
+
+    /// The controller closes a listener the settings do not ask for, and every settings change makes it look. Ask for this one.
+    private func keepServerOn() async {
+        h.api.settings.update { $0.remote.enabled = true; $0.remote.port = h.port }
+        await h.controller.settled()
+    }
+
+    private func uploadBackground(_ data: Data, token: String? = nil) async throws -> RemoteReply {
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(h.port)/v1/settings/background")!)
+        request.httpMethod = "POST"
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        request.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+        request.httpBody = data
+        let (body, response) = try await h.session.data(for: request)
+        let http = response as! HTTPURLResponse
+        return RemoteReply(status: http.statusCode, data: body, headers: [:])
+    }
+
+    // S4
+    func testAPhoneUploadBecomesTheCustomBackgroundAndIsServedByHash() async throws {
+        await keepServerOn()
+        let jpeg = try picture(width: 80, height: 60)
+        // The first check only records the folders, as it does when the app starts.
+        h.api.pet.checkAssets()
+        seen = []
+        let reply = try await uploadBackground(jpeg, token: token)
+        XCTAssertEqual(reply.status, 200, String(decoding: reply.data, as: UTF8.self))
+        XCTAssertEqual((reply.json["chat"] as? [String: Any])?["background"] as? String, "custom")
+        let config = h.api.settings.config
+        XCTAssertEqual(config.chat.background, "custom")
+        let name = try XCTUnwrap(config.chat.customImage)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: root.appendingPathComponent("backgrounds/\(name)").path))
+        XCTAssertEqual(seen.filter { $0.kind == .assetsChanged }.count, 1, "the phones are told so they fetch the image")
+        // S2: the image is in the manifest as chat.background and downloads by its hash, with a token.
+        let manifest = try await get("/v1/assets/manifest")
+        let entry = try XCTUnwrap((manifest.json["assets"] as? [[String: Any]])?.first { $0["id"] as? String == "chat.background" })
+        let hash = try XCTUnwrap(entry["sha256"] as? String)
+        // Asked first: the answer to the authorised request is cacheable, and the URL session would serve it again.
+        let anonymous = try await h.request("GET", "/v1/assets/\(hash)")
+        XCTAssertEqual(anonymous.status, 401, "the custom image is never served without a device token")
+        let image = try await get("/v1/assets/\(hash)")
+        XCTAssertEqual(image.status, 200)
+        XCTAssertEqual(image.data, jpeg, "a small image is sent as it is")
+    }
+
+    func testTheBackgroundUploadRefusesNoTokenAWrongTokenWrongTypesEmptyAndTooLargeBodies() async throws {
+        let jpeg = try picture(width: 20, height: 20)
+        let none = try await uploadBackground(jpeg)
+        XCTAssertEqual(none.status, 401)
+        h.clock.advance(70)
+        let wrong = try await uploadBackground(jpeg, token: "ipt_wrong")
+        XCTAssertEqual(wrong.status, 401)
+        XCTAssertNil(h.api.settings.config.chat.customImage, "a refused upload stores nothing")
+        let text = try await uploadBackground(Data("not an image at all".utf8), token: token)
+        XCTAssertEqual(text.status, 415)
+        let gif = try await uploadBackground(Data("GIF89a".utf8) + Data(count: 40), token: token)
+        XCTAssertEqual(gif.status, 415)
+        let empty = try await uploadBackground(Data(), token: token)
+        XCTAssertEqual(empty.status, 400)
+        let big = try await uploadBackground(Data([0xFF, 0xD8, 0xFF]) + Data(count: RemoteUploads.maxBytes + 1), token: token)
+        XCTAssertEqual(big.status, 413)
+        XCTAssertNil(h.api.settings.config.chat.customImage)
+        XCTAssertEqual(h.api.settings.config.chat.background, "default")
+    }
+
+    func testTheImageKindComesFromTheBytesAndAcceptsJPEGPNGAndHEIC() throws {
+        XCTAssertEqual(RemotePhoneSettings.imageExtension(of: try picture(width: 8, height: 8)), "jpg")
+        XCTAssertEqual(RemotePhoneSettings.imageExtension(of: try picture(width: 8, height: 8, type: "public.png")), "png")
+        let heic = Data([0, 0, 0, 24]) + Data("ftypheic".utf8) + Data(count: 12)
+        XCTAssertEqual(RemotePhoneSettings.imageExtension(of: heic), "heic")
+        XCTAssertNil(RemotePhoneSettings.imageExtension(of: Data("<svg></svg>".utf8)))
+        XCTAssertNil(RemotePhoneSettings.imageExtension(of: Data()))
+    }
+
+    // S3
+    func testAPhonePicksABuiltInAndTheMacConfigChangesAndAPushFollows() async throws {
+        await keepServerOn()
+        seen = []
+        let reply = try await h.request("PATCH", "/v1/settings", token: token, body: ["chat": ["background": "dusk"]])
+        XCTAssertEqual(reply.status, 200, String(decoding: reply.data, as: UTF8.self))
+        XCTAssertEqual(h.api.settings.config.chat.background, "dusk")
+        XCTAssertEqual((reply.json["chat"] as? [String: Any])?["background"] as? String, "dusk")
+        XCTAssertTrue(seen.contains { $0.kind == .settingsChanged }, "the phones hear about the change")
+        let pet = try await get("/v1/pet")
+        XCTAssertEqual(pet.json["background"] as? String, "dusk", "S1: the pet resource the phone reads follows the selection")
+        let back = try await h.request("PATCH", "/v1/settings", token: token, body: ["chat": ["background": "default"]])
+        XCTAssertEqual(back.status, 200)
+        XCTAssertEqual(h.api.settings.config.chat.background, "default")
+    }
+
+    func testALargeImageGoesToThePhoneAtMost2400PixelsWide() async throws {
+        await keepServerOn()
+        let big = try picture(width: 3600, height: 1200, type: "public.png")
+        try big.write(to: root.appendingPathComponent("backgrounds/custom-big.png"))
+        h.api.settings.update { $0.chat.customImage = "custom-big.png"; $0.chat.background = "custom" }
+        let manifest = try await get("/v1/assets/manifest")
+        let entry = try XCTUnwrap((manifest.json["assets"] as? [[String: Any]])?.first { $0["id"] as? String == "chat.background" })
+        let image = try await get("/v1/assets/\(try XCTUnwrap(entry["sha256"] as? String))")
+        let source = try XCTUnwrap(CGImageSourceCreateWithData(image.data as CFData, nil))
+        let size = try XCTUnwrap(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        XCTAssertEqual(size[kCGImagePropertyPixelWidth] as? Int, 2400)
+        XCTAssertEqual(try Data(contentsOf: root.appendingPathComponent("backgrounds/custom-big.png")), big, "the Mac keeps the original")
+    }
 }

@@ -27,7 +27,7 @@ struct MarkdownBody: View {
     var find: RemoteChatFind.RowHighlight?
     @Environment(\.openFilePath) private var openFilePath
     private var links: Bool { openFilePath != nil }
-    @ScaledMetric(relativeTo: .body) private var scale = ChatMetrics.scale
+    @ChatScale(.body) private var scale
 
     var body: some View {
         let blocks = ChatMarkdown.parse(text)
@@ -61,7 +61,7 @@ struct MarkdownBody: View {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in ListRow(item: item, size: size, segment: segment + index, find: find) }
             }
         case .code(let language, let code, _):
-            CodeBlock(language: language, code: code, size: 12 * scale, segment: segment, find: ChatMarkdown.segments(of: block).isEmpty ? nil : find)
+            CodeBlock(language: language, code: code, size: 12 * scale, scale: scale, segment: segment, find: ChatMarkdown.segments(of: block).isEmpty ? nil : find)
         case .table(let header, let rows):
             TableBlock(header: header, rows: rows, size: size, segment: segment, find: find)
         case .rule:
@@ -103,6 +103,7 @@ private struct CodeBlock: View {
     let language: String?
     let code: String
     let size: CGFloat
+    let scale: CGFloat
     var segment = 0
     var find: RemoteChatFind.RowHighlight?
     @State private var copied = false
@@ -110,14 +111,14 @@ private struct CodeBlock: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
-                Text(language ?? "code").font(.system(size: 10.5 * ChatMetrics.scale, weight: .medium)).foregroundStyle(.secondary)
+                Text(language ?? "code").font(.system(size: 10.5 * scale, weight: .medium)).foregroundStyle(.secondary)
                 Spacer()
                 Button {
                     UIPasteboard.general.string = code
                     copied = true
                     Task { try? await Task.sleep(for: .seconds(1.5)); copied = false }
                 } label: {
-                    Label(copied ? "Copied" : "Copy", systemImage: copied ? SharedSymbols.allow : SharedSymbols.copy).font(.system(size: 10.5 * ChatMetrics.scale))
+                    Label(copied ? "Copied" : "Copy", systemImage: copied ? SharedSymbols.allow : SharedSymbols.copy).font(.system(size: 10.5 * scale))
                 }
                 .buttonStyle(.borderless).foregroundStyle(.secondary)
                 .accessibilityIdentifier("copy-code")
@@ -180,7 +181,7 @@ struct ReplyQuote: View {
     @Environment(\.macAccent) private var macAccent
     let reply: RemoteChatReply
     var onUser = false
-    @ScaledMetric(relativeTo: .caption) private var scale = ChatMetrics.scale
+    @ChatScale(.caption1) private var scale
 
     var body: some View {
         HStack(spacing: 6) {
@@ -229,7 +230,7 @@ struct UserBubble: View {
     var find: RemoteChatFind.RowHighlight?
     @Environment(\.openFilePath) private var openFilePath
     private var links: Bool { openFilePath != nil }
-    @ScaledMetric(relativeTo: .body) private var scale = ChatMetrics.scale
+    @ChatScale(.body) private var scale
 
     var body: some View {
         let preview = ChatMessageCollapse.preview(of: text)
@@ -305,7 +306,7 @@ struct AssistantBubble: View {
     var avatar: CGImage?
     var readAloud: ReadAloud?
     var find: RemoteChatFind.RowHighlight?
-    @ScaledMetric(relativeTo: .caption) private var scale = ChatMetrics.scale
+    @ChatScale(.caption1) private var scale
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -378,7 +379,7 @@ struct PetAvatar: View {
 struct ToolStepsRow: View {
     let steps: [RemoteChatItem]
     @State private var expanded = false
-    @ScaledMetric(relativeTo: .caption) private var scale = ChatMetrics.scale
+    @ChatScale(.caption1) private var scale
 
     var body: some View {
         ChatSystemRow(expanded: expanded, scale: scale, identifier: "tool-steps-\(steps[0].id)",
@@ -406,7 +407,7 @@ struct ToolStepsRow: View {
 struct NoticeRow: View {
     let notice: ChatNotice
     @State private var expanded = false
-    @ScaledMetric(relativeTo: .caption) private var scale = ChatMetrics.scale
+    @ChatScale(.caption1) private var scale
 
     var body: some View {
         ChatSystemRow(expanded: expanded, canExpand: !notice.detail.isEmpty, scale: scale, identifier: "notice-label",
@@ -426,7 +427,7 @@ struct NoticeRow: View {
 /// An error in the transcript: red text on a light red card.
 struct ErrorRow: View {
     let text: String
-    @ScaledMetric(relativeTo: .caption) private var scale = ChatMetrics.scale
+    @ChatScale(.caption1) private var scale
 
     var body: some View {
         Label(text, systemImage: SharedSymbols.warning).font(.system(size: 12 * scale)).foregroundStyle(.red)
@@ -441,7 +442,7 @@ struct ErrorRow: View {
 struct TypingRow: View {
     let started: Date?
     var avatar: CGImage?
-    @ScaledMetric(relativeTo: .caption) private var scale = ChatMetrics.scale
+    @ChatScale(.caption1) private var scale
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -492,7 +493,7 @@ struct PulsingDots: View {
 /// "Jump to latest", shown over the transcript when new content arrived while the reader was scrolled up.
 struct JumpToLatestButton: View {
     let action: () -> Void
-    @ScaledMetric(relativeTo: .caption) private var scale = ChatMetrics.scale
+    @ChatScale(.caption1) private var scale
 
     var body: some View {
         Button(action: action) {

@@ -65,8 +65,8 @@ struct RemoteGate: RouterMiddleware {
         if headerBytes > RemoteServer.maxHeaders {
             return RemoteServer.error(431, "headers_too_large", "request headers are too large")
         }
-        // Only the upload route takes a body past 1 MiB.
-        let limit = Self.template(context.endpointPath) == RemoteServer.uploadRoute ? RemoteUploads.maxBytes : RemoteServer.maxBody
+        // Only the upload routes take a body past 1 MiB.
+        let limit = RemoteServer.largeBodyRoutes.contains(Self.template(context.endpointPath) ?? "") ? RemoteUploads.maxBytes : RemoteServer.maxBody
         if let length = request.headers[.contentLength].flatMap(Int.init), length > limit {
             return RemoteServer.error(413, "too_large", "request body is larger than \(limit) bytes")
         }
@@ -101,6 +101,9 @@ final class RemoteServer {
     nonisolated static let maxBody = 1 << 20
     nonisolated static let maxHeaders = 64 << 10
     nonisolated static let uploadRoute = "/v1/uploads"
+    nonisolated static let backgroundRoute = "/v1/settings/background"
+    /// The routes that take a body past 1 MiB.
+    nonisolated static let largeBodyRoutes: Set<String> = [uploadRoute, backgroundRoute]
     /// The longest message the event socket reads from a device.
     nonisolated static let maxSocketMessage = 16 << 10
 
@@ -335,6 +338,13 @@ final class RemoteServer {
             let id = Self.parameter(context, "id")
             return try await self.call(context) { try $0.delete(id) }
         }
+        router.get("/v1/task-filters") { [self] _, context in
+            try await self.call(context) { $0.filters() }
+        }
+        router.delete("/v1/task-filters/:id") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return try await self.call(context) { try $0.deleteFilter(id) }
+        }
         router.get("/v1/suggestions") { [self] _, context in
             try await self.call(context) { try $0.suggestions() }
         }
@@ -473,6 +483,13 @@ final class RemoteServer {
         router.post("/v1/settings/pet") { [self] request, context in
             let body = try await Self.object(request, context)
             return await self.phoneFour(context) { api, _ in try await RemotePhoneSettings(api: api).selectPet(body) }
+        }
+        // One image as the raw body, up to 20 MiB: JPEG, PNG or HEIC. It becomes the custom chat background of the Mac and every phone.
+        router.post("/v1/settings/background") { [self] request, context in
+            guard context.device != nil else { return Self.error(401, "unauthorized", "unauthorized") }
+            let buffer = try await request.body.collect(upTo: RemoteUploads.maxBytes)
+            let data = Data(buffer.readableBytesView)
+            return await self.phoneFour(context) { api, _ in try await RemotePhoneSettings(api: api).uploadBackground(data) }
         }
         router.get("/v1/usage") { [self] request, context in
             let range = Self.query(request)["range"]?.first
@@ -707,10 +724,14 @@ final class RemoteServer {
                 let gap = since.map { bus.replay(after: $0).gap } ?? false
                 if gap { send.yield(Self.text(["kind": "resync", "seq": bus.lastSeq])) }
                 // A streamed reply changes one message many times a second. The phone reads it again on each event, so it gets at most
-                // one `chat.item` per message per interval, and the last one after the stream pauses.
+                // one `chat.item` per message per interval, and the last one after the stream pauses. Each carries the message text as it is at that moment.
                 let throttle = RemoteEventThrottle(interval: interval) {
                     if $0.kind == .chatItem { HopLog.mark("mac.push") }
-                    send.yield(Self.text(Self.describe($0)))
+                    var frame = Self.describe($0)
+                    // The changed message rides along, so the phone does not read it again. An older phone ignores the key.
+                    if $0.kind == .chatItem, let id = $0.id.flatMap(UUID.init(uuidString:)), let item = api.chat.currentItem(id),
+                       let inline = RemoteChat.inlineJSON(item) { frame["item"] = inline }
+                    send.yield(Self.text(frame))
                 }
                 return (bus.subscribe(after: gap ? nil : since) { throttle.push($0) }, throttle)
             }
@@ -757,7 +778,11 @@ final class RemoteServer {
             let (frames, send) = AsyncStream<RemoteVoice.Output>.makeStream(bufferingPolicy: .unbounded)
             guard let socket = service.openSocket(device: device.id, kind: RemoteService.voiceSocket, close: { send.finish() }) else { return }
             defer { service.socketClosed(socket) }
-            let voice = await MainActor.run { RemoteVoice(api: api, device: device.id) { send.yield($0) } }
+            let voice = await MainActor.run { () -> RemoteVoice in
+                let voice = RemoteVoice(api: api, device: device.id) { send.yield($0) }
+                voice.hop = { HopLog.mark($0) }
+                return voice
+            }
             defer { Task { @MainActor in voice.close() } }
             await withTaskGroup(of: Void.self) { group in
                 group.addTask {

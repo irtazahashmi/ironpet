@@ -1,5 +1,6 @@
 import Foundation
 import IronPetCore
+import enum IronPetKit.QuickFilterNode
 
 /// How the Tasks page shows its tasks. Saved in UserDefaults, so the choice survives a relaunch.
 enum TaskViewMode: String, CaseIterable {
@@ -69,12 +70,12 @@ enum TaskBoard {
     /// Done tasks stay in the database for `tasks.keepDoneDays`. The list and the board show the last week.
     static let doneWindow: TimeInterval = 7 * 86_400
 
-    /// The tasks of each column, in the store's order, narrowed by the label and the search text.
+    /// The tasks of each column, in the store's order, narrowed by the quick filter and the search text.
     /// The list and the board both read their groups from here, so they always agree.
-    static func columns(_ tasks: [TaskItem], label: String?, query: String, now: Date = Date()) -> [TaskColumn: [TaskItem]] {
+    static func columns(_ tasks: [TaskItem], filter: QuickFilterNode?, query: String, now: Date = Date()) -> [TaskColumn: [TaskItem]] {
         let cutoff = now.addingTimeInterval(-doneWindow)
         var result: [TaskColumn: [TaskItem]] = [:]
-        for task in tasks where TaskListView.matches(task, label: label, query: query) {
+        for task in tasks where TaskListView.matches(task, filter: filter, query: query, now: now) {
             let column = TaskColumn.of(task)
             if column == .done, (task.closed ?? task.updated) < cutoff { continue }
             result[column, default: []].append(task)

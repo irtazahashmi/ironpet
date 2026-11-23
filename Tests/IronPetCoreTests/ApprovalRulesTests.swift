@@ -58,6 +58,14 @@ final class ApprovalRulesTests: XCTestCase {
         XCTAssertEqual(title, "Use run_query (db)?")
     }
 
+    func testQuickFilterToolsAllowedButDeleteAsks() {
+        for tool in ["task_filters_list", "task_filters_upsert", "task_filters_reorder"] {
+            XCTAssertEqual(policy(ACPToolCall(id: "1", title: "mcp__ironpet__\(tool)", kind: "other")), .allow, tool)
+        }
+        if case .allow = policy(ACPToolCall(id: "1", title: "mcp__ironpet__task_filters_delete", kind: "other")) { XCTFail("deleting a filter must ask") }
+        if case .allow = policy(ACPToolCall(id: "1", title: "mcp__other__task_filters_upsert", kind: "other")) { XCTFail("another server must ask") }
+    }
+
     func testOwnTaskWritesAllowedButDeleteAndOtherServersAsk() {
         for tool in ["tasks_create", "tasks_update", "tasks_close"] {
             XCTAssertEqual(policy(ACPToolCall(id: "1", title: "mcp__ironpet__\(tool)", kind: "other", rawInput: ["title": "x"])), .allow, tool)

@@ -121,7 +121,7 @@ struct FilePreviewSheet: View {
         } catch ClientError.api(_, _, let message) {
             phase = .failed(message.prefix(1).uppercased() + message.dropFirst())
         } catch {
-            phase = .failed(error.localizedDescription)
+            phase = .failed(PlainError.message(for: error))
         }
     }
 }

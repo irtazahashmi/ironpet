@@ -114,7 +114,10 @@ struct MainTabs: View {
                 .tabItem { Label("Pet", systemImage: AppTab.pet.symbol) }.tag(AppTab.pet)
             ChatView(model: chat, backgroundID: pet.backgroundID, backgroundImage: pet.backgroundImage, avatar: PetAvatar.face(of: pet.atlas))
                 .tabItem { Label("Chat", systemImage: AppTab.chat.symbol) }.badge(chat.approvals.count + chat.forms.count).tag(AppTab.chat)
-            TasksView(model: tasks)
+            TasksView(model: tasks, onAsk: { [chat] text in
+                tab = .chat
+                Task { await chat.sendPrompt(text) }
+            })
                 .tabItem { Label("Tasks", systemImage: AppTab.tasks.symbol) }.tag(AppTab.tasks)
             AgentsView(model: agents)
                 .tabItem { Label("Agents", systemImage: AppTab.agents.symbol) }.tag(AppTab.agents)
@@ -123,12 +126,13 @@ struct MainTabs: View {
                 .tag(AppTab.more)
         }
         .themedTabBar()
+        .environment(\.macBackground, MacBackground(id: pet.backgroundID, image: pet.backgroundImage))
         .environment(voice)
         // The Mac's accent colour, when it has one. `nil` leaves the app's own tint, the system blue.
         .tint(pet.accent)
         .environment(\.macAccent, pet.accent ?? .accentColor)
         // The alert count and the waiting approvals are on their tabs before the user opens it.
-        .task { alerts.start(); chat.start(); pet.start(); automations.start(); voice.onTranscript = { [chat] text, mode in if mode == .draft { chat.insertDictation(text) } }; voice.start() }
+        .task { alerts.start(); chat.start(); pet.start(); automations.start(); voice.onTranscript = { [chat] text, mode in if mode == .draft { chat.insertDictation(text) } }; voice.onSend = { [chat] in chat.voiceEvent($0) }; chat.resendVoice = { [voice] in await voice.resend($0) }; voice.start() }
         // The five minutes count from the app going to the background, whichever screen is open. Watching only inside the Meetings
         // screen would leave the text unlocked after the person left it and then left the app.
         .onChange(of: scenePhase) { _, phase in

@@ -43,6 +43,25 @@ final class ClientTests: XCTestCase {
 
     // MARK: Requests
 
+    func testTaskFiltersAreListedAndRemoved() async throws {
+        server.taskFilters = [QuickFilter(id: "epic", name: "Epic", query: .object(["labelExists": .string("project")]), order: 0),
+                              QuickFilter(id: "mine", name: "Mine", query: .object(["status": .string("needs_you")]), order: 1)]
+        let client = paired()
+        let filters = try await client.taskFilters()
+        XCTAssertEqual(filters.map(\.id), ["epic", "mine"])
+        try await client.deleteTaskFilter(id: "epic")
+        XCTAssertEqual(server.requests.map(\.line), ["GET /v1/task-filters", "DELETE /v1/task-filters/epic"])
+        XCTAssertEqual(server.taskFilters.map(\.id), ["mine"])
+    }
+
+    func testAnOlderMacAnswersTheFilterRouteWith404() async throws {
+        server.taskFiltersSupported = false
+        do { _ = try await paired().taskFilters(); XCTFail("expected 404") } catch {
+            guard case ClientError.api(let status, _, _) = error else { return XCTFail("\(error)") }
+            XCTAssertEqual(status, 404)
+        }
+    }
+
     func testListsTasksWithTheToken() async throws {
         let tasks = try await paired().tasks()
         XCTAssertEqual(tasks.count, MockIronPetServer.sampleTasks.count)

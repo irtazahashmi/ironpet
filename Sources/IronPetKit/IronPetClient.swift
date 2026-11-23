@@ -92,6 +92,9 @@ public final class IronPetClient: @unchecked Sendable {
     func performWithResponse(_ request: URLRequest) async throws -> (data: Data, response: HTTPURLResponse) {
         let data: Data, response: URLResponse
         do { (data, response) = try await session.data(for: request) } catch {
+            // A request the app cancelled is not a transport failure. Only the calling task's own cancellation counts: URLSession also
+            // reports a rejected certificate pin as `.cancelled`, and that must stay a visible transport error.
+            if error is CancellationError || ((error as? URLError)?.code == .cancelled && Task.isCancelled) { throw CancellationError() }
             throw ClientError.transport(error.localizedDescription)
         }
         guard let http = response as? HTTPURLResponse else { throw ClientError.invalidResponse }
@@ -139,6 +142,10 @@ public final class IronPetClient: @unchecked Sendable {
     public func tasks(includeDone: Bool = true) async throws -> [RemoteTask] {
         try await get(TaskListResponse.self, APIPath.tasks, query: includeDone ? [URLQueryItem(name: "include_done", value: "1")] : []).tasks
     }
+
+    public func taskFilters() async throws -> [QuickFilter] { try await get(QuickFilterListResponse.self, APIPath.taskFilters).filters }
+
+    public func deleteTaskFilter(id: String) async throws { _ = try await perform(request("DELETE", APIPath.taskFilter(id))) }
 
     public func task(id: String) async throws -> RemoteTaskDetail { try await get(RemoteTaskDetail.self, APIPath.task(id)) }
 

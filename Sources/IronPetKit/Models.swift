@@ -235,9 +235,24 @@ public struct RemoteEvent: Codable, Equatable, Sendable {
     public var at: Date?
     public var kind: String
     public var id: String?
+    /// For `chat.item`: the message as it is now, when the Mac sends it along. Nil from an older Mac, or when the text is too long
+    /// to send, and the phone reads the message with a GET.
+    public var item: RemoteChatItem?
 
-    public init(seq: Int, kind: String, at: Date? = nil, id: String? = nil) {
-        self.seq = seq; self.kind = kind; self.at = at; self.id = id
+    public init(seq: Int, kind: String, at: Date? = nil, id: String? = nil, item: RemoteChatItem? = nil) {
+        self.seq = seq; self.kind = kind; self.at = at; self.id = id; self.item = item
+    }
+
+    enum CodingKeys: String, CodingKey { case seq, at, kind, id, item }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        seq = try c.decodeIfPresent(Int.self, forKey: .seq) ?? 0
+        at = try? c.decodeIfPresent(Date.self, forKey: .at)
+        kind = try c.decode(String.self, forKey: .kind)
+        id = try c.decodeIfPresent(String.self, forKey: .id)
+        // A message this app cannot read must not drop the event: the phone falls back to reading it.
+        item = try? c.decodeIfPresent(RemoteChatItem.self, forKey: .item)
     }
 }
 

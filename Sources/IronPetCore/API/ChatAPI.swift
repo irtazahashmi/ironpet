@@ -493,6 +493,9 @@ package final class ChatAPI {
     /// The open chat's messages, oldest first.
     package func messages() async -> [ChatItem] { session.items }
 
+    /// The message with this id as it is now, without a suspension point. The event socket reads it when it sends a `chat.item`.
+    package func currentItem(_ id: UUID) -> ChatItem? { session.items.first { $0.id == id } }
+
     /// One message, for a client that heard a `chat.item` event with its id.
     package func message(_ id: UUID) async throws -> ChatItem {
         guard let item = session.items.first(where: { $0.id == id }) else { throw APIError.notFound("no message with id \"\(id.uuidString)\"") }

@@ -4,7 +4,7 @@ import IronPetCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// `--render-previews <dir> [--sprite <sheet.png>]`: renders the main UI with made-up sample data to PNGs, plus an
+/// `--render-previews <dir> [--sprite <sheet.png>] [--background <id>]`: renders the main UI with made-up sample data to PNGs, plus an
 /// animated `pet.gif` of Ghost reacting to an agent, for checking the design without clicking through it and for the
 /// README (`scripts/screenshots.sh`).
 /// Nothing here reads your sessions, alerts or chats.
@@ -18,6 +18,9 @@ enum PreviewRenderer {
         // Default settings (the pet is called Ghost), whatever is in your config.json.
         var config = Config()
         config.pet.sprite = sprite
+        if let id = arguments.firstIndex(of: "--background").flatMap({ arguments.count > $0 + 1 ? arguments[$0 + 1] : nil }) {
+            config.chat.background = id
+        }
         ConfigStore.shared.usePreview(config)
         let atlas = Atlas.loadDefault(sprite: sprite)
         let name = config.pet.name
@@ -74,6 +77,7 @@ enum PreviewRenderer {
                 .frame(width: 780, height: 560).panel()
         }
         render(list(sessions, tasks: tasks, on: .chat), to: dir, "window-chat")
+        render(list(sessions, tasks: tasks, on: .chat), to: dir, "window-chat-light", scheme: .light)
         render(list(sessions, tasks: tasks, on: .transcripts), to: dir, "transcripts")
         // The same section mid-run: the row and the header show the stage, and Regenerate is disabled for the other meeting.
         meetingLibrary.regenerator.loadPreview(active: "2026-11-16-0930", .transcribing(chunk: 2, of: 5))
@@ -133,7 +137,7 @@ enum PreviewRenderer {
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks")
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks-light", scheme: .light)
         for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
-            render(TaskBoardView(columns: TaskBoard.columns(tasks.all, label: nil, query: ""), onOpen: { _ in }, onDrop: { _, _ in })
+            render(TaskBoardView(columns: TaskBoard.columns(tasks.all, filter: nil, query: ""), onOpen: { _ in }, onDrop: { _, _ in })
                 .frame(width: 1240, height: 520).panel(), to: dir, "tasks-board" + suffix, scheme: scheme)
         }
         if let sample = tasks.all.first {
@@ -684,7 +688,11 @@ enum PreviewRenderer {
                                             url: URL(string: "https://mail.google.com/mail/u/0/#inbox/1"))],
                       automation: "gmail-watch", name: "Gmail watcher")
         clock = Date()
-        return TasksAPI(store: store)
+        let api = TasksAPI(store: store)
+        _ = try? api.upsertQuickFilter(id: nil, name: "Open", query: ["not": ["status": "done"]])
+        _ = try? api.upsertQuickFilter(id: nil, name: "Needs me", query: ["status": "needs_you"])
+        _ = try? api.upsertQuickFilter(id: nil, name: "Due soon", query: ["and": [["due": ["before": "2099-01-01"]], ["not": ["status": "done"]]]])
+        return api
     }
 
     private static var sampleSignals: [Signal] {
