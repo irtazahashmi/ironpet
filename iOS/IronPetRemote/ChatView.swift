@@ -29,7 +29,7 @@ struct ChatView: View {
             VStack(spacing: 0) {
                 if find.isOpen { ChatFindBar(find: find) }
                 if let message = model.errorMessage {
-                    Label(message, systemImage: "exclamationmark.triangle").font(.footnote).foregroundStyle(.orange)
+                    Label(message, systemImage: SharedSymbols.warning).font(.footnote).foregroundStyle(.orange)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.vertical, 6)
                         .accessibilityIdentifier("chat-error")
                 }
@@ -48,12 +48,13 @@ struct ChatView: View {
                     }
             }
             .background {
-                ChatBackgroundPicture(id: backgroundID, customImage: backgroundImage.map(Image.init(uiImage:)), fallback: Color(.systemBackground))
+                ChatBackgroundPicture(id: backgroundID, customImage: backgroundImage.map(Image.init(uiImage:)), fallback: SharedTheme.window)
                     .ignoresSafeArea()
                     .accessibilityHidden(true)
                     .accessibilityIdentifier("chat-background-\(backgroundID)")
             }
             .navigationTitle(model.title)
+            .themedScreen()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
@@ -63,11 +64,11 @@ struct ChatView: View {
                     }
                 }
                 ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button { find.open() } label: { Image(systemName: "magnifyingglass") }
+                    Button { find.open() } label: { Image(systemName: SharedSymbols.find) }
                         .accessibilityLabel("Find in chat").accessibilityIdentifier("chat-find-button")
-                    Button { showSettings = true } label: { Image(systemName: "slider.horizontal.3") }
+                    Button { showSettings = true } label: { Image(systemName: SharedSymbols.chatOptions) }
                         .accessibilityLabel("Chat settings").accessibilityIdentifier("chat-settings-button")
-                    Button { showThreads = true } label: { Image(systemName: "clock.arrow.circlepath") }
+                    Button { showThreads = true } label: { Image(systemName: SharedSymbols.history) }
                         .accessibilityLabel("Chats").accessibilityIdentifier("threads-button")
                 }
             }
@@ -284,7 +285,7 @@ private struct QueuedRow: View {
 
     var body: some View {
         HStack {
-            Image(systemName: "clock").foregroundStyle(.secondary)
+            Image(systemName: SharedSymbols.sentAt).foregroundStyle(.secondary)
             Text(queued.text.isEmpty ? "Attachment" : queued.text).font(.footnote).lineLimit(2)
             Spacer()
             Text("Queued").font(.caption2).foregroundStyle(.secondary)
@@ -332,11 +333,11 @@ struct MessageRow: View {
         }
         .frame(maxWidth: .infinity, alignment: item.kind == "user" || (item.kind == "screenshot" && item.origin != nil) ? .trailing : .leading)
         .contextMenu {
-            if let onReply { Button { onReply() } label: { Label("Reply", systemImage: "arrowshape.turn.up.left") } }
-            if let text = item.text, !text.isEmpty { Button { UIPasteboard.general.string = text } label: { Label("Copy", systemImage: "doc.on.doc") } }
+            if let onReply { Button { onReply() } label: { Label("Reply", systemImage: SharedSymbols.reply) } }
+            if let text = item.text, !text.isEmpty { Button { UIPasteboard.general.string = text } label: { Label("Copy", systemImage: SharedSymbols.copy) } }
             if let readAloud {
                 Button(action: readAloud.toggle) {
-                    Label(readAloud.active ? "Stop Reading" : "Read Aloud", systemImage: readAloud.active ? "stop.circle" : "speaker.wave.2")
+                    Label(readAloud.active ? "Stop Reading" : "Read Aloud", systemImage: readAloud.active ? SharedSymbols.stopSpeaking : SharedSymbols.speak)
                 }
             }
         }
@@ -401,7 +402,7 @@ private struct Attachment: View {
         // A file the phone does not show, an image still loading, or one the Mac no longer has.
         HStack(spacing: 6) {
             if isImage, images != nil, failure == nil, photo == nil { ProgressView().controlSize(.small) } else {
-                Image(systemName: isImage ? "photo" : "doc").foregroundStyle(.secondary)
+                Image(systemName: isImage ? SharedSymbols.photo : SharedSymbols.file).foregroundStyle(.secondary)
             }
             VStack(alignment: .leading, spacing: 1) {
                 Text(mine ? Self.display(name) : (isImage ? "Screenshot on the Mac" : Self.display(name))).font(.system(size: 11.5)).lineLimit(2).truncationMode(.middle)
@@ -451,7 +452,7 @@ private struct ImageViewer: View {
                         }
                         .accessibilityLabel("Image \(name)").accessibilityIdentifier("image-viewer-picture")
                 } else if let failure {
-                    Label(failure, systemImage: "exclamationmark.triangle").foregroundStyle(.white).padding()
+                    Label(failure, systemImage: SharedSymbols.warning).foregroundStyle(.white).padding()
                         .accessibilityIdentifier("image-viewer-error")
                 } else {
                     ProgressView().tint(.white)
@@ -483,7 +484,7 @@ private struct FormRecord: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(message.isEmpty ? "Question" : message, systemImage: skipped ? "forward.circle" : "checkmark.circle.fill")
+            Label(message.isEmpty ? "Question" : message, systemImage: skipped ? "forward.circle" : SharedSymbols.done)
                 .font(.system(size: 12.5, weight: .semibold)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if skipped { Text("Skipped").font(.system(size: 12)).foregroundStyle(.secondary) }
             ForEach(Array(lines.enumerated()), id: \.offset) { _, line in
@@ -495,7 +496,7 @@ private struct FormRecord: View {
             }
         }
         .padding(12).frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+        .background(SharedTheme.card, in: RoundedRectangle(cornerRadius: 12))
     }
 }
 
@@ -507,16 +508,16 @@ private struct ApprovalCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(approval.title, systemImage: "hand.raised.fill").font(.system(size: 13, weight: .semibold)).foregroundStyle(.orange)
+            Label(approval.title, systemImage: SharedSymbols.approval).font(.system(size: 13, weight: .semibold)).foregroundStyle(.orange)
             if !approval.detail.isEmpty {
                 Text(approval.detail).font(.system(size: 11.5, design: .monospaced)).lineLimit(10).textSelection(.enabled)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(8)
                     .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 6))
             }
             HStack {
-                Button { Task { await model.decide(approval, allow: true) } } label: { Label("Allow", systemImage: "checkmark").frame(minWidth: 70) }.buttonStyle(.borderedProminent)
+                Button { Task { await model.decide(approval, allow: true) } } label: { Label("Allow", systemImage: SharedSymbols.allow).frame(minWidth: 70) }.buttonStyle(.borderedProminent)
                     .accessibilityIdentifier("allow-\(approval.id)")
-                Button { Task { await model.decide(approval, allow: false) } } label: { Label("Deny", systemImage: "xmark").frame(minWidth: 70) }.buttonStyle(.bordered)
+                Button { Task { await model.decide(approval, allow: false) } } label: { Label("Deny", systemImage: SharedSymbols.deny).frame(minWidth: 70) }.buttonStyle(.bordered)
                     .accessibilityIdentifier("deny-\(approval.id)")
             }
         }
@@ -535,13 +536,13 @@ private struct FormCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label(form.message.isEmpty ? "The agent has a question" : form.message, systemImage: "questionmark.bubble.fill")
+            Label(form.message.isEmpty ? "The agent has a question" : form.message, systemImage: SharedSymbols.question)
                 .font(.system(size: 13, weight: .semibold)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             ForEach(form.fields) { field in fieldView(field) }
             HStack {
-                Button { Task { await model.submit(form) } } label: { Label("Submit", systemImage: "checkmark").frame(minWidth: 70) }.buttonStyle(.borderedProminent).disabled(!form.canSubmit)
+                Button { Task { await model.submit(form) } } label: { Label("Submit", systemImage: SharedSymbols.allow).frame(minWidth: 70) }.buttonStyle(.borderedProminent).disabled(!form.canSubmit)
                     .accessibilityIdentifier("submit-\(form.id)")
-                Button { Task { await model.skip(form) } } label: { Label("Skip", systemImage: "forward").frame(minWidth: 70) }.buttonStyle(.bordered)
+                Button { Task { await model.skip(form) } } label: { Label("Skip", systemImage: SharedSymbols.skip).frame(minWidth: 70) }.buttonStyle(.bordered)
                     .accessibilityIdentifier("skip-\(form.id)")
             }
         }
@@ -614,9 +615,9 @@ private struct Composer: View {
         GlassGroup {
             HStack(alignment: .bottom, spacing: 8) {
                 Menu {
-                    PhotosPicker(selection: $photos, maxSelectionCount: ChatModel.maxPendingImages, matching: .images) { Label("Photo", systemImage: "photo") }
-                    Button { showFiles = true } label: { Label("File", systemImage: "doc") }
-                } label: { Image(systemName: "paperclip").glassCircle() }
+                    PhotosPicker(selection: $photos, maxSelectionCount: ChatModel.maxPendingImages, matching: .images) { Label("Photo", systemImage: SharedSymbols.photo) }
+                    Button { showFiles = true } label: { Label("File", systemImage: SharedSymbols.file) }
+                } label: { Image(systemName: SharedSymbols.attach).glassCircle() }
                     .accessibilityLabel("Attach").accessibilityIdentifier("attach-button")
                 field
                 if let voice { MicButton(voice: voice) }
@@ -633,7 +634,7 @@ private struct Composer: View {
                 HStack(spacing: 4) {
                     ReplyQuote(reply: RemoteChatReply(itemID: reply.id, sender: reply.kind == "user" ? "You" : "Reply", text: reply.text ?? ""))
                     Spacer(minLength: 0)
-                    Button { model.replyTo = nil } label: { Image(systemName: "xmark.circle.fill") }.foregroundStyle(.secondary)
+                    Button { model.replyTo = nil } label: { Image(systemName: SharedSymbols.removeAttachment) }.foregroundStyle(.secondary)
                         .accessibilityLabel("Cancel reply").accessibilityIdentifier("cancel-reply")
                 }
                 .padding(.horizontal, 6).padding(.top, 4)
@@ -674,10 +675,10 @@ private struct Composer: View {
     @ViewBuilder
     private var capsuleButton: some View {
         if model.running, !model.canSend {
-            capsule("stop.fill", fill: .red, foreground: .white) { Task { await model.stopTurn() } }
+            capsule(SharedSymbols.stop, fill: .red, foreground: .white) { Task { await model.stopTurn() } }
                 .accessibilityLabel("Stop").accessibilityIdentifier("stop-button")
         } else {
-            capsule("arrow.up", fill: model.canSend ? macAccent : Color(.tertiarySystemFill),
+            capsule(SharedSymbols.send, fill: model.canSend ? macAccent : Color(.tertiarySystemFill),
                     foreground: model.canSend ? .white : Color.secondary) { Task { await model.send() } }
                 .disabled(!model.canSend)
                 .accessibilityLabel("Send").accessibilityIdentifier("send-button")
@@ -703,7 +704,7 @@ private struct Composer: View {
             .accessibilityElement(children: .ignore).accessibilityLabel("Pasted image").accessibilityIdentifier("attachment-thumbnail-\(index)")
             .overlay(alignment: .topTrailing) {
                 Button { model.removeAttachment(attachment) } label: {
-                    Image(systemName: "xmark.circle.fill").symbolRenderingMode(.palette).foregroundStyle(.white, .black.opacity(0.6))
+                    Image(systemName: SharedSymbols.removeAttachment).symbolRenderingMode(.palette).foregroundStyle(.white, .black.opacity(0.6))
                 }
                 .padding(2).accessibilityLabel("Remove image").accessibilityIdentifier("attachment-remove-\(index)")
             }
@@ -712,9 +713,9 @@ private struct Composer: View {
     /// A photo from the picker or a file, which the phone shows by name.
     private func chip(_ attachment: PendingAttachment, _ index: Int) -> some View {
         HStack(spacing: 4) {
-            Image(systemName: attachment.isImage ? "photo" : "doc")
+            Image(systemName: attachment.isImage ? SharedSymbols.photo : SharedSymbols.file)
             Text(attachment.fileName).lineLimit(1)
-            Button { model.removeAttachment(attachment) } label: { Image(systemName: "xmark.circle.fill") }
+            Button { model.removeAttachment(attachment) } label: { Image(systemName: SharedSymbols.removeAttachment) }
                 .accessibilityLabel("Remove \(attachment.fileName)").accessibilityIdentifier("attachment-remove-\(index)")
         }
         .font(.caption).padding(.horizontal, 8).padding(.vertical, 4).background(.quaternary, in: Capsule())
@@ -745,61 +746,64 @@ private struct ChatSettingsSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    Picker("Project", selection: Binding(
-                        get: { options.folder ?? "" },
-                        set: { id in Task { await model.setOptions(id.isEmpty ? RemoteChatOptionsChange(noProject: true) : RemoteChatOptionsChange(folder: id)) } })) {
-                        Text("No project").tag("")
-                        ForEach(options.folders) { Text($0.name).tag($0.id) }
-                        if let folder = options.folder, !options.folders.contains(where: { $0.id == folder }) { Text(folderName).tag(folder) }
-                    }
-                    .accessibilityIdentifier("settings-project")
-                    Picker("Agent", selection: Binding(
-                        get: { model.snapshot?.agent.id ?? "" },
-                        set: { id in Task { await model.setOptions(RemoteChatOptionsChange(agent: id)) } })) {
-                        ForEach(options.agents) { Text($0.name).tag($0.id) }
-                    }
-                    .accessibilityIdentifier("settings-agent")
-                    if !options.models.isEmpty {
-                        Picker("Model", selection: Binding(
-                            get: { model.snapshot?.model ?? "" },
-                            set: { id in Task { await model.setOptions(RemoteChatOptionsChange(model: .some(id.isEmpty ? nil : id))) } })) {
-                            Text("Default (agent setting)").tag("")
-                            ForEach(options.models) { Text($0.name).tag($0.id) }
-                        }
-                        .accessibilityIdentifier("settings-model")
-                    }
-                } footer: {
-                    Text(locked ? "The agent is working. Project, agent and model change when it is done." : "Changing the project or agent starts a new chat on your Mac.")
-                }
-                .disabled(locked)
-                if !options.modes.isEmpty {
-                    // The modes the agent advertises, the same list as the Mac's picker. A mode can change while the agent works.
+                Group {
                     Section {
-                        Picker("Mode", selection: Binding(
-                            get: { options.mode ?? "" },
-                            set: { id in if !id.isEmpty { Task { await model.setOptions(RemoteChatOptionsChange(mode: id)) } } })) {
-                            ForEach(options.modes) { mode in
-                                VStack(alignment: .leading) {
-                                    Text(mode.name)
-                                    if let detail = mode.detail, !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(.secondary) }
-                                }
-                                .tag(mode.id)
-                                .accessibilityIdentifier("settings-mode-\(mode.id)")
-                            }
+                        Picker("Project", selection: Binding(
+                            get: { options.folder ?? "" },
+                            set: { id in Task { await model.setOptions(id.isEmpty ? RemoteChatOptionsChange(noProject: true) : RemoteChatOptionsChange(folder: id)) } })) {
+                            Text("No project").tag("")
+                            ForEach(options.folders) { Text($0.name).tag($0.id) }
+                            if let folder = options.folder, !options.folders.contains(where: { $0.id == folder }) { Text(folderName).tag(folder) }
                         }
-                        .pickerStyle(.inline).labelsHidden()
-                    } header: {
-                        Text("Mode")
+                        .accessibilityIdentifier("settings-project")
+                        Picker("Agent", selection: Binding(
+                            get: { model.snapshot?.agent.id ?? "" },
+                            set: { id in Task { await model.setOptions(RemoteChatOptionsChange(agent: id)) } })) {
+                            ForEach(options.agents) { Text($0.name).tag($0.id) }
+                        }
+                        .accessibilityIdentifier("settings-agent")
+                        if !options.models.isEmpty {
+                            Picker("Model", selection: Binding(
+                                get: { model.snapshot?.model ?? "" },
+                                set: { id in Task { await model.setOptions(RemoteChatOptionsChange(model: .some(id.isEmpty ? nil : id))) } })) {
+                                Text("Default (agent setting)").tag("")
+                                ForEach(options.models) { Text($0.name).tag($0.id) }
+                            }
+                            .accessibilityIdentifier("settings-model")
+                        }
                     } footer: {
-                        Text("What the agent may do without asking. The agent defines the modes.")
+                        Text(locked ? "The agent is working. Project, agent and model change when it is done." : "Changing the project or agent starts a new chat on your Mac.")
                     }
-                }
-                Section {
-                    Button { Task { if await model.newChat() { dismiss() } } } label: { Label("New chat", systemImage: "square.and.pencil") }
-                        .disabled(locked)
-                        .accessibilityIdentifier("settings-new-chat")
-                }
+                    .disabled(locked)
+                    if !options.modes.isEmpty {
+                        // The modes the agent advertises, the same list as the Mac's picker. A mode can change while the agent works.
+                        Section {
+                            Picker("Mode", selection: Binding(
+                                get: { options.mode ?? "" },
+                                set: { id in if !id.isEmpty { Task { await model.setOptions(RemoteChatOptionsChange(mode: id)) } } })) {
+                                ForEach(options.modes) { mode in
+                                    VStack(alignment: .leading) {
+                                        Text(mode.name)
+                                        if let detail = mode.detail, !detail.isEmpty { Text(detail).font(.caption).foregroundStyle(.secondary) }
+                                    }
+                                    .tag(mode.id)
+                                    .accessibilityIdentifier("settings-mode-\(mode.id)")
+                                }
+                            }
+                            .pickerStyle(.inline).labelsHidden()
+                        } header: {
+                            Text("Mode")
+                        } footer: {
+                            Text("What the agent may do without asking. The agent defines the modes.")
+                        }
+                    }
+                    Section {
+                        Button { Task { if await model.newChat() { dismiss() } } } label: { Label("New chat", systemImage: SharedSymbols.newChat) }
+                            .disabled(locked)
+                            .accessibilityIdentifier("settings-new-chat")
+                    }
+            
+                }.listRowBackground(SharedTheme.card)
             }
             .navigationTitle("Chat settings")
             .navigationBarTitleDisplayMode(.inline)
@@ -822,26 +826,30 @@ private struct ThreadsSheet: View {
     var body: some View {
         NavigationStack {
             List {
-                Section {
-                    Button { Task { if await model.newChat() { dismiss() } } } label: { Label("New chat", systemImage: "square.and.pencil") }
-                        .accessibilityIdentifier("new-chat-button")
-                } footer: {
-                    Text("New chat and Open on Mac change the chat on your Mac.")
-                }
-                Section("Saved chats") {
-                    ForEach(model.threads) { thread in
-                        NavigationLink(value: thread) {
-                            VStack(alignment: .leading) {
-                                Text(thread.title).lineLimit(2)
-                                Text([thread.folderLabel, thread.updated.formatted(date: .abbreviated, time: .shortened)].filter { !$0.isEmpty }.joined(separator: " · "))
-                                    .font(.caption).foregroundStyle(.secondary)
-                            }
-                        }
-                        .accessibilityIdentifier("thread-\(thread.id)")
+                Group {
+                    Section {
+                        Button { Task { if await model.newChat() { dismiss() } } } label: { Label("New chat", systemImage: SharedSymbols.newChat) }
+                            .accessibilityIdentifier("new-chat-button")
+                    } footer: {
+                        Text("New chat and Open on Mac change the chat on your Mac.")
                     }
-                }
+                    Section("Saved chats") {
+                        ForEach(model.threads) { thread in
+                            NavigationLink(value: thread) {
+                                VStack(alignment: .leading) {
+                                    Text(thread.title).lineLimit(2)
+                                    Text([thread.folderLabel, thread.updated.formatted(date: .abbreviated, time: .shortened)].filter { !$0.isEmpty }.joined(separator: " · "))
+                                        .font(.caption).foregroundStyle(.secondary)
+                                }
+                            }
+                            .accessibilityIdentifier("thread-\(thread.id)")
+                        }
+                    }
+            
+                }.listRowBackground(SharedTheme.card)
             }
             .navigationTitle("Chats")
+            .themedScreen()
             .navigationDestination(for: RemoteChatThread.self) { ThreadReader(model: model, thread: $0, avatar: avatar, dismissSheet: { dismiss() }) }
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { dismiss() } } }
             .task { await model.loadThreads() }
@@ -873,6 +881,7 @@ private struct ThreadReader: View {
             .padding()
         }
         .navigationTitle(thread.title)
+        .themedScreen()
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

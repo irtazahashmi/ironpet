@@ -1,4 +1,5 @@
 import IronPetCore
+import IronPetKit
 import SwiftUI
 
 /// The card for a form the agent is waiting on. It looks like the approval card.
@@ -11,7 +12,7 @@ struct ElicitationCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label(pending.form.message.isEmpty ? "The agent has a question" : pending.form.message, systemImage: "questionmark.bubble.fill")
+            Label(pending.form.message.isEmpty ? "The agent has a question" : pending.form.message, systemImage: SharedSymbols.question)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)
@@ -32,7 +33,7 @@ struct ElicitationCard: View {
                         .font(.system(size: 11.5).monospacedDigit())
                         .foregroundStyle(.secondary)
                     if !page.isLast {
-                        Button { move { $0.forward() } } label: { Image(systemName: "chevron.right") }
+                        Button { move { $0.forward() } } label: { Image(systemName: SharedSymbols.chevron) }
                             .buttonStyle(.bordered)
                             .keyboardShortcut(.rightArrow, modifiers: [])
                             .help("Next question")
@@ -41,7 +42,7 @@ struct ElicitationCard: View {
                 }
                 if !page.isPaged || page.isLast {
                     Button { submit() } label: {
-                        Label("Submit", systemImage: "checkmark").frame(minWidth: 70)
+                        Label("Submit", systemImage: SharedSymbols.allow).frame(minWidth: 70)
                     }
                     .buttonStyle(.borderedProminent)
                     .disabled(!page.isPaged && !pending.form.canSubmit(pending.answers))
@@ -49,7 +50,7 @@ struct ElicitationCard: View {
                     .pointerCursor()
                 }
                 Button { session.skipForm(pending.id) } label: {
-                    Label("Skip", systemImage: "forward").frame(minWidth: 70)
+                    Label("Skip", systemImage: SharedSymbols.skip).frame(minWidth: 70)
                 }
                 .buttonStyle(.bordered)
                 .pointerCursor()
@@ -166,7 +167,7 @@ struct ElicitationRecordCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Label(record.message.isEmpty ? "Question" : record.message, systemImage: record.skipped ? "forward.circle" : "checkmark.circle.fill")
+            Label(record.message.isEmpty ? "Question" : record.message, systemImage: record.skipped ? "forward.circle" : SharedSymbols.done)
                 .font(.system(size: 12.5, weight: .semibold))
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -183,6 +184,6 @@ struct ElicitationRecordCard: View {
         }
         .padding(12)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.primary.opacity(0.05), in: RoundedRectangle(cornerRadius: 12))
+        .background(SharedTheme.card, in: RoundedRectangle(cornerRadius: 12))
     }
 }

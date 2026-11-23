@@ -19,7 +19,7 @@ struct SpriteView: View {
                 }
             }
         } else {
-            Image(systemName: "pawprint.fill").resizable().scaledToFit().padding(48).foregroundStyle(.secondary)
+            Image(systemName: SharedSymbols.pet).resizable().scaledToFit().padding(48).foregroundStyle(.secondary)
         }
     }
 

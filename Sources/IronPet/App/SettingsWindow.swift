@@ -1,4 +1,5 @@
 import AppKit
+import IronPetKit
 import IronPetCore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -147,13 +148,13 @@ struct SettingsView: View {
     }
 
     static let pages = [
-        Page(tag: "general", title: "General", symbol: "gearshape"),
+        Page(tag: "general", title: "General", symbol: SharedSymbols.settings),
         Page(tag: "memory", title: "Memory", symbol: "brain"),
         Page(tag: "integrations", title: "Integrations", symbol: "puzzlepiece.extension"),
-        Page(tag: "voice", title: "Voice", symbol: "mic"),
+        Page(tag: "voice", title: "Voice", symbol: SharedSymbols.microphone),
         Page(tag: "meetings", title: "Meetings", symbol: "person.2.wave.2"),
         Page(tag: "usage", title: "Usage", symbol: "chart.bar"),
-        Page(tag: "screen", title: "Screen", symbol: "rectangle.dashed.badge.record"),
+        Page(tag: "screen", title: "Screen", symbol: SharedSymbols.screen),
         Page(tag: "devices", title: "Devices", symbol: "iphone.gen3"),
     ]
     static let sidebarWidth: CGFloat = 180
@@ -216,7 +217,7 @@ struct SettingsView: View {
     private var footer: some View {
         HStack {
             if let error = store.error {
-                Label(error, systemImage: "exclamationmark.triangle.fill")
+                Label(error, systemImage: SharedSymbols.warning)
                     .foregroundStyle(.orange)
                     .font(.caption)
                     .lineLimit(2)
@@ -376,7 +377,7 @@ private struct ShortcutRow: View {
                             .frame(minWidth: 110)
                     }
                     if !value.isEmpty && !recording {
-                        Button { store.update { $0.hotkeys[keyPath: path] = "" } } label: { Image(systemName: "xmark.circle.fill") }
+                        Button { store.update { $0.hotkeys[keyPath: path] = "" } } label: { Image(systemName: SharedSymbols.removeAttachment) }
                             .buttonStyle(.borderless)
                             .help("Turn this shortcut off")
                     }

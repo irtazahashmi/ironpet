@@ -1,4 +1,5 @@
 import AppKit
+import enum IronPetKit.SharedSymbols
 import IronPetCore
 import SwiftUI
 import Carbon
@@ -686,7 +687,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard let capture else { return }
         let approvals = DesktopApprovals(present: { [weak self] request, decide in
             self?.announcer.automation(AutomationNotice(
-                id: Self.desktopApprovalID(request), symbol: "hand.raised.fill", tint: .warn, title: request.title,
+                id: Self.desktopApprovalID(request), symbol: SharedSymbols.approval, tint: .warn, title: request.title,
                 subtitle: "An agent wants to act on your Mac.", body: request.detail,
                 buttons: [.init(title: "Approve", primary: true) { decide(true) }, .init(title: "Reject", destructive: true) { decide(false) }],
                 systemNotification: true, macOnly: true))
@@ -793,11 +794,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if !problems.isEmpty { body = SkillInstaller.describe(problems) }
             else if !agents.isEmpty { body = "Installed for " + agents.joined(separator: ", ") + "." }
             announcer.automation(AutomationNotice(
-                id: "skill-install", symbol: problems.isEmpty ? "checkmark.seal.fill" : "exclamationmark.triangle.fill",
+                id: "skill-install", symbol: problems.isEmpty ? "checkmark.seal.fill" : SharedSymbols.warning,
                 tint: problems.isEmpty ? .good : .warn, title: problems.isEmpty ? "Skills installed" : "Skills installed with problems",
                 body: body, expires: 15))
         } catch {
-            announcer.automation(AutomationNotice(id: "skill-install", symbol: "exclamationmark.triangle.fill", tint: .bad,
+            announcer.automation(AutomationNotice(id: "skill-install", symbol: SharedSymbols.warning, tint: .bad,
                                                   title: "Could not install the skills", body: error.localizedDescription, expires: 20))
         }
     }

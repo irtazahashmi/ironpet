@@ -1,4 +1,5 @@
 import AppKit
+import enum IronPetKit.SharedSymbols
 import IronPetCore
 import SwiftUI
 
@@ -67,7 +68,7 @@ final class Announcer {
     /// The Allow and Deny bubble of a chat tool request. Only the Mac answers it.
     static func approvalBubble(id: UUID, heading: String, detail: String, decide: @escaping (Bool) -> Void, openChat: @escaping () -> Void,
                                open: (() -> Void)?) -> BubbleDraft {
-        BubbleDraft(id: approvalID(id), symbol: "hand.raised.fill", tint: .orange, title: heading, body: String(detail.prefix(240)),
+        BubbleDraft(id: approvalID(id), symbol: SharedSymbols.approval, tint: .orange, title: heading, body: String(detail.prefix(240)),
                actions: [
                    .init("allow", "Allow", style: .primary) { decide(true) },
                    .init("deny", "Deny", style: .destructive) { decide(false) },
@@ -90,7 +91,7 @@ final class Announcer {
                 answer(option.id)
             }
         }
-        return BubbleDraft(id: approvalID(request.id), symbol: "hand.raised.fill", tint: .orange, title: request.heading,
+        return BubbleDraft(id: approvalID(request.id), symbol: SharedSymbols.approval, tint: .orange, title: request.heading,
                            body: String(request.detail.prefix(240)), actions: actions, macOnly: true)
     }
 
@@ -103,7 +104,7 @@ final class Announcer {
     static func telegramPairingBubble(_ request: TelegramBridge.Pending, allow: @escaping () -> Void, deny: @escaping () -> Void) -> BubbleDraft {
         let user = request.user
         let handle = user.username.map { "@\($0), " } ?? ""
-        return BubbleDraft(id: telegramID(user.id), symbol: "paperplane.fill", tint: .blue,
+        return BubbleDraft(id: telegramID(user.id), symbol: SharedSymbols.sourceTelegram, tint: .blue,
                       title: "Telegram user \(user.displayName) (\(handle)id \(user.id)) wants to connect",
                       body: "Allow them to chat with \(ConfigStore.shared.config.pet.name) from Telegram?",
                       actions: [.init("allow", "Allow", style: .primary, run: allow), .init("deny", "Deny", style: .destructive, run: deny)], macOnly: true)
@@ -112,7 +113,7 @@ final class Announcer {
     /// The bubble for a phone that sent a valid pairing code. Allow gives it a token that reads and changes tasks on this Mac, so the
     /// bubble says so and expires with the code.
     static func remotePairingBubble(_ request: RemotePairingRequest, machine: String, allow: @escaping () -> Void, deny: @escaping () -> Void) -> BubbleDraft {
-        BubbleDraft(id: remotePairingID(request.id), symbol: "iphone", tint: .blue,
+        BubbleDraft(id: remotePairingID(request.id), symbol: SharedSymbols.sourceIPhone, tint: .blue,
                title: "Allow \(request.deviceName) to connect to \(machine)?",
                body: "This device asked to pair with the remote API. Only allow it if you just scanned the pairing code yourself.",
                actions: [.init("allow", "Allow", style: .primary, run: allow), .init("deny", "Deny", style: .destructive, run: deny)],
@@ -315,7 +316,7 @@ final class Announcer {
         }
         if !fits {
             let rest = digest.items.dropFirst(shown.count).reduce(0) { $0 + $1.count }
-            lines.append(BubbleDraft.Row(id: "line:more", symbol: "ellipsis.circle", tint: .secondary, text: "and \(rest) more", run: showAll))
+            lines.append(BubbleDraft.Row(id: "line:more", symbol: SharedSymbols.more, tint: .secondary, text: "and \(rest) more", run: showAll))
         }
         let urgent = digest.items.contains(where: \.isUrgent)
         return BubbleDraft(id: id, symbol: urgent ? "exclamationmark.bubble.fill" : "sun.max.fill", tint: urgent ? .orange : .accent,
@@ -337,11 +338,11 @@ final class Announcer {
         let name = first?.title ?? ""
         switch item.kind {
         case .sessionNeedsInput:
-            return ("hand.raised.fill", .orange, n == 1 ? "\(name) is waiting for you" : "\(n) agents are waiting for you")
+            return (SharedSymbols.approval, .orange, n == 1 ? "\(name) is waiting for you" : "\(n) agents are waiting for you")
         case .sessionFailed:
             return ("xmark.octagon.fill", .red, n == 1 ? "\(name) failed" : "\(n) agents failed")
         case .sessionDone:
-            return ("checkmark.circle.fill", .green, n == 1 ? "\(name) finished" : "\(n) agents finished")
+            return (SharedSymbols.done, .green, n == 1 ? "\(name) finished" : "\(n) agents finished")
         case .alertOpened:
             let failing = item.isUrgent
             let symbol = n == 1 ? (first?.extra[ActivityEvent.AlertKey.symbol] ?? "bell.fill") : "bell.badge.fill"
@@ -351,7 +352,7 @@ final class Announcer {
         case .taskDue:
             return ("calendar", .accent, n == 1 ? "Task due: \(name)" : "\(n) tasks due")
         case .taskSuggested:
-            return ("checklist", .accent, n == 1 ? "Suggested task: \(name)" : "\(n) suggested tasks")
+            return (SharedSymbols.tasks, .accent, n == 1 ? "Suggested task: \(name)" : "\(n) suggested tasks")
         case .meetingSummary:
             return ("doc.text.fill", .green, n == 1 ? "Meeting summary ready: \(name)" : "\(n) meeting summaries ready")
         case .chatFinished:
@@ -420,7 +421,7 @@ final class Announcer {
 
     /// Small talk from the Actions menu.
     func say(_ text: String) {
-        bubbles.show(BubbleDraft(id: "say", symbol: "pawprint.fill", tint: .accent, title: ConfigStore.shared.config.pet.name, body: text,
+        bubbles.show(BubbleDraft(id: "say", symbol: SharedSymbols.pet, tint: .accent, title: ConfigStore.shared.config.pet.name, body: text,
                             expires: Date().addingTimeInterval(8)))
     }
 

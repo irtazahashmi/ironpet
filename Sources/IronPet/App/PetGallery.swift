@@ -1,4 +1,5 @@
 import AppKit
+import enum IronPetKit.SharedTheme
 import IronPetCore
 import SwiftUI
 import UniformTypeIdentifiers
@@ -184,7 +185,7 @@ private struct PetTile: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 6)
-            .background(RoundedRectangle(cornerRadius: 10).fill(isSelected ? Color.accentColor.opacity(0.15) : Color.primary.opacity(0.05)))
+            .background(RoundedRectangle(cornerRadius: 10).fill(isSelected ? Color.accentColor.opacity(0.15) : SharedTheme.card))
             .overlay(RoundedRectangle(cornerRadius: 10).stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2))
             .contentShape(RoundedRectangle(cornerRadius: 10))
         }

@@ -1,4 +1,5 @@
 import Foundation
+import enum IronPetKit.SharedSymbols
 
 /// Permission requests from runs that have no chat: background jobs and the `new`, `own` and `fork` sessions of an automation.
 /// A request becomes an alert in the alerts list, and `onRaised` listeners (the Mac's bubble and notification, Telegram) show it
@@ -80,7 +81,7 @@ package final class BackgroundPermissions {
         waiting[request.id] = entry
         pending.append(request)
         signals?.add(Signal(id: Self.alertID(request.id), title: request.heading, subtitle: String(request.detail.prefix(200)), url: nil,
-                            label: "Permission", symbol: "hand.raised.fill", mood: .needsInput, detail: request.detail), notify: false)
+                            label: "Permission", symbol: SharedSymbols.approval, mood: .needsInput, detail: request.detail), notify: false)
         for listener in raisedListeners.values { listener(request) }
         return request.id
     }

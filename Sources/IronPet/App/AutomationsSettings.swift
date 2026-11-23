@@ -1,4 +1,5 @@
 import AppKit
+import enum IronPetKit.SharedSymbols
 import IronPetCore
 import SwiftUI
 
@@ -165,7 +166,7 @@ private struct AutomationList: View {
                 }
                 if let approval = (try? api.status(a.id))?.approval {
                     let rejected = approval == .rejected
-                    Label(rejected ? "Rejected" : "Waiting for your approval", systemImage: rejected ? "xmark.circle.fill" : "hand.raised.fill")
+                    Label(rejected ? "Rejected" : "Waiting for your approval", systemImage: rejected ? SharedSymbols.removeAttachment : SharedSymbols.approval)
                         .font(.caption).foregroundStyle(rejected ? Color.red : Color.orange)
                     HStack(spacing: 6) {
                         Button("Review…") { reviewing = a }
@@ -182,7 +183,7 @@ private struct AutomationList: View {
                 Button("Edit…") { editing = a }
                 Divider()
                 Button("Delete", role: .destructive) { try? api.delete(a.id) }
-            } label: { Image(systemName: "ellipsis.circle") }
+            } label: { Image(systemName: SharedSymbols.more) }
                 .menuStyle(.borderlessButton).fixedSize()
         }
     }

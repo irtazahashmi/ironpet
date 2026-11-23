@@ -1,4 +1,5 @@
 import AppKit
+import enum IronPetKit.SharedSymbols
 import IronPetCore
 import SwiftUI
 
@@ -48,7 +49,7 @@ struct VoicePillView: View {
                     .accessibilityHidden(true)
             }
             Button(action: onEnd) {
-                Image(systemName: "xmark")
+                Image(systemName: SharedSymbols.deny)
                     .font(.system(size: 10, weight: .bold))
                     .foregroundStyle(.secondary)
                     .frame(width: 22, height: 22)
@@ -84,7 +85,7 @@ extension VoiceConversation.State {
 
     var symbol: String {
         switch self {
-        case .idle, .listening: return "mic.fill"
+        case .idle, .listening: return SharedSymbols.microphoneActive
         case .transcribing, .thinking: return "ellipsis"
         case .speaking: return "speaker.wave.2.fill"
         }

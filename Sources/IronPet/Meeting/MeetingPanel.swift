@@ -1,4 +1,5 @@
 import AppKit
+import enum IronPetKit.SharedSymbols
 import IronPetCore
 import SwiftUI
 
@@ -152,7 +153,7 @@ struct MeetingView: View {
                 Button("Cancel") { controller.confirmDiscard() }
                 Spacer()
                 Button { try? controller.stopRecording() } label: {
-                    Label("Stop", systemImage: "stop.fill")
+                    Label("Stop", systemImage: SharedSymbols.stop)
                 }
                 .buttonStyle(.borderedProminent)
                 .tint(.red)
@@ -224,10 +225,10 @@ struct MeetingView: View {
     private var done: some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
-                Image(systemName: "checkmark.circle.fill").foregroundStyle(.green)
+                Image(systemName: SharedSymbols.done).foregroundStyle(.green)
                 Text("Meeting saved").font(.system(size: 13, weight: .semibold))
                 Spacer()
-                Button { controller.dismiss() } label: { Image(systemName: "xmark") }
+                Button { controller.dismiss() } label: { Image(systemName: SharedSymbols.deny) }
                     .buttonStyle(.borderless).help("Close")
             }
             Text(controller.appName + " · " + controller.folderLabel).font(.caption).foregroundStyle(.secondary).lineLimit(1)

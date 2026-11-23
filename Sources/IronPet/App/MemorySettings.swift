@@ -1,4 +1,5 @@
 import AppKit
+import enum IronPetKit.SharedSymbols
 import IronPetCore
 import SwiftUI
 
@@ -197,7 +198,7 @@ struct MemorySettingsBody: View {
                 .disabled(!config.reflect)
                 .help("Sends the whole file, including notes from chats with other agents and lines you wrote, to this agent to merge and shorten.")
             if config.reflect, let error = memory.lastError {
-                Label("The last pass failed: \(error)", systemImage: "exclamationmark.triangle.fill")
+                Label("The last pass failed: \(error)", systemImage: SharedSymbols.warning)
                     .font(.caption).foregroundStyle(.orange).textSelection(.enabled)
             }
         } header: {
@@ -307,10 +308,10 @@ Text("When a chat goes quiet, \(petName) sends its new messages to the agent tha
 
     static func symbol(_ kind: MemoryIndex.Kind) -> String {
         switch kind {
-        case .chat: return "bubble.left.and.bubble.right"
+        case .chat: return SharedSymbols.chat
         case .meeting: return "person.2.wave.2"
         case .note: return "note.text"
-        case .history: return "clock.arrow.circlepath"
+        case .history: return SharedSymbols.history
         }
     }
 

@@ -1,4 +1,6 @@
 import AppKit
+import enum IronPetKit.SharedTheme
+import enum IronPetKit.SharedSymbols
 import IronPetCore
 import SwiftUI
 
@@ -97,7 +99,7 @@ struct TaskListView: View {
             if content == .unavailable {
                 Spacer()
             } else if content == .empty {
-                EmptyState(symbol: "checklist", title: "No tasks yet",
+                EmptyState(symbol: SharedSymbols.tasks, title: "No tasks yet",
                            detail: "Ask \(petName) to keep track of something, or finish a meeting.")
             } else if nothingShown {
                 NoMatches()
@@ -191,7 +193,7 @@ struct TaskListView: View {
                 .accessibilityLabel("Filter by label")
                 if let labelFilter {
                     Button { self.labelFilter = nil } label: {
-                        Label(labelFilter, systemImage: "xmark.circle.fill")
+                        Label(labelFilter, systemImage: SharedSymbols.removeAttachment)
                     }
                     .buttonStyle(.plain)
                     .padding(.horizontal, 6).padding(.vertical, 2)
@@ -225,7 +227,7 @@ struct TaskListView: View {
                     Text("DONE (\(done.count))")
                         .font(.system(size: 10, weight: .semibold))
                         .tracking(0.6)
-                    Image(systemName: "chevron.right")
+                    Image(systemName: SharedSymbols.chevron)
                         .font(.system(size: 8, weight: .bold))
                         .rotationEffect(.degrees(showDone ? 90 : 0))
                 }
@@ -286,7 +288,7 @@ struct TaskListView: View {
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
-        .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
+        .background(RoundedRectangle(cornerRadius: 8).fill(SharedTheme.card))
         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.primary.opacity(0.08), lineWidth: 1))
         .padding(10)
         .help("Tasks are changed through the chat, for example \"move the deploy task to in progress\"")
@@ -445,7 +447,7 @@ private struct CheckButton: View {
 
     var body: some View {
         Button(action: action) {
-            Image(systemName: done ? "checkmark.circle.fill" : hovering ? "checkmark.circle" : "circle")
+            Image(systemName: done ? SharedSymbols.done : hovering ? "checkmark.circle" : "circle")
                 .font(.system(size: 15))
                 .foregroundStyle(done ? AnyShapeStyle(AgentStatus.done.tint) : AnyShapeStyle(.secondary))
                 .frame(width: 18, height: 18)

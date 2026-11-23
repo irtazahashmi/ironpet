@@ -14,6 +14,7 @@ struct MeetingsView: View {
             if model.gate.isUnlocked { unlocked } else { locked }
         }
         .navigationTitle("Meetings")
+        .themedScreen()
         .privacySensitive()
         .onChange(of: scenePhase) { _, phase in
             model.gate.scenePhaseChanged(phase)
@@ -41,42 +42,45 @@ struct MeetingsView: View {
 
     private var unlocked: some View {
         List {
-            if let message = model.errorMessage {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).accessibilityIdentifier("meetings-error")
-                    Button("Retry") { Task { await model.refresh() } }.accessibilityIdentifier("meetings-retry")
-                }
-            }
-            if let notice = model.notice {
-                Label(notice, systemImage: "info.circle").accessibilityIdentifier("meetings-notice")
-            }
-            if model.state.isRecording {
-                Section {
-                    Label("Recording\(model.state.appName.isEmpty ? "" : " · \(model.state.appName)")", systemImage: "record.circle").foregroundStyle(.red)
-                        .accessibilityIdentifier("recording-state")
-                    Button("Stop recording", role: .destructive) { Task { await model.stopRecording() } }.accessibilityIdentifier("stop-recording")
-                } footer: {
-                    Text("Recording can only be started on the Mac.")
-                }
-            } else if model.state.phase == "summarizing" || model.state.phase == "finishing" {
-                Label("Summarizing…", systemImage: "hourglass").accessibilityIdentifier("summarizing-state")
-            }
-            ForEach(model.meetings) { meeting in
-                NavigationLink {
-                    MeetingDetailView(model: model, meeting: meeting)
-                } label: {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text(meeting.date.formatted(date: .abbreviated, time: .shortened)).font(.headline)
-                        if !meeting.preview.isEmpty { Text(meeting.preview).font(.subheadline).foregroundStyle(.secondary).lineLimit(2) }
-                        if meeting.active { Text("In progress").font(.caption).foregroundStyle(.orange) }
+            Group {
+                if let message = model.errorMessage {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("meetings-error")
+                        Button("Retry") { Task { await model.refresh() } }.accessibilityIdentifier("meetings-retry")
                     }
                 }
-                .accessibilityIdentifier("meeting-\(meeting.id)")
-                .swipeActions { Button("Delete", role: .destructive) { deleting = meeting } }
-            }
-            if model.showsEmptyState {
-                ContentUnavailableView("No meetings", systemImage: "person.2", description: Text("Meetings recorded on the Mac show up here."))
-            }
+                if let notice = model.notice {
+                    Label(notice, systemImage: "info.circle").accessibilityIdentifier("meetings-notice")
+                }
+                if model.state.isRecording {
+                    Section {
+                        Label("Recording\(model.state.appName.isEmpty ? "" : " · \(model.state.appName)")", systemImage: "record.circle").foregroundStyle(.red)
+                            .accessibilityIdentifier("recording-state")
+                        Button("Stop recording", role: .destructive) { Task { await model.stopRecording() } }.accessibilityIdentifier("stop-recording")
+                    } footer: {
+                        Text("Recording can only be started on the Mac.")
+                    }
+                } else if model.state.phase == "summarizing" || model.state.phase == "finishing" {
+                    Label("Summarizing…", systemImage: "hourglass").accessibilityIdentifier("summarizing-state")
+                }
+                ForEach(model.meetings) { meeting in
+                    NavigationLink {
+                        MeetingDetailView(model: model, meeting: meeting)
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(meeting.date.formatted(date: .abbreviated, time: .shortened)).font(.headline)
+                            if !meeting.preview.isEmpty { Text(meeting.preview).font(.subheadline).foregroundStyle(.secondary).lineLimit(2) }
+                            if meeting.active { Text("In progress").font(.caption).foregroundStyle(.orange) }
+                        }
+                    }
+                    .accessibilityIdentifier("meeting-\(meeting.id)")
+                    .swipeActions { Button("Delete", role: .destructive) { deleting = meeting } }
+                }
+                if model.showsEmptyState {
+                    ContentUnavailableView("No meetings", systemImage: SharedSymbols.meetings, description: Text("Meetings recorded on the Mac show up here."))
+                }
+        
+            }.listRowBackground(SharedTheme.card)
         }
         .refreshable { await model.refresh() }
         .toolbar { ToolbarItem(placement: .primaryAction) { Button("Lock") { model.gate.lock() }.accessibilityIdentifier("lock-meetings") } }
@@ -112,7 +116,7 @@ struct MeetingDetailView: View {
                 } else if loading {
                     ProgressView()
                 } else if let message = model.errorMessage {
-                    Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).accessibilityIdentifier("meeting-text-error")
+                    Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("meeting-text-error")
                     Button("Retry") { Task { await load() } }.accessibilityIdentifier("meeting-text-retry")
                 } else {
                     Text("This meeting has no \(kind) yet.").foregroundStyle(.secondary)
@@ -122,6 +126,7 @@ struct MeetingDetailView: View {
         }
         .privacySensitive()
         .navigationTitle(meeting.date.formatted(date: .abbreviated, time: .shortened))
+        .themedScreen()
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -129,7 +134,7 @@ struct MeetingDetailView: View {
                     Button("Ask Ghost") { Task { await model.ask(meeting) } }.accessibilityIdentifier("ask-meeting")
                     Button("Rebuild summary") { Task { await model.regenerate(meeting, summaryOnly: true) } }.accessibilityIdentifier("rebuild-summary")
                     if meeting.hasAudio { Button("Transcribe again…") { confirmingRebuild = true }.accessibilityIdentifier("rebuild-full") }
-                } label: { Image(systemName: "ellipsis.circle") }
+                } label: { Image(systemName: SharedSymbols.more) }
                     .accessibilityIdentifier("meeting-menu")
             }
         }

@@ -1,4 +1,5 @@
 import Foundation
+import enum IronPetKit.SharedSymbols
 
 /// A reference from a notification to something that already exists: a page, a file, a chat thread, an agent session, a task or an
 /// alert. Nothing is copied, so a link is only a pointer and can go stale.
@@ -77,7 +78,7 @@ package enum NotificationType: String, CaseIterable, Codable {
 
     package var symbol: String {
         switch self {
-        case .reminder: return "bell"
+        case .reminder: return SharedSymbols.alerts
         case .backgroundResult: return "sparkles"
         case .digest: return "sun.horizon"
         case .alertAnnouncement: return "bell.badge"

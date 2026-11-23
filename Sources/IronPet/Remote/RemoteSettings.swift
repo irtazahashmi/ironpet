@@ -1,4 +1,5 @@
 import AppKit
+import enum IronPetKit.SharedSymbols
 import CoreImage.CIFilterBuiltins
 import IronPetCore
 import SwiftUI
@@ -62,8 +63,8 @@ private struct RemoteSettingsBody: View {
     @ViewBuilder private var statusLabel: some View {
         switch remote.status {
         case .off: Text("Off").foregroundStyle(.secondary)
-        case .listening(let port): Label(listeningText(port), systemImage: "checkmark.circle.fill").foregroundStyle(.green)
-        case .failed(let message): Label(message, systemImage: "exclamationmark.triangle.fill").foregroundStyle(.orange).font(.caption)
+        case .listening(let port): Label(listeningText(port), systemImage: SharedSymbols.done).foregroundStyle(.green)
+        case .failed(let message): Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).font(.caption)
         }
     }
 

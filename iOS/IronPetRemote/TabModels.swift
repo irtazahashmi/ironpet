@@ -78,6 +78,17 @@ class SocketModel {
 enum AppTab: Hashable {
     case pet, chat, tasks, agents, more
 
+    /// The tab's icon, from the table the Mac's sidebar reads too.
+    var symbol: String {
+        switch self {
+        case .pet: return SharedSymbols.pet
+        case .chat: return SharedSymbols.chat
+        case .tasks: return SharedSymbols.tasks
+        case .agents: return SharedSymbols.agents
+        case .more: return SharedSymbols.more
+        }
+    }
+
     /// A task opens Tasks, a session Agents. An alert or a meeting opens More, on `MoreDestination.destination(for:)`.
     static func tab(for target: TodayTarget) -> AppTab? {
         switch target.type {

@@ -13,29 +13,33 @@ struct AutomationsView: View {
 
     var body: some View {
         List {
-            if let message = model.errorMessage {
-                Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).accessibilityIdentifier("automations-error")
-            }
-            if let notice = model.notice {
-                Label(notice, systemImage: "info.circle").accessibilityIdentifier("automations-notice")
-            }
-            ForEach(model.automations) { automation in
-                NavigationLink {
-                    AutomationDetailView(model: model, id: automation.id)
-                } label: {
-                    AutomationRow(automation: automation)
+            Group {
+                if let message = model.errorMessage {
+                    Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("automations-error")
                 }
-                .accessibilityIdentifier("automation-\(automation.id)")
-                .swipeActions {
-                    Button("Delete", role: .destructive) { deleting = automation }
+                if let notice = model.notice {
+                    Label(notice, systemImage: "info.circle").accessibilityIdentifier("automations-notice")
                 }
-            }
-            if model.loaded, model.automations.isEmpty {
-                ContentUnavailableView("No automations", systemImage: "clock.arrow.2.circlepath",
-                                       description: Text("Reminders and watchers you make show up here."))
-            }
+                ForEach(model.automations) { automation in
+                    NavigationLink {
+                        AutomationDetailView(model: model, id: automation.id)
+                    } label: {
+                        AutomationRow(automation: automation)
+                    }
+                    .accessibilityIdentifier("automation-\(automation.id)")
+                    .swipeActions {
+                        Button("Delete", role: .destructive) { deleting = automation }
+                    }
+                }
+                if model.loaded, model.automations.isEmpty {
+                    ContentUnavailableView("No automations", systemImage: SharedSymbols.automations,
+                                           description: Text("Reminders and watchers you make show up here."))
+                }
+        
+            }.listRowBackground(SharedTheme.card)
         }
         .navigationTitle("Automations")
+        .themedScreen()
         .refreshable { await model.refresh() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
@@ -49,14 +53,18 @@ struct AutomationsView: View {
         .sheet(isPresented: $asking) {
             NavigationStack {
                 Form {
-                    Section {
-                        TextField("What should it do, and when?", text: $request, axis: .vertical).lineLimit(3...8)
-                            .accessibilityIdentifier("automation-request-field")
-                    } footer: {
-                        Text("Ghost builds it in the chat on your Mac. Anything that runs a command waits for Approve there.")
-                    }
+                    Group {
+                        Section {
+                            TextField("What should it do, and when?", text: $request, axis: .vertical).lineLimit(3...8)
+                                .accessibilityIdentifier("automation-request-field")
+                        } footer: {
+                            Text("Ghost builds it in the chat on your Mac. Anything that runs a command waits for Approve there.")
+                        }
+                
+                    }.listRowBackground(SharedTheme.card)
                 }
                 .navigationTitle("New automation")
+                .themedScreen()
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar {
                     ToolbarItem(placement: .cancellationAction) { Button("Cancel") { asking = false } }
@@ -104,7 +112,7 @@ struct AutomationRow: View {
             }
             Text(automation.trigger).font(.subheadline).foregroundStyle(.secondary)
             if automation.waitsForApproval {
-                Label(waitingForApproveText, systemImage: "hand.raised.fill")
+                Label(waitingForApproveText, systemImage: SharedSymbols.approval)
                     .font(.footnote).foregroundStyle(.orange)
                     .accessibilityIdentifier("approval-\(automation.id)")
             } else if let last = automation.lastRun {
@@ -124,53 +132,57 @@ struct AutomationDetailView: View {
 
     var body: some View {
         List {
-            if let automation {
-                Section {
-                    LabeledContent("Runs", value: automation.trigger)
-                    if let next = automation.nextRun, automation.enabled { LabeledContent("Next", value: next.formatted(date: .abbreviated, time: .shortened)) }
-                    LabeledContent("Made by", value: automation.createdBy)
-                    if let stream = automation.stream { LabeledContent("Stream", value: stream) }
-                }
-                if automation.waitsForApproval {
+            Group {
+                if let automation {
                     Section {
-                        Label(waitingForApproveText, systemImage: "hand.raised.fill").foregroundStyle(.orange)
-                            .accessibilityIdentifier("detail-approval")
-                        if let detail = automation.approvalDetail { Text(detail).font(.footnote.monospaced()).textSelection(.enabled) }
-                    } footer: {
-                        Text("Approve and Reject are only on the Mac.")
+                        LabeledContent("Runs", value: automation.trigger)
+                        if let next = automation.nextRun, automation.enabled { LabeledContent("Next", value: next.formatted(date: .abbreviated, time: .shortened)) }
+                        LabeledContent("Made by", value: automation.createdBy)
+                        if let stream = automation.stream { LabeledContent("Stream", value: stream) }
                     }
-                } else {
+                    if automation.waitsForApproval {
+                        Section {
+                            Label(waitingForApproveText, systemImage: SharedSymbols.approval).foregroundStyle(.orange)
+                                .accessibilityIdentifier("detail-approval")
+                            if let detail = automation.approvalDetail { Text(detail).font(.footnote.monospaced()).textSelection(.enabled) }
+                        } footer: {
+                            Text("Approve and Reject are only on the Mac.")
+                        }
+                    } else {
+                        Section {
+                            Button("Run now") { Task { await model.runNow(automation); await load() } }.accessibilityIdentifier("run-now")
+                        }
+                    }
                     Section {
-                        Button("Run now") { Task { await model.runNow(automation); await load() } }.accessibilityIdentifier("run-now")
+                        Button(automation.enabled ? "Pause" : "Resume") {
+                            Task { await model.setPaused(automation, automation.enabled); await load() }
+                        }.accessibilityIdentifier("pause-resume")
+                        Button("Edit…") { editing = true }.accessibilityIdentifier("edit-automation")
                     }
-                }
-                Section {
-                    Button(automation.enabled ? "Pause" : "Resume") {
-                        Task { await model.setPaused(automation, automation.enabled); await load() }
-                    }.accessibilityIdentifier("pause-resume")
-                    Button("Edit…") { editing = true }.accessibilityIdentifier("edit-automation")
-                }
-                Section("History") {
-                    if history.isEmpty { Text("No runs yet").foregroundStyle(.secondary) }
-                    ForEach(Array(history.enumerated()), id: \.offset) { _, run in
-                        VStack(alignment: .leading) {
-                            Text("\(run.date.formatted(date: .abbreviated, time: .shortened)) · \(run.outcome)").font(.footnote)
-                            if !run.output.isEmpty { Text(run.output).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
+                    Section("History") {
+                        if history.isEmpty { Text("No runs yet").foregroundStyle(.secondary) }
+                        ForEach(Array(history.enumerated()), id: \.offset) { _, run in
+                            VStack(alignment: .leading) {
+                                Text("\(run.date.formatted(date: .abbreviated, time: .shortened)) · \(run.outcome)").font(.footnote)
+                                if !run.output.isEmpty { Text(run.output).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
+                            }
+                        }
+                    }
+                    Section("Log") {
+                        if log.isEmpty { Text("Nothing logged").foregroundStyle(.secondary) }
+                        ForEach(log) { entry in
+                            VStack(alignment: .leading) {
+                                Text("\(entry.date.formatted(date: .omitted, time: .standard)) · \(entry.outcome)").font(.footnote)
+                                Text(entry.summary).font(.caption).foregroundStyle(.secondary).lineLimit(3)
+                            }
                         }
                     }
                 }
-                Section("Log") {
-                    if log.isEmpty { Text("Nothing logged").foregroundStyle(.secondary) }
-                    ForEach(log) { entry in
-                        VStack(alignment: .leading) {
-                            Text("\(entry.date.formatted(date: .omitted, time: .standard)) · \(entry.outcome)").font(.footnote)
-                            Text(entry.summary).font(.caption).foregroundStyle(.secondary).lineLimit(3)
-                        }
-                    }
-                }
-            }
+        
+            }.listRowBackground(SharedTheme.card)
         }
         .navigationTitle(automation?.name ?? "Automation")
+        .themedScreen()
         .navigationBarTitleDisplayMode(.inline)
         .sheet(isPresented: $editing) {
             if let automation {
@@ -209,18 +221,22 @@ struct AutomationEditor: View {
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    TextEditor(text: $text)
-                        .font(.footnote.monospaced())
-                        .autocorrectionDisabled()
-                        .textInputAutocapitalization(.never)
-                        .frame(minHeight: 260)
-                        .accessibilityIdentifier("automation-json")
-                } footer: {
-                    Text("A change to what it runs makes it wait for Approve on the Mac again.")
-                }
+                Group {
+                    Section {
+                        TextEditor(text: $text)
+                            .font(.footnote.monospaced())
+                            .autocorrectionDisabled()
+                            .textInputAutocapitalization(.never)
+                            .frame(minHeight: 260)
+                            .accessibilityIdentifier("automation-json")
+                    } footer: {
+                        Text("A change to what it runs makes it wait for Approve on the Mac again.")
+                    }
+            
+                }.listRowBackground(SharedTheme.card)
             }
             .navigationTitle(title)
+            .themedScreen()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }

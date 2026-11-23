@@ -1,4 +1,5 @@
 import SwiftUI
+import IronPetKit
 
 /// The microphone button of the composer. A tap starts a recording, a second tap ends it and the text lands in the composer.
 struct MicButton: View {
@@ -8,9 +9,9 @@ struct MicButton: View {
         Button { Task { await voice.micTapped() } } label: {
             switch voice.state {
             case .idle:
-                Image(systemName: voice.speaking ? "speaker.slash.fill" : "mic.fill").glassCircle()
+                Image(systemName: voice.speaking ? "speaker.slash.fill" : SharedSymbols.microphoneActive).glassCircle()
             case .recording:
-                Image(systemName: "stop.fill")
+                Image(systemName: SharedSymbols.stop)
                     .font(.system(size: 15, weight: .medium)).foregroundStyle(.white)
                     .frame(width: GlassCircleButtonStyle.size, height: GlassCircleButtonStyle.size)
                     .tintedCircle(.red)

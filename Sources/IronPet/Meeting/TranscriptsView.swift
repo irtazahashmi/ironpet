@@ -1,4 +1,5 @@
 import AppKit
+import enum IronPetKit.SharedSymbols
 import IronPetCore
 import SwiftUI
 
@@ -34,7 +35,7 @@ struct TranscriptsView: View {
         }) {
             VStack(spacing: 0) {
                 if meetings.meetings.isEmpty {
-                    EmptyState(symbol: "waveform", title: "No meetings yet",
+                    EmptyState(symbol: SharedSymbols.meetings, title: "No meetings yet",
                                detail: "Start one from \(SettingsAPI.live.config.pet.name)'s right-click menu; its transcript and summary show up here.")
                 } else if selected != nil {
                     detail
@@ -86,7 +87,7 @@ struct TranscriptsView: View {
                     ListRow(title: Self.title(meeting),
                             description: meeting.preview.isEmpty ? (recording ? "Recording…" : "No transcript") : meeting.preview,
                             emphasized: true, onOpen: { page = .summary; selection = meeting.id },
-                            leading: { ListRowIcon(symbol: recording ? "record.circle" : "waveform", color: recording ? .red : .secondary) },
+                            leading: { ListRowIcon(symbol: recording ? "record.circle" : SharedSymbols.meetings, color: recording ? .red : .secondary) },
                             extra: {
                                 if meetings.regenerationID == meeting.id, let progress = meetings.regenerationProgress {
                                     HStack(spacing: 5) {

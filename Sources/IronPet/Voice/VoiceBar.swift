@@ -1,4 +1,5 @@
 import IronPetCore
+import enum IronPetKit.SharedSymbols
 import SwiftUI
 
 /// Replaces the whole composer while a voice note is recording or being transcribed: cancel, a live waveform across
@@ -10,7 +11,7 @@ struct VoiceBar: View {
 
     var body: some View {
         HStack(spacing: 10) {
-            circleButton("xmark", help: transcribing ? "Cancel transcription" : "Discard recording") { voice.cancel() }
+            circleButton(SharedSymbols.deny, help: transcribing ? "Cancel transcription" : "Discard recording") { voice.cancel() }
             Waveform(voice: voice)
                 .frame(height: 34)
                 .frame(maxWidth: .infinity)
@@ -25,7 +26,7 @@ struct VoiceBar: View {
             } else {
                 ElapsedTime(since: voice.startedAt)
                 Button { voice.stop() } label: {
-                    Image(systemName: "stop.fill")
+                    Image(systemName: SharedSymbols.stop)
                         .font(.system(size: 11, weight: .bold))
                         .foregroundStyle(.white)
                         .frame(width: 28, height: 28)

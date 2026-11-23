@@ -1,4 +1,6 @@
 import AppKit
+import enum IronPetKit.SharedTheme
+import enum IronPetKit.SharedSymbols
 import IronPetCore
 import SwiftUI
 
@@ -173,7 +175,7 @@ struct TaskDetailPage: View {
                     .frame(minHeight: 220)
                     .scrollContentBackground(.hidden)
                     .padding(8)
-                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.primary.opacity(0.05)))
+                    .background(RoundedRectangle(cornerRadius: 8).fill(SharedTheme.card))
                     .accessibilityLabel("Notes as markdown")
                 Text("Markdown. \(draft.utf8.count) of \(TaskValidator.maxNotes) bytes.")
                     .font(.caption).foregroundStyle(draft.utf8.count > TaskValidator.maxNotes ? .red : .secondary)
@@ -223,7 +225,7 @@ struct TaskDetailPage: View {
                 ForEach(task.labels.sorted { $0.key < $1.key }, id: \.key) { key, value in
                     HStack(spacing: 4) {
                         Text("\(key)=\(value)").textSelection(.enabled)
-                        Button { attempt { _ = try tasks.update(UpdateTaskRequest(id: id, removeLabels: [key])) } } label: { Image(systemName: "xmark").font(.system(size: 9, weight: .bold)) }
+                        Button { attempt { _ = try tasks.update(UpdateTaskRequest(id: id, removeLabels: [key])) } } label: { Image(systemName: SharedSymbols.deny).font(.system(size: 9, weight: .bold)) }
                             .buttonStyle(.plain)
                             .accessibilityLabel("Remove label \(key)")
                             .help("Remove \(key)")
@@ -291,7 +293,7 @@ private struct DuePicker: View {
                                      : Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: due))
                 }
                 .buttonStyle(.borderless)
-                Button { onChange(nil) } label: { Image(systemName: "xmark.circle.fill") }
+                Button { onChange(nil) } label: { Image(systemName: SharedSymbols.removeAttachment) }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
                     .accessibilityLabel("Clear due date")
             } else {

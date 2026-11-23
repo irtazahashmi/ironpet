@@ -1,4 +1,5 @@
 import AppKit
+import enum IronPetKit.SharedSymbols
 import IronPetCore
 import SwiftUI
 
@@ -98,7 +99,7 @@ struct ListSearchField: View {
 
     var body: some View {
         HStack(spacing: 5) {
-            Image(systemName: "magnifyingglass")
+            Image(systemName: SharedSymbols.find)
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
@@ -108,7 +109,7 @@ struct ListSearchField: View {
                 .accessibilityLabel("Search \(label)")
             if !text.isEmpty {
                 Button { text = "" } label: {
-                    Image(systemName: "xmark.circle.fill").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Image(systemName: SharedSymbols.removeAttachment).font(.system(size: 11)).foregroundStyle(.secondary)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel("Clear search")
@@ -140,7 +141,7 @@ struct ListScroll<Content: View>: View {
 /// What a list shows when the search or a filter hides every row.
 struct NoMatches: View {
     var body: some View {
-        EmptyState(symbol: "magnifyingglass", title: "Nothing matches", detail: "No row has that text in its title or description.")
+        EmptyState(symbol: SharedSymbols.find, title: "Nothing matches", detail: "No row has that text in its title or description.")
     }
 }
 

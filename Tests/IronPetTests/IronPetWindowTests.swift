@@ -1,4 +1,5 @@
 import AppKit
+import IronPetKit
 import SwiftUI
 import XCTest
 @testable import IronPet
@@ -806,5 +807,17 @@ extension WindowAutoHideTests {
         XCTAssertFalse(h.model.voice.isBusy)
         resign()
         XCTAssertFalse(panel.isVisible)
+    }
+}
+
+final class SectionSymbolTableTests: XCTestCase {
+    func testSidebarSectionsReadTheSharedTable() {
+        XCTAssertEqual(IronPetSection.chat.symbol, SharedSymbols.chat)
+        XCTAssertEqual(IronPetSection.tasks.symbol, SharedSymbols.tasks)
+        XCTAssertEqual(IronPetSection.agents.symbol, SharedSymbols.agents)
+        XCTAssertEqual(IronPetSection.alerts.symbol, SharedSymbols.alerts)
+        XCTAssertEqual(IronPetSection.automations.symbol, SharedSymbols.automations)
+        XCTAssertEqual(IronPetSection.screen.symbol, SharedSymbols.screen)
+        XCTAssertEqual(IronPetSection.transcripts.symbol, SharedSymbols.meetings)
     }
 }

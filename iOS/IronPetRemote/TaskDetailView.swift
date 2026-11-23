@@ -18,35 +18,39 @@ struct TaskDetailView: View {
 
     var body: some View {
         List {
-            Section {
-                Text(current.title).font(.headline)
-                LabeledContent("Status", value: current.waitingOn.map { "Waiting on \($0)" } ?? current.status.title)
-                if let due = current.due { LabeledContent("Due", value: due.formatted(date: .abbreviated, time: .omitted)) }
-                LabeledContent("From", value: current.source)
-            }
-            if !current.notes.isEmpty { Section("Notes") { Text(current.notes) } }
-            if !current.links.isEmpty {
-                Section("Links") {
-                    ForEach(current.links, id: \.self) { link in
-                        if link.kind == "url", let url = URL(string: link.ref) { Link(link.label ?? link.ref, destination: url) } else {
-                            LabeledContent(link.label ?? link.kind, value: link.ref)
+            Group {
+                Section {
+                    Text(current.title).font(.headline)
+                    LabeledContent("Status", value: current.waitingOn.map { "Waiting on \($0)" } ?? current.status.title)
+                    if let due = current.due { LabeledContent("Due", value: due.formatted(date: .abbreviated, time: .omitted)) }
+                    LabeledContent("From", value: current.source)
+                }
+                if !current.notes.isEmpty { Section("Notes") { Text(current.notes) } }
+                if !current.links.isEmpty {
+                    Section("Links") {
+                        ForEach(current.links, id: \.self) { link in
+                            if link.kind == "url", let url = URL(string: link.ref) { Link(link.label ?? link.ref, destination: url) } else {
+                                LabeledContent(link.label ?? link.kind, value: link.ref)
+                            }
                         }
                     }
                 }
-            }
-            if let history = detail?.history, !history.isEmpty {
-                Section("History") {
-                    ForEach(Array(history.enumerated()), id: \.offset) { _, event in
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("\(event.kind.capitalized) by \(event.by)").font(.subheadline)
-                            if !event.detail.isEmpty { Text(event.detail).font(.caption).foregroundStyle(.secondary) }
-                            Text(event.at.formatted(date: .abbreviated, time: .shortened)).font(.caption2).foregroundStyle(.tertiary)
+                if let history = detail?.history, !history.isEmpty {
+                    Section("History") {
+                        ForEach(Array(history.enumerated()), id: \.offset) { _, event in
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("\(event.kind.capitalized) by \(event.by)").font(.subheadline)
+                                if !event.detail.isEmpty { Text(event.detail).font(.caption).foregroundStyle(.secondary) }
+                                Text(event.at.formatted(date: .abbreviated, time: .shortened)).font(.caption2).foregroundStyle(.tertiary)
+                            }
                         }
                     }
                 }
-            }
+        
+            }.listRowBackground(SharedTheme.card)
         }
         .navigationTitle("Task")
+        .themedScreen()
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             if current.status != .done {
@@ -55,7 +59,7 @@ struct TaskDetailView: View {
                         Button("Close with a note", systemImage: "checkmark.circle") { sheet = .close }
                         Button("Add a note", systemImage: "note.text.badge.plus") { sheet = .note }
                         Button("Change status", systemImage: "arrow.triangle.2.circlepath") { sheet = .status }
-                    } label: { Label("Actions", systemImage: "ellipsis.circle") }
+                    } label: { Label("Actions", systemImage: SharedSymbols.more) }
                         .accessibilityIdentifier("task-actions")
                 }
             } else {
@@ -99,14 +103,18 @@ struct NoteSheet: View {
     var body: some View {
         NavigationStack {
             Form {
-                if !statuses.isEmpty {
-                    Picker("Status", selection: $status) { ForEach(statuses, id: \.self) { Text($0.title).tag($0) } }
-                }
-                Section(prompt) {
-                    TextField(prompt, text: $note, axis: .vertical).lineLimit(2...8).accessibilityIdentifier("note-field")
-                }
+                Group {
+                    if !statuses.isEmpty {
+                        Picker("Status", selection: $status) { ForEach(statuses, id: \.self) { Text($0.title).tag($0) } }
+                    }
+                    Section(prompt) {
+                        TextField(prompt, text: $note, axis: .vertical).lineLimit(2...8).accessibilityIdentifier("note-field")
+                    }
+            
+                }.listRowBackground(SharedTheme.card)
             }
             .navigationTitle(title)
+            .themedScreen()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }

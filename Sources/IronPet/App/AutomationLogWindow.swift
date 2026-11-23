@@ -1,4 +1,5 @@
 import AppKit
+import enum IronPetKit.SharedTheme
 import IronPetCore
 import SwiftUI
 
@@ -133,7 +134,7 @@ private struct AutomationLogView: View {
                         if !entry.detail.isEmpty, entry.detail != entry.summary {
                             Text(entry.detail).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
                                 .padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                                .background(RoundedRectangle(cornerRadius: 6).fill(Color.primary.opacity(0.05)))
+                                .background(RoundedRectangle(cornerRadius: 6).fill(SharedTheme.card))
                         }
                     }
                     .padding(12)

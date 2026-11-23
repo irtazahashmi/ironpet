@@ -1,4 +1,5 @@
 import AppKit
+import enum IronPetKit.SharedSymbols
 import IronPetCore
 import SwiftUI
 
@@ -119,7 +120,7 @@ private struct SetupView: View {
                         Text("No supported agent found on this Mac yet.").font(.caption).foregroundStyle(.secondary)
                     }
                     if !hasChatCLI {
-                        Label("To chat, install an agent that speaks ACP (for example cursor-agent, claude, codex or gemini) and sign in.", systemImage: "exclamationmark.triangle.fill")
+                        Label("To chat, install an agent that speaks ACP (for example cursor-agent, claude, codex or gemini) and sign in.", systemImage: SharedSymbols.warning)
                             .font(.caption).foregroundStyle(.orange)
                     }
                 }

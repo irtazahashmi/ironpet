@@ -1,4 +1,5 @@
 import AppKit
+import enum IronPetKit.SharedSymbols
 import Combine
 import IronPetCore
 import SwiftUI
@@ -74,7 +75,7 @@ private struct BubbleView: View {
 
     private var closeButton: some View {
         Button(action: dismiss) {
-            Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).frame(width: 16, height: 16)
+            Image(systemName: SharedSymbols.deny).font(.system(size: 9, weight: .bold)).frame(width: 16, height: 16)
         }
         .buttonStyle(.borderless)
         .foregroundStyle(.secondary)
@@ -96,7 +97,7 @@ private struct BubbleView: View {
                         .lineLimit(2)
                     Spacer(minLength: 4)
                     Button(action: dismiss) {
-                        Image(systemName: "xmark").font(.system(size: 9, weight: .bold)).frame(width: 16, height: 16)
+                        Image(systemName: SharedSymbols.deny).font(.system(size: 9, weight: .bold)).frame(width: 16, height: 16)
                     }
                     .buttonStyle(.borderless)
                     .foregroundStyle(.secondary)
@@ -144,7 +145,7 @@ private struct BubbleView: View {
                     .lineLimit(1)
                     .truncationMode(.middle)
                 Spacer(minLength: 0)
-                Image(systemName: "chevron.right")
+                Image(systemName: SharedSymbols.chevron)
                     .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(.tertiary)
             }

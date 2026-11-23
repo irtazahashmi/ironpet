@@ -39,6 +39,7 @@ struct ScreenView: View {
             if model.gate.isUnlocked { unlocked } else { locked }
         }
         .navigationTitle("Screen")
+        .themedScreen()
         .screenPrivacy()
         .onChange(of: scenePhase) { _, phase in
             model.gate.scenePhaseChanged(phase)
@@ -65,7 +66,7 @@ struct ScreenView: View {
     @ViewBuilder private var unlocked: some View {
         if model.forbidden {
             ContentUnavailableView {
-                Label("Screen text is off for this phone", systemImage: "hand.raised.fill")
+                Label("Screen text is off for this phone", systemImage: SharedSymbols.approval)
             } description: {
                 Text("On the Mac, open Settings, then Devices, and turn on Screen text for this phone.")
             } actions: {
@@ -79,17 +80,20 @@ struct ScreenView: View {
 
     private var list: some View {
         List {
-            if let message = model.errorMessage {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).accessibilityIdentifier("screen-error")
-                    Button("Retry") { Task { await model.refresh() } }.accessibilityIdentifier("screen-retry")
+            Group {
+                if let message = model.errorMessage {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("screen-error")
+                        Button("Retry") { Task { await model.refresh() } }.accessibilityIdentifier("screen-retry")
+                    }
                 }
-            }
-            if let notice = model.notice {
-                Label(notice, systemImage: "info.circle").accessibilityIdentifier("screen-notice")
-            }
-            statusSection
-            if let searched = model.searched { searchResults(searched) } else { changes }
+                if let notice = model.notice {
+                    Label(notice, systemImage: "info.circle").accessibilityIdentifier("screen-notice")
+                }
+                statusSection
+                if let searched = model.searched { searchResults(searched) } else { changes }
+        
+            }.listRowBackground(SharedTheme.card)
         }
         .refreshable { await model.refresh() }
         .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: "Search screen text")
@@ -206,7 +210,7 @@ struct ScreenCaptureView: View {
                 } else if loading {
                     ProgressView()
                 } else if let message = model.errorMessage {
-                    Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).accessibilityIdentifier("screen-capture-error")
+                    Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("screen-capture-error")
                     Button("Retry") { Task { await load() } }.accessibilityIdentifier("screen-capture-retry")
                 } else {
                     Text("This capture is gone or the screen is locked.").foregroundStyle(.secondary)
@@ -216,6 +220,7 @@ struct ScreenCaptureView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
         }
         .navigationTitle("Capture")
+        .themedScreen()
         .navigationBarTitleDisplayMode(.inline)
         .screenPrivacy()
         // Runs again when the screen unlocks, so a capture opened before a lock loads again instead of staying empty.
