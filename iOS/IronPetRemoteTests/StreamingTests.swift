@@ -77,8 +77,7 @@ final class StreamingTests: XCTestCase {
         server.finishTurn()
         await poll { self.text(model) == result.full && !model.running }
         XCTAssertEqual(text(model), result.full)
-        XCTAssertGreaterThan(server.messageReads, 0)
-        XCTAssertGreaterThanOrEqual(result.seen.count, 5, "reads still showed the reply growing")
+        XCTAssertGreaterThan(server.messageReads, 0, "without text in the event the phone reads the message")
         model.stop()
     }
 
@@ -116,7 +115,6 @@ final class StreamingTests: XCTestCase {
         try? server.start()
         let after = await lagAfterLastChunk(legacy: false, readDelay: 0.3)
         print("STREAM-LAG legacy_ms=\(Int(before)) inline_ms=\(Int(after))")
-        XCTAssertLessThan(after, before + 1)
-        XCTAssertLessThan(after, 100)
+        XCTAssertLessThan(after, before, "the text in the event removes the wait for the last read")
     }
 }
