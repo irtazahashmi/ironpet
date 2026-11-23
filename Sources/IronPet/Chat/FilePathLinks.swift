@@ -1,5 +1,6 @@
 import AppKit
 import IronPetCore
+import IronPetKit
 import SwiftUI
 
 /// Turns file paths in chat text into links that open the file. Detection is pure string work. Whether a
@@ -15,96 +16,9 @@ enum FilePathLinks {
 
     // MARK: Detection
 
-    private static let stopCharacters: Set<Character> = ["`", "\"", "'", "<", ">", "|", "*"]
-    private static let trailingPunctuation: Set<Character> = [".", ",", ";", ":", "!", "?", ")", "]", "}"]
-    private static let boundaryBefore: Set<Character> = ["(", "[", "{", "\"", "'", "`", "=", ",", ";", ">", "*"]
-
-    /// Finds absolute paths, `~/` paths and `file://` URLs. Existence is not checked here.
+    /// Finds absolute paths, `~/` paths and `file://` URLs. Existence is not checked here. The rules are `ChatFilePaths`, shared with the phone.
     static func detect(in text: String) -> [Match] {
-        var matches: [Match] = []
-        var i = text.startIndex
-        while i < text.endIndex {
-            guard isStart(text, at: i) else { i = text.index(after: i); continue }
-            let end = candidateEnd(text, from: i)
-            if let match = match(text, from: i, to: end) {
-                matches.append(match)
-                i = match.range.upperBound
-            } else {
-                i = text.index(after: i)
-            }
-        }
-        return matches
-    }
-
-    private static func isStart(_ text: String, at i: String.Index) -> Bool {
-        let rest = text[i...]
-        guard rest.hasPrefix("/") || rest.hasPrefix("~/") || rest.hasPrefix("file://") else { return false }
-        if rest.hasPrefix("//") { return false }
-        guard i > text.startIndex else { return true }
-        let before = text[text.index(before: i)]
-        return before.isWhitespace || boundaryBefore.contains(before)
-    }
-
-    /// Runs to the first unescaped space or stop character.
-    private static func candidateEnd(_ text: String, from start: String.Index) -> String.Index {
-        var i = start
-        while i < text.endIndex {
-            let c = text[i]
-            if c == "\\", text.index(after: i) < text.endIndex, text[text.index(after: i)] == " " {
-                i = text.index(i, offsetBy: 2)
-                continue
-            }
-            if c.isWhitespace || stopCharacters.contains(c) { break }
-            i = text.index(after: i)
-        }
-        return i
-    }
-
-    private static func match(_ text: String, from start: String.Index, to end: String.Index) -> Match? {
-        var raw = String(text[start..<end])
-        var spanned: String?
-        while true {
-            let before = raw
-            raw = trimTrailing(raw)
-            if let suffix = raw.range(of: #":\d+(:\d+)?$"#, options: .regularExpression) {
-                if spanned == nil { spanned = raw }
-                raw.removeSubrange(suffix)
-            }
-            if raw == before { break }
-        }
-        // Characters that were cut from a `\ ` pair must not leave a dangling backslash.
-        if raw.hasSuffix("\\") { raw.removeLast() }
-        // The range also covers a `:line` suffix, which is not part of the path.
-        let span = spanned.map { $0.hasPrefix(raw) ? $0 : raw } ?? raw
-        let stop = text.index(start, offsetBy: span.count)
-
-        guard let path = resolvedPath(raw), path.split(separator: "/").count >= 2 else { return nil }
-        if raw.hasPrefix("~/"), raw.count <= 2 { return nil }
-        return Match(range: start..<stop, path: path)
-    }
-
-    /// Drops closing punctuation, keeping a `)` that closes a `(` inside the path.
-    private static func trimTrailing(_ value: String) -> String {
-        var value = value
-        while let last = value.last, trailingPunctuation.contains(last) {
-            if last == ")", value.filter({ $0 == "(" }).count >= value.filter({ $0 == ")" }).count { break }
-            value.removeLast()
-        }
-        return value
-    }
-
-    private static func resolvedPath(_ raw: String) -> String? {
-        var path = raw
-        if path.hasPrefix("file://") {
-            guard let url = URL(string: path) ?? URL(string: path.replacingOccurrences(of: " ", with: "%20")), url.isFileURL
-            else { return nil }
-            path = url.path
-        } else {
-            path = path.replacingOccurrences(of: "\\ ", with: " ")
-            if path.hasPrefix("~/") { path = NSHomeDirectory() + path.dropFirst() }
-        }
-        guard path.hasPrefix("/"), path.count > 1 else { return nil }
-        return path
+        ChatFilePaths.detect(in: text, home: NSHomeDirectory()).map { Match(range: $0.range, path: $0.path) }
     }
 
     // MARK: Linking

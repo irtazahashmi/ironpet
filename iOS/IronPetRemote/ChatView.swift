@@ -17,6 +17,7 @@ struct ChatView: View {
     @State private var photos: [PhotosPickerItem] = []
     @State private var focused = false
     @State private var find = ChatFindState()
+    @State private var preview: FilePreviewTarget?
 
     /// Changes when the query or the transcript does, so the matches are found again.
     private var findKey: String {
@@ -35,6 +36,7 @@ struct ChatView: View {
                 }
                 // The composer floats over the transcript, so the background shows through the glass.
                 Transcript(model: model, find: find, avatar: avatar)
+                    .environment(\.openFilePath, { preview = FilePreviewTarget(path: $0) })
                     .glassBottomBar {
                         VStack(spacing: 6) {
                             if let notice = model.snapshot?.notice {
@@ -75,6 +77,7 @@ struct ChatView: View {
             .onChange(of: findKey) { find.update(model.displayItems) }
             .sheet(isPresented: $showThreads) { ThreadsSheet(model: model, avatar: avatar) }
             .sheet(isPresented: $showSettings) { ChatSettingsSheet(model: model) }
+            .sheet(item: $preview) { FilePreviewSheet(client: model.client, target: $0) }
             .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
                 guard case .success(let urls) = result else { return }
                 for url in urls {
@@ -309,6 +312,7 @@ struct MessageRow: View {
     var readAloud: ReadAloud?
     /// The highlights of Find in chat for this message. Nil outside a search.
     var find: RemoteChatFind.RowHighlight?
+    @Environment(\.openFilePath) private var openFilePath
 
     var body: some View {
         Group {
@@ -332,6 +336,12 @@ struct MessageRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: item.kind == "user" || (item.kind == "screenshot" && item.origin != nil) ? .trailing : .leading)
+        // A tap on a file path asks the Mac for a preview. Any other link keeps its usual action.
+        .environment(\.openURL, OpenURLAction { url in
+            guard let path = ChatFilePaths.path(from: url), let openFilePath else { return .systemAction }
+            openFilePath(path)
+            return .handled
+        })
         .contextMenu {
             if let onReply { Button { onReply() } label: { Label("Reply", systemImage: SharedSymbols.reply) } }
             if let text = item.text, !text.isEmpty { Button { UIPasteboard.general.string = text } label: { Label("Copy", systemImage: SharedSymbols.copy) } }

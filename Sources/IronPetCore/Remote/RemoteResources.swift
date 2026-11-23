@@ -159,7 +159,7 @@ package struct RemoteResources {
         return (found.data, Self.contentType(found.entry.name))
     }
 
-    package static func contentType(_ name: String) -> String {
+    package nonisolated static func contentType(_ name: String) -> String {
         switch (name as NSString).pathExtension.lowercased() {
         case "png": return "image/png"
         case "webp": return "image/webp"

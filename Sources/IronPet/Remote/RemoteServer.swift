@@ -498,6 +498,11 @@ final class RemoteServer {
             let id = Self.parameter(context, "id")
             return await self.chatFile(id, context)
         }
+        // A preview of a file a reply named, inside the folders the Mac chat works in. The path is in the query, which no log keeps.
+        router.get("/v1/files/preview") { [self] request, context in
+            let path = Self.query(request)["path"]?.first ?? ""
+            return await self.filePreview(path, context)
+        }
         router.get("/v1/chat/threads") { [self] _, context in await self.chat(context) { await $0.threads() } }
         router.get("/v1/chat/threads/:id") { [self] _, context in
             let id = Self.parameter(context, "id")
@@ -631,6 +636,18 @@ final class RemoteServer {
         do {
             let found = try await RemoteChat(api: api, device: device.id, uploads: uploads).file(id)
             let headers: HTTPFields = [.cacheControl: "no-store", .contentType: found.contentType]
+            return Response(status: .ok, headers: headers, body: .init(byteBuffer: ByteBuffer(bytes: found.data)))
+        } catch {
+            return Self.errorResponse(RemoteFailure(error))
+        }
+    }
+
+    private func filePreview(_ path: String, _ context: RemoteContext) async -> Response {
+        guard let device = context.device else { return Self.error(401, "unauthorized", "unauthorized") }
+        do {
+            let found = try await RemoteChat(api: api, device: device.id, uploads: uploads).filePreview(path: path)
+            var headers: HTTPFields = [.cacheControl: "no-store", .contentType: found.contentType]
+            if found.truncated, let name = HTTPField.Name("X-Ironpet-Truncated") { headers[name] = "1" }
             return Response(status: .ok, headers: headers, body: .init(byteBuffer: ByteBuffer(bytes: found.data)))
         } catch {
             return Self.errorResponse(RemoteFailure(error))

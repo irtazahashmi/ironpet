@@ -66,16 +66,17 @@ public final class IronPetClient: @unchecked Sendable {
 
     deinit { session.finishTasksAndInvalidate() }
 
-    func url(_ path: String, query: [URLQueryItem] = []) -> URL {
+    func url(_ path: String, query: [URLQueryItem] = [], encodedQuery: String? = nil) -> URL {
         var parts = URLComponents(url: endpoint.baseURL, resolvingAgainstBaseURL: false) ?? URLComponents()
         let base = parts.path.hasSuffix("/") ? String(parts.path.dropLast()) : parts.path
         parts.path = base + path
         parts.queryItems = query.isEmpty ? nil : query
+        if let encodedQuery { parts.percentEncodedQuery = encodedQuery }
         return parts.url ?? endpoint.baseURL
     }
 
-    func request(_ method: String, _ path: String, query: [URLQueryItem] = [], body: Data? = nil, headers: [String: String] = [:]) -> URLRequest {
-        var request = URLRequest(url: url(path, query: query))
+    func request(_ method: String, _ path: String, query: [URLQueryItem] = [], encodedQuery: String? = nil, body: Data? = nil, headers: [String: String] = [:]) -> URLRequest {
+        var request = URLRequest(url: url(path, query: query, encodedQuery: encodedQuery))
         request.httpMethod = method
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         if let body {
@@ -86,7 +87,9 @@ public final class IronPetClient: @unchecked Sendable {
         return request
     }
 
-    func perform(_ request: URLRequest) async throws -> Data {
+    func perform(_ request: URLRequest) async throws -> Data { try await performWithResponse(request).data }
+
+    func performWithResponse(_ request: URLRequest) async throws -> (data: Data, response: HTTPURLResponse) {
         let data: Data, response: URLResponse
         do { (data, response) = try await session.data(for: request) } catch {
             throw ClientError.transport(error.localizedDescription)
@@ -97,7 +100,7 @@ public final class IronPetClient: @unchecked Sendable {
             let detail = (try? decoder.decode(APIErrorBody.self, from: data))?.error
             throw ClientError.api(status: http.statusCode, code: detail?.code ?? "failed", message: detail?.message ?? "The Mac answered \(http.statusCode).")
         }
-        return data
+        return (data, http)
     }
 
     func decode<T: Decodable>(_ type: T.Type, from data: Data) throws -> T {
@@ -208,6 +211,16 @@ public final class IronPetClient: @unchecked Sendable {
 
     /// The image behind a `screenshot` message of the open chat. It throws the Mac's reason, such as "the file is no longer on the Mac".
     public func downloadChatImage(messageID: String) async throws -> Data { try await perform(request("GET", APIPath.chatMessageFile(messageID))) }
+
+    /// A file a reply named, from the folder the Mac chat works in: the start of a text file, or an image. It throws the Mac's reason,
+    /// such as "the Mac only previews files inside the folders its chat works in".
+    public func filePreview(path: String) async throws -> RemoteFilePreview {
+        // Every character but the unreserved ones is escaped, so a `+` or `&` in a file name reaches the Mac as it is.
+        let value = path.addingPercentEncoding(withAllowedCharacters: CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~/")) ?? path
+        let (data, response) = try await performWithResponse(request("GET", APIPath.filePreview, encodedQuery: "path=" + value))
+        let type = response.value(forHTTPHeaderField: "Content-Type") ?? "application/octet-stream"
+        return RemoteFilePreview(path: path, contentType: type, data: data, truncated: response.value(forHTTPHeaderField: "X-Ironpet-Truncated") == "1")
+    }
 
     // MARK: Chat
 
