@@ -1,6 +1,7 @@
 import Foundation
 import IronPetKit
 import Observation
+import UIKit
 
 /// The phone's side of the voice socket: the mic button, the transcript it gets back, and the spoken replies.
 ///
@@ -35,6 +36,10 @@ final class VoiceModel {
     var sendAtOnce: Bool {
         didSet { defaults.set(sendAtOnce, forKey: Self.sendKey) }
     }
+    /// When the running recording began. The recording bar counts from it.
+    private(set) var startedAt: Date?
+    /// Loudness of the running recording, drawn by the waveform. A reference type, so drawing never re-renders the chat.
+    @ObservationIgnored let levels = LevelBuffer()
     /// True while a reply plays or arrives.
     private(set) var speaking = false
     /// The id of the chat message that plays or arrives, so its speaker button shows Stop.
@@ -65,6 +70,7 @@ final class VoiceModel {
     @ObservationIgnored private var pump: Task<VoiceFramer, Never>?
     @ObservationIgnored private var streamID: String?
     @ObservationIgnored private var streamMode: VoiceMode = .draft
+    @ObservationIgnored private var ticker: Task<Void, Never>?
     @ObservationIgnored private var announcedReply: String?
     /// The frames of a recording sent at once, by stream id, kept until the Mac has the text so `resend` can send them again.
     @ObservationIgnored private var retained: [String: [Data]] = [:]
@@ -139,9 +145,11 @@ final class VoiceModel {
         mic = nil
         pump?.cancel()
         pump = nil
-        if let id = streamID { await send(.cancel(id: id)) }
+        let id = streamID
         streamID = nil
         state = .idle
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        if let id { await send(.cancel(id: id)) }
     }
 
     private func beginRecording() async {
@@ -166,14 +174,17 @@ final class VoiceModel {
         streamID = id
         streamMode = sendAtOnce ? .send : .draft
         state = .recording
+        startMetering()
         do { try await channel.send(text: VoiceClientMessage.start(id: id, mode: streamMode).json) } catch {
             fail("The Mac is not reachable.")
             return
         }
+        let levels = levels
         recorded = []
         pump = Task { [weak self] in
             var framer = VoiceFramer()
             for await pcm in audio {
+                levels.record(Self.level(of: pcm))
                 for frame in framer.append(pcm) {
                     self?.recorded.append(frame)
                     do { try await channel.send(binary: frame) } catch { self?.fail("The Mac is not reachable."); return framer }
@@ -181,6 +192,28 @@ final class VoiceModel {
             }
             return framer
         }
+    }
+
+    /// Resets the waveform and ticks it 25 times a second until the recording ends.
+    private func startMetering() {
+        levels.reset()
+        startedAt = Date()
+        ticker?.cancel()
+        ticker = Task { [weak self] in
+            while !Task.isCancelled, self?.state == .recording {
+                self?.levels.tick()
+                try? await Task.sleep(for: .seconds(LevelBuffer.tickInterval))
+            }
+        }
+    }
+
+    /// The loudest sample of a 16-bit little-endian PCM chunk, 0...1. A square root lifts quiet speech so the bars are visible.
+    nonisolated static func level(of pcm: Data) -> Float {
+        var peak: Int32 = 0
+        pcm.withUnsafeBytes { raw in
+            for sample in raw.bindMemory(to: Int16.self) { peak = max(peak, abs(Int32(Int16(littleEndian: sample)))) }
+        }
+        return min(1, (Float(peak) / Float(Int16.max)).squareRoot())
     }
 
     /// The microphone stopped on its own while recording. The Mac is told to drop the stream and the user sees why.

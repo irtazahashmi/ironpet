@@ -182,6 +182,39 @@ final class PhaseSixTests: XCTestCase {
         XCTAssertTrue(mic.stopped, "an error for the stream also stops the microphone")
     }
 
+    func testCancellingARecordingStopsTheMicSendsCancelAndNeverEndsTheStream() async {
+        let mic = SilentMic()
+        let log = Log()
+        let channel = FakeChannel(log: log)
+        let model = VoiceModel(player: ReplyPlayer(engine: FakeEngine(log: log)), defaults: defaults(), openChannel: { channel }, makeMic: { mic })
+        model.onTranscript = { _, _ in XCTFail("a cancelled recording yields no text") }
+        await model.micTapped()
+        XCTAssertEqual(model.state, .recording)
+        XCTAssertNotNil(model.startedAt)
+        await model.cancelRecording()
+        XCTAssertEqual(model.state, .idle)
+        XCTAssertTrue(mic.stopped)
+        let messages = channel.sentTexts.compactMap(VoiceClientMessage.parse)
+        XCTAssertTrue(messages.contains { if case .cancel = $0 { true } else { false } })
+        XCTAssertFalse(messages.contains { if case .end = $0 { true } else { false } }, "nothing is sent for transcription")
+    }
+
+    func testTheWaveformFollowsTheLevelOfTheAudio() {
+        XCTAssertEqual(VoiceModel.level(of: Data(count: 640)), 0)
+        var loud = Data()
+        for _ in 0..<320 { withUnsafeBytes(of: Int16.max.littleEndian) { loud.append(contentsOf: $0) } }
+        XCTAssertEqual(VoiceModel.level(of: loud), 1, accuracy: 0.001)
+        var quiet = Data()
+        for _ in 0..<320 { withUnsafeBytes(of: Int16(1000).littleEndian) { quiet.append(contentsOf: $0) } }
+        XCTAssertEqual(VoiceModel.level(of: quiet), 0.175, accuracy: 0.01)
+    }
+
+    func testTheRecordingClockShowsMinutesAndSeconds() {
+        XCTAssertEqual(VoiceClock.format(0), "0:00")
+        XCTAssertEqual(VoiceClock.format(7), "0:07")
+        XCTAssertEqual(VoiceClock.format(75), "1:15")
+    }
+
     func testAMicrophoneThatDiesMidRecordingReturnsToIdleWithItsReason() async {
         let mic = SilentMic()
         let log = Log()

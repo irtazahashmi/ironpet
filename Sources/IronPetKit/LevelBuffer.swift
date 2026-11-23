@@ -3,10 +3,10 @@ import Foundation
 /// Loudness samples for the waveform. The audio thread records peaks; the main thread calls `tick` at a fixed rate to
 /// turn them into evenly spaced bars. The waveform view reads it on its own display-rate timeline, so drawing
 /// never goes through `@Published` and never re-renders the chat.
-package final class LevelBuffer: @unchecked Sendable {
-    package init() {}
+public final class LevelBuffer: @unchecked Sendable {
+    public init() {}
 
-    package static let tickInterval: TimeInterval = 1.0 / 25
+    public static let tickInterval: TimeInterval = 1.0 / 25
     private static let capacity = 400
 
     private let lock = NSLock()
@@ -16,14 +16,14 @@ package final class LevelBuffer: @unchecked Sendable {
     private var lastTick: TimeInterval = ProcessInfo.processInfo.systemUptime
 
     /// Called from the audio thread.
-    package func record(_ level: Float) {
+    public func record(_ level: Float) {
         lock.lock()
         peak = max(peak, level)
         lock.unlock()
     }
 
     /// Closes the current interval into one bar. A fast attack and slow release keep the bars from flickering.
-    package func tick() {
+    public func tick() {
         lock.lock()
         let bar = max(peak, previous * 0.7)
         previous = bar
@@ -36,7 +36,7 @@ package final class LevelBuffer: @unchecked Sendable {
 
     /// The newest `count` bars, oldest first, padded with silence on the left, and how far through the current
     /// interval it is (0...1) so the view can scroll smoothly between ticks.
-    package func recent(_ count: Int) -> (bars: [Float], phase: Double) {
+    public func recent(_ count: Int) -> (bars: [Float], phase: Double) {
         lock.lock()
         defer { lock.unlock() }
         let tail = Array(bars.suffix(count))
@@ -44,7 +44,7 @@ package final class LevelBuffer: @unchecked Sendable {
         return (padded, min(1, (ProcessInfo.processInfo.systemUptime - lastTick) / Self.tickInterval))
     }
 
-    package func reset() {
+    public func reset() {
         lock.lock()
         peak = 0
         previous = 0

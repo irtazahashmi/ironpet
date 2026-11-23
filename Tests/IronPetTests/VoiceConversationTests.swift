@@ -1,6 +1,7 @@
 import XCTest
 @testable import IronPet
 @testable import IronPetCore
+@testable import IronPetKit
 
 @MainActor
 private final class FakeMic: ConversationListening {
