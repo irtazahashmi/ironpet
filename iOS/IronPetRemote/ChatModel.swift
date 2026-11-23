@@ -108,6 +108,8 @@ final class ChatModel: SocketModel {
     private(set) var sending = false
     /// Messages sent from this phone that the transcript has not caught up with. They show at the end of `displayItems`.
     private(set) var outbox: [OutgoingMessage] = []
+    /// The event socket, set by the app. Typed messages go over it while it is open. Nil in tests that use HTTPS only.
+    @ObservationIgnored var socket: (any ChatSocket)?
     /// How long the Mac has to answer a send before the message is marked failed.
     @ObservationIgnored var sendTimeout: Duration = .seconds(15)
     /// The Mac's reason for refusing to open a thread or start a chat, shown as an alert.
@@ -456,11 +458,31 @@ final class ChatModel: SocketModel {
             if let index = outbox.firstIndex(where: { $0.id == id }) { outbox[index].state = state }
         }
         let client = self.client, timeout = sendTimeout
-        PhoneHopLog.mark("phone.post")
+        // The id is the message's own, so a Retry sends the same id and the Mac creates the message once.
+        let clientID = (id ?? UUID()).uuidString.lowercased()
         do {
-            _ = try await Self.withTimeout(timeout) { try await client.sendMessage(text: text, uploadIDs: uploadIDs, reply: reply) }
-            PhoneHopLog.mark("phone.ack")
+            try await Self.withTimeout(timeout) { [socket] in
+                // The open event socket carries messages without attachments. Without it, or when the Mac did not announce `chat.send`,
+                // the send goes over HTTPS as before.
+                if uploadIDs.isEmpty, let socket, socket.canSendChat {
+                    PhoneHopLog.mark("phone.socket")
+                    do {
+                        _ = try await socket.sendChat(clientID: clientID, text: text, reply: reply)
+                        PhoneHopLog.mark("phone.socket.ack")
+                        return
+                    } catch SocketSendError.unavailable {
+                    } catch SocketSendError.closed {
+                        // The socket closed after the frame left. The Mac may have taken it, and the same id makes the HTTPS send safe.
+                    }
+                }
+                PhoneHopLog.mark("phone.post")
+                _ = try await client.sendMessage(text: text, uploadIDs: uploadIDs, reply: reply, clientID: clientID)
+                PhoneHopLog.mark("phone.ack")
+            }
             errorMessage = nil
+        } catch SocketSendError.refused(_, let message) {
+            mark(.failed(message))
+            return false
         } catch ClientError.unauthorized {
             mark(.failed("Sign in again to send."))
             onUnauthorized()

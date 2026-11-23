@@ -69,11 +69,15 @@ struct MainTabs: View {
         let client = IronPetClient(endpoint: device.endpoint, token: device.token)
         self.client = client
         // The Mac allows three sockets per device and five screens want events, so they share one.
-        let events = SharedEventSource(EventConnection(client: client))
+        let connection = EventConnection(client: client)
+        let events = SharedEventSource(connection)
         let unauthorized: () -> Void = { [weak model] in model?.handleUnauthorized() }
         _tasks = State(initialValue: TasksModel(client: client, events: events, onUnauthorized: unauthorized))
         _pet = State(initialValue: PetModel(client: client, events: events, cache: AssetCache(directory: Self.assetsDirectory), onUnauthorized: unauthorized))
-        _chat = State(initialValue: ChatModel(client: client, events: events, onUnauthorized: unauthorized))
+        let chatModel = ChatModel(client: client, events: events, onUnauthorized: unauthorized)
+        // Typed messages go over the same socket the events arrive on.
+        chatModel.socket = connection
+        _chat = State(initialValue: chatModel)
         _today = State(initialValue: TodayModel(client: client, events: events, onUnauthorized: unauthorized))
         _agents = State(initialValue: AgentsModel(client: client, events: events, onUnauthorized: unauthorized))
         _alerts = State(initialValue: AlertsModel(client: client, events: events, onUnauthorized: unauthorized))

@@ -6,7 +6,7 @@ public protocol EventSignalSource: Sendable {
     func signals() -> AsyncStream<EventSignal>
 }
 
-extension EventConnection: EventSignalSource {}
+extension EventConnection: EventSignalSource, ChatSocket {}
 
 /// One event socket for every screen. The Mac allows three sockets per device, and each tab model wants the stream, so they share this:
 /// the first subscriber opens the socket, every later one gets the same signals, and the socket closes with the last.
