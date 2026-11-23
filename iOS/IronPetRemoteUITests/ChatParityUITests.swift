@@ -87,12 +87,16 @@ final class ChatParityUITests: XCTestCase {
 
     private var transcript: XCUIElement { any("transcript").firstMatch }
 
-    /// Scrolls the transcript until `element` can be hit, up to `limit` swipes.
+    /// Scrolls the transcript until `element` can be hit, up to `limit` swipes in the given direction, then back the other way.
+    /// The default chat text is one step bigger, so a row can end up behind the composer at the top of the transcript.
     private func scroll(to element: XCUIElement, up: Bool, limit: Int = 12) {
-        var swipes = 0
-        while !element.isHittable, swipes < limit {
-            if up { transcript.swipeDown(velocity: .fast) } else { transcript.swipeUp(velocity: .fast) }
-            swipes += 1
+        for direction in [up, !up] {
+            var swipes = 0
+            while !element.isHittable, swipes < limit {
+                if direction { transcript.swipeDown(velocity: .fast) } else { transcript.swipeUp(velocity: .slow) }
+                swipes += 1
+            }
+            if element.isHittable { return }
         }
     }
 

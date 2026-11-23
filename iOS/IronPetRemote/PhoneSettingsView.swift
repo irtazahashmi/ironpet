@@ -7,10 +7,17 @@ import UIKit
 struct PhoneSettingsView: View {
     let model: PhoneSettingsModel
     @Environment(VoiceModel.self) private var voice: VoiceModel?
+    @AppStorage(ChatTextSize.storageKey) private var chatTextSize = ChatTextSize.default.rawValue
 
     var body: some View {
         Form {
             Group {
+                Section("Chat") {
+                    Picker("Chat text size", selection: $chatTextSize) {
+                        ForEach(ChatTextSize.allCases) { Text($0.label).tag($0.rawValue) }
+                    }
+                    .accessibilityIdentifier("chat-text-size")
+                }
                 if let message = model.errorMessage {
                     Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("settings-error")
                 }
