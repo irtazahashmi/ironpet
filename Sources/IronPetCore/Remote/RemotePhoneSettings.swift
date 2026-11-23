@@ -74,6 +74,41 @@ package struct RemotePhoneSettings {
         return result
     }
 
+    // MARK: Background image
+
+    /// The kind of image `data` is, from its first bytes: JPEG, PNG or HEIC. The file name and the request's content type are not trusted.
+    package static func imageExtension(of data: Data) -> String? {
+        let head = [UInt8](data.prefix(12))
+        if head.count >= 3, head[0] == 0xFF, head[1] == 0xD8, head[2] == 0xFF { return "jpg" }
+        if head.count >= 8, head[0..<8].elementsEqual([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]) { return "png" }
+        if head.count >= 12, String(decoding: head[4..<8], as: UTF8.self) == "ftyp",
+           ["heic", "heix", "hevc", "hevx", "mif1", "msf1"].contains(String(decoding: head[8..<12], as: UTF8.self)) { return "heic" }
+        return nil
+    }
+
+    /// Makes the image the custom chat background and returns the new settings. The size limit is the attachment limit. The Mac
+    /// stores the image as the user's own pick would be stored, so the Mac and every phone show it.
+    package func uploadBackground(_ data: Data) async throws -> [String: Any] {
+        guard !data.isEmpty else { throw RemoteFailure.invalid("the image is empty") }
+        guard data.count <= RemoteUploads.maxBytes else {
+            throw RemoteFailure(status: 413, code: "too_large", message: "the image is larger than \(RemoteUploads.maxBytes) bytes")
+        }
+        guard let ext = Self.imageExtension(of: data) else {
+            throw RemoteFailure(status: 415, code: "unsupported_type", message: "the background must be a JPEG, PNG or HEIC image")
+        }
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-background-\(UUID().uuidString)")
+        let file = folder.appendingPathComponent("upload.\(ext)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try data.write(to: file)
+        } catch {
+            throw RemoteFailure(status: 500, code: "failed", message: "the Mac could not store the image")
+        }
+        try api.pet.importBackground(file)
+        return get()
+    }
+
     // MARK: Pets
 
     /// The gallery. A pet's id is a hash of its sheet's path, so the Mac's folder names stay on the Mac.

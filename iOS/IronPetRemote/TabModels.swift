@@ -168,7 +168,8 @@ final class PetModel: SocketModel {
         case RemoteEvent.assetsChanged:
             await reloadPet(applyMood: false)
             await syncAssets()
-        case RemoteEvent.alertsChanged, RemoteEvent.agentsChanged: await reloadPet(applyMood: false)
+        // The Mac's background (and its accent colour) are part of the pet resource, so a change in the Mac's Settings shows at once.
+        case RemoteEvent.alertsChanged, RemoteEvent.agentsChanged, RemoteEvent.settingsChanged: await reloadPet(applyMood: false)
         default: break
         }
     }

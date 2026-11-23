@@ -77,5 +77,7 @@ public enum APIPath {
     public static let settings = "/v1/settings"
     public static let settingsPets = "/v1/settings/pets"
     public static let settingsPet = "/v1/settings/pet"
+    /// POST the raw bytes of a JPEG, PNG or HEIC image to make it the custom chat background.
+    public static let settingsBackground = "/v1/settings/background"
     public static let usage = "/v1/usage"
 }

@@ -281,7 +281,8 @@ package final class PetAPI {
                 assets.insert(ResolvedAsset(entry: active, url: url), at: 0)
             }
             if let custom, !custom.contains("/") {
-                let url = folders.backgroundsFolder.appendingPathComponent(custom)
+                // A phone gets a copy of at most 2400 px on the long side, so a large photo does not cross the relay in full.
+                let url = folders.phoneBackground(named: custom) ?? folders.backgroundsFolder.appendingPathComponent(custom)
                 if var image = Self.entry(.background, url) {
                     image.id = "chat.background"
                     assets.append(ResolvedAsset(entry: image, url: url))

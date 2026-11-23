@@ -115,4 +115,30 @@ final class ChatBackgroundTests: XCTestCase {
             }
         }
     }
+
+    private func writePNG(width: Int, height: Int, alpha: Bool, to url: URL) throws {
+        let rep = try XCTUnwrap(NSBitmapImageRep(bitmapDataPlanes: nil, pixelsWide: width, pixelsHigh: height, bitsPerSample: 8, samplesPerPixel: 4,
+                                                 hasAlpha: true, isPlanar: false, colorSpaceName: .deviceRGB, bytesPerRow: 0, bitsPerPixel: 0))
+        if let data = rep.bitmapData {
+            for index in stride(from: 0, to: rep.bytesPerRow * height, by: 4) { data[index] = 200; data[index + 1] = 40; data[index + 2] = 40; data[index + 3] = alpha ? 0 : 255 }
+        }
+        try XCTUnwrap(rep.representation(using: .png, properties: [:])).write(to: url)
+    }
+
+    func testThePhoneCopyOfATransparentImageStaysAPNGAndOfAnOpaqueOneIsAJPEG() throws {
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        try writePNG(width: 3000, height: 1000, alpha: true, to: dir.appendingPathComponent("clear.png"))
+        try writePNG(width: 3000, height: 1000, alpha: false, to: dir.appendingPathComponent("solid.png"))
+        let clear = try XCTUnwrap(ChatBackground.phoneCopy(of: "clear.png", in: dir))
+        XCTAssertEqual(clear.pathExtension, "png", "a JPEG has no alpha and would turn the clear pixels black")
+        let source = try XCTUnwrap(CGImageSourceCreateWithURL(clear as CFURL, nil))
+        let image = try XCTUnwrap(CGImageSourceCreateImageAtIndex(source, 0, nil))
+        XCTAssertEqual(image.width, 2400)
+        let alpha = try XCTUnwrap(NSBitmapImageRep(cgImage: image).colorAt(x: 10, y: 10)?.alphaComponent)
+        XCTAssertEqual(alpha, 0, accuracy: 0.01, "the transparency survives")
+        XCTAssertEqual(try XCTUnwrap(ChatBackground.phoneCopy(of: "solid.png", in: dir)).pathExtension, "jpg")
+        // Importing a new image removes the old phone copy, whichever kind it is.
+        _ = try ChatBackground.importImage(from: dir.appendingPathComponent("solid.png"), into: dir, replacing: "clear.png")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: clear.path))
+    }
 }
