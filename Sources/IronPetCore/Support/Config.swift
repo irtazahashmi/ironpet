@@ -75,7 +75,8 @@ package struct Config: Codable, Equatable {
             captureRegion: String = "cmd+opt+ctrl+g",
             voice: String = "cmd+opt+v",
             meeting: String = "",
-            voiceMode: String = "cmd+opt+ctrl+v"
+            voiceMode: String = "cmd+opt+ctrl+v",
+            copyVersion: String = ""
         ) {
             self.chat = chat
             self.captureWindow = captureWindow
@@ -83,6 +84,7 @@ package struct Config: Codable, Equatable {
             self.voice = voice
             self.meeting = meeting
             self.voiceMode = voiceMode
+            self.copyVersion = copyVersion
         }
 
         package var chat = "cmd+opt+g"
@@ -95,6 +97,8 @@ package struct Config: Codable, Equatable {
         package var meeting = ""
         /// Starts and ends a voice conversation with the pet. Only registered while voice mode is on.
         package var voiceMode = "cmd+opt+ctrl+v"
+        /// Copies the app version and commit to the clipboard. No default binding.
+        package var copyVersion = ""
     }
 
     /// Voice notes: record the mic and send the audio to an OpenAI-compatible transcription server. The API key is

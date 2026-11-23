@@ -255,7 +255,8 @@ Open **Settings** (<kbd>⌘,</kbd> or right-click Ghost → Settings…) to rena
     "captureRegion": "cmd+opt+ctrl+g",
     "voice": "cmd+opt+v",
     "meeting": "",
-    "voiceMode": "cmd+opt+ctrl+v"
+    "voiceMode": "cmd+opt+ctrl+v",
+    "copyVersion": ""
   },
   "reminders": { "paused": false, "idleResetMinutes": 5, "snoozeMinutes": 10 },
   "automations": { "logRetentionDays": 14, "autoFix": true, "autoApprove": false },
