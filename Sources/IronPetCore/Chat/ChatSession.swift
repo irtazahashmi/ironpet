@@ -293,7 +293,7 @@ package final class ChatSession {
         didSet { events?.publish(.chatState, id: "options") }
     }
     package private(set) var agent: ACPAgent =
-        AgentCatalog.agent(id: UserDefaults.standard.string(forKey: "chatAgent")) ?? AgentCatalog.agent(id: "cursor")! {
+        AgentCatalog.agent(id: ChatAgentPreference.resolvedID())! {
         willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "options") }
     }
@@ -525,7 +525,7 @@ package final class ChatSession {
 
     private func select(_ next: ACPAgent) {
         agent = next
-        UserDefaults.standard.set(next.id, forKey: "chatAgent")
+        UserDefaults.standard.set(next.id, forKey: ChatAgentPreference.key)
         model = UserDefaults.standard.string(forKey: "chatModel.\(next.id)")
         models = Self.cachedModels(for: next)
         commands = SlashCommand.cached(for: next.id)
