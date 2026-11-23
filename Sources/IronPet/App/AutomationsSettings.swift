@@ -7,10 +7,12 @@ import SwiftUI
 struct AutomationsSettings: View {
     @ObservedObject var model: SettingsModel
     @ObservedObject private var config = SettingsAPI.live
+    /// The automation to show in full when the tab appears. The preview renderer uses it.
+    var open: String?
 
     var body: some View {
         if let service = model.automations {
-            AutomationList(api: service, config: config, showLogs: model.showLogs, createWithAgent: model.createWithAgent)
+            AutomationList(api: service, config: config, showLogs: model.showLogs, createWithAgent: model.createWithAgent, open: open)
         } else {
             ListScreen(title: IronPetSection.automations.title) {
                 Text("Automations are not ready yet.").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -19,7 +21,8 @@ struct AutomationsSettings: View {
     }
 }
 
-private struct AutomationList: View {
+/// The Automations screen once the service is ready. Internal so the tests and the preview renderer can build it.
+struct AutomationList: View {
     @ObservedObject var api: AutomationsAPI
     @ObservedObject var config: SettingsAPI
     let showLogs: (String?) -> Void
@@ -29,7 +32,15 @@ private struct AutomationList: View {
     @State private var reviewing: Automation?
     @State private var tick = 0
     @State private var search = ""
-    @State private var nav = ListNavigation<String>()
+    @State private var nav: ListNavigation<String>
+
+    init(api: AutomationsAPI, config: SettingsAPI, showLogs: @escaping (String?) -> Void, createWithAgent: @escaping (String) -> Void, open: String? = nil) {
+        self.api = api
+        self.config = config
+        self.showLogs = showLogs
+        self.createWithAgent = createWithAgent
+        _nav = State(initialValue: ListNavigation(opened: open))
+    }
 
     var body: some View {
         ListScreen(title: IronPetSection.automations.title, search: $search, detailOpen: nav.opened != nil) {
@@ -55,30 +66,58 @@ private struct AutomationList: View {
         if let a = api.automations.first(where: { $0.id == id }) {
             let status = try? api.status(a.id)
             ListDetailPage(section: "Automations", onBack: { nav.close() }) {
-                Text(a.name).font(.system(size: 24, weight: .bold)).textSelection(.enabled)
-                Toggle("Enabled", isOn: Binding(get: { a.enabled }, set: { on in try? api.setEnabled(a.id, on) }))
-                HStack(spacing: 8) {
-                    Button("Show logs…") { showLogs(a.id) }
-                    Button("Run now") { Task { _ = try? await api.runNow(a.id) } }
-                    Button("Edit…") { editing = a }
-                    Button("Delete", role: .destructive) { try? api.delete(a.id); nav.close() }
-                }
-                .buttonStyle(.bordered)
-                DetailField(label: "Schedule", value: subtitle(a))
-                if let last = status?.lastRun {
-                    DetailField(label: "Last run", value: "\(last.outcome)\(last.output.isEmpty ? "" : ", \(last.output)")")
-                }
-                if let approval = status?.approval {
-                    DetailField(label: "Approval", value: approval == .rejected ? "Rejected" : "Waiting for your approval")
-                    HStack(spacing: 6) {
-                        Button("Review…") { reviewing = a }
-                        Button("Approve") { try? api.approve(a.id); tick += 1 }.buttonStyle(.borderedProminent)
-                        if approval != .rejected { Button("Reject") { try? api.reject(a.id); tick += 1 } }
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 8) {
+                        Chip(text: a.enabled ? "On" : "Off", tint: a.enabled ? .green : .gray)
+                        if let approval = status?.approval {
+                            Chip(text: approval == .rejected ? "Rejected" : "Needs approval", tint: approval == .rejected ? .red : .orange)
+                        }
                     }
+                    Text(a.name).font(.system(size: 24, weight: .bold)).textSelection(.enabled)
+                    HStack(spacing: 8) {
+                        Button("Show logs…") { showLogs(a.id) }
+                        Button("Run now") { Task { _ = try? await api.runNow(a.id) } }
+                        Button("Edit…") { editing = a }
+                        Button("Delete", role: .destructive) { try? api.delete(a.id); nav.close() }
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
                 }
-                if let hint = setupHint(a) { Label(hint, systemImage: "info.circle").font(.caption).foregroundStyle(.orange) }
-                DetailField(label: "Runs", value: a.action.type == "prompt" ? "A prompt for the agent" : a.action.type)
-                DetailField(label: "Created by", value: a.createdBy)
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .cardMaterial()
+                CardSection(title: "Summary") {
+                    SummaryRow(label: "Enabled", symbol: "power") {
+                        Toggle("Enabled", isOn: Binding(get: { a.enabled }, set: { on in try? api.setEnabled(a.id, on) }))
+                            .labelsHidden().toggleStyle(.switch)
+                    }
+                    Divider()
+                    SummaryRow(label: "Schedule", symbol: "clock") { value(subtitle(a)) }
+                    if let last = status?.lastRun {
+                        Divider()
+                        SummaryRow(label: "Last run", symbol: "arrow.clockwise") { value("\(last.outcome)\(last.output.isEmpty ? "" : ", \(last.output)")") }
+                    }
+                    if let approval = status?.approval {
+                        Divider()
+                        SummaryRow(label: "Approval", symbol: SharedSymbols.approval) { value(approval == .rejected ? "Rejected" : "Waiting for your approval") }
+                        HStack(spacing: 6) {
+                            Spacer()
+                            Button("Review…") { reviewing = a }
+                            Button("Approve") { try? api.approve(a.id); tick += 1 }.buttonStyle(.borderedProminent)
+                            if approval != .rejected { Button("Reject") { try? api.reject(a.id); tick += 1 } }
+                        }
+                        .controlSize(.small)
+                        .padding(.horizontal, 14).padding(.bottom, 10)
+                    }
+                    Divider()
+                    SummaryRow(label: "Runs", symbol: "play") { value(a.action.type == "prompt" ? "A prompt for the agent" : a.action.type) }
+                    Divider()
+                    SummaryRow(label: "Created by", symbol: "person") { value(a.createdBy) }
+                }
+                if let hint = setupHint(a) {
+                    Label(hint, systemImage: "info.circle").font(.caption).foregroundStyle(.orange)
+                        .padding(10).frame(maxWidth: .infinity, alignment: .leading).cardMaterial()
+                }
             }
             .onExitCommand { nav.close() }
         } else {
@@ -86,59 +125,80 @@ private struct AutomationList: View {
         }
     }
 
-    private var form: some View {
-        Form {
-            Section {
-                Toggle("Pause all reminders", isOn: binding(\.paused))
-            } footer: {
-                Text("A reminder on keyboard time only counts while you're at the keyboard. While an agent is working it can come a little early so you take the break while you'd be waiting anyway. Agents can add and change automations; anything that runs a command or a prompt waits for your Approve first.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Automations") {
-                if api.automations.isEmpty { Text("None yet. Ask an agent, or add one.").foregroundStyle(.secondary) }
-                else if shown.isEmpty { Text("No automation has that text in its name or schedule.").foregroundStyle(.secondary) }
-                ForEach(shown) { automation in row(automation) }
-                HStack {
-                    Button("New automation…") { asking = true }
-                    Button("Show logs") { showLogs(nil) }
-                    Button("Open automations.json") { NSWorkspace.shared.open(api.file) }
-                    Spacer()
-                }
-            }
-            Section {
-                Toggle("Auto-approve automation changes", isOn: Binding(
-                    get: { config.config.automations.autoApprove },
-                    set: { on in
-                        config.update { $0.automations.autoApprove = on }
-                        if on { api.reviewApprovals() }
-                    }))
-            } footer: {
-                Text("Agent-written scripts can run shell commands without review.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section {
-                Toggle("Ask the agent to fix automations that fail", isOn: Binding(
-                    get: { config.config.automations.autoFix },
-                    set: { on in config.update { $0.automations.autoFix = on } }))
-            } footer: {
-                Text("When a poll, script, shell command or prompt fails, ironpet sends the error to the current chat and asks your agent to fix it with the automation tools. Changes to a command, script or prompt still wait for your Approve. At most one request per automation every 6 hours, and only after it has run fine since the last one.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section("Timing") {
-                LabeledContent("Reset after being away") { minutes(binding(\.idleResetMinutes), range: 1...60) }
-                LabeledContent("Snooze for") { minutes(binding(\.snoozeMinutes), range: 1...120) }
-                LabeledContent("Keep logs for") {
-                    Stepper(value: Binding(get: { config.config.automations.logRetentionDays },
-                                           set: { days in config.update { $0.automations.logRetentionDays = days } }), in: 1...365, step: 1) {
-                        Text("\(config.config.automations.logRetentionDays) day\(config.config.automations.logRetentionDays == 1 ? "" : "s")")
-                            .monospacedDigit().frame(minWidth: 56, alignment: .trailing)
-                    }
-                    .fixedSize()
-                }
-            }
+    private func value(_ text: String) -> some View {
+        Text(text).multilineTextAlignment(.trailing).textSelection(.enabled)
+    }
+
+    /// A line of explanation under a card.
+    private func footer(_ text: String) -> some View {
+        Text(text).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4).frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func switchRow(_ title: String, isOn: Binding<Bool>) -> some View {
+        HStack {
+            Text(title)
+            Spacer()
+            Toggle(title, isOn: isOn).labelsHidden().toggleStyle(.switch)
         }
-        .formStyle(.grouped)
-        .scrollContentBackground(.hidden)
+        .font(.system(size: 13.5))
+        .padding(.horizontal, 14)
+        .frame(minHeight: 40)
+    }
+
+    private var form: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 16) {
+                CardSection(title: "Reminders") { switchRow("Pause all reminders", isOn: binding(\.paused)) }
+                footer("A reminder on keyboard time only counts while you're at the keyboard. While an agent is working it can come a little early so you take the break while you'd be waiting anyway. Agents can add and change automations; anything that runs a command or a prompt waits for your Approve first.")
+                CardSection(title: "Automations") {
+                    if api.automations.isEmpty { Text("None yet. Ask an agent, or add one.").foregroundStyle(.secondary).padding(14) }
+                    else if shown.isEmpty { Text("No automation has that text in its name or schedule.").foregroundStyle(.secondary).padding(14) }
+                    ForEach(shown) { automation in
+                        if automation.id != shown.first?.id { Divider() }
+                        row(automation)
+                    }
+                    Divider()
+                    HStack {
+                        Button("New automation…") { asking = true }
+                        Button("Show logs") { showLogs(nil) }
+                        Button("Open automations.json") { NSWorkspace.shared.open(api.file) }
+                        Spacer()
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                }
+                CardSection(title: "Approval") {
+                    switchRow("Auto-approve automation changes", isOn: Binding(
+                        get: { config.config.automations.autoApprove },
+                        set: { on in
+                            config.update { $0.automations.autoApprove = on }
+                            if on { api.reviewApprovals() }
+                        }))
+                }
+                footer("Agent-written scripts can run shell commands without review.")
+                CardSection(title: "Failures") {
+                    switchRow("Ask the agent to fix automations that fail", isOn: Binding(
+                        get: { config.config.automations.autoFix },
+                        set: { on in config.update { $0.automations.autoFix = on } }))
+                }
+                footer("When a poll, script, shell command or prompt fails, ironpet sends the error to the current chat and asks your agent to fix it with the automation tools. Changes to a command, script or prompt still wait for your Approve. At most one request per automation every 6 hours, and only after it has run fine since the last one.")
+                CardSection(title: "Timing") {
+                    SummaryRow(label: "Reset after being away", symbol: "moon.zzz", labelWidth: 200) { minutes(binding(\.idleResetMinutes), range: 1...60) }
+                    Divider()
+                    SummaryRow(label: "Snooze for", symbol: "bell.slash", labelWidth: 200) { minutes(binding(\.snoozeMinutes), range: 1...120) }
+                    Divider()
+                    SummaryRow(label: "Keep logs for", symbol: "tray.full", labelWidth: 200) {
+                        Stepper(value: Binding(get: { config.config.automations.logRetentionDays },
+                                               set: { days in config.update { $0.automations.logRetentionDays = days } }), in: 1...365, step: 1) {
+                            Text("\(config.config.automations.logRetentionDays) day\(config.config.automations.logRetentionDays == 1 ? "" : "s")")
+                                .monospacedDigit().frame(minWidth: 56, alignment: .trailing)
+                        }
+                        .fixedSize()
+                    }
+                }
+            }
+            .padding(.horizontal, ListScreenMetrics.gutter + 4)
+            .padding(.vertical, 14)
+        }
     }
 
     private func row(_ a: Automation) -> some View {
@@ -186,6 +246,7 @@ private struct AutomationList: View {
             } label: { Image(systemName: SharedSymbols.more) }
                 .menuStyle(.borderlessButton).fixedSize()
         }
+        .padding(.horizontal, 14).padding(.vertical, 10)
     }
 
     /// The time of a daily automation with one time, and Weekdays only when its days are every day or Monday to Friday.

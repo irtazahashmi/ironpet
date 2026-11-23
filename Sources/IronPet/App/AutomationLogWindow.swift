@@ -1,5 +1,4 @@
 import AppKit
-import enum IronPetKit.SharedTheme
 import IronPetCore
 import SwiftUI
 
@@ -68,11 +67,12 @@ final class AutomationLogModel: ObservableObject {
     }
 }
 
-private struct AutomationLogView: View {
+/// The log window's content: the filters in one card, the runs in another, and the open run as cards beside them.
+struct AutomationLogView: View {
     @ObservedObject var model: AutomationLogModel
 
     var body: some View {
-        VStack(spacing: 0) {
+        VStack(spacing: 12) {
             if let reason = model.unavailable { DatabaseBanner(reason: reason) }
             HStack {
                 Picker("Automation", selection: $model.filter) {
@@ -86,15 +86,16 @@ private struct AutomationLogView: View {
                 Button("Clear", role: .destructive) { model.clear() }
             }
             .padding(10)
-            Divider()
+            .frame(maxWidth: .infinity)
+            .cardMaterial()
             HSplitView {
-                list.frame(minWidth: 380)
-                detail.frame(minWidth: 240)
+                list.frame(minWidth: 380).padding(.trailing, 6)
+                detail.frame(minWidth: 240).padding(.leading, 6)
             }
-            Divider()
             Text("Logs older than \(model.retentionDays) day\(model.retentionDays == 1 ? "" : "s") are deleted. Change this under Automations in the ironpet window.")
-                .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(8)
+                .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 4)
         }
+        .padding(12)
     }
 
     private var list: some View {
@@ -118,30 +119,41 @@ private struct AutomationLogView: View {
                     }
                     .tag(entry.id)
                 }
+                .scrollContentBackground(.hidden)
             }
         }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .cardMaterial()
     }
 
     private var detail: some View {
         Group {
             if let entry = model.logs.first(where: { $0.id == model.selection }) {
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text(model.name(entry.automation)).font(.headline)
-                        Text("\(entry.outcome) · \(entry.date.formatted(date: .abbreviated, time: .standard))" + (entry.duration > 0 ? " · \(String(format: "%.2f", entry.duration)) s" : ""))
-                            .font(.caption).foregroundStyle(.secondary)
-                        Text(entry.summary).font(.callout).textSelection(.enabled)
+                    VStack(alignment: .leading, spacing: 16) {
+                        VStack(alignment: .leading, spacing: 8) {
+                            Chip(text: entry.outcome, tint: color(entry.outcome))
+                            Text(model.name(entry.automation)).font(.headline)
+                            Text(entry.date.formatted(date: .abbreviated, time: .standard) + (entry.duration > 0 ? " · \(String(format: "%.2f", entry.duration)) s" : ""))
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .cardMaterial()
+                        CardSection(title: "Summary") {
+                            Text(entry.summary).font(.callout).textSelection(.enabled)
+                                .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                        }
                         if !entry.detail.isEmpty, entry.detail != entry.summary {
-                            Text(entry.detail).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
-                                .padding(8).frame(maxWidth: .infinity, alignment: .leading)
-                                .background(RoundedRectangle(cornerRadius: 6).fill(SharedTheme.card))
+                            CardSection(title: "Output") {
+                                Text(entry.detail).font(.system(.caption, design: .monospaced)).textSelection(.enabled)
+                                    .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                            }
                         }
                     }
-                    .padding(12)
-                    .frame(maxWidth: .infinity, alignment: .leading)
                 }
             } else {
-                Text("Select a run to see its output.").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
+                Text("Select a run to see its output.").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity).cardMaterial()
             }
         }
     }

@@ -269,6 +269,26 @@ enum PreviewRenderer {
                 render(SettingsView(model: settingsModel).frame(height: 600), to: dir, "settings-window-\(tab)" + suffix, scheme: scheme)
             }
         }
+        // The detail pages of Screen, Transcripts and Automations, and the automation log window, as cards.
+        let slackCapture = capturesStore.recent(limit: 50).first
+        for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
+            render(ScreenCaptureDetail(title: slackCapture.map { "\($0.appName): \(ScreenSectionText.windowLabel($0))" } ?? "Slack: ana (DM) - Acme",
+                                       app: slackCapture?.appName ?? "Slack", at: slackCapture?.at ?? Date(),
+                                       text: slackCapture?.text ?? "Ana\nCan you review PR 4649 before lunch?", onBack: {})
+                .frame(width: 780, height: 460).panel(), to: dir, "screen-detail" + suffix, scheme: scheme)
+            render(TranscriptsView(meetings: meetings, focus: .constant(meetingLibrary.meetings.first?.id))
+                .frame(width: 780, height: 560).panel(), to: dir, "transcript-detail" + suffix, scheme: scheme)
+            render(AutomationsSettings(model: settingsModel).frame(width: 780, height: 1100).panel(), to: dir, "automations" + suffix, scheme: scheme)
+            render(AutomationsSettings(model: settingsModel, open: settingsModel.automations?.automations.first?.id).frame(width: 780, height: 640).panel(),
+                   to: dir, "automation-detail" + suffix, scheme: scheme)
+            if let api = settingsModel.automations {
+                let logModel = AutomationLogModel()
+                logModel.api = api
+                logModel.reload()
+                logModel.selection = logModel.logs.first { $0.outcome == "failed" }?.id
+                render(AutomationLogView(model: logModel).frame(width: 860, height: 520).panel(), to: dir, "automation-logs" + suffix, scheme: scheme)
+            }
+        }
         // Voice mode's pill in each state, with what was heard.
         let pills: [(VoiceConversation.State, VoiceConversation.Mode, String?, String)] = [
             (.listening, .microphone, nil, "listening"), (.thinking, .microphone, "What's going on with my jobs?", "thinking"),
@@ -468,7 +488,13 @@ enum PreviewRenderer {
             storage: .init(users: { [] }, add: { _ in }, remove: { _ in }, offset: { 0 }, setOffset: { _ in }))
         let model = SettingsModel(actions: .init(suspendHotKeys: { _ in }, buildPet: { _ in }),
                                   announcer: Announcer(notifier: Notifier()), telegram: telegram)
-        model.automations = AutomationsAPI(service: AutomationService(store: store, engine: AutomationEngine(env: .init())))
+        let service = AutomationService(store: store, engine: AutomationEngine(env: .init()))
+        let api = AutomationsAPI(service: service)
+        let sample = api.automations.first?.id ?? AutomationDefaults.githubID
+        service.log(sample, "failed", "gh: could not reach api.github.com", detail: "gh pr list --author @me\nerror connecting to api.github.com\ncheck your internet connection", duration: 1.25)
+        service.log(sample, "fired", "2 pull requests changed", detail: "#4649 Add screen capture: approved\n#4651 Fix the flaky login test: checks passed", duration: 0.8)
+        service.log(sample, "baseline", "First look at your pull requests", duration: 0.6)
+        model.automations = api
         return model
     }
 

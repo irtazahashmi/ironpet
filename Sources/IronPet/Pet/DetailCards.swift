@@ -43,13 +43,15 @@ struct CardSection<Trailing: View, Content: View>: View {
 struct SummaryRow<Value: View>: View {
     let label: String
     let symbol: String
+    /// Wider than the task page's labels where a row's name is longer, such as "Reset after being away".
+    var labelWidth: CGFloat = 140
     @ViewBuilder let value: () -> Value
 
     var body: some View {
         HStack(spacing: 8) {
             Label { Text(label) } icon: { Image(systemName: symbol).frame(width: 16) }
                 .foregroundStyle(.secondary)
-                .frame(width: 140, alignment: .leading)
+                .frame(width: labelWidth, alignment: .leading)
             Spacer(minLength: 8)
             value()
         }
