@@ -40,7 +40,9 @@ class SocketModel {
 
     func refresh() async {
         await reload()
-        loaded = true
+        // A cancelled load never read the Mac, so an empty list after it is not "no meetings". The load that follows sets `loaded`.
+        // This checks the calling task, so a second refresh running at the same time cannot change the answer.
+        if !Task.isCancelled { loaded = true }
     }
 
     func handle(_ signal: EventSignal) async {
@@ -67,6 +69,8 @@ class SocketModel {
         } catch ClientError.unauthorized {
             onUnauthorized()
         } catch is CancellationError {
+            // The app cancelled the request. It is not a failure to show.
+        } catch let error as URLError where error.code == .cancelled {
         } catch {
             errorMessage = message(for: error)
         }
