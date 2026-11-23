@@ -19,46 +19,46 @@ final class ChatAgentPreferenceTests: XCTestCase {
 
     func testMigratesClaudeFromLegacyKey() {
         defaults.set("claude", forKey: ChatAgentPreference.legacyKey)
-        XCTAssertEqual(ChatAgentPreference.resolvedID(defaults: defaults), "claude")
+        XCTAssertEqual(ChatAgentPreference.resolveID(defaults: defaults), "claude")
         XCTAssertEqual(defaults.string(forKey: ChatAgentPreference.key), "claude")
         XCTAssertEqual(defaults.string(forKey: ChatAgentPreference.legacyKey), "claude", "legacy key stays for idempotency")
     }
 
     func testMigratesCursorFromLegacyKey() {
         defaults.set("cursor", forKey: ChatAgentPreference.legacyKey)
-        XCTAssertEqual(ChatAgentPreference.resolvedID(defaults: defaults), "cursor")
+        XCTAssertEqual(ChatAgentPreference.resolveID(defaults: defaults), "cursor")
         XCTAssertEqual(defaults.string(forKey: ChatAgentPreference.key), "cursor")
     }
 
     func testPrefersExistingChatAgent() {
         defaults.set("claude", forKey: ChatAgentPreference.key)
         defaults.set("cursor", forKey: ChatAgentPreference.legacyKey)
-        XCTAssertEqual(ChatAgentPreference.resolvedID(defaults: defaults), "claude")
+        XCTAssertEqual(ChatAgentPreference.resolveID(defaults: defaults), "claude")
         XCTAssertEqual(defaults.string(forKey: ChatAgentPreference.legacyKey), "cursor", "does not rewrite when new key is set")
     }
 
     func testIgnoresUnknownLegacyValue() {
         defaults.set("not-an-agent", forKey: ChatAgentPreference.legacyKey)
-        XCTAssertEqual(ChatAgentPreference.resolvedID(defaults: defaults), ChatAgentPreference.defaultID)
+        XCTAssertEqual(ChatAgentPreference.resolveID(defaults: defaults), ChatAgentPreference.defaultID)
         XCTAssertNil(defaults.string(forKey: ChatAgentPreference.key))
     }
 
     func testDefaultsToCursorWhenBothMissing() {
-        XCTAssertEqual(ChatAgentPreference.resolvedID(defaults: defaults), "cursor")
+        XCTAssertEqual(ChatAgentPreference.resolveID(defaults: defaults), "cursor")
         XCTAssertNil(defaults.string(forKey: ChatAgentPreference.key))
     }
 
     func testSecondResolveIsIdempotent() {
         defaults.set("claude", forKey: ChatAgentPreference.legacyKey)
-        XCTAssertEqual(ChatAgentPreference.resolvedID(defaults: defaults), "claude")
-        XCTAssertEqual(ChatAgentPreference.resolvedID(defaults: defaults), "claude")
+        XCTAssertEqual(ChatAgentPreference.resolveID(defaults: defaults), "claude")
+        XCTAssertEqual(ChatAgentPreference.resolveID(defaults: defaults), "claude")
         XCTAssertEqual(defaults.string(forKey: ChatAgentPreference.key), "claude")
     }
 
     func testIgnoresUnknownChatAgentAndFallsBackToLegacy() {
         defaults.set("gone", forKey: ChatAgentPreference.key)
         defaults.set("claude", forKey: ChatAgentPreference.legacyKey)
-        XCTAssertEqual(ChatAgentPreference.resolvedID(defaults: defaults), "claude")
+        XCTAssertEqual(ChatAgentPreference.resolveID(defaults: defaults), "claude")
         XCTAssertEqual(defaults.string(forKey: ChatAgentPreference.key), "claude")
     }
 

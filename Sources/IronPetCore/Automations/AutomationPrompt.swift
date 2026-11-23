@@ -7,7 +7,7 @@ package enum AutomationPrompt {
     /// The catalog id of the agent a background run of this automation uses: its own `agent`, else the chat's, else Cursor.
     package static func agentID(_ automation: Automation, defaults: UserDefaults = .standard) -> String {
         if let id = automation.action.agent, AgentCatalog.agent(id: id) != nil { return id }
-        return ChatAgentPreference.resolvedID(defaults: defaults)
+        return ChatAgentPreference.resolveID(defaults: defaults)
     }
 
     /// `agentOverride` lets tests run a scripted agent instead of one from the catalog.

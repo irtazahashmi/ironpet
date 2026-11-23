@@ -293,7 +293,7 @@ package final class ChatSession {
         didSet { events?.publish(.chatState, id: "options") }
     }
     package private(set) var agent: ACPAgent =
-        AgentCatalog.agent(id: ChatAgentPreference.resolvedID())! {
+        AgentCatalog.agent(id: ChatAgentPreference.resolveID())! {
         willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "options") }
     }

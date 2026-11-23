@@ -11,7 +11,7 @@ package enum ChatAgentPreference {
 
     /// Returns a known catalog id. When `chatAgent` is missing or unknown and `chatBackend` is a known id, writes
     /// that value into `chatAgent` and returns it. Otherwise returns `cursor`.
-    package static func resolvedID(defaults: UserDefaults = .standard) -> String {
+    package static func resolveID(defaults: UserDefaults = .standard) -> String {
         if let id = defaults.string(forKey: key), AgentCatalog.agent(id: id) != nil {
             return id
         }
