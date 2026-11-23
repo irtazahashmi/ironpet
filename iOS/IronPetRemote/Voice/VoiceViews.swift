@@ -26,6 +26,34 @@ struct MicButton: View {
     }
 }
 
+/// Takes the place of the composer while a voice note records: cancel, a live waveform, the elapsed time and stop.
+struct VoiceRecordingBar: View {
+    let voice: VoiceModel
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Button { Task { await voice.cancelRecording() } } label: {
+                Image(systemName: SharedSymbols.deny).glassCircle()
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Cancel recording").accessibilityIdentifier("voice-cancel")
+            VoiceWaveform(levels: voice.levels)
+                .frame(height: 34).frame(maxWidth: .infinity)
+                .accessibilityIdentifier("voice-waveform")
+            TimelineView(.periodic(from: .now, by: 0.5)) { context in
+                let seconds = Int(max(0, context.date.timeIntervalSince(voice.startedAt ?? context.date)))
+                Text(VoiceClock.format(seconds)).font(.system(size: 15, design: .monospaced)).monospacedDigit()
+                    .accessibilityLabel("Recording time").accessibilityValue(VoiceClock.format(seconds))
+            }
+            .accessibilityIdentifier("voice-timer")
+            MicButton(voice: voice)
+        }
+        .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 8)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("voice-recording-bar")
+    }
+}
+
 /// The two voice switches of this iPhone. They are stored on the phone: the Mac setting "Read replies aloud" is about the Mac's speaker.
 struct VoiceSettingsSection: View {
     @Bindable var voice: VoiceModel

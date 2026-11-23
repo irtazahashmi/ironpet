@@ -81,7 +81,16 @@ struct MainTabs: View {
         _screen = State(initialValue: ScreenModel(client: client, events: events, gate: TranscriptGate(authenticator: Self.authenticator, reason: "Show screen text"),
                                                   onUnauthorized: unauthorized))
         _phoneSettings = State(initialValue: PhoneSettingsModel(client: client, events: events, onUnauthorized: unauthorized))
-        _voice = State(initialValue: VoiceModel(player: ReplyPlayer(engine: AudioPlayerEngine()), openChannel: { client.openVoiceChannel() }, makeMic: { EngineMicSource() }))
+        _voice = State(initialValue: Self.makeVoice(client: client))
+    }
+
+    private static func makeVoice(client: IronPetClient) -> VoiceModel {
+        #if DEBUG
+        if DebugVoice.enabled {
+            return VoiceModel(player: ReplyPlayer(engine: AudioPlayerEngine()), openChannel: { SilentVoiceChannel() }, makeMic: { PulseMicSource() })
+        }
+        #endif
+        return VoiceModel(player: ReplyPlayer(engine: AudioPlayerEngine()), openChannel: { client.openVoiceChannel() }, makeMic: { EngineMicSource() })
     }
 
     /// Face ID or the passcode. UI tests launch with `--auto-unlock`, because a simulator cannot answer the system prompt.

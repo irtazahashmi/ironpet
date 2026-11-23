@@ -622,6 +622,14 @@ private struct Composer: View {
     private static let inlineSendWidth: CGFloat = capsuleWidth + capsuleInset
 
     var body: some View {
+        if let voice, voice.state == .recording {
+            VoiceRecordingBar(voice: voice)
+        } else {
+            composer
+        }
+    }
+
+    private var composer: some View {
         GlassGroup {
             HStack(alignment: .bottom, spacing: 8) {
                 Menu {

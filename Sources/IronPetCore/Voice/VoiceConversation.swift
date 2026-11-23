@@ -1,4 +1,5 @@
 import Foundation
+import IronPetKit
 
 /// Voice mode: a spoken back-and-forth with the pet. Listening, then transcribing what was said, thinking (the front
 /// desk's turn), speaking the reply, and listening again, until the user says goodbye, presses the shortcut or Esc,
