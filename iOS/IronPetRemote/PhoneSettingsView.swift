@@ -97,14 +97,13 @@ private struct BackgroundSection: View {
 
     var body: some View {
         Section {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    choice(ChatBackgrounds.defaultID, "Default")
-                    ForEach(ChatBackgrounds.builtIns) { choice($0.id, $0.name) }
-                    if current == ChatBackgrounds.customID { choice(ChatBackgrounds.customID, "Custom image") }
-                }
-                .padding(.vertical, 4)
+            // A wrapping grid, so every option shows without scrolling sideways, as the Mac's picker wraps.
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 80), spacing: 12, alignment: .top)], alignment: .leading, spacing: 12) {
+                choice(ChatBackgrounds.defaultID, "Default")
+                ForEach(ChatBackgrounds.builtIns) { choice($0.id, $0.name) }
+                if current == ChatBackgrounds.customID { choice(ChatBackgrounds.customID, "Custom image") }
             }
+            .padding(.vertical, 4)
             photoPicker
         } header: {
             Text("Chat background")

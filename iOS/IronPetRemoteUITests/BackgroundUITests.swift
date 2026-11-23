@@ -142,6 +142,15 @@ final class BackgroundUITests: XCTestCase {
         attach("chat-paws-\(dark ? "dark" : "light")")
     }
 
+    func testChatterShowsInTheChatInDark() {
+        dark = true
+        server.pet = RemotePet(name: "Ghost", mood: "idle", badge: 0, tricks: [], background: "chatter")
+        pair()
+        openChat()
+        XCTAssertTrue(any("chat-background-chatter").waitForExistence(timeout: 20))
+        attach("chat-chatter-dark")
+    }
+
     func testTheSettingsAndTheChatShowTheBackgroundInDark() {
         dark = true
         server.pet = RemotePet(name: "Ghost", mood: "idle", badge: 0, tricks: [], background: "paws")
@@ -153,4 +162,50 @@ final class BackgroundUITests: XCTestCase {
         XCTAssertTrue(any("screen-background-paws").waitForExistence(timeout: 10))
         attach("more-paws-dark")
     }
+
+    // S3: the whole picker is on screen at once, with the Mac's selection marked.
+    func testThePickerShowsEveryOptionAndMarksTheMacsSelection() {
+        server.pet = RemotePet(name: "Ghost", mood: "idle", badge: 0, tricks: [], background: "chatter")
+        server.config.chat.background = "chatter"
+        pair()
+        openSettings()
+        reveal("background-photo") // the form draws only rows near the screen, so scroll to the last row first
+        for id in ["default", "dusk", "paws", "ghosts", "chatter", "leaves", "photo"] {
+            XCTAssertTrue(any("background-\(id)").isHittable, "background-\(id) is visible without scrolling sideways")
+        }
+        XCTAssertTrue(any("background-chatter").isSelected, "the Mac's choice is marked selected")
+        XCTAssertFalse(any("background-paws").isSelected)
+        attach("picker-chatter-\(dark ? "dark" : "light")")
+    }
+
+    // S5: every tab and every More subpage draws the chosen background.
+    func testEveryTabShowsTheBackground() {
+        server.pet = RemotePet(name: "Ghost", mood: "idle", badge: 0, tricks: [], background: "chatter")
+        pair()
+        for tab in ["Pet", "Tasks", "Agents", "More"] {
+            app.tabBars.buttons[tab].tap()
+            XCTAssertTrue(any("screen-background-chatter").waitForExistence(timeout: 10), "\(tab) shows the background")
+            attach("tab-\(tab)")
+        }
+        openChat()
+        XCTAssertTrue(any("chat-background-chatter").waitForExistence(timeout: 10))
+        attach("tab-Chat")
+    }
+
+    private func assertMoreSubpageShowsTheBackground(_ row: String) {
+        server.pet = RemotePet(name: "Ghost", mood: "idle", badge: 0, tricks: [], background: "chatter")
+        pair()
+        app.tabBars.buttons["More"].tap()
+        let link = app.buttons[row]
+        XCTAssertTrue(link.waitForExistence(timeout: 10), "\(row) is listed under More")
+        link.tap()
+        XCTAssertTrue(any("screen-background-chatter").waitForExistence(timeout: 10), "\(row) shows the background")
+        attach(row)
+    }
+
+    func testMoreAlertsShowsTheBackground() { assertMoreSubpageShowsTheBackground("more-alerts") }
+    func testMoreAutomationsShowsTheBackground() { assertMoreSubpageShowsTheBackground("more-automations") }
+    func testMoreMeetingsShowsTheBackground() { assertMoreSubpageShowsTheBackground("more-meetings") }
+    func testMoreScreenShowsTheBackground() { assertMoreSubpageShowsTheBackground("more-screen") }
+    func testMoreSettingsShowsTheBackground() { assertMoreSubpageShowsTheBackground("more-settings") }
 }
