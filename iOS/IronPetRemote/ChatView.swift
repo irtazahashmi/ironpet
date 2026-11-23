@@ -14,6 +14,7 @@ struct ChatView: View {
     @State private var showThreads = false
     @State private var showSettings = false
     @State private var showFiles = false
+    @State private var showPhotos = false
     @State private var photos: [PhotosPickerItem] = []
     @State private var focused = false
     @State private var find = ChatFindState()
@@ -54,7 +55,7 @@ struct ChatView: View {
                                     .background(.thinMaterial).accessibilityIdentifier("chat-notice")
                             }
                             if let voice { VoiceNotice(voice: voice) }
-                            Composer(model: model, showFiles: $showFiles, photos: $photos, focused: $focused)
+                            Composer(model: model, showFiles: $showFiles, showPhotos: $showPhotos, focused: $focused)
                         }
                     }
             }
@@ -97,17 +98,12 @@ struct ChatView: View {
                     model.attach(data: data, fileName: url.lastPathComponent, contentType: type)
                 }
             }
+            .photosPicker(isPresented: $showPhotos, selection: $photos, maxSelectionCount: ChatModel.maxPendingImages, matching: .images)
             .onChange(of: photos) { _, picked in
                 guard !picked.isEmpty else { return }
-                Task {
-                    for (index, item) in picked.enumerated() {
-                        guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
-                        let type = item.supportedContentTypes.first
-                        let ext = type?.preferredFilenameExtension ?? "jpg"
-                        model.attach(data: data, fileName: "photo-\(index + 1).\(ext)", contentType: type?.preferredMIMEType ?? "image/jpeg")
-                    }
-                    photos = []
-                }
+                let loaders: [@Sendable () async throws -> Data?] = picked.map { item in { try await item.loadTransferable(type: Data.self) } }
+                photos = []
+                Task { await model.attachPhotos(loaders) }
             }
         }
         .task { model.start() }
@@ -620,7 +616,7 @@ private struct Composer: View {
     let model: ChatModel
     @Environment(VoiceModel.self) private var voice: VoiceModel?
     @Binding var showFiles: Bool
-    @Binding var photos: [PhotosPickerItem]
+    @Binding var showPhotos: Bool
     @Binding var focused: Bool
 
     /// Gap between the send capsule and the field's top, bottom and trailing edges.
@@ -634,7 +630,9 @@ private struct Composer: View {
         GlassGroup {
             HStack(alignment: .bottom, spacing: 8) {
                 Menu {
-                    PhotosPicker(selection: $photos, maxSelectionCount: ChatModel.maxPendingImages, matching: .images) { Label("Photo", systemImage: SharedSymbols.photo) }
+                    // The picker is presented from ChatView. A PhotosPicker inside the menu is removed when the menu closes.
+                    Button { showPhotos = true } label: { Label("Photo", systemImage: SharedSymbols.photo) }
+                        .accessibilityIdentifier("attach-photo")
                     Button { showFiles = true } label: { Label("File", systemImage: SharedSymbols.file) }
                 } label: { Image(systemName: SharedSymbols.attach).glassCircle() }
                     .accessibilityLabel("Attach").accessibilityIdentifier("attach-button")
@@ -658,6 +656,16 @@ private struct Composer: View {
                 }
                 .padding(.horizontal, 6).padding(.top, 4)
                 .accessibilityIdentifier("reply-bar")
+            }
+            if let failure = model.uploadFailure {
+                HStack(spacing: 6) {
+                    Label(failure, systemImage: SharedSymbols.warning).font(.footnote).foregroundStyle(.orange).lineLimit(3)
+                        .accessibilityIdentifier("upload-error")
+                    Spacer(minLength: 0)
+                    Button("Retry") { Task { await model.send() } }.font(.footnote.weight(.semibold))
+                        .disabled(model.sending).accessibilityIdentifier("upload-retry")
+                }
+                .padding(.horizontal, 6).padding(.top, 4)
             }
             if !model.attachments.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {

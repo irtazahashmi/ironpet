@@ -317,3 +317,73 @@ final class ChatModeUITests: XCTestCase {
         attach("settings-mode-plan")
     }
 }
+
+/// Attaching a photo from the library with the attach button, against the mock server. Needs a photo in the simulator's library.
+final class AttachPhotoUITests: XCTestCase {
+    var server: MockIronPetServer!
+    var app: XCUIApplication!
+
+    override func setUpWithError() throws {
+        continueAfterFailure = false
+        server = MockIronPetServer()
+        try server.start()
+        app = XCUIApplication()
+        app.launchArguments = ["--reset-credentials"]
+        app.launch()
+        let field = app.textFields["pairing-link-field"]
+        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        field.tap()
+        field.typeText(server.pairingLink)
+        app.buttons["pair-button"].tap()
+        let tab = app.tabBars.buttons["Chat"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        tab.tap()
+        XCTAssertTrue(app.textViews["chat-input"].waitForExistence(timeout: 20))
+    }
+
+    override func tearDown() { server.stop() }
+
+    private func any(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id] }
+
+    /// Opens the picker from the attach menu, picks the first photo and confirms. Skips when the simulator's library is empty, as
+    /// it is on a fresh CI runner; the unit tests cover the conversion and upload without the system picker.
+    private func pickFirstPhoto() throws {
+        // A tap at the button's centre. A plain `tap()` scrolls to the element first, which fails on some simulators.
+        app.buttons["attach-button"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        let photo = app.buttons["Photo"]
+        XCTAssertTrue(photo.waitForExistence(timeout: 5), "the menu offers Photo")
+        photo.tap()
+        // The grid's cells are labelled "Photo, <date>". The first image in the sheet is the privacy banner's icon.
+        let image = app.scrollViews.images.matching(NSPredicate(format: "label BEGINSWITH 'Photo'")).firstMatch
+        guard image.waitForExistence(timeout: 15) else { throw XCTSkip("the simulator's photo library is empty") }
+        image.tap()
+        for label in ["Add", "Done"] where app.buttons[label].waitForExistence(timeout: 2) { app.buttons[label].tap(); break }
+        XCTAssertTrue(any("attachment-thumbnail-0").waitForExistence(timeout: 15), "the picked photo shows in the composer")
+    }
+
+    // S1
+    func testAPickedPhotoUploadsAndTheMessageCarriesIt() throws {
+        try pickFirstPhoto()
+        app.buttons["send-button"].tap()
+        let sent = NSPredicate { _, _ in self.server.requests.contains { $0.path == "/v1/chat/current/messages" && ($0.json["upload_ids"] as? [String])?.count == 1 } }
+        wait(for: [XCTNSPredicateExpectation(predicate: sent, object: nil)], timeout: 15)
+        XCTAssertEqual(server.requests.first { $0.path == "/v1/uploads" }?.headers["content-type"], "image/jpeg")
+    }
+
+    // S4
+    func testAFailedUploadShowsRetryAndRetrySendsOnce() throws {
+        try pickFirstPhoto()
+        server.uploadFails = true
+        app.buttons["send-button"].tap()
+        XCTAssertTrue(any("upload-error").waitForExistence(timeout: 15), "the failure shows")
+        let retry = app.buttons["upload-retry"]
+        XCTAssertTrue(retry.exists)
+        XCTAssertEqual(server.count("POST /v1/chat/current/messages"), 0)
+        server.uploadFails = false
+        retry.tap()
+        let sent = NSPredicate { _, _ in self.server.count("POST /v1/chat/current/messages") == 1 }
+        wait(for: [XCTNSPredicateExpectation(predicate: sent, object: nil)], timeout: 15)
+        XCTAssertTrue(any("upload-error").waitForNonExistence(timeout: 10))
+        XCTAssertEqual(server.count("POST /v1/chat/current/messages"), 1)
+    }
+}
