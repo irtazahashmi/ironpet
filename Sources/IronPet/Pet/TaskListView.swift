@@ -5,6 +5,7 @@ import IronPetCore
 import struct IronPetKit.QuickFilter
 import enum IronPetKit.QuickFilterPrompt
 import enum IronPetKit.QuickFilterNode
+import enum IronPetKit.QuickFilterSelection
 import SwiftUI
 
 /// The Tasks section of the ironpet window. The agent owns the list; here the user can only mark a task done, delete it,
@@ -22,8 +23,9 @@ struct TaskListView: View {
     @State private var showDone = false
     @State private var message = ""
     @State private var highlighted: String?
-    /// The id of the quick filter the list is narrowed by. Nil is the "All" chip.
-    @State private var selectedFilter: String?
+    /// The id of the quick filter the list is narrowed by. Empty is the "All" chip. Saved per device, so it survives
+    /// switching sections and a relaunch.
+    @AppStorage(QuickFilterSelection.key) private var selectedFilterRaw = ""
     /// The Add or Edit sheet, until the user sends or cancels.
     @State private var filterRequest: QuickFilterRequest?
     /// The filter the user asked to remove, until they confirm.
@@ -76,6 +78,8 @@ struct TaskListView: View {
             } message: {
                 Text("Tasks are not changed.")
             }
+            .onAppear(perform: dropStaleFilter)
+            .onChange(of: tasks.quickFilters.map(\.id)) { dropStaleFilter() }
             .alert("Waiting on whom?", isPresented: holdingAlertShown) {
                 TextField("Name", text: $holder)
                 Button("Cancel", role: .cancel) {}
@@ -84,6 +88,16 @@ struct TaskListView: View {
                 Text("The task moves to Waiting on others.")
             }
         }
+    }
+
+    private var selectedFilter: String? {
+        get { selectedFilterRaw.isEmpty ? nil : selectedFilterRaw }
+        nonmutating set { selectedFilterRaw = newValue ?? "" }
+    }
+
+    /// Clears a saved filter that was deleted while the app was closed, so the list shows All and the stored value goes.
+    private func dropStaleFilter() {
+        if selectedFilter != nil, QuickFilterSelection.valid(selectedFilter, in: tasks.quickFilters) == nil { selectedFilter = nil }
     }
 
     private var removingShown: Binding<Bool> {

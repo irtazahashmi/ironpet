@@ -23,9 +23,13 @@ final class QuickFilterPhoneTests: XCTestCase {
 
     private var client: IronPetClient { IronPetClient(endpoint: ServerEndpoint(baseURL: server.baseURL), token: server.token) }
 
-    private func model() -> TasksModel {
+    private func model(defaults: UserDefaults? = nil) -> TasksModel {
         TasksModel(client: client, events: SharedEventSource(EventConnection(client: client, backoff: .init(initial: .milliseconds(20), maximum: .milliseconds(100)))),
-                   onUnauthorized: {})
+                   defaults: defaults ?? scratchDefaults(), onUnauthorized: {})
+    }
+
+    private func scratchDefaults() -> UserDefaults {
+        UserDefaults(suiteName: "ironpet-tasks-filter-\(UUID().uuidString)")!
     }
 
     private func poll(_ timeout: Double = 10, _ condition: @MainActor () -> Bool) async {
@@ -114,5 +118,30 @@ final class QuickFilterPhoneTests: XCTestCase {
         ])
         XCTAssertEqual(chat.draft, "half-typed note", "the composer is left alone")
         chat.stop()
+    }
+
+    // S3
+    func testThePickedFilterIsReadBackByAFreshModel() async {
+        let defaults = scratchDefaults()
+        let first = model(defaults: defaults)
+        await first.reload()
+        first.selectedFilterID = "epic"
+        let relaunched = model(defaults: defaults)
+        XCTAssertEqual(relaunched.selectedFilterID, "epic")
+        await relaunched.reload()
+        XCTAssertEqual(relaunched.selectedFilterID, "epic")
+        XCTAssertEqual(Set(relaunched.inProgress.map(\.id)), ["t-epic"], "the list is filtered by it")
+    }
+
+    // S4
+    func testAStoredFilterTheMacNoLongerHasShowsAllAndClearsTheStoredValue() async {
+        let defaults = scratchDefaults()
+        QuickFilterSelection.save("deleted", defaults)
+        let model = model(defaults: defaults)
+        await model.reload()
+        XCTAssertNil(model.selectedFilterID)
+        XCTAssertNil(QuickFilterSelection.load(defaults))
+        XCTAssertNil(model.errorMessage)
+        XCTAssertEqual(Set((model.needsYou + model.inProgress + model.backlog + model.waiting + model.done).map(\.id)), ["t-epic", "t-mine", "t-done"])
     }
 }

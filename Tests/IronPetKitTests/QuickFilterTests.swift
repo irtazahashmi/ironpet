@@ -113,4 +113,24 @@ final class QuickFilterTests: XCTestCase {
         XCTAssertEqual(QuickFilterPrompt.edit(filter, "epic tasks not done"),
                        #"Change the task quick filter "Epic, open" (id epic-open, current query {"text":"epic"}): epic tasks not done"#)
     }
+
+    // S2
+    func testTheSelectionIsSavedAndReadBackOnAFreshLoad() throws {
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: "ironpet-quick-filter-\(UUID().uuidString)"))
+        XCTAssertNil(QuickFilterSelection.load(defaults))
+        QuickFilterSelection.save("epic", defaults)
+        XCTAssertEqual(QuickFilterSelection.load(defaults), "epic")
+        QuickFilterSelection.save(nil, defaults)
+        XCTAssertNil(QuickFilterSelection.load(defaults), "All removes the stored value")
+        XCTAssertNil(defaults.object(forKey: QuickFilterSelection.key))
+    }
+
+    // S4
+    func testASelectionWithoutAChipFallsBackToAll() {
+        let filters = [QuickFilter(id: "epic", name: "Epic", query: .object(["label": .object(["project": .string("epic")])]), order: 0)]
+        XCTAssertEqual(QuickFilterSelection.valid("epic", in: filters), "epic")
+        XCTAssertNil(QuickFilterSelection.valid("gone", in: filters))
+        XCTAssertNil(QuickFilterSelection.valid(nil, in: filters))
+        XCTAssertNil(QuickFilterSelection.valid("epic", in: []))
+    }
 }

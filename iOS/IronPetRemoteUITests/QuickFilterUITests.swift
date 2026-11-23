@@ -119,6 +119,36 @@ final class QuickFilterUITests: XCTestCase {
         waitForExpectations(timeout: 15)
     }
 
+    /// S3
+    func testThePickedFilterSurvivesSwitchingTabsAndARelaunch() {
+        pairAndOpenTasks()
+        XCTAssertTrue(app.buttons["quick-filter-epic"].waitForExistence(timeout: 30))
+        app.buttons["quick-filter-epic"].tap()
+        XCTAssertTrue(app.buttons["task-t-epic"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["task-t-band"].exists)
+
+        app.tabBars.buttons["Chat"].tap()
+        XCTAssertTrue(app.tabBars.buttons["Chat"].isSelected)
+        app.tabBars.buttons["Tasks"].tap()
+        XCTAssertTrue(app.buttons["quick-filter-epic"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["quick-filter-epic"].isSelected, "the same chip is still selected after another tab")
+        XCTAssertTrue(app.buttons["task-t-epic"].exists)
+        XCTAssertFalse(app.buttons["task-t-band"].exists)
+        attach("quick-filter-after-tab-switch")
+
+        // Relaunch without --reset-credentials: the pairing and the stored filter stay.
+        app.terminate()
+        app.launchArguments = ["--auto-unlock"]
+        app.launch()
+        let tab = app.tabBars.buttons["Tasks"]
+        XCTAssertTrue(tab.waitForExistence(timeout: 60))
+        tab.tap()
+        XCTAssertTrue(app.buttons["quick-filter-epic"].waitForExistence(timeout: 30))
+        XCTAssertTrue(app.buttons["quick-filter-epic"].isSelected, "the same chip is selected after a relaunch")
+        XCTAssertTrue(app.buttons["task-t-epic"].waitForExistence(timeout: 10))
+        XCTAssertFalse(app.buttons["task-t-band"].exists)
+    }
+
     func testAnOlderMacShowsNoChips() {
         server.taskFiltersSupported = false
         pairAndOpenTasks()
