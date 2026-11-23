@@ -60,6 +60,11 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _sendFails = false
     private var _sendDelay: TimeInterval = 0
     private var _sendPushesFirst = false
+    private var _legacyEvents = false
+    private var _messageReadDelay: TimeInterval = 0
+    private var _messageReads = 0
+    private var _readsInFlight = 0
+    private var _maxReadsInFlight = 0
     fileprivate var _p4 = MockPhaseFour()
     private let encoder = WireJSON.makeEncoder()
     private(set) var port: UInt16 = 0
@@ -193,6 +198,14 @@ final class MockIronPetServer: @unchecked Sendable {
     var sendDelay: TimeInterval { get { lock.lock(); defer { lock.unlock() }; return _sendDelay } set { lock.lock(); _sendDelay = newValue; lock.unlock() } }
     /// Push the `chat.item` event before the answer to the send, as a fast socket can.
     var sendPushesFirst: Bool { get { lock.lock(); defer { lock.unlock() }; return _sendPushesFirst } set { lock.lock(); _sendPushesFirst = newValue; lock.unlock() } }
+    /// True makes `streamChunk` send `chat.item` without the text, as a Mac before this change does.
+    var legacyEvents: Bool { get { lock.lock(); defer { lock.unlock() }; return _legacyEvents } set { lock.lock(); _legacyEvents = newValue; lock.unlock() } }
+    /// Seconds `GET /v1/chat/messages/:id` takes to answer, as a slow route to the Mac does.
+    var messageReadDelay: TimeInterval { get { lock.lock(); defer { lock.unlock() }; return _messageReadDelay } set { lock.lock(); _messageReadDelay = newValue; lock.unlock() } }
+    /// The most single-message reads that were waiting for an answer at one time.
+    var maxMessageReadsInFlight: Int { lock.lock(); defer { lock.unlock() }; return _maxReadsInFlight }
+    /// How many times a single message was read with a GET.
+    var messageReads: Int { lock.lock(); defer { lock.unlock() }; return _messageReads }
     /// The bytes of an upload by id.
     func uploaded(_ id: String) -> Data? { lock.lock(); defer { lock.unlock() }; return _uploads[id] }
 
@@ -202,8 +215,9 @@ final class MockIronPetServer: @unchecked Sendable {
         if let index = _chat.items.firstIndex(where: { $0.id == id }) { _chat.items[index].text = (_chat.items[index].text ?? "") + text }
         else { _chat.items.append(RemoteChatItem(id: id, kind: "assistant", date: Date(), text: text)) }
         _chat.running = true
+        let inline = _legacyEvents ? nil : _chat.items.first { $0.id == id }
         lock.unlock()
-        publish(RemoteEvent.chatItem, id: id)
+        publish(RemoteEvent.chatItem, id: id, item: inline)
     }
 
     /// Ends the running turn.
@@ -242,10 +256,10 @@ final class MockIronPetServer: @unchecked Sendable {
 
     /// Sends an event to every open socket and keeps it for replay.
     @discardableResult
-    func publish(_ kind: String, id: String? = nil) -> Int {
+    func publish(_ kind: String, id: String? = nil, item: RemoteChatItem? = nil) -> Int {
         lock.lock()
         _seq += 1
-        let event = RemoteEvent(seq: _seq, kind: kind, at: Date(), id: id)
+        let event = RemoteEvent(seq: _seq, kind: kind, at: Date(), id: id, item: item)
         buffer.append(event)
         let open = sockets
         lock.unlock()
@@ -606,7 +620,12 @@ extension MockIronPetServer {
         case (3, "current") where get: respond(connection, 200, chat)
         case (4, "messages") where get:
             guard let item = chat.items.first(where: { $0.id == parts[3] }) else { fail(connection, 404, "not_found", "no message"); return true }
-            respond(connection, 200, item)
+            lock.lock(); _messageReads += 1; _readsInFlight += 1; _maxReadsInFlight = max(_maxReadsInFlight, _readsInFlight); let delay = _messageReadDelay; lock.unlock()
+            let answer = { [self] in
+                lock.lock(); _readsInFlight -= 1; lock.unlock()
+                respond(connection, 200, item)
+            }
+            if delay > 0 { queue.asyncAfter(deadline: .now() + delay, execute: answer) } else { answer() }
         case (3, "options") where request.method == "PATCH":
             // Only `mode` is acted on: it must be one the chat advertises, as on the Mac, and then it is the mode in force.
             guard let mode = request.json["mode"] as? String else { respond(connection, 200, Data("{\"changed\":true}".utf8)); return true }

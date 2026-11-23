@@ -151,6 +151,7 @@ final class ChatModel: SocketModel {
         guard let fresh = await run({ try await self.client.chat() }) else { return false }
         snapshot = fresh
         items = fresh.items
+        fullReads += 1
         reconcile()
         return true
     }
@@ -159,20 +160,66 @@ final class ChatModel: SocketModel {
         switch event.kind {
         case RemoteEvent.chatItem:
             guard let id = event.id else { return await reload() }
-            await refreshItem(id)
+            if let item = event.item, item.id == id {
+                // The Mac sent the message with the event: no read needed.
+                PhoneHopLog.mark("phone.event")
+                apply(item, from: .event)
+            } else {
+                // An older Mac, or a message too long to send along. The read runs on its own task so the next event is not held
+                // up behind it.
+                requestRefresh(id)
+            }
         case RemoteEvent.chatState:
             await reload()
         default: break
         }
     }
 
+    private enum Source { case event, read }
+
+    /// Bumped each time a message changes from an event or a full read. A read that started before the bump holds older text.
+    @ObservationIgnored private var revisions: [String: Int] = [:]
+    @ObservationIgnored private var fullReads = 0
+    /// The messages with a read in flight, and those that changed again while it ran.
+    @ObservationIgnored private var refreshing: Set<String> = []
+    @ObservationIgnored private var stale: Set<String> = []
+
+    private func apply(_ item: RemoteChatItem, from source: Source) {
+        if let index = items.firstIndex(where: { $0.id == item.id }) {
+            if items[index] != item { items[index] = item }
+        } else {
+            items.append(item)
+        }
+        if source == .event { revisions[item.id, default: 0] += 1 }
+        reconcile()
+    }
+
+    /// Reads one message again. At most one read per message runs at a time. An event that arrives meanwhile marks the message stale,
+    /// and the read runs once more when the first ends, so the last state wins and a burst costs two reads, not one per event.
+    private func requestRefresh(_ id: String) {
+        guard refreshing.insert(id).inserted else {
+            stale.insert(id)
+            return
+        }
+        Task { [weak self] in
+            while let self {
+                self.stale.remove(id)
+                await self.refreshItem(id)
+                guard self.stale.contains(id) else { break }
+            }
+            self?.refreshing.remove(id)
+        }
+    }
+
     /// One streamed message: read it and replace it, or add it at the end. A message the Mac no longer has means the chat changed under us.
     private func refreshItem(_ id: String) async {
+        let revision = revisions[id, default: 0], reads = fullReads
         do {
             let item = try await client.chatMessage(id: id)
-            if let index = items.firstIndex(where: { $0.id == id }) { items[index] = item } else { items.append(item) }
+            // An event or a full read that finished while this one was in flight holds newer text than this answer.
+            guard revisions[id, default: 0] == revision, fullReads == reads else { return }
+            apply(item, from: .read)
             PhoneHopLog.mark("phone.item")
-            reconcile()
         } catch ClientError.unauthorized {
             onUnauthorized()
         } catch ClientError.api(404, _, _) {
