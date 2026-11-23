@@ -9,7 +9,11 @@ import UIKit
 enum PhoneHopLog {
     private static let logger = Logger(subsystem: "com.ironpet.remote", category: "send-latency")
 
+    /// Called with each hop name. Tests read it; nothing sets it in the app.
+    nonisolated(unsafe) static var tap: ((String) -> Void)?
+
     static func mark(_ hop: String) {
+        tap?(hop)
         logger.debug("hop=\(hop, privacy: .public) t=\(Int(Date().timeIntervalSince1970 * 1000), privacy: .public)")
     }
 }
@@ -27,7 +31,7 @@ struct OutgoingMessage: Identifiable, Equatable {
 
     /// Draws as the transcript item `pending-<id>`.
     let id: UUID
-    let text: String
+    var text: String
     let date: Date
     var state: State
     /// The ids of the user messages the phone already had when this was sent. A new `ios` message with the same text that is not in this
@@ -35,6 +39,11 @@ struct OutgoingMessage: Identifiable, Equatable {
     let known: Set<String>
     var uploadIDs: [String] = []
     var reply: RemoteReplyRef?
+    /// A message dictated and sent at once. Its text is empty until the Mac sends the transcript back.
+    var isVoice = false
+
+    /// A voice message whose text the Mac has not sent yet.
+    var isTranscribing: Bool { isVoice && text.isEmpty }
 
     var isFailed: Bool {
         if case .failed = state { return true }
@@ -45,7 +54,7 @@ struct OutgoingMessage: Identifiable, Equatable {
     static func itemID(_ id: UUID) -> String { "pending-\(id.uuidString)" }
     static func isPending(_ itemID: String) -> Bool { itemID.hasPrefix("pending-") }
 
-    var item: RemoteChatItem { RemoteChatItem(id: itemID, kind: "user", date: date, origin: "ios", text: text) }
+    var item: RemoteChatItem { RemoteChatItem(id: itemID, kind: "user", date: date, origin: "ios", text: isTranscribing ? (isFailed ? "Voice message" : "Transcribing…") : text) }
 }
 
 /// Plain wording for a failed request. URLSession's own text ("The request timed out.", "The network connection was lost.") never reaches the chat.
@@ -153,13 +162,18 @@ final class ChatModel: SocketModel {
 
     /// The outbox without the messages the transcript already has. Each Mac item settles one local message, oldest first, so two
     /// identical texts sent in a row stay two messages until both arrive.
+    /// A voice message with no text yet takes any new `ios` item, but only after the messages with text took theirs.
     private func unconfirmed() -> [OutgoingMessage] {
         var claimed = Set<String>()
-        return outbox.filter { message in
-            guard let match = items.first(where: { $0.kind == "user" && $0.origin == "ios" && $0.text == message.text && !message.known.contains($0.id) && !claimed.contains($0.id) }) else { return true }
-            claimed.insert(match.id)
-            return false
+        var settled = Set<UUID>()
+        for transcribing in [false, true] {
+            for message in outbox where message.isTranscribing == transcribing {
+                guard let match = items.first(where: { $0.kind == "user" && $0.origin == "ios" && (transcribing || $0.text == message.text) && !message.known.contains($0.id) && !claimed.contains($0.id) }) else { continue }
+                claimed.insert(match.id)
+                settled.insert(message.id)
+            }
         }
+        return outbox.filter { !settled.contains($0.id) }
     }
 
     private var userItemIDs: Set<String> { Set(items.filter { $0.kind == "user" }.map(\.id)) }
@@ -430,6 +444,8 @@ final class ChatModel: SocketModel {
         guard let index = outbox.firstIndex(where: { $0.id == id }), outbox[index].isFailed else { return }
         outbox[index].state = .sending
         let message = outbox[index]
+        // A voice message without text sends its audio again. One with text only needs the Mac to put it in the chat.
+        if message.isTranscribing { return await resendVoice(id.uuidString.lowercased()) }
         await deliver(id, text: message.text, uploadIDs: message.uploadIDs, reply: message.reply, photos: [:])
     }
 
@@ -462,6 +478,33 @@ final class ChatModel: SocketModel {
         // Once the whole chat is read the Mac's copy is in `items`, or the message is in its queue, so the local copy is done.
         if await fetch() { outbox.removeAll { $0.id == id } }
         return true
+    }
+
+    // MARK: Voice
+
+    /// Sends the audio of a failed voice message again. Set by the app to `VoiceModel.resend`.
+    @ObservationIgnored var resendVoice: (String) async -> Void = { _ in }
+
+    /// Applies what happened to a voice message sent at once. The stream id is the message id, so the pending item is the one Stop made.
+    func voiceEvent(_ event: VoiceModel.SendEvent) {
+        func index(_ id: String) -> Int? { UUID(uuidString: id).flatMap { uuid in outbox.firstIndex { $0.id == uuid } } }
+        switch event {
+        case .started(let id):
+            guard let uuid = UUID(uuidString: id), index(id) == nil else { return }
+            var message = OutgoingMessage(id: uuid, text: "", date: Date(), state: .sending, known: userItemIDs)
+            message.isVoice = true
+            outbox.append(message)
+        case .transcribed(let id, let text):
+            guard let at = index(id) else { return }
+            outbox[at].text = text
+            outbox[at].state = .sent
+            reconcile()
+        case .failed(let id, let reason):
+            guard let at = index(id) else { return }
+            outbox[at].state = .failed(reason)
+        case .discarded(let id):
+            outbox.removeAll { $0.id == UUID(uuidString: id) }
+        }
     }
 
     private static func withTimeout<T: Sendable>(_ limit: Duration, _ work: @escaping @Sendable () async throws -> T) async throws -> T {
