@@ -170,7 +170,7 @@ private struct Transcript: View {
                         ForEach(RemoteTranscriptGroup.make(model.displayItems)) { group in
                             TranscriptGroupView(group: group, photos: model.sentPhotos, images: model.images, avatar: avatar, expanded: expandedMessages,
                                                 toggleExpand: { id in if !expandedMessages.insert(id).inserted { expandedMessages.remove(id) } },
-                                                outbox: model.outbox, onRetry: { id in Task { await model.retry(id) } },
+                                                outbox: model.outbox, onRetry: { id in Task { await model.retry(id) } }, onDelete: { id in model.deleteQueued(id) },
                                                 onReply: { model.replyTo = $0 },
                                                 readAloud: { item in voice.flatMap { ReadAloud(item: item, voice: $0) } },
                                                 highlights: find.highlights)
@@ -251,6 +251,7 @@ private struct TranscriptGroupView: View {
     var toggleExpand: (String) -> Void = { _ in }
     var outbox: [OutgoingMessage] = []
     var onRetry: (UUID) -> Void = { _ in }
+    var onDelete: (UUID) -> Void = { _ in }
     var onReply: (RemoteChatItem) -> Void = { _ in }
     /// Nil in a saved thread, whose messages the Mac cannot read from the open chat.
     var readAloud: (RemoteChatItem) -> ReadAloud? = { _ in nil }
@@ -265,7 +266,7 @@ private struct TranscriptGroupView: View {
                 MessageRow(item: item, photo: item.fileName.flatMap { photos[$0] }, images: images, avatar: avatar, expanded: expanded.contains(item.id),
                            onToggleExpand: { toggleExpand(item.id) }, onReply: item.canReply && !OutgoingMessage.isPending(item.id) ? { onReply(item) } : nil,
                            readAloud: item.kind == "assistant" ? readAloud(item) : nil, find: highlights[item.id])
-                if let message = outbox.first(where: { $0.itemID == item.id }) { OutgoingStatus(message: message, onRetry: { onRetry(message.id) }) }
+                if let message = outbox.first(where: { $0.itemID == item.id }) { OutgoingStatus(message: message, onRetry: { onRetry(message.id) }, onDelete: { onDelete(message.id) }) }
             }
         }
     }
@@ -275,9 +276,18 @@ private struct TranscriptGroupView: View {
 private struct OutgoingStatus: View {
     let message: OutgoingMessage
     let onRetry: () -> Void
+    var onDelete: () -> Void = {}
 
     var body: some View {
         switch message.state {
+        case .waiting:
+            HStack(spacing: 6) {
+                Image(systemName: "clock").foregroundStyle(.secondary)
+                Text("Waiting to send").font(.caption2).foregroundStyle(.secondary)
+                Button("Delete", role: .destructive, action: onDelete).font(.caption2.weight(.semibold)).accessibilityIdentifier("outgoing-delete")
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("outgoing-waiting")
         case .sending, .sent:
             // A voice message shows "Transcribing…" in its bubble until the text arrives.
             if !message.isTranscribing {
@@ -288,6 +298,9 @@ private struct OutgoingStatus: View {
                 Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
                 Text(reason).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
                 Button("Retry", action: onRetry).font(.caption2.weight(.semibold)).accessibilityIdentifier("outgoing-retry")
+                if message.queuedAt != nil {
+                    Button("Delete", role: .destructive, action: onDelete).font(.caption2.weight(.semibold)).accessibilityIdentifier("outgoing-delete")
+                }
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("outgoing-failed")

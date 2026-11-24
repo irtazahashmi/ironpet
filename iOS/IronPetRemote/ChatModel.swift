@@ -21,6 +21,8 @@ enum PhoneHopLog {
 /// A message the user sent that the Mac has not shown back yet. The transcript draws it at once, so the send does not wait for the network.
 struct OutgoingMessage: Identifiable, Equatable {
     enum State: Equatable {
+        /// The phone cannot reach the Mac. The message is saved on the phone and goes out, in order, when the connection is back.
+        case waiting
         /// The upload or the send is in flight.
         case sending
         /// The Mac took it and the transcript has not shown it yet.
@@ -36,11 +38,18 @@ struct OutgoingMessage: Identifiable, Equatable {
     var state: State
     /// The ids of the user messages the phone already had when this was sent. A new `ios` message with the same text that is not in this
     /// set is the Mac's copy of this one.
-    let known: Set<String>
+    var known: Set<String>
     var uploadIDs: [String] = []
     var reply: RemoteReplyRef?
     /// A message dictated and sent at once. Its text is empty until the Mac sends the transcript back.
     var isVoice = false
+    /// When the message first started waiting for the connection. The age limit counts from here. Retry clears it.
+    var queuedAt: Date?
+    /// Loaded from the saved outbox after a launch. The transcript cannot hold its copy, since the phone does not know whether an
+    /// earlier launch sent it, so it never settles against an item until it is sent again.
+    var restored = false
+
+    var isWaiting: Bool { state == .waiting }
 
     /// A voice message whose text the Mac has not sent yet.
     var isTranscribing: Bool { isVoice && text.isEmpty }
@@ -110,6 +119,15 @@ final class ChatModel: SocketModel {
     private(set) var outbox: [OutgoingMessage] = []
     /// The event socket, set by the app. Typed messages go over it while it is open. Nil in tests that use HTTPS only.
     @ObservationIgnored var socket: (any ChatSocket)?
+    /// A message that waits longer than this for the connection is not sent on its own any more. It shows Retry instead.
+    static let maxWaitingAge: TimeInterval = 24 * 60 * 60
+    /// The most messages the phone keeps waiting. The Mac remembers the last 512 client ids per device, so this stays well inside
+    /// the window in which a resend is still recognized.
+    static let outboxCapacity = 100
+    /// Where waiting messages are saved. Set with `useOutbox`.
+    @ObservationIgnored private var outboxStore: (any OutboxStoring)?
+    @ObservationIgnored var now: () -> Date = Date.init
+    @ObservationIgnored private var flushing = false
     /// How long the Mac has to answer a send before the message is marked failed.
     @ObservationIgnored var sendTimeout: Duration = .seconds(15)
     /// The Mac's reason for refusing to open a thread or start a chat, shown as an alert.
@@ -160,7 +178,7 @@ final class ChatModel: SocketModel {
     var displayItems: [RemoteChatItem] { items + unconfirmed().map(\.item) }
 
     /// True while a sent message waits for the Mac, so the transcript shows the typing row before the Mac says it is running.
-    var awaitingReply: Bool { unconfirmed().contains { !$0.isFailed } }
+    var awaitingReply: Bool { unconfirmed().contains { !$0.isFailed && !$0.isWaiting } }
 
     /// The outbox without the messages the transcript already has. Each Mac item settles one local message, oldest first, so two
     /// identical texts sent in a row stay two messages until both arrive.
@@ -169,7 +187,8 @@ final class ChatModel: SocketModel {
         var claimed = Set<String>()
         var settled = Set<UUID>()
         for transcribing in [false, true] {
-            for message in outbox where message.isTranscribing == transcribing {
+            // A waiting message never reached the Mac, so no item in the transcript can be its copy.
+            for message in outbox where message.isTranscribing == transcribing && !message.isWaiting && !message.restored {
                 guard let match = items.first(where: { $0.kind == "user" && $0.origin == "ios" && (transcribing || $0.text == message.text) && !message.known.contains($0.id) && !claimed.contains($0.id) }) else { continue }
                 claimed.insert(match.id)
                 settled.insert(message.id)
@@ -428,7 +447,7 @@ final class ChatModel: SocketModel {
         if let outgoing, let index = outbox.firstIndex(where: { $0.id == outgoing }) { outbox[index].uploadIDs = ids }
         // An attachment-only message has no local copy to retry, so a failed send gives the composer its content back.
         let delivered = await deliver(outgoing, text: text, uploadIDs: ids, reply: quote, photos: photos)
-        if !delivered, outgoing == nil { restore() }
+        if delivered != .delivered, outgoing == nil { restore() }
     }
 
     /// Sends `text` as its own message and leaves the composer, its attachments and its reply as they are. The Tasks tab uses it for
@@ -445,17 +464,38 @@ final class ChatModel: SocketModel {
     func retry(_ id: UUID) async {
         guard let index = outbox.firstIndex(where: { $0.id == id }), outbox[index].isFailed else { return }
         outbox[index].state = .sending
+        // A retry starts the waiting clock again, so a message the user retries is not failed for its old age at the next reconnect.
+        outbox[index].queuedAt = nil
+        outbox[index].restored = false
         let message = outbox[index]
         // A voice message without text sends its audio again. One with text only needs the Mac to put it in the chat.
         if message.isTranscribing { return await resendVoice(id.uuidString.lowercased()) }
         await deliver(id, text: message.text, uploadIDs: message.uploadIDs, reply: message.reply, photos: [:])
     }
 
-    /// Returns false when the send failed.
+    private enum Delivery {
+        case delivered
+        /// The Mac answered that it will not take the message.
+        case refused
+        /// The phone could not reach the Mac, and the message now waits in the outbox.
+        case offline
+        /// Anything else: the Mac did not answer in time, the token is gone, or the outbox is full.
+        case failed
+    }
+
     @discardableResult
-    private func deliver(_ id: UUID?, text: String, uploadIDs: [String], reply: RemoteReplyRef?, photos: [String: Data]) async -> Bool {
+    private func deliver(_ id: UUID?, text: String, uploadIDs: [String], reply: RemoteReplyRef?, photos: [String: Data]) async -> Delivery {
         func mark(_ state: OutgoingMessage.State) {
             if let index = outbox.firstIndex(where: { $0.id == id }) { outbox[index].state = state }
+            persistOutbox()
+        }
+        // Only a plain text message can wait. Attachments upload first, and a voice message has its own path.
+        let canQueue = id != nil && uploadIDs.isEmpty && !text.isEmpty
+        // A message typed while an earlier one waits or is on its way from the outbox goes behind it, so the Mac sees them in order.
+        if canQueue, let id, let index = outbox.firstIndex(where: { $0.id == id }), outbox[..<index].contains(where: { $0.queuedAt != nil && ($0.isWaiting || $0.state == .sending) }) {
+            enqueue(id)
+            kickFlush()
+            return .offline
         }
         let client = self.client, timeout = sendTimeout
         // The id is the message's own, so a Retry sends the same id and the Mac creates the message once.
@@ -482,24 +522,130 @@ final class ChatModel: SocketModel {
             errorMessage = nil
         } catch SocketSendError.refused(_, let message) {
             mark(.failed(message))
-            return false
+            return .refused
         } catch ClientError.unauthorized {
             mark(.failed("Sign in again to send."))
             onUnauthorized()
-            return false
+            return .failed
         } catch is CancellationError {
             mark(.failed("The send was cancelled."))
-            return false
+            return .failed
+        } catch where canQueue && Self.isUnreachable(error) {
+            // The Mac is out of reach (no network, asleep, relay down). Keep the message and send it on the next connect.
+            if let id { enqueue(id) }
+            return outbox.contains { $0.id == id && $0.isWaiting } ? .offline : .failed
         } catch {
             // The failed row under the message carries the reason and its Retry. No banner repeats it.
             mark(.failed(PlainError.message(for: error)))
-            return false
+            return .failed
         }
         sentPhotos.merge(photos) { _, new in new }
         mark(.sent)
         // Once the whole chat is read the Mac's copy is in `items`, or the message is in its queue, so the local copy is done.
         if await fetch() { outbox.removeAll { $0.id == id } }
-        return true
+        persistOutbox()
+        return .delivered
+    }
+
+    /// True when the Mac could not be reached. The relay answers 502, 503 or 504 when it cannot reach the Mac (tunnel down, Mac asleep).
+    /// Any other status came from the Mac itself, so the message fails with Retry.
+    private static func isUnreachable(_ error: Error) -> Bool {
+        switch error {
+        case ClientError.transport: return true
+        case ClientError.api(let status, _, _): return [502, 503, 504].contains(status)
+        default: return error is URLError
+        }
+    }
+
+    // MARK: Outbox
+
+    /// Loads the saved outbox and keeps saving it from now on. Call it once, before `start()`. A message that was waiting or on its
+    /// way when the app ended comes back as waiting: a resend carries the same client id, so the Mac still makes it once.
+    func useOutbox(_ store: any OutboxStoring) {
+        outboxStore = store
+        let restored = store.load().filter { record in !outbox.contains { $0.id == record.id } }
+        for record in restored.prefix(Self.outboxCapacity) {
+            var message = OutgoingMessage(id: record.id, text: record.text, date: record.date, state: record.failure.map { .failed($0) } ?? .waiting, known: [], reply: record.reply)
+            message.queuedAt = record.queuedAt
+            message.restored = true
+            outbox.append(message)
+        }
+        outbox.sort { $0.date < $1.date }
+    }
+
+    private func persistOutbox() {
+        guard let outboxStore else { return }
+        let records: [OutboxRecord] = outbox.compactMap { message in
+            guard let queuedAt = message.queuedAt else { return nil }
+            var failure: String?
+            switch message.state {
+            case .waiting, .sending: break
+            case .failed(let reason): failure = reason
+            case .sent: return nil
+            }
+            return OutboxRecord(id: message.id, text: message.text, date: message.date, queuedAt: queuedAt, replyItemID: message.reply?.itemID, replySelection: message.reply?.selectionText, failure: failure)
+        }
+        outboxStore.save(records)
+    }
+
+    /// Marks a message as waiting for the connection. A full outbox fails the new message instead, which then shows Retry.
+    private func enqueue(_ id: UUID) {
+        guard let index = outbox.firstIndex(where: { $0.id == id }) else { return }
+        if outbox[index].queuedAt == nil {
+            guard outbox.filter({ $0.queuedAt != nil }).count < Self.outboxCapacity else {
+                outbox[index].state = .failed("Too many messages are waiting to send. Delete some, or wait for your Mac.")
+                return
+            }
+            outbox[index].queuedAt = now()
+        }
+        outbox[index].state = .waiting
+        persistOutbox()
+    }
+
+    /// Removes a message that waits or failed before the Mac got it. A message already on its way cannot be taken back.
+    func deleteQueued(_ id: UUID) {
+        guard let index = outbox.firstIndex(where: { $0.id == id }), outbox[index].isWaiting || outbox[index].isFailed else { return }
+        outbox.remove(at: index)
+        persistOutbox()
+    }
+
+    private func kickFlush() {
+        guard !flushing else { return }
+        Task { [weak self] in await self?.flushOutbox() }
+    }
+
+    override func handle(_ signal: EventSignal) async {
+        await super.handle(signal)
+        switch signal {
+        case .connected, .resync: kickFlush()
+        default: break
+        }
+    }
+
+    /// Sends the waiting messages one at a time, oldest first, each after the Mac answered the one before. It stops at the first
+    /// message that cannot reach the Mac, so the order holds. A message the Mac refuses, or one older than `maxWaitingAge`, shows
+    /// Retry and is skipped.
+    func flushOutbox() async {
+        guard !flushing else { return }
+        flushing = true
+        defer { flushing = false }
+        while let index = outbox.firstIndex(where: \.isWaiting) {
+            let message = outbox[index]
+            if let queuedAt = message.queuedAt, now().timeIntervalSince(queuedAt) > Self.maxWaitingAge {
+                outbox[index].state = .failed("Waited more than 24 hours, so it was not sent.")
+                persistOutbox()
+                continue
+            }
+            outbox[index].state = .sending
+            outbox[index].restored = false
+            // Messages the Mac showed while this one waited are not its copy.
+            outbox[index].known = userItemIDs
+            persistOutbox()
+            switch await deliver(message.id, text: message.text, uploadIDs: [], reply: message.reply, photos: [:]) {
+            case .delivered, .refused: continue
+            case .offline, .failed: return
+            }
+        }
     }
 
     // MARK: Voice
