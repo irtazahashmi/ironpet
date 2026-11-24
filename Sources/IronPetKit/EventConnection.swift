@@ -61,10 +61,19 @@ public final class DefaultsResumeStore: EventResumeStoring, @unchecked Sendable 
         defaults.set(epoch, forKey: epochKey)
     }
 
-    /// Forgets the resume point, when the phone unpairs.
+    /// Forgets this store's resume point.
     public func clear() {
         defaults.removeObject(forKey: seqKey)
         defaults.removeObject(forKey: epochKey)
+    }
+
+    /// The prefix of every key the app gives its stores, one per paired Mac.
+    public static let keyPrefix = "events.resume."
+
+    /// Forgets the resume points of every Mac this phone was paired with. The phone calls it when it unpairs and when it pairs again,
+    /// since a point from one Mac means nothing to another.
+    public static func clearAll(defaults: UserDefaults = .standard) {
+        for name in defaults.dictionaryRepresentation().keys where name.hasPrefix(keyPrefix) { defaults.removeObject(forKey: name) }
     }
 }
 

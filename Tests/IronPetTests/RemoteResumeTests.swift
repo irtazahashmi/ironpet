@@ -104,7 +104,10 @@ final class RemoteResumeTests: XCTestCase {
         }
         for _ in 0..<100 where !seen.contains(.resumed(replayed: 1)) { try await Task.sleep(nanoseconds: 20_000_000) }
         h.events.publish(.agentsChanged)
+        // A Mac that never sends the second event must fail the test, not hang it.
+        let stopper = Task { try? await Task.sleep(nanoseconds: 2_000_000_000); reading.cancel() }
         await reading.value
+        stopper.cancel()
         XCTAssertEqual(seqs(seen), [start + 1, start + 2])
         XCTAssertEqual(seen.firstIndex(of: .resumed(replayed: 1)), 1, "the replay, then resumed, then live events")
     }

@@ -170,13 +170,49 @@ final class ResumeTests: XCTestCase {
             seen.set(applied)
         }
         server.publish(RemoteEvent.chatItem, id: "m-4", item: item("m-4", "replayed"))
+        // The replay comes 300 ms after the hello. A phone that acts on the hello alone sends the queued message before it.
+        server.replayDelay = 0.3
         model.start()
         await poll { !socket.sent.isEmpty }
-        try? await Task.sleep(nanoseconds: 300_000_000)
+        try? await Task.sleep(nanoseconds: 600_000_000)
 
         XCTAssertEqual(socket.sent.map(\.text), ["typed offline"], "sent once")
         XCTAssertEqual(socket.sent.first?.clientID, offline.outbox.first?.id.uuidString.lowercased(), "with the client id it was made with")
         XCTAssertTrue(seen.value, "the replayed message was applied before the queued one went out")
         model.stop()
+    }
+
+    // The saved position belongs to one pairing, so ending or changing the pairing forgets it.
+    private func appModel(_ device: PairedDevice?) -> (AppModel, UserDefaults) {
+        let suite = "resume-tests-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        addTeardownBlock { defaults.removePersistentDomain(forName: suite) }
+        DefaultsResumeStore(defaults: defaults, key: DefaultsResumeStore.keyPrefix + "aaaa").save(seq: 42, epoch: "old-launch")
+        defaults.set("kept", forKey: "unrelated.key")
+        return (AppModel(store: MemoryCredentialStore(device), resumeDefaults: defaults), defaults)
+    }
+
+    private func device(_ token: String) -> PairedDevice {
+        PairedDevice(endpoint: ServerEndpoint(baseURL: server.baseURL), token: token, deviceID: "d")
+    }
+
+    func testUnpairingForgetsTheSavedSeq() async {
+        let (app, defaults) = appModel(device(server.token))
+        await app.unpair()
+        XCTAssertNil(DefaultsResumeStore(defaults: defaults, key: DefaultsResumeStore.keyPrefix + "aaaa").load())
+        XCTAssertEqual(defaults.string(forKey: "unrelated.key"), "kept", "only the resume keys go")
+    }
+
+    func testAnUnauthorizedAnswerForgetsTheSavedSeq() {
+        let (app, defaults) = appModel(device(server.token))
+        app.handleUnauthorized()
+        XCTAssertNil(DefaultsResumeStore(defaults: defaults, key: DefaultsResumeStore.keyPrefix + "aaaa").load())
+    }
+
+    func testPairingToAnotherMacForgetsTheSavedSeq() {
+        let (app, defaults) = appModel(nil)
+        app.completePairing(device("a-token-from-another-mac"))
+        XCTAssertNil(DefaultsResumeStore(defaults: defaults, key: DefaultsResumeStore.keyPrefix + "aaaa").load())
+        XCTAssertEqual(defaults.string(forKey: "unrelated.key"), "kept")
     }
 }

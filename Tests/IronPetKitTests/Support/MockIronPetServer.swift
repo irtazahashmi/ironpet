@@ -42,6 +42,7 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _resumeSupported = false
     private var _epoch = "mock-epoch-1"
     private var _bufferFloor = 0
+    private var _replayDelay = 0.0
     private var _socketURLs: [String] = []
     private var _pet = RemotePet(name: "Ghost", mood: "idle", badge: 0, tricks: ["Wave", "Jump", "Dance", "Zoomies"])
     private var _bubbles: [RemoteBubble] = MockIronPetServer.sampleBubbles
@@ -155,6 +156,8 @@ final class MockIronPetServer: @unchecked Sendable {
     var resumeSupported: Bool { get { lock.lock(); defer { lock.unlock() }; return _resumeSupported } set { lock.lock(); _resumeSupported = newValue; lock.unlock() } }
     /// Names this launch of the mock Mac. Changing it is a Mac restart: a phone that sends the old one gets `resync`.
     var epoch: String { get { lock.lock(); defer { lock.unlock() }; return _epoch } set { lock.lock(); _epoch = newValue; lock.unlock() } }
+    /// Seconds between the hello frame and the replay that follows it, so a test can tell which signal the phone acts on.
+    var replayDelay: Double { get { lock.lock(); defer { lock.unlock() }; return _replayDelay } set { lock.lock(); _replayDelay = newValue; lock.unlock() } }
     /// Events with a seq at or below this are gone from the mock's buffer, so a `since` below it is too old.
     var bufferFloor: Int { get { lock.lock(); defer { lock.unlock() }; return _bufferFloor } set { lock.lock(); _bufferFloor = newValue; lock.unlock() } }
     /// The request target of every socket upgrade, such as `/v1/events?since=3`.
@@ -598,14 +601,18 @@ final class MockIronPetServer: @unchecked Sendable {
         let helloRaw = #"{"kind":"hello","seq":\#(_seq),"epoch":"\#(_epoch)","capabilities":["events.resume"]}"#
         let replay = since.map { floor in buffer.filter { $0.seq > floor } } ?? []
         let seqNow = _seq
+        let delay = _replayDelay
         lock.unlock()
         connection.send(content: Data(head.utf8), completion: .contentProcessed { [weak self] _ in
             guard let self else { return }
             if resume { self.sendPayload(Data(helloRaw.utf8), on: connection) } else { self.sendText(hello, on: connection) }
-            if gap { self.sendText(RemoteEvent(seq: self.currentSeq, kind: RemoteEvent.resync), on: connection) } else {
-                for event in replay { self.sendText(event, on: connection) }
-                if resume, since != nil { self.sendPayload(Data(#"{"kind":"resumed","seq":\#(seqNow),"replayed":\#(replay.count)}"#.utf8), on: connection) }
+            let rest = {
+                if gap { self.sendText(RemoteEvent(seq: self.currentSeq, kind: RemoteEvent.resync), on: connection) } else {
+                    for event in replay { self.sendText(event, on: connection) }
+                    if resume, since != nil { self.sendPayload(Data(#"{"kind":"resumed","seq":\#(seqNow),"replayed":\#(replay.count)}"#.utf8), on: connection) }
+                }
             }
+            if delay > 0 { self.queue.asyncAfter(deadline: .now() + delay, execute: rest) } else { rest() }
             self.lock.lock(); self.sockets.append(connection); self.lock.unlock()
             self.drain(connection)
         })

@@ -14,9 +14,12 @@ final class AppModel {
     /// A line for the pairing screen, such as why the app is back there.
     var notice: String?
     @ObservationIgnored let store: CredentialStore
+    /// Where the event socket keeps the last event it applied. Pairing or unpairing forgets it.
+    @ObservationIgnored private let resumeDefaults: UserDefaults
 
-    init(store: CredentialStore) {
+    init(store: CredentialStore, resumeDefaults: UserDefaults = .standard) {
         self.store = store
+        self.resumeDefaults = resumeDefaults
         if let device = store.load() { phase = .paired(device) } else { phase = .unpaired }
     }
 
@@ -27,6 +30,8 @@ final class AppModel {
 
     func completePairing(_ device: PairedDevice) {
         do {
+            // A resume point from the Mac paired before is no use to this one.
+            DefaultsResumeStore.clearAll(defaults: resumeDefaults)
             try store.save(device)
             notice = nil
             phase = .paired(device)
@@ -38,6 +43,7 @@ final class AppModel {
     func handleUnauthorized() {
         guard device != nil else { return }
         store.delete()
+        DefaultsResumeStore.clearAll(defaults: resumeDefaults)
         forgetPresence()
         notice = "The Mac no longer accepts this device. Pair it again."
         phase = .unpaired
@@ -49,6 +55,7 @@ final class AppModel {
             try? await IronPetClient(endpoint: device.endpoint, token: device.token).revokeSelf()
         }
         store.delete()
+        DefaultsResumeStore.clearAll(defaults: resumeDefaults)
         forgetPresence()
         notice = nil
         phase = .unpaired

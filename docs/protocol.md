@@ -105,7 +105,7 @@ launch that numbered it, on the phone. `GET /v1/events?since=<seq>&epoch=<epoch>
 - It sends `{"kind":"resync","seq":n}` and no events when `since` is below the oldest event it still holds, above its newest event, or `epoch` is not its own. The phone reads each area once and goes on from `seq`.
 
 The Mac holds the last 500 events (`APIEventBus.capacity`), and an event merged into a newer one for the same message does not count as lost.
-It logs `events resume_from=K replayed=N` or `events resume_from=K too_old=true`, with no device or message text. A phone sends no `since` on its
+It logs `events resume_from=K replayed=N` or `events resume_from=K too_old=true`, with no device or message text. The phone forgets the saved pair when it unpairs or pairs again. A phone sends no `since` on its
 first connection, and a Mac whose hello lacks `events.resume` sends neither `resumed` nor `resync` after a replay, so the phone reads everything again
 on every connect, as it did before. The queued messages of the outbox below go out after `resumed` or `resync`, so the replayed events are
 applied first.
