@@ -107,7 +107,11 @@ package final class FileMemoryStore: MemoryStore {
     }
 
     /// Past this size a file is tidied after the next reflection.
-    package static let sizeLimit: [MemoryScope: Int] = [.me: 8_000, .project: 12_000, .people: 8_000]
+    /// A file over its limit is shortened by the tidier when `memory.tidy` is on: `memory.sizeLimitMe`, `sizeLimitProject`, `sizeLimitPeople`.
+    package static var sizeLimit: [MemoryScope: Int] {
+        let memory = ConfigStore.shared.config.memory
+        return [.me: memory.sizeLimitMe, .project: memory.sizeLimitProject, .people: memory.sizeLimitPeople]
+    }
     /// Earlier versions kept per file. The oldest go, with their index entries, when a new one is written.
     package static let historyLimit = 50
 

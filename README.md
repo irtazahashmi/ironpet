@@ -260,21 +260,21 @@ Open **Settings** (<kbd>⌘,</kbd> or right-click Ghost → Settings…) to rena
     "copyVersion": ""
   },
   "reminders": { "paused": false, "idleResetMinutes": 5, "snoozeMinutes": 10 },
-  "automations": { "logRetentionDays": 14, "autoFix": true, "autoApprove": false },
+  "automations": { "logRetentionDays": 14, "autoFix": true, "autoApprove": false, "ownRunLimit": 50, "keptThreads": 50, "runTimeoutSeconds": 900 },
   "skills": { "autoUpdate": true },
   "tasks": { "meetingSuggestions": true, "dueReminders": true, "keepDoneDays": 30 },
-  "jobs": { "maxRunning": 3, "permissionTimeoutMinutes": 10, "turnTimeoutMinutes": 60 },
+  "jobs": { "maxRunning": 3, "permissionTimeoutMinutes": 10, "turnTimeoutMinutes": 60, "retentionDays": 30 },
   "welcomeBack": { "enabled": true },
   "window": { "autoHide": false, "appearance": "system" },
   "integrations": { "shareMCPSignIns": false },
   "voice": { "enabled": false, "baseUrl": "http://localhost:8000/v1", "model": "mlx-community/parakeet-tdt-0.6b-v3", "holdToTalk": true },
   "speech": { "enabled": false, "model": "mlx-community/Kokoro-82M-bf16", "voice": "am_puck", "speed": 1.0 },
-  "voiceMode": { "enabled": false, "listenWith": "ironpet", "model": "", "silenceSeconds": 20, "speakJobUpdates": true },
-  "meetings": { "enabled": false, "lastApp": "", "summaryAgent": "claude", "summaryModel": null, "autoSummary": true, "offerToRecordCalls": true, "recogniseSpeakers": false },
+  "voiceMode": { "enabled": false, "listenWith": "ironpet", "model": "", "silenceSeconds": 20, "speakJobUpdates": true, "idleShutdownMinutes": 10, "fastModelWords": ["haiku", "flash", "mini", "fast", "lite"] },
+  "meetings": { "enabled": false, "lastApp": "", "summaryAgent": "claude", "summaryModel": null, "autoSummary": true, "offerToRecordCalls": true, "recogniseSpeakers": false, "transcriptCharacters": 300000 },
   "telegram": { "enabled": false, "allowedUsers": [] },
   "screenCapture": { "enabled": false, "ocr": false, "retentionDays": 30, "excludedApps": [] },
   "desktopControl": { "enabled": false },
-  "memory": { "reflect": true, "reflectAgent": null, "reflectModel": null, "quietMinutes": 30, "tidy": false, "reflectMaxNotes": 8, "reflectMaxInputChars": 24000, "reflectTimeoutSeconds": 180 },
+  "memory": { "reflect": true, "reflectAgent": null, "reflectModel": null, "quietMinutes": 30, "tidy": false, "reflectMaxNotes": 8, "reflectMaxInputChars": 24000, "reflectTimeoutSeconds": 180, "recallBytesMe": 4000, "recallBytesProject": 6000, "recallBytesPeople": 2000, "sizeLimitMe": 8000, "sizeLimitProject": 12000, "sizeLimitPeople": 8000, "catchUpDays": 7, "catchUpThreads": 5, "noteMaxLength": 240 },
   "remote": { "enabled": false, "port": 47380, "address": "", "machineName": "" },
   "chat": { "background": "default", "pasteAttachmentChars": 4000, "pasteAttachmentLines": 60, "sessionRolloverMB": 50, "sessionRetentionDays": 14 },
   "openIn": "auto",
@@ -289,10 +289,10 @@ Open **Settings** (<kbd>⌘,</kbd> or right-click Ghost → Settings…) to rena
 - **Appearance** (`window.appearance`) is `"system"`, `"light"` or `"dark"`. It applies to the pet, bubbles and windows. Settings → General.
 - **Open sessions in** (`openIn`) is `"auto"`, which opens the app that started the agent (found by walking the agent's parent processes), or the bundle id of a fixed app such as `"dev.zed.Zed"`. The picker offers Cursor, VS Code, Zed, Band, Windsurf, Xcode, Finder, Orca, cmux, T3 Code, herdr, Claude and Codex when installed, plus your `editors` entries. Orca opens the session's worktree, and the last five of those open the exact tab or thread of the session when the hook saw its id, and otherwise only bring the app forward. In `urlTemplate`, `{cwd}` becomes the percent-encoded session folder, and `{session}` the agent's session id; without a template the folder is opened with the app.
 - **Reminders and alerts** moved to `automations.json` (see [Automations](#automations)). Older `reminders.water`, `stretch`, `eyes` and `integrations.githubAlerts` keys still load. They are only read once, on the first launch with automations.
-- **Automations** (`automations`): `logRetentionDays` (default 14), `autoFix` (on by default: ask the chat agent to fix a failing automation) and `autoApprove` (off by default: skip the Approve bubble for agent-written shell commands, scripts and prompts; see [Automations](#automations)).
+- **Automations** (`automations`): `logRetentionDays` (default 14), `autoFix` (on by default: ask the chat agent to fix a failing automation) and `autoApprove` (off by default: skip the Approve bubble for agent-written shell commands, scripts and prompts; see [Automations](#automations)). `ownRunLimit` (1 to 500, default 50) is how many runs one automation's own thread takes before it starts fresh, for agents without a readable transcript, `keptThreads` (1 to 500, default 50) is how many threads each automation keeps, and `runTimeoutSeconds` (60 to 7,200, default 900) is how long an automation's agent run may take.
 - **Skills** (`skills.autoUpdate`, on by default): install missing skills and update installed ones at launch for the agents found on your Mac. Settings → General → Skills.
 - **Tasks** (`tasks`): `meetingSuggestions` offers a meeting's action items, `dueReminders` says when a task is due, and `keepDoneDays` is how long done tasks are kept. See [Tasks](#tasks).
-- **Background jobs** (`jobs.maxRunning`, 1 to 5) is how many run at once, and `jobs.permissionTimeoutMinutes` (1 to 1440, default 10) is how long a permission request from a job or an automation's own session waits before the agent gets its reject option. `jobs.turnTimeoutMinutes` (1 to 1440, default 60) is how long one job's agent may run before ironpet stops it. See [Background jobs](#background-jobs).
+- **Background jobs** (`jobs.maxRunning`, 1 to 5) is how many run at once, and `jobs.permissionTimeoutMinutes` (1 to 1440, default 10) is how long a permission request from a job or an automation's own session waits before the agent gets its reject option. `jobs.turnTimeoutMinutes` (1 to 1440, default 60) is how long one job's agent may run before ironpet stops it, and `jobs.retentionDays` (1 to 365, default 30) is how long finished jobs are kept. See [Background jobs](#background-jobs).
 - **Welcome back** (`welcomeBack.enabled`) shows the summary bubble when you return. How long counts as away is `reminders.idleResetMinutes`.
 - **Window auto-hide** (`window.autoHide`, off by default) hides the ironpet window on every section when another app becomes active, and shows it again, on the same section and at the same place, when ironpet is activated (pet click, shortcut, menu bar item). A window you closed with Esc or the close button stays closed. It does not hide while an ironpet sheet, alert or open panel is up, a file drag is over the chat, a screen capture is running, or a voice note is being recorded or transcribed. The voice shortcut shows a hidden window as before. A running chat turn carries on while the window is hidden. Settings → General → "Hide the window when another app is in front" sets it, and a change applies at once.
 - **Telegram** (`telegram`) is covered in [Telegram](#telegram). The bot token is not in this file; it is stored in the Keychain.
@@ -300,7 +300,7 @@ Open **Settings** (<kbd>⌘,</kbd> or right-click Ghost → Settings…) to rena
 - **Voice** (`voice`) is covered in [Voice notes](#voice-notes), **speech** (`speech`, including `speech.speed`) in [Spoken replies](#spoken-replies), and **voice mode** (`voiceMode`) in [Voice mode](#voice-mode). The API key is not in this file; it is stored in the Keychain.
 - **Screen capture** (`screenCapture`) and **desktop control** (`desktopControl`) are covered in [Screen capture](#screen-capture) and [Desktop control](#desktop-control). Both are off by default.
 - **Meetings** (`meetings`, `hotkeys.meeting`) are covered in [Meeting transcripts](#meeting-transcripts).
-- **Memory** (`memory`): `reflect` (on by default) learns from quiet chats, `reflectAgent` is `null` (or empty) for each chat's own agent, or an agent id to have only that agent's text read by it, `reflectModel` is `null` for the agent's cheap model (`haiku` for Claude Code, the default for the others) or a model id for the picked agent (ignored without one), `quietMinutes` (2 to 240) is how long a chat must be quiet, and `tidy` (off by default) lets that agent shorten files that grew past their limit. `reflectMaxNotes` (1 to 20, default 8) caps the notes one pass saves, `reflectMaxInputChars` (2,000 to 200,000, default 24,000) is how much of a chat it reads, and `reflectTimeoutSeconds` (30 to 1,800, default 180) is how long it waits for the agent. See [Memory](#memory).
+- **Memory** (`memory`): `reflect` (on by default) learns from quiet chats, `reflectAgent` is `null` (or empty) for each chat's own agent, or an agent id to have only that agent's text read by it, `reflectModel` is `null` for the agent's cheap model (`haiku` for Claude Code, the default for the others) or a model id for the picked agent (ignored without one), `quietMinutes` (2 to 240) is how long a chat must be quiet, and `tidy` (off by default) lets that agent shorten files that grew past their limit. `reflectMaxNotes` (1 to 20, default 8) caps the notes one pass saves, `reflectMaxInputChars` (2,000 to 200,000, default 24,000) is how much of a chat it reads, and `reflectTimeoutSeconds` (30 to 1,800, default 180) is how long it waits for the agent. `recallBytesMe`, `recallBytesProject` and `recallBytesPeople` (500 to 50,000 bytes, defaults 4,000, 6,000 and 2,000) are how much of each file goes into a chat's context. `sizeLimitMe`, `sizeLimitProject` and `sizeLimitPeople` (1,000 to 200,000 bytes, defaults 8,000, 12,000 and 8,000) are the file sizes the tidier shortens past. `catchUpDays` (1 to 90, default 7) and `catchUpThreads` (1 to 50, default 5) limit the chats a launch catches up on, and `noteMaxLength` (40 to 2,000 characters, default 240) is the longest note. See [Memory](#memory).
 - If the file doesn't parse, ironpet uses the defaults and shows the error at the bottom of Settings. Saving from Settings then first copies your file to `config.invalid.json`.
 
 ## Telegram
@@ -404,6 +404,8 @@ Voice mode has no sidebar page. Its controls are in **Settings → Voice** (List
 | Listen with | `voiceMode.listenWith` | `ironpet` (Microphone in Settings: Ghost hears when you stop talking) or `wispr` (Wispr Flow's dictation is sent as soon as it lands) |
 | Model | `voiceMode.model` | Empty uses the agent's fastest model (Haiku, Flash or a mini), else the chat's |
 | End after silence | `voiceMode.silenceSeconds` | Default 20, 5 to 120 |
+| Close when idle | `voiceMode.idleShutdownMinutes` | Default 10, 1 to 120. The front desk's agent process is closed after this long with no conversation |
+| Fast model words | `voiceMode.fastModelWords` | Default `haiku`, `flash`, `mini`, `fast`, `lite`. With no model set, the first model whose id or name has one of these words is used; up to 20 words, lowercased |
 | Speak job updates | `voiceMode.speakJobUpdates` | Default on |
 
 - **The microphone** is open only during a conversation, with macOS voice processing on, so Ghost's own voice is cancelled from what it hears. Ghost's reply goes to the speech server and plays through the same audio engine.
@@ -566,6 +568,7 @@ Turn it on under **Settings → Meetings**. The switch only turns on after the v
 | Offer to record calls | `meetings.offerToRecordCalls` | Default on, and only applies with meetings on. When another app holds the microphone for about 10 seconds, Ghost asks whether to record it. Nothing records until you click Record |
 | Never treat as a call | `meetings.ignoredMicApps` | Default empty. Bundle id prefixes (at least two dot-separated parts, such as `com.example.dictate`) of apps whose microphone use is not a call, for example dictation apps. They get no call offer and do not hold back spoken replies. Siri, Apple dictation and Wispr Flow are always ignored. Works with meetings off |
 | Recognise speakers in meetings | `meetings.recogniseSpeakers` | Default off. See [Recognising speakers](#recognising-speakers) |
+| Transcript length | `meetings.transcriptCharacters` | Default 300,000, 20,000 to 2,000,000. The summary reads the last this many characters; a longer transcript is cut at the start and the summary says so |
 | Start or stop shortcut | `hotkeys.meeting` | No default. Registered only while meetings are on |
 | Last recorded app | `meetings.lastApp` | Written by ironpet: a bundle id, or `"all"` |
 

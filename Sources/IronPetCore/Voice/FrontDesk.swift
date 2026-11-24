@@ -61,7 +61,7 @@ package final class FrontDesk: FrontDeskTalking {
     package var onConversationEnded: (String) -> Void = { _ in }
     package var now: () -> Date = Date.init
     /// The process is closed after this long without a conversation.
-    package var idleShutdown: TimeInterval = 600
+    package var idleShutdown: TimeInterval = TimeInterval(ConfigStore.shared.config.voiceMode.idleShutdownMinutes * 60)
     /// `--test-mode` only: every reply is this, and no agent runs.
     package var stubReply: String?
 
@@ -262,7 +262,7 @@ package final class FrontDesk: FrontDeskTalking {
         func words(_ model: ChatModel) -> Set<String> {
             Set((model.id + " " + model.name).lowercased().split { !$0.isLetter && !$0.isNumber }.map(String.init))
         }
-        for word in ["haiku", "flash", "mini", "fast", "lite"] {
+        for word in Config.load().config.voiceMode.fastModelWords {
             if let model = models.first(where: { words($0).contains(word) }) { return model.id }
         }
         return nil

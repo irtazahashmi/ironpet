@@ -65,9 +65,9 @@ package final class MemoryReflector {
     package static var maxNotes: Int { ConfigStore.shared.config.memory.reflectMaxNotes }
     package static var maxInput: Int { ConfigStore.shared.config.memory.reflectMaxInputChars }
     package static var timeout: TimeInterval { TimeInterval(ConfigStore.shared.config.memory.reflectTimeoutSeconds) }
-    /// Launch catches up on threads from this far back, at most `catchUpLimit` of them.
-    package static let catchUpDays = 7.0
-    package static let catchUpLimit = 5
+    /// Launch catches up on threads from `memory.catchUpDays` back, at most `memory.catchUpThreads` of them.
+    package static var catchUpDays: Double { Double(ConfigStore.shared.config.memory.catchUpDays) }
+    package static var catchUpLimit: Int { ConfigStore.shared.config.memory.catchUpThreads }
     /// The cursor row that says earlier chats were marked as read.
     package static let seededKey = "catch-up:seeded"
 

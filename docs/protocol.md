@@ -318,7 +318,7 @@ Ghost's notes and search over past chats, meetings and the screen.
 
 ### `prompts`
 
-The prompts ironpet sends to agents on its own: the chat context and rules, the automation run wrapper, the meeting summary and the built-in task review, screen review and mail and calendar checks. Each one's text is `~/.ironpet/prompts/<id>.md`, copied from the default the app ships the first time. `PromptsAPI` lists them with their default and whether a newer default is waiting, and saves, resets or keeps the user's text. Settings → Prompts is its only client today, so no RPC method or REST route exists yet.
+The prompts ironpet sends to agents on its own: the chat context and rules, the automation run wrapper, the messages that ask the chat agent to create or fix an automation, the meeting summary and the built-in task review, screen review and mail and calendar checks. Each one's text is `~/.ironpet/prompts/<id>.md`, copied from the default the app ships the first time. `PromptsAPI` lists them with their default and whether a newer default is waiting, and saves, resets or keeps the user's text. Settings → Prompts is its only client today, so no RPC method or REST route exists yet.
 
 ### `settings`
 

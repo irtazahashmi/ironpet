@@ -28,6 +28,9 @@ package enum Prompts {
                    placeholders: ["pet", "kind", "scopes", "notes", "rule", "input", "maxLength", "maxNotes"], required: []),
         PromptInfo(id: "memory-tidier", title: "Memory: tidying a big file", placeholders: ["limit", "file"], required: []),
         PromptInfo(id: "session-handoff", title: "Chat: handoff to a new session", placeholders: [], required: []),
+        PromptInfo(id: "automation-new", title: "Automations: asking the chat agent to create one", placeholders: ["request", "cli"], required: ["request"]),
+        PromptInfo(id: "automation-fix", title: "Automations: asking the chat agent to fix a failed one", placeholders: ["name", "id", "trigger", "error", "cli"], required: ["error"]),
+        PromptInfo(id: "automation-cli", title: "Automations: the command-line fallback line", placeholders: ["executable"], required: []),
     ]
 
     package static func info(_ id: String) -> PromptInfo? { catalog.first { $0.id == id } }
