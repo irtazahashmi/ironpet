@@ -148,7 +148,6 @@ final class ChatModel: SocketModel {
     /// The ETag of the page the Mac last answered and the phone holds as it is. Nil once a message changed on the phone, so the next read asks in full.
     @ObservationIgnored private var etag: String?
     @ObservationIgnored private var cache: (any ChatCaching)?
-    @ObservationIgnored private var reloadDebounce: Task<Void, Never>?
     var draft = ""
     var attachments: [PendingAttachment] = []
     /// The message the next one answers, with the part of it the user selected, if any.
@@ -254,8 +253,6 @@ final class ChatModel: SocketModel {
     override func stop() {
         quietRetry?.cancel()
         quietRetry = nil
-        reloadDebounce?.cancel()
-        reloadDebounce = nil
         super.stop()
     }
 
@@ -278,12 +275,7 @@ final class ChatModel: SocketModel {
     /// A reload after a burst of `chat.state` events. It waits until the events stop, so a turn that changes the state many times reads
     /// the chat once.
     private func scheduleReload() {
-        reloadDebounce?.cancel()
-        reloadDebounce = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled, let self else { return }
-            await self.reload()
-        }
+        debouncer.run("chat") { [weak self] in await self?.reload() }
     }
 
     override func message(for error: Error) -> String { PlainError.message(for: error) }

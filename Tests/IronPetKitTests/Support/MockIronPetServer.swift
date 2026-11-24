@@ -407,7 +407,10 @@ final class MockIronPetServer: @unchecked Sendable {
             lock.lock(); _tokenValid = false; lock.unlock()
             respond(connection, 200, Data(#"{"revoked":true}"#.utf8))
         case ("GET", 2) where parts[1] == "events": upgrade(request, connection)
-        case ("GET", 2) where parts[1] == "tasks": respond(connection, 200, TaskListResponse(tasks: tasks))
+        case ("GET", 2) where parts[1] == "tasks":
+            // As the Mac does: done tasks only when asked for with include_done=1.
+            let includeDone = request.query.split(separator: "&").contains("include_done=1")
+            respond(connection, 200, TaskListResponse(tasks: includeDone ? tasks : tasks.filter { $0.status != .done }))
         case ("GET", 2) where parts[1] == "task-filters":
             guard taskFiltersSupported else { return fail(connection, 404, "not_found", "not found") }
             respond(connection, 200, QuickFilterListResponse(filters: taskFilters))

@@ -20,7 +20,8 @@ final class AutomationsModel: SocketModel {
 
     override func handle(_ event: RemoteEvent) async {
         switch event.kind {
-        case RemoteEvent.automationsChanged, RemoteEvent.automationNeedsApproval: await reload()
+        case RemoteEvent.automationsChanged, RemoteEvent.automationNeedsApproval:
+            debouncer.run("automations") { [weak self] in await self?.reload() }
         default: break
         }
     }
@@ -194,7 +195,7 @@ final class MeetingsModel: SocketModel {
     }
 
     override func handle(_ event: RemoteEvent) async {
-        if event.kind == RemoteEvent.meetingsChanged { await reload() }
+        if event.kind == RemoteEvent.meetingsChanged { debouncer.run("meetings") { [weak self] in await self?.reload() } }
     }
 
     /// The summary or transcript of a meeting, or nil when it has none or the screen is locked.
@@ -255,7 +256,8 @@ final class PhoneSettingsModel: SocketModel {
 
     override func handle(_ event: RemoteEvent) async {
         switch event.kind {
-        case RemoteEvent.settingsChanged, RemoteEvent.assetsChanged: await reload()
+        case RemoteEvent.settingsChanged, RemoteEvent.assetsChanged:
+            debouncer.run("settings") { [weak self] in await self?.reload() }
         default: break
         }
     }

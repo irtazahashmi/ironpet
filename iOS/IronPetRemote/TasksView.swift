@@ -5,7 +5,6 @@ struct TasksView: View {
     let model: TasksModel
     /// Sends a message to the main chat and shows the Chat tab. Add and Edit on a quick filter use it.
     var onAsk: (String) -> Void = { _ in }
-    @State private var showDone = false
     @State private var filterRequest: QuickFilterRequest?
     @State private var removingFilter: QuickFilter?
     @AppStorage(TasksViewMode.key) private var modeRaw = TasksViewMode.list.rawValue
@@ -132,18 +131,19 @@ struct TasksView: View {
                     taskSection("In progress", id: "in-progress", model.inProgress)
                     taskSection("Backlog", id: "backlog", model.backlog)
                     taskSection("Waiting on others", id: "waiting", model.waiting)
-                    if !model.done.isEmpty {
+                    // The header stays while the done tasks are not loaded, since the list only asks for them when the section opens.
+                    if !model.tasks.isEmpty {
                         Section {
-                            Button { withAnimation { showDone.toggle() } } label: {
+                            Button { Task { await model.setShowsDone(!model.showsDone) } } label: {
                                 HStack {
-                                    Image(systemName: SharedSymbols.chevron).rotationEffect(.degrees(showDone ? 90 : 0)).foregroundStyle(.secondary)
-                                    Text("Done (\(model.done.count))").font(.headline)
+                                    Image(systemName: SharedSymbols.chevron).rotationEffect(.degrees(model.showsDone ? 90 : 0)).foregroundStyle(.secondary)
+                                    Text(model.showsDone ? "Done (\(model.done.count))" : "Done").font(.headline)
                                 }
                             }
                             .foregroundStyle(.primary)
                             .accessibilityIdentifier("section-done")
-                            .accessibilityValue(showDone ? "Expanded" : "Collapsed")
-                            if showDone { ForEach(model.done) { row($0) } }
+                            .accessibilityValue(model.showsDone ? "Expanded" : "Collapsed")
+                            if model.showsDone { ForEach(model.done) { row($0) } }
                         }
                     }
                     if model.loaded, model.tasks.isEmpty, model.suggestions.isEmpty {

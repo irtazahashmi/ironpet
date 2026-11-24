@@ -24,6 +24,9 @@ final class TasksModel {
     @ObservationIgnored private let onUnauthorized: () -> Void
     @ObservationIgnored private var listener: Task<Void, Never>?
     @ObservationIgnored private let defaults: UserDefaults
+    @ObservationIgnored private let debouncer = EventDebouncer()
+    /// Done tasks are asked for only while the Done section is open, so a collapsed list does not carry them.
+    private(set) var showsDone = false
 
     init(client: IronPetClient, events: (any EventSignalSource)? = nil, defaults: UserDefaults = .standard, onUnauthorized: @escaping () -> Void) {
         self.client = client
@@ -69,6 +72,7 @@ final class TasksModel {
     func stop() {
         listener?.cancel()
         listener = nil
+        debouncer.cancelAll()
     }
 
     func handle(_ signal: EventSignal) async {
@@ -78,9 +82,9 @@ final class TasksModel {
         case .unauthorized: onUnauthorized()
         case .event(let event):
             switch event.kind {
-            case RemoteEvent.tasksChanged: await reloadTasks()
-            case RemoteEvent.suggestionsChanged: await reloadSuggestions()
-            case RemoteEvent.settingsChanged: await reloadFilters()
+            case RemoteEvent.tasksChanged: debouncer.run("tasks") { [weak self] in await self?.reloadTasks() }
+            case RemoteEvent.suggestionsChanged: debouncer.run("suggestions") { [weak self] in await self?.reloadSuggestions() }
+            case RemoteEvent.settingsChanged: debouncer.run("filters") { [weak self] in await self?.reloadFilters() }
             default: break
             }
         }
@@ -121,7 +125,14 @@ final class TasksModel {
     }
 
     func reloadTasks() async {
-        if let list = await run({ try await self.client.tasks() }) { tasks = list }
+        if let list = await run({ try await self.client.tasks(includeDone: self.showsDone) }) { tasks = list }
+    }
+
+    /// The Done section opened or closed. Opening it asks the Mac for the done tasks; closing it drops them from the list.
+    func setShowsDone(_ shown: Bool) async {
+        guard showsDone != shown else { return }
+        showsDone = shown
+        await reloadTasks()
     }
 
     func reloadSuggestions() async {

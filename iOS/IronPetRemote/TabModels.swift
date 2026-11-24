@@ -4,9 +4,32 @@ import Observation
 import SwiftUI
 import UIKit
 
+/// Runs a reload once a burst of events under one key has settled for 300 ms. A replay of many events, or a burst of one kind, reads each
+/// screen once instead of once per event, which is how the Mac's rate limit gets hit.
+@MainActor
+final class EventDebouncer {
+    private var pending: [String: Task<Void, Never>] = [:]
+
+    func run(_ key: String, _ work: @escaping @MainActor () async -> Void) {
+        pending[key]?.cancel()
+        pending[key] = Task {
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled else { return }
+            await work()
+        }
+    }
+
+    func cancelAll() {
+        for task in pending.values { task.cancel() }
+        pending = [:]
+    }
+}
+
 /// What every tab model does with the event socket: read it until `stop()`, reload when it opens or resyncs, and drop the token on a 401.
 @MainActor @Observable
 class SocketModel {
+    /// Event-driven reloads go through this, so a burst reads each screen once. Cancelled on `stop()`.
+    @ObservationIgnored let debouncer = EventDebouncer()
     @ObservationIgnored let client: IronPetClient
     @ObservationIgnored let events: any EventSignalSource
     @ObservationIgnored let onUnauthorized: () -> Void
@@ -36,6 +59,7 @@ class SocketModel {
     func stop() {
         listener?.cancel()
         listener = nil
+        debouncer.cancelAll()
     }
 
     func refresh() async {
@@ -169,13 +193,17 @@ final class PetModel: SocketModel {
         switch event.kind {
         case RemoteEvent.petMood:
             if let id = event.id { setMood(id) }
-            await reloadPet(applyMood: false)
-        case RemoteEvent.bubbleShown, RemoteEvent.bubbleDismissed: await reloadBubbles()
+            debouncer.run("pet") { [weak self] in await self?.reloadPet(applyMood: false) }
+        case RemoteEvent.bubbleShown, RemoteEvent.bubbleDismissed:
+            debouncer.run("bubbles") { [weak self] in await self?.reloadBubbles() }
         case RemoteEvent.assetsChanged:
-            await reloadPet(applyMood: false)
-            await syncAssets()
+            debouncer.run("assets") { [weak self] in
+                await self?.reloadPet(applyMood: false)
+                await self?.syncAssets()
+            }
         // The Mac's background (and its accent colour) are part of the pet resource, so a change in the Mac's Settings shows at once.
-        case RemoteEvent.alertsChanged, RemoteEvent.agentsChanged, RemoteEvent.settingsChanged: await reloadPet(applyMood: false)
+        case RemoteEvent.alertsChanged, RemoteEvent.agentsChanged, RemoteEvent.settingsChanged:
+            debouncer.run("pet") { [weak self] in await self?.reloadPet(applyMood: false) }
         default: break
         }
     }
@@ -251,7 +279,7 @@ final class AgentsModel: SocketModel {
     }
 
     override func handle(_ event: RemoteEvent) async {
-        if event.kind == RemoteEvent.agentsChanged { await reload() }
+        if event.kind == RemoteEvent.agentsChanged { debouncer.run("agents") { [weak self] in await self?.reload() } }
     }
 
     func detail(_ id: String) async -> RemoteAgent? { await run { try await self.client.agent(id: id) } }
@@ -277,7 +305,7 @@ final class AlertsModel: SocketModel {
     }
 
     override func handle(_ event: RemoteEvent) async {
-        if event.kind == RemoteEvent.alertsChanged { await reload() }
+        if event.kind == RemoteEvent.alertsChanged { debouncer.run("alerts") { [weak self] in await self?.reload() } }
     }
 
     func dismiss(_ alert: RemoteAlert) async {
@@ -312,7 +340,8 @@ final class TodayModel: SocketModel {
 
     override func handle(_ event: RemoteEvent) async {
         switch event.kind {
-        case RemoteEvent.tasksChanged, RemoteEvent.agentsChanged, RemoteEvent.alertsChanged, "meetings.changed": await reload()
+        case RemoteEvent.tasksChanged, RemoteEvent.agentsChanged, RemoteEvent.alertsChanged, "meetings.changed":
+            debouncer.run("today") { [weak self] in await self?.reload() }
         default: break
         }
     }
