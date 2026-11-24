@@ -3,103 +3,93 @@ import enum IronPetKit.SharedSymbols
 import IronPetCore
 import SwiftUI
 
-/// What Settings → Memory shows and does: the recent changes with Undo, the files with an editor, and search. The rules (writing,
-/// undo, history) live in `FileMemoryStore`; this only calls them and keeps the page's state.
+/// What Settings → Memory shows and does: the pages and their claims, the recent changes with Undo, and search. The rules (writing,
+/// undo, pinning) live in `EntityMemoryStore`, behind `MemoryAPI`; this only calls the API and keeps the page's state.
 @MainActor
 final class MemorySettingsModel: ObservableObject {
     /// Probes for installed agents. `AppDelegate` sets the Mac one.
     var spawner: ProcessSpawner = UnsupportedProcessSpawner()
-    let store: FileMemoryStore
-    let index: MemoryIndex?
+    let api: MemoryAPI
     private weak var reflector: MemoryReflector?
     @Published private(set) var changes: [MemoryChange] = []
     /// Why the last reflection pass failed, until one succeeds.
     @Published private(set) var lastError: String?
-    @Published private(set) var files: [MemoryFile] = []
-    /// The file open in the editor, by its path inside the memory folder.
+    @Published private(set) var entities: [MemoryEntity] = []
+    /// How many valid claims each entity has, by id.
+    @Published private(set) var counts: [String: Int] = [:]
+    /// The page open in the list, by entity id.
     @Published private(set) var selected: String?
-    @Published var draft = ""
-    @Published private(set) var saved = ""
+    @Published private(set) var claims: [MemoryClaim] = []
+    /// The claims the page used to hold, newest first.
+    @Published private(set) var history: [MemoryClaim] = []
     @Published private(set) var message: String?
     /// Why the last Undo did nothing.
     @Published private(set) var undoMessage: String?
 
-    init(store: FileMemoryStore, index: MemoryIndex?, reflector: MemoryReflector? = nil) {
-        self.store = store
-        self.index = index
+    init(api: MemoryAPI, reflector: MemoryReflector? = nil) {
+        self.api = api
         self.reflector = reflector
         reload()
     }
 
-    var hasUnsavedEdit: Bool { draft != saved }
-
-    /// "About me", "People" or the project's name, for a path inside the memory folder.
-    func title(of path: String) -> String {
-        files.first { $0.path == path }?.title ?? store.title(store.directory.appendingPathComponent(path))
+    /// The page's name, for a change or a row.
+    func name(of entity: String) -> String {
+        entities.first { $0.id == entity }?.name ?? entity
     }
 
     func reload() {
         if let outcome = reflector?.lastOutcome, !outcome.skipped { lastError = outcome.error }
-        changes = store.recentChanges(limit: 20)
-        files = store.files()
-        if selected == nil || !files.contains(where: { $0.path == selected }) { select(files.first?.path) }
-        else if !hasUnsavedEdit, let selected { load(selected) }
+        changes = api.recentChanges(limit: 20)
+        entities = api.entities()
+        counts = Dictionary(uniqueKeysWithValues: entities.map { ($0.id, api.claims(of: $0.id).count) })
+        if selected == nil || !entities.contains(where: { $0.id == selected }) {
+            selected = entities.first(where: { (counts[$0.id] ?? 0) > 0 })?.id ?? entities.first?.id
+        }
+        refreshPage()
     }
 
-    func select(_ path: String?) {
-        selected = path
+    func select(_ entity: String?) {
+        selected = entity
         message = nil
-        if let path { load(path) } else { draft = ""; saved = "" }
+        refreshPage()
     }
 
-    private func load(_ path: String) {
-        saved = store.text(store.directory.appendingPathComponent(path))
-        draft = saved
+    private func refreshPage() {
+        guard let selected else { claims = []; history = []; return }
+        claims = api.claims(of: selected)
+        history = api.history(of: selected)
     }
 
-    func save() {
-        guard let selected else { return }
-        // A reflection pass may have written the file since it was opened. Saving the draft would drop what it learned.
-        guard store.text(store.directory.appendingPathComponent(selected)) == saved else {
-            message = "This file changed while you were editing. Revert to see the new version, then make your edit again."
-            return
-        }
-        switch store.rewrite(store.directory.appendingPathComponent(selected), with: draft, action: .edited, source: MemoryNote.userSource,
-                             summary: "Edited \(selected) in Settings") {
-        case .success: message = nil
-        case .failure(let failure): message = failure.message
-        }
+    func pin(_ claim: MemoryClaim) {
+        _ = api.setPinned(claim.id, !claim.pinned)
         reload()
-        load(selected)
-    }
-
-    /// Goes back to the file as it is on disk now, which also picks up what a reflection pass wrote meanwhile.
-    func revert() {
-        message = nil
-        if let selected { load(selected) }
     }
 
     func undo(_ change: MemoryChange) {
-        if case .failure(let failure) = store.undo(change) { undoMessage = failure.message } else { undoMessage = nil }
+        if case .failure(let failure) = api.undo(change) { undoMessage = failure.message } else { undoMessage = nil }
         reload()
-        guard let selected, selected == change.file else { return }
-        if hasUnsavedEdit { message = "Undo changed this file while you were editing. Revert to see the new version, then make your edit again." } else { load(selected) }
     }
 
     func search(_ query: String) -> [MemoryIndex.Hit] {
-        index?.search(query, limit: 20) ?? []
+        api.search(query, limit: 20)
     }
 
     func forgetEverything() {
         reflector?.cancelAll()
-        store.forgetEverything()
+        api.forgetEverything()
         selected = nil
         reload()
     }
 
-    func openFolder() {
-        try? FileManager.default.createDirectory(at: store.directory, withIntermediateDirectories: true)
-        NSWorkspace.shared.open(store.directory)
+    /// Writes the Markdown copies of every page and opens the folder. A copy for reading; nothing reads it back.
+    func exportAndOpen() {
+        switch api.exportMarkdown() {
+        case .success(let folder):
+            message = nil
+            NSWorkspace.shared.open(folder)
+        case .failure(let failure):
+            message = failure.message
+        }
     }
 }
 
@@ -139,7 +129,7 @@ struct MemorySettingsBody: View {
             Form {
                 learningSection
                 recentSection(scroll)
-                notesSection.id("notes")
+                pagesSection.id("pages")
                 searchSection
                 dataSection
             }
@@ -185,18 +175,19 @@ struct MemorySettingsBody: View {
                 LabeledContent("Model") { Text("Haiku for Claude Code, each agent's default for the others").foregroundStyle(.secondary) }
             }
             Stepper {
-                Text("Learn after \(config.quietMinutes) min of quiet")
+                Text("Learn every \(config.digestMinutes) min")
             } onIncrement: {
-                let q = config.quietMinutes
-                store.update { $0.memory.quietMinutes = min(Config.Memory.quietRange.upperBound, q < 10 ? q + 1 : q + 5) }
+                let d = config.digestMinutes
+                store.update { $0.memory.digestMinutes = min(Config.Memory.digestMinutesRange.upperBound, d < 60 ? d + 15 : d + 60) }
             } onDecrement: {
-                let q = config.quietMinutes
-                store.update { $0.memory.quietMinutes = max(Config.Memory.quietRange.lowerBound, q > 10 ? max(10, q - 5) : q - 1) }
+                let d = config.digestMinutes
+                store.update { $0.memory.digestMinutes = max(Config.Memory.digestMinutesRange.lowerBound, d > 60 ? d - 60 : d - 15) }
             }
+            .help("Once an hour, Ghost reads what is new in chats, meeting summaries and tasks, and merges any page that has grown too long.")
             .disabled(!config.reflect)
-            Toggle("Tidy files that grow too big", isOn: Binding(get: { config.tidy }, set: { on in store.update { $0.memory.tidy = on } }))
-                .disabled(!config.reflect)
-                .help("Sends the whole file, including notes from chats with other agents and lines you wrote, to this agent to merge and shorten.")
+            Toggle("Learn from the screen", isOn: Binding(get: { config.learnFromScreen }, set: { on in store.update { $0.memory.learnFromScreen = on } }))
+                .disabled(!config.reflect || (!store.config.screenCapture.enabled && !config.learnFromScreen))
+                .help("Also reads the text of the screen captures that screen capture saves, with the same agent as the chats. Off by default.")
             if config.reflect, let error = memory.lastError {
                 Label("The last pass failed: \(error)", systemImage: SharedSymbols.warning)
                     .font(.caption).foregroundStyle(.orange).textSelection(.enabled)
@@ -204,7 +195,7 @@ struct MemorySettingsBody: View {
         } header: {
             Text("Learning")
         } footer: {
-Text("When a chat goes quiet, \(petName) sends its new messages to the agent that already had them, which names the facts worth keeping. Each pass uses that agent's quota and shows as Memory in the Usage tab.")
+Text("Once an hour, \(petName) sends what is new to the agent that already had it, which names the facts worth keeping. Each pass uses that agent's quota and shows as Memory in the Usage tab.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -230,9 +221,9 @@ Text("When a chat goes quiet, \(petName) sends its new messages to the agent tha
                     .font(.callout).foregroundStyle(.secondary)
             }
             ForEach(memory.changes) { change in
-                ChangeRow(change: change, file: memory.title(of: change.file), undo: { memory.undo(change) }, edit: {
+                ChangeRow(change: change, page: memory.name(of: change.file), undo: { memory.undo(change) }, edit: {
                     memory.select(change.file)
-                    withAnimation { scroll.scrollTo("notes", anchor: .top) }
+                    withAnimation { scroll.scrollTo("pages", anchor: .top) }
                 })
             }
         } header: {
@@ -240,36 +231,37 @@ Text("When a chat goes quiet, \(petName) sends its new messages to the agent tha
         }
     }
 
-    // MARK: Notes
+    // MARK: Pages
 
-    private var notesSection: some View {
+    private var pagesSection: some View {
         Section {
-            if memory.files.isEmpty {
-                Text("No notes yet.").font(.callout).foregroundStyle(.secondary)
+            if memory.entities.isEmpty {
+                Text("No pages yet.").font(.callout).foregroundStyle(.secondary)
             } else {
-                Picker("File", selection: Binding(get: { memory.selected ?? "" }, set: { memory.select($0) })) {
-                    ForEach(memory.files) { file in
-                        Text("\(file.title) (\(file.notes) note\(file.notes == 1 ? "" : "s"))").tag(file.path)
+                Picker("Page", selection: Binding(get: { memory.selected ?? "" }, set: { memory.select($0.isEmpty ? nil : $0) })) {
+                    ForEach(memory.entities) { entity in
+                        let count = memory.counts[entity.id] ?? 0
+                        Text(entity.isStub ? "\(entity.name) (stub)" : "\(entity.name) (\(count) fact\(count == 1 ? "" : "s"))").tag(entity.id)
                     }
                 }
-                TextEditor(text: $memory.draft)
-                    .font(.system(.callout, design: .monospaced))
-                    .frame(minHeight: 180, maxHeight: 260)
-                    .scrollContentBackground(.hidden)
-                    .accessibilityLabel("Notes in \(memory.selected ?? "")")
-                HStack {
-                    if let message = memory.message {
-                        Text(message).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                if memory.claims.isEmpty {
+                    Text("Nothing on this page yet.").font(.callout).foregroundStyle(.secondary)
+                }
+                ForEach(memory.claims) { claim in
+                    ClaimRow(claim: claim, pin: { memory.pin(claim) })
+                }
+                if !memory.history.isEmpty {
+                    DisclosureGroup("Earlier (\(memory.history.count))") {
+                        ForEach(memory.history) { claim in
+                            Text(claim.text).strikethrough().foregroundStyle(.secondary).font(.callout)
+                        }
                     }
-                    Spacer()
-                    Button("Revert", action: memory.revert).disabled(!memory.hasUnsavedEdit)
-                    Button("Save", action: memory.save).keyboardShortcut("s", modifiers: .command).disabled(!memory.hasUnsavedEdit)
                 }
             }
         } header: {
-            Text("Notes")
+            Text("Pages")
         } footer: {
-            Text("Plain Markdown, one note per line starting with \"- \". The comment at the end of a line holds the day and where the note came from. Saving keeps the previous version in .history.")
+            Text("Each page holds what \(petName) knows about one person, project or the user. A fact that changed is replaced and kept under Earlier. Pinned facts are never replaced: a newer fact is added beside them.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -311,7 +303,6 @@ Text("When a chat goes quiet, \(petName) sends its new messages to the agent tha
         case .chat: return SharedSymbols.chat
         case .meeting: return "person.2.wave.2"
         case .note: return "note.text"
-        case .history: return SharedSymbols.history
         }
     }
 
@@ -320,32 +311,35 @@ Text("When a chat goes quiet, \(petName) sends its new messages to the agent tha
     private var dataSection: some View {
         Section {
             HStack {
-                let notes = memory.files.reduce(0) { $0 + $1.notes }
-                Text("\(notes) note\(notes == 1 ? "" : "s") in \(memory.files.count) file\(memory.files.count == 1 ? "" : "s")")
+                let facts = memory.counts.values.reduce(0, +)
+                Text("\(facts) fact\(facts == 1 ? "" : "s") on \(memory.entities.count) page\(memory.entities.count == 1 ? "" : "s")")
                     .foregroundStyle(.secondary)
                 Spacer()
-                Button("Open Folder", action: memory.openFolder)
+                Button("Export Markdown", action: memory.exportAndOpen)
                 Button("Forget Everything…", role: .destructive) { confirmForget = true }
-                    .disabled(memory.files.isEmpty && memory.changes.isEmpty)
+                    .disabled(memory.entities.count <= 1 && memory.changes.isEmpty)
+                    .confirmationDialog("Forget everything \(petName) has learned?", isPresented: $confirmForget) {
+                        Button("Forget Everything", role: .destructive, action: memory.forgetEverything)
+                    } message: {
+                        Text("Deletes every page, fact and its history, and the search index for them. This cannot be undone. Your chats and meetings stay.")
+                    }
             }
-            .confirmationDialog("Forget everything \(petName) has learned?", isPresented: $confirmForget) {
-                Button("Forget Everything", role: .destructive, action: memory.forgetEverything)
-            } message: {
-                Text("Deletes every note and every earlier version in ~/.ironpet/memory, and their search index. This cannot be undone. Your chats and meetings stay.")
+            if let message = memory.message {
+                Text(message).font(.caption).foregroundStyle(.red).textSelection(.enabled)
             }
         } header: {
             Text("Data")
         } footer: {
-            Text("Stored on this Mac in ~/.ironpet/memory and ironpet.db. Each new chat's agent gets the notes.")
+            Text("Stored on this Mac in ironpet.db. Export writes a Markdown copy of each page to ~/.ironpet/memory-export for reading; ironpet does not read it back.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
 }
 
-/// One change in Recently learned: what changed, in which file, from where, and Undo.
+/// One change in Recently learned: what changed, on which page, from where, and Undo.
 private struct ChangeRow: View {
     let change: MemoryChange
-    let file: String
+    let page: String
     let undo: () -> Void
     let edit: () -> Void
 
@@ -376,13 +370,13 @@ private struct ChangeRow: View {
             Image(systemName: symbol).foregroundStyle(.secondary).accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(text).strikethrough(change.undone).lineLimit(3)
-                Text("\(verb) · \(change.section.map { "\(file) · \($0)" } ?? file) · \(Self.origin(change.source)) · "
+                Text("\(verb) · \(change.section.map { $0 == page ? page : "\(page) · \($0)" } ?? page) · \(Self.origin(change.source)) · "
                      + change.at.formatted(.relative(presentation: .named)))
                     .font(.caption).foregroundStyle(.secondary)
             }
             Spacer()
-            Button("Edit", action: edit).controlSize(.small)
-            Button(change.undone ? "Undone" : "Undo", action: undo).controlSize(.small).disabled(change.undone)
+            Button("Show", action: edit).controlSize(.small)
+            Button(change.undone ? "Undone" : "Undo", action: undo).controlSize(.small).disabled(change.undone || change.claim == nil)
         }
         .accessibilityElement(children: .contain)
     }
@@ -394,8 +388,31 @@ private struct ChangeRow: View {
         if source.hasPrefix("automation:") { return "from automation \(source.dropFirst("automation:".count))" }
         switch source {
         case MemoryNote.userSource: return "by you"
-        case "tidy": return "tidy pass"
         default: return "by an agent"
         }
+    }
+}
+
+/// One claim on a page: its text, the day and the source, and a pin.
+private struct ClaimRow: View {
+    let claim: MemoryClaim
+    let pin: () -> Void
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(claim.text).lineLimit(3)
+                Text([claim.date, claim.sources.last.map { ChangeRow.origin($0) }].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button(action: pin) {
+                Image(systemName: claim.pinned ? "pin.fill" : "pin")
+            }
+            .buttonStyle(.borderless)
+            .help(claim.pinned ? "Unpin this fact" : "Pin this fact so a newer one is added beside it instead of replacing it")
+            .accessibilityLabel(claim.pinned ? "Unpin" : "Pin")
+        }
+        .accessibilityElement(children: .contain)
     }
 }

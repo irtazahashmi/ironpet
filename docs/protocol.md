@@ -316,7 +316,7 @@ Ghost's notes and search over past chats, meetings and the screen.
 |---|---|---|---|
 | `memory.call` | `MemoryCall` | `JSON` | none |
 
-`memory.call` runs one `memory_*` tool. `params` is `{"name", "arguments", "caller"}` where `name` is `memory_remember`, `memory_forget`, `memory_search` or `memory_get`, and `arguments` is that tool's input object. The result is the tool's JSON output. A failure of the tool is `invalid` with the tool's message. It fails with `unavailable` until the host attaches the memory services.
+`memory.call` runs one `memory_*` tool. `params` is `{"name", "arguments", "caller"}` where `name` is `memory_remember`, `memory_forget`, `memory_page`, `memory_links`, `memory_search` or `memory_get`, and `arguments` is that tool's input object. The result is the tool's JSON output. A failure of the tool is `invalid` with the tool's message. It fails with `unavailable` until the host attaches the memory services.
 
 ### `prompts`
 

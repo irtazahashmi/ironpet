@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import HTTPTypes
 import Hummingbird
@@ -513,7 +514,7 @@ final class RemoteServer {
             let query = Self.query(request)
             let limit = query["limit"]?.first.flatMap { Int($0) }.map { min(max($0, 1), 200) }
             let before = query["before"]?.first
-            return await self.chat(context) { await $0.current(limit: limit, before: before) }
+            return await self.chatCurrent(request, context, limit: limit, before: before)
         }
         router.get("/v1/chat/messages/:id") { [self] _, context in
             let id = Self.parameter(context, "id")
@@ -590,6 +591,20 @@ final class RemoteServer {
                 return Self.errorResponse(RemoteFailure(error))
             }
         }
+    }
+
+    /// The chat as JSON, with an ETag over the exact bytes sent. A phone that sends the ETag it saved gets 304 and no body when the chat
+    /// has not changed, so a launch with a saved chat costs a few hundred bytes. `no-cache` makes every client check again.
+    private func chatCurrent(_ request: Request, _ context: RemoteContext, limit: Int?, before: String?) async -> Response {
+        guard let device = context.device else { return Self.error(401, "unauthorized", "unauthorized") }
+        let object = await RemoteChat(api: api, device: device.id, uploads: uploads).current(limit: limit, before: before)
+        let bytes = Self.data(object)
+        let digest = SHA256.hash(data: bytes).prefix(16).map { String(format: "%02x", $0) }.joined()
+        let etag = "\"\(digest)\""
+        var headers: HTTPFields = [.cacheControl: "no-cache", .eTag: etag]
+        if request.headers[.ifNoneMatch] == etag { return Response(status: .notModified, headers: headers) }
+        headers[.contentType] = "application/json; charset=utf-8"
+        return Response(status: .ok, headers: headers, body: .init(byteBuffer: ByteBuffer(bytes: bytes)))
     }
 
     private func chat(_ context: RemoteContext, status: Int = 200, _ body: @MainActor (RemoteChat) async throws -> [String: Any]) async -> Response {

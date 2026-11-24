@@ -3,7 +3,7 @@ import Foundation
 @testable import IronPetCore
 
 /// Points Ghost's memory and its editable prompts at one temp folder for the rest of the test run, so no test reads or writes
-/// `~/.ironpet/memory` or `~/.ironpet/prompts`. Every suite that starts a chat turn or an agent session calls it in setUp;
+/// `~/.ironpet/memory`, `~/.ironpet/memory-export` or `~/.ironpet/prompts`. Every suite that starts a chat turn or an agent session calls it in setUp;
 /// `ZMemoryIsolationTests` fails when one is missed.
 enum TestMemory {
     static let directory = FileManager.default.temporaryDirectory
@@ -13,7 +13,8 @@ enum TestMemory {
         .appendingPathComponent("ironpet-test-memory-\(ProcessInfo.processInfo.processIdentifier)/prompts")
 
     static func isolate() {
-        FileMemoryStore.directory = directory
+        LegacyMemoryFiles.directory = directory
+        EntityMemoryStore.exportDirectory = directory.deletingLastPathComponent().appendingPathComponent("memory-export")
         PromptStore.directory = promptDirectory
     }
 }

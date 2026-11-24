@@ -24,7 +24,7 @@ final class AssistantMCPTests: XCTestCase {
         folder = FileManager.default.temporaryDirectory.appendingPathComponent("assistant-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         context = AssistantContext()
-        memory = MemoryMCP.Services(store: FileMemoryStore(directory: folder.appendingPathComponent("memory")), index: nil)
+        memory = MemoryMCP.Services(store: EntityMemoryStore(database: try Database(path: nil, migrations: AppMigrations.all)), index: nil)
     }
 
     override func tearDown() async throws {
@@ -104,15 +104,15 @@ final class AssistantMCPTests: XCTestCase {
         let project = folder.appendingPathComponent("repo")
         try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
         memory.jobFolder = { $0 == "job-1" ? project : nil }
-        let store = try XCTUnwrap(memory.store as? FileMemoryStore)
+        let store = try XCTUnwrap(memory.store as? EntityMemoryStore)
 
         let saved = try await call("memory_remember", ["text": "Prefers short answers", "scope": "me"], jobScope: true, caller: "job:job-1")
         XCTAssertFalse(saved.isError, saved.text)
-        XCTAssertEqual(store.document(store.aboutMe)?.notes.first?.source, "job:job-1", "a job is not outside text")
+        XCTAssertEqual(store.claims(of: "me").first?.sources.last, "job:job-1", "a job is not outside text")
         let projectNote = try await call("memory_remember", ["text": "Tests run with swift test", "scope": "project"], jobScope: true, caller: "job:job-1")
-        XCTAssertEqual(projectNote.json["file"] as? String, store.relativePath(store.projectFile(ProjectKey.of(project))), "the job's folder")
+        XCTAssertEqual(projectNote.json["page"] as? String, store.location(.project, project: ProjectKey.of(project)), "the job's folder")
         _ = try await call("memory_remember", ["text": "Leads the payments team", "scope": "people", "person": "Sara"], jobScope: true, caller: "job:job-1")
-        XCTAssertEqual(store.document(store.people)?.sections, ["Sara"])
+        XCTAssertEqual(store.entities().filter { $0.type == .person }.map(\.name), ["Sara"])
 
         let forgot = try await call("memory_forget", ["query": "payments"], jobScope: true, caller: "job:job-1")
         XCTAssertFalse(forgot.isError, forgot.text)

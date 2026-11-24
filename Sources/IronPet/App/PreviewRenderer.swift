@@ -487,9 +487,10 @@ enum PreviewRenderer {
 
     /// A memory folder with a few notes learned over the last days, one of them undone, or an empty one.
     private static func sampleMemory(in folder: URL, filled: Bool) -> MemorySettingsModel {
-        let index = (try? Database(path: nil, migrations: AppMigrations.all)).map(MemoryIndex.init(database:))
-        let store = FileMemoryStore(directory: folder, index: index)
-        guard filled else { return MemorySettingsModel(store: store, index: index) }
+        EntityMemoryStore.exportDirectory = folder
+        let store = EntityMemoryStore(database: Database.open(path: nil, migrations: MemoryIndex.migrations).database)
+        let api = MemoryAPI(services: { nil }, pages: { store })
+        guard filled else { return MemorySettingsModel(api: api) }
         var clock = Date().addingTimeInterval(-3 * 86_400)
         store.now = { clock }
         let project = ProjectKey(key: "github.com/you/demo-app", name: "demo-app", isRepo: true, workspace: URL(fileURLWithPath: "/Users/you/code/demo-app"))
@@ -508,7 +509,7 @@ enum PreviewRenderer {
         clock = Date().addingTimeInterval(-300)
         _ = store.remember("Uses Vim keybindings everywhere.", scope: .me, source: "chat:c41d09aa")
         if let added = store.recentChanges(limit: 1).first { _ = store.undo(added) }
-        return MemorySettingsModel(store: store, index: index)
+        return MemorySettingsModel(api: api)
     }
 
     private static func sampleSettings(chat: ChatSession, config: Config) -> SettingsModel {

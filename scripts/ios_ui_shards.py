@@ -17,8 +17,9 @@ import sys
 SHARDS = [
     # Shard 1 (28 tests)
     ["BackgroundUITests", "ChatTextSizeUITests", "ChatFileLinksUITests", "ChatSwipeReplyUITests", "ChatMenuKeyboardUITests"],
-    # Shard 2 (26 tests)
-    ["PasteUITests", "QuickFilterUITests", "PhaseThreeUITests", "TasksBoardUITests", "TasksOfflineUITests", "ChatStreamingUITests", "ChatPagingUITests"],
+    # Shard 2 (27 tests)
+    ["PasteUITests", "QuickFilterUITests", "PhaseThreeUITests", "TasksBoardUITests", "TasksOfflineUITests", "ChatStreamingUITests", "ChatPagingUITests",
+     "ChatCacheUITests"],
     # Shard 3 (24 tests)
     ["IronPetRemoteUITests", "ChatParityUITests", "PhaseFourUITests", "PhaseFiveUITests",
      "VoiceRecordingUITests", "AttachPhotoUITests", "ChatModeUITests", "ChatFindUITests", "ChatOutboxUITests"],

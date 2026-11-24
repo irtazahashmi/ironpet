@@ -89,7 +89,7 @@ public final class IronPetClient: @unchecked Sendable {
 
     func perform(_ request: URLRequest) async throws -> Data { try await performWithResponse(request).data }
 
-    func performWithResponse(_ request: URLRequest) async throws -> (data: Data, response: HTTPURLResponse) {
+    func performWithResponse(_ request: URLRequest, acceptNotModified: Bool = false) async throws -> (data: Data, response: HTTPURLResponse) {
         let data: Data, response: URLResponse
         do { (data, response) = try await session.data(for: request) } catch {
             // A request the app cancelled is not a transport failure. Only the calling task's own cancellation counts: URLSession also
@@ -98,7 +98,8 @@ public final class IronPetClient: @unchecked Sendable {
             throw ClientError.transport(error.localizedDescription)
         }
         guard let http = response as? HTTPURLResponse else { throw ClientError.invalidResponse }
-        guard (200..<300).contains(http.statusCode) else {
+        // 304 is an answer, not a failure, for a read that sent the ETag it saved.
+        guard (200..<300).contains(http.statusCode) || (acceptNotModified && http.statusCode == 304) else {
             if http.statusCode == 401, token != nil { throw ClientError.unauthorized }
             let detail = (try? decoder.decode(APIErrorBody.self, from: data))?.error
             throw ClientError.api(status: http.statusCode, code: detail?.code ?? "failed", message: detail?.message ?? "The Mac answered \(http.statusCode).")
@@ -268,6 +269,22 @@ public final class IronPetClient: @unchecked Sendable {
 
     /// The chat. With `limit`, the newest `limit` messages, or the ones before `before`; `hasMore` says whether older ones exist. A Mac
     /// older than paging ignores the query and sends the whole thread, with `hasMore` nil.
+    /// The chat, unless it is still the one the phone saved. `etag` is the ETag of that saved chat. The answer is `.notModified` when the
+    /// Mac says nothing changed, or the chat with the ETag to save next time.
+    public func chatIfChanged(etag: String?, limit: Int? = nil, before: String? = nil) async throws -> ChatRead {
+        var query: [URLQueryItem] = []
+        if let limit { query.append(URLQueryItem(name: "limit", value: String(limit))) }
+        if let before { query.append(URLQueryItem(name: "before", value: before)) }
+        var headers: [String: String] = [:]
+        if let etag { headers["If-None-Match"] = etag }
+        var urlRequest = request("GET", APIPath.chat, query: query, headers: headers)
+        // URLSession's own cache would turn a 304 back into the cached 200, so the answer would not be the Mac's.
+        urlRequest.cachePolicy = .reloadIgnoringLocalCacheData
+        let (data, http) = try await performWithResponse(urlRequest, acceptNotModified: true)
+        if http.statusCode == 304 { return .notModified }
+        return .snapshot(try decode(RemoteChatSnapshot.self, from: data), etag: http.value(forHTTPHeaderField: "ETag"))
+    }
+
     public func chat(limit: Int? = nil, before: String? = nil) async throws -> RemoteChatSnapshot {
         var query: [URLQueryItem] = []
         if let limit { query.append(URLQueryItem(name: "limit", value: String(limit))) }

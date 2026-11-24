@@ -3,7 +3,7 @@ import XCTest
 
 final class ApprovalRulesTests: XCTestCase {
     private func policy(_ call: ACPToolCall) -> ApprovalPolicy {
-        ApprovalRules.policy(for: call, isMemoryFile: { $0.hasPrefix("/memory/") })
+        ApprovalRules.policy(for: call)
     }
 
     private func shell(_ command: String, viaTitleOnly: Bool = false) -> ACPToolCall {
@@ -27,18 +27,15 @@ final class ApprovalRulesTests: XCTestCase {
         }
     }
 
-    func testEditsAskUnlessMemoryFile() {
+    func testEditsAndDeletesAsk() {
+        // Memory lives in ironpet.db now, so no file the agent edits is ever a memory file.
         let edit = ACPToolCall(id: "1", title: "Edit", kind: "edit", rawInput: ["file_path": "/work/app.swift", "new_string": "let a = 1"])
         guard case .ask(let title, let detail) = policy(edit) else { return XCTFail("an edit asks") }
         XCTAssertEqual(title, "Edit app.swift?")
         XCTAssertTrue(detail.contains("/work/app.swift") && detail.contains("let a = 1"))
-        let memory = ACPToolCall(id: "2", title: "Edit", kind: "edit", paths: ["/memory/me.md"])
-        XCTAssertEqual(policy(memory), .allow)
-        let alsoOutside = ACPToolCall(id: "4", title: "Edit", kind: "edit", rawInput: ["path": "/etc/hosts"], paths: ["/memory/me.md"])
-        if case .allow = policy(alsoOutside) { XCTFail("every path must be a note file") }
-        for kind in ["delete", "move"] {
-            if case .allow = policy(ACPToolCall(id: "3", title: kind, kind: kind, paths: ["/memory/me.md"])) {
-                XCTFail("\(kind) of a note file skips its .history copy, so it asks")
+        for kind in ["edit", "delete", "move"] {
+            if case .allow = policy(ACPToolCall(id: "3", title: kind, kind: kind, paths: ["/Users/you/.ironpet/memory/me.md"])) {
+                XCTFail("\(kind) of a file asks, even under the old memory folder")
             }
         }
     }
