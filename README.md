@@ -418,6 +418,7 @@ All in `~/.ironpet/`:
 | Path | Contents |
 | --- | --- |
 | `memory/` | `me.md`, `people.md` and one file per project under `projects/`; edit freely. `.history/` keeps every earlier version. See [Memory](#memory) |
+| `prompts/` | The prompts Ghost sends to agents on its own: `<id>.md` is the text in use, `.defaults/` the default each one was made from. Edit them in Settings → Prompts; see [SPEC.md](SPEC.md#prompts) |
 | `threads/` | Saved chats |
 | `screenshots/` | Screen captures you attached to chats; `attachments/` for files you attached (and large pastes as `pasted-text.txt`) |
 | `meetings/` | One folder per meeting: WAV chunks, `transcript.md`, `summary.md` |

@@ -28,7 +28,7 @@ package enum AutomationPrompt {
         runner.restricted = true
         runner.usageFeature = .automations
         runner.onPermission = { call, respond in respond(decision(for: call)) }
-        let text = "This is an automated run of \"\(automation.name)\" from ironpet. Answer in under 600 characters, as plain text for a small notification.\n\n\(prompt)"
+        let text = Prompts.render(id: "automation-prompt", ["name": automation.name, "prompt": prompt])
         let turn = ACPTurn(prompt: text, preamble: nil, workspace: workspace, resume: nil, model: automation.action.model, images: [], files: [])
         let state = Box()
         let task = Task { @MainActor in

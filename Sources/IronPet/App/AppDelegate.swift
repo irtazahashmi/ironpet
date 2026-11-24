@@ -441,6 +441,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         chat.onAutomation = { [weak service] id, event in service?.chatOutcome(id, event) }
         automations = service
         settingsModel.automations = api.automations
+        settingsModel.prompts = api.prompts
         settingsModel.showLogs = { [weak self] id in
             // The log is a normal window, so it would open behind the floating ironpet window.
             self?.pet.closeWindow()

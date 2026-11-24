@@ -691,7 +691,13 @@ package enum AutomationTemplate {
             out += rest[..<open.lowerBound]
             guard let close = rest.range(of: "}}", range: open.upperBound..<rest.endIndex) else { out += rest[open.lowerBound...]; return out }
             let key = rest[open.upperBound..<close.lowerBound].trimmingCharacters(in: .whitespaces)
-            out += lookup(key, in: values)
+            // `{{prompt.<id>}}` is the text of an editable prompt, read when the automation runs (`Prompts`), so an edit applies
+            // to the next run. It is not item data, so it does not change how the run is classified.
+            if key.hasPrefix("prompt.") {
+                out += Prompts.text(String(key.dropFirst("prompt.".count)))
+            } else {
+                out += lookup(key, in: values)
+            }
             rest = rest[close.upperBound...]
         }
         return out + rest
