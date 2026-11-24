@@ -18,12 +18,6 @@ struct TasksView: View {
     var body: some View {
         NavigationStack {
             content
-            .safeAreaInset(edge: .top, spacing: 0) {
-                if model.filtersSupported {
-                    QuickFilterChips(filters: model.filters, selection: Bindable(model).selectedFilterID,
-                                     onAdd: { filterRequest = .add }, onEdit: { filterRequest = .edit($0) }, onRemove: { removingFilter = $0 })
-                }
-            }
             .sheet(item: $filterRequest) { request in
                 QuickFilterRequestSheet(request: request) { onAsk(request.prompt($0)) }
             }
@@ -81,8 +75,17 @@ struct TasksView: View {
         if mode == .board { board } else { list }
     }
 
+    /// The chips sit in the page content, below the large title. A top safe area inset would pin them to the bar and the title would scroll under them.
+    @ViewBuilder private var chips: some View {
+        if model.filtersSupported {
+            QuickFilterChips(filters: model.filters, selection: Bindable(model).selectedFilterID,
+                             onAdd: { filterRequest = .add }, onEdit: { filterRequest = .edit($0) }, onRemove: { removingFilter = $0 })
+        }
+    }
+
     private var board: some View {
         VStack(spacing: 0) {
+            chips
             if let message = model.errorMessage {
                 Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).font(.footnote)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).accessibilityIdentifier("tasks-error")
@@ -111,6 +114,12 @@ struct TasksView: View {
 
     private var list: some View {
             List {
+                if model.filtersSupported {
+                    chips
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
                 Group {
                     if let message = model.errorMessage {
                         Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("tasks-error")
