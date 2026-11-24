@@ -254,7 +254,7 @@ final class MemoryReflectorTests: XCTestCase {
         answers = [notes(#"{"merges":[{"ids":["\#(next.ref)","\#(other.ref)"],"text":"Merged fact."}]}"#)]
         await digest()
         XCTAssertEqual(prompts.count, 1)
-        XCTAssertTrue(prompts[0].contains("\(next.id): Fact number"), "the oldest unpinned facts are shown")
+        XCTAssertTrue(prompts[0].contains("\(next.ref): Fact number"), "the oldest unpinned facts are shown")
         XCTAssertTrue(claims("me").contains("Merged fact."))
         XCTAssertEqual(store.claims(of: "me").count, 11)
         XCTAssertTrue(store.claims(of: "me").contains { $0.pinned && $0.id == oldest.id }, "a pinned fact is never merged")
