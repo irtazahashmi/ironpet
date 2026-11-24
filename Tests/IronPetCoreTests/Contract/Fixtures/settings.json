@@ -37,6 +37,7 @@
             "captureWindow" : "cmd+opt+shift+g",
             "chat" : "cmd+opt+g",
             "copyVersion" : "",
+            "dictation" : "ctrl+opt+space",
             "meeting" : "",
             "voice" : "cmd+opt+v",
             "voiceMode" : "cmd+opt+ctrl+v"
@@ -211,6 +212,7 @@
             "captureWindow" : "cmd+opt+shift+g",
             "chat" : "cmd+opt+g",
             "copyVersion" : "",
+            "dictation" : "ctrl+opt+space",
             "meeting" : "",
             "voice" : "cmd+opt+v",
             "voiceMode" : "cmd+opt+ctrl+v"
@@ -382,6 +384,7 @@
             "captureWindow" : "cmd+opt+shift+g",
             "chat" : "cmd+opt+g",
             "copyVersion" : "",
+            "dictation" : "ctrl+opt+space",
             "meeting" : "",
             "voice" : "cmd+opt+v",
             "voiceMode" : "cmd+opt+ctrl+v"

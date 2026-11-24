@@ -416,7 +416,7 @@ private struct ShortcutRow: View {
                 message = "Use ⌘, ⌥ or ⌃ (Shift alone isn't enough), or a function key."
                 return nil
             }
-            let others = [\Config.Hotkeys.chat, \.captureWindow, \.captureRegion, \.voice, \.meeting, \.voiceMode, \.copyVersion].filter { $0 != path }
+            let others = [\Config.Hotkeys.chat, \.captureWindow, \.captureRegion, \.voice, \.dictation, \.meeting, \.voiceMode, \.copyVersion].filter { $0 != path }
             if others.contains(where: { Shortcut(store.config.hotkeys[keyPath: $0]) == shortcut }) {
                 message = "\(shortcut.display) is already used for another action."
                 return nil
@@ -459,6 +459,7 @@ struct VoiceSettings: View {
                                                     set: { on in store.update { $0.voice.enabled = on } }))
                 Group {
                     ShortcutRow(title: "Voice shortcut", path: \.voice, model: model)
+                    ShortcutRow(title: "Dictation shortcut", path: \.dictation, model: model)
                     Toggle("Hold to talk", isOn: Binding(get: { store.config.voice.holdToTalk },
                                                          set: { on in store.update { $0.voice.holdToTalk = on } }))
                 }
@@ -466,7 +467,7 @@ struct VoiceSettings: View {
             } header: {
                 Text("Talk to \(name)")
             } footer: {
-                Text("Hold the shortcut or the chat's microphone button, speak, and let go. The text lands in the chat box, or is sent at once when \"Send voice notes automatically\" is on in the chat's menu. With Hold to talk off, press once to start and again to stop. Esc cancels.")
+                Text("Hold the shortcut or the chat's microphone button, speak, and let go. The text lands in the chat box, or is sent at once when \"Send voice notes automatically\" is on in the chat's menu. With Hold to talk off, press once to start and again to stop. Esc cancels.\n\nThe dictation shortcut works in any app: press it, speak, and press it again (or Enter) to type the transcript where the cursor is. Esc cancels and types nothing. Text goes in through Accessibility, or is pasted with your clipboard put back afterwards. Password fields never get text, and when no text field has focus the transcript stays on the clipboard. It needs Accessibility and Microphone access.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             SpokenReplySettings(voiceAPI: model.voice)
