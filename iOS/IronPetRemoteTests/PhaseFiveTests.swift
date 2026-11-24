@@ -67,8 +67,8 @@ final class PhaseFiveTests: XCTestCase {
         let model = model()
         await model.unlock()
         XCTAssertNotNil(model.status, "the status call after it worked")
-        XCTAssertNotNil(model.errorMessage)
-        XCTAssertFalse(model.showsEmptyState)
+        XCTAssertNil(model.errorMessage, "a failed read shows no row")
+        XCTAssertFalse(model.showsEmptyState, "a failed list is not an empty one")
 
         server.brokenRoutes = [:]
         await model.refresh()
@@ -92,12 +92,13 @@ final class PhaseFiveTests: XCTestCase {
         XCTAssertEqual(model.windows.count, 2)
     }
 
-    func testAFailedStatusKeepsItsErrorWhenTheChangeListWorks() async throws {
+    func testAFailedStatusDoesNotHideTheChangeList() async throws {
         server.brokenRoutes = ["/v1/screen/status": 200]
         let model = model()
         await model.unlock()
         XCTAssertEqual(model.windows.count, 2)
-        XCTAssertNotNil(model.errorMessage, "an undecodable status is shown, not cleared by the list that followed")
+        XCTAssertNil(model.errorMessage, "the failed status shows no row")
+        XCTAssertNil(model.status)
     }
 
     func testAScreenWithNoChangesShowsTheEmptyState() async throws {

@@ -9,9 +9,6 @@ struct AgentsView: View {
         NavigationStack(path: $path) {
             List {
                 Group {
-                    if let message = model.errorMessage {
-                        Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("agents-error")
-                    }
                     section("Needs you", id: "needs-input", model.needsInput)
                     section("Running", id: "running", model.running)
                     section("Finished", id: "finished", model.finished)
@@ -24,6 +21,7 @@ struct AgentsView: View {
             .navigationTitle("Agents")
             .navigationBarTitleDisplayMode(.inline)
             .themedScreen()
+            .fullPageLoadError(model)
             .refreshable { await model.refresh() }
             .navigationDestination(for: String.self) { id in AgentDetailView(model: model, id: id) }
             .onChange(of: model.pendingDetail) { _, id in

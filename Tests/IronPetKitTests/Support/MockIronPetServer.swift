@@ -283,7 +283,8 @@ final class MockIronPetServer: @unchecked Sendable {
             sec_protocol_options_set_local_identity(options.securityProtocolOptions, sec_identity_create(tlsIdentity)!)
             parameters = NWParameters(tls: options)
         }
-        let listener = try NWListener(using: parameters, on: .any)
+        // A restart after `stop()` takes the same port again, so a paired phone finds the Mac where it was.
+        let listener = try NWListener(using: parameters, on: port == 0 ? .any : NWEndpoint.Port(rawValue: port)!)
         let ready = DispatchSemaphore(value: 0)
         listener.stateUpdateHandler = { state in if case .ready = state { ready.signal() } }
         listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }

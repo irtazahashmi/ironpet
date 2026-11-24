@@ -18,9 +18,6 @@ struct PhoneSettingsView: View {
                     }
                     .accessibilityIdentifier("chat-text-size")
                 }
-                if let message = model.errorMessage {
-                    Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("settings-error")
-                }
                 if let config = model.config {
                     Section("Reminders") {
                         Toggle("Pause reminders", isOn: binding(config.reminders.paused) { ["reminders": ["paused": $0]] })
@@ -86,6 +83,7 @@ struct PhoneSettingsView: View {
         .navigationTitle("Settings")
         .navigationBarTitleDisplayMode(.inline)
         .themedScreen()
+        .fullPageLoadError(model)
         .refreshable { await model.refresh() }
         .task { model.start() }
     }
