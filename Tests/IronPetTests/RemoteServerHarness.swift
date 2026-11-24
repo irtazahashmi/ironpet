@@ -119,6 +119,8 @@ final class RemoteServerHarness {
         }
         var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)\(path)")!)
         request.httpMethod = method
+        // A 304 must reach the caller as it is, not as the cached 200 a URL cache would substitute.
+        request.cachePolicy = .reloadIgnoringLocalCacheData
         if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
         for (key, value) in headers { request.setValue(value, forHTTPHeaderField: key) }
         if let body {
