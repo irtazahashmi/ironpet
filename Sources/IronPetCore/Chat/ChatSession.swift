@@ -83,6 +83,7 @@ package final class ChatSession {
             attachments: [URL],
             origin: ChatOrigin? = nil,
             reply: Reply? = nil,
+            selection: FrontSelection? = nil,
             automation: String? = nil,
             notice: Bool = false
         ) {
@@ -90,6 +91,7 @@ package final class ChatSession {
             self.attachments = attachments
             self.origin = origin
             self.reply = reply
+            self.selection = selection
             self.automation = automation
             self.notice = notice
         }
@@ -100,6 +102,8 @@ package final class ChatSession {
         /// Who sent it when it was not typed on the Mac. Those are never put back in the Mac input.
         package var origin: ChatOrigin? = nil
         package var reply: Reply? = nil
+        /// Text selected in another app when the chat opened. Mac local sends only.
+        package var selection: FrontSelection? = nil
         /// The id of the automation that sent the message. Those are never put back in the Mac input.
         package var automation: String? = nil
         /// A turn that only delivers pending system notices. It has no text and never reaches the draft.
@@ -701,6 +705,12 @@ package final class ChatSession {
         return "> \(lead) \(owner) message\(when):\n\(quoted)\n\n\(text)"
     }
 
+    /// What the agent receives: optional front-app selection, then an optional reply quote, then the user's text.
+    package static func outgoingPrompt(text: String, reply: Reply?, selection: FrontSelection?) -> String {
+        let withReply = reply.map { replyPrompt($0, text: text) } ?? text
+        return selection.map { FrontSelection.prompt($0, text: withReply) } ?? withReply
+    }
+
     /// The picked permission mode is not touched: it is kept per agent, not per chat.
     package func newChat(reason: String = "new chat requested") {
         ChatLog.note("chat cleared (\(items.count) items, thread \(threadID ?? "none")): \(reason)")
@@ -783,8 +793,8 @@ package final class ChatSession {
     }
 
     /// What a message typed in a job's thread sends to the job.
-    package static func jobMessage(_ text: String, reply: Reply?, files: [URL]) -> String {
-        var message = reply.map { replyPrompt($0, text: text) } ?? text
+    package static func jobMessage(_ text: String, reply: Reply?, files: [URL], selection: FrontSelection? = nil) -> String {
+        var message = outgoingPrompt(text: text, reply: reply, selection: selection)
         if !files.isEmpty { message += (message.isEmpty ? "" : "\n\n") + "Attached files:\n" + files.map { "- \($0.path)" }.joined(separator: "\n") }
         return message
     }
@@ -804,13 +814,13 @@ package final class ChatSession {
 
     /// A message typed on this Mac. A running turn queues it, a running background job in this thread takes it, and with no
     /// folder chosen it is refused so the picker can show. The caller keeps the draft until the answer says it was taken.
-    package func submitLocal(_ text: String, files: [URL], reply: Reply?) -> LocalSend {
+    package func submitLocal(_ text: String, files: [URL], reply: Reply?, selection: FrontSelection? = nil) -> LocalSend {
         let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty || !files.isEmpty else { return .ignored }
         speech.stop()
         // A second process on the job's session would race it, so everything typed here goes to the job: a reply as its
         // quoted prompt, attachments as their paths.
-        let message = Self.jobMessage(prompt, reply: reply, files: files)
+        let message = Self.jobMessage(prompt, reply: reply, files: files, selection: selection)
         if !isRunning, let threadID, jobFollowUp?(threadID, message) == true {
             let item = Item(kind: .user(prompt.isEmpty ? "Attached files" : prompt), origin: Self.jobOrigin, reply: reply)
             items.append(item)
@@ -818,17 +828,17 @@ package final class ChatSession {
             return .toJob
         }
         if isRunning {
-            queue.append(QueuedMessage(text: prompt, attachments: files, reply: reply))
+            queue.append(QueuedMessage(text: prompt, attachments: files, reply: reply, selection: selection))
             steerNext()
             return .queued
         }
-        return start(prompt: prompt, shots: files, reply: reply) ? .sent : .needsFolder
+        return start(prompt: prompt, shots: files, reply: reply, selection: selection) ? .sent : .needsFolder
     }
 
     /// Starts a turn. Returns false, without sending, when no folder is chosen or the hooks are missing.
     @discardableResult
-    private func start(prompt: String, shots: [URL], from client: ChatOrigin? = nil, reply: Reply? = nil, automation: String? = nil,
-                       silent: Bool = false) -> Bool {
+    private func start(prompt: String, shots: [URL], from client: ChatOrigin? = nil, reply: Reply? = nil,
+                       selection: FrontSelection? = nil, automation: String? = nil, silent: Bool = false) -> Bool {
         var prompt = prompt
         let pendingMeta = items.flatMap { $0.meta != nil && $0.metaSent != true ? $0.meta! : [] }
         // A notice turn with nothing left to deliver (a message went first and took it) has nothing to do.
@@ -866,7 +876,7 @@ package final class ChatSession {
         if let automation { onAutomation?(automation, .started) }
         // Pending notices go with this turn once. What the user, a client or a tool wrote cannot contain a genuine meta tag.
         for index in items.indices where items[index].meta != nil && items[index].metaSent != true { items[index].metaSent = true }
-        let sent = MetaTag.escape(reply.map { Self.replyPrompt($0, text: prompt) } ?? prompt)
+        let sent = MetaTag.escape(Self.outgoingPrompt(text: prompt, reply: reply, selection: selection))
         var text = silent ? MetaTag.triggerLead : Self.withVoiceMode(sent, on: voiceModeOn())
         if !pendingMeta.isEmpty { text += "\n\n" + MetaTag.block(pendingMeta) }
         run(ACPTurn(prompt: text, preamble: preamble, workspace: workspace, resume: agentSessionID, model: model,
@@ -904,15 +914,17 @@ package final class ChatSession {
     /// from another client go back to it as a failure instead: they are not the Mac user's draft.
     /// Queued Mac messages that were cancelled before they started, for the draft to take back.
     package struct RestoredDraft: Equatable {
-        package init(text: String, attachments: [URL], reply: Reply? = nil) {
+        package init(text: String, attachments: [URL], reply: Reply? = nil, selection: FrontSelection? = nil) {
             self.text = text
             self.attachments = attachments
             self.reply = reply
+            self.selection = selection
         }
 
         package var text: String
         package var attachments: [URL]
         package var reply: Reply?
+        package var selection: FrontSelection?
     }
 
     package private(set) var restoredDraft: RestoredDraft?
@@ -935,7 +947,8 @@ package final class ChatSession {
         let earlier = restoredDraft
         restoredDraft = RestoredDraft(text: [earlier?.text, text].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: "\n\n"),
                                       attachments: (earlier?.attachments ?? []) + queue.flatMap(\.attachments),
-                                      reply: earlier?.reply ?? queue.compactMap(\.reply).first)
+                                      reply: earlier?.reply ?? queue.compactMap(\.reply).first,
+                                      selection: earlier?.selection ?? queue.compactMap(\.selection).first)
         queue = []
         events?.publish(.chatState, id: "draft")
     }
@@ -974,7 +987,7 @@ package final class ChatSession {
 
     private func steerTurn(_ message: QueuedMessage) -> ACPTurn {
         let prompt = Self.displayText(message)
-        let sent = MetaTag.escape(message.reply.map { Self.replyPrompt($0, text: prompt) } ?? prompt)
+        let sent = MetaTag.escape(Self.outgoingPrompt(text: prompt, reply: message.reply, selection: message.selection))
         return ACPTurn(prompt: Self.withVoiceMode(sent, on: voiceModeOn()), preamble: nil, workspace: workspace ?? Self.scratchWorkspace,
                        resume: agentSessionID, model: model,
                        images: message.attachments.filter(FolderFileIntake.isImageFile), files: message.attachments.filter { !FolderFileIntake.isImageFile($0) })
@@ -1013,7 +1026,8 @@ package final class ChatSession {
     /// Sends the oldest queued message through the normal path.
     private func sendNextQueued() {
         guard let next = queue.first else { return }
-        if start(prompt: next.text, shots: next.attachments, from: next.origin, reply: next.reply, automation: next.automation, silent: next.notice) {
+        if start(prompt: next.text, shots: next.attachments, from: next.origin, reply: next.reply, selection: next.selection,
+                 automation: next.automation, silent: next.notice) {
             queue.removeFirst()
         } else {
             restoreQueue()

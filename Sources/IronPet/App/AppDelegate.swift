@@ -1170,7 +1170,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// a saved thread or the agent switch.
     private func showChat() {
         let front = NSWorkspace.shared.frontmostApplication
-        if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier { previousApp = front }
+        if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier {
+            previousApp = front
+            // Read before ironpet activates, so focus has not left the other app. No selection clears any previous chip.
+            chatModel.attachedSelection = FrontSelectionReader.read(from: front)
+        }
         pet.showWindow(.chat)
     }
 

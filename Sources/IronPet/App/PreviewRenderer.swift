@@ -51,6 +51,17 @@ enum PreviewRenderer {
                 }
             }
         }
+        // Selection from another app waiting in the composer as context.
+        for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
+            let session = ChatSession(restore: false)
+            session.loadPreview(.done)
+            let model = Self.chatModel(session)
+            model.attachedSelection = FrontSelection(
+                text: "Can we ship the selection chip this week?\nLooks good on my side.",
+                appName: "Slack", windowTitle: "ana (DM)")
+            model.input = "summarize this"
+            render(ChatView(session: model).frame(width: 520, height: 640).panel(), to: dir, "chat-selection-context" + suffix, scheme: scheme)
+        }
         // A ~60 KB crash log pasted into the chat: over the paste limits, so the input shows an attachment chip.
         let pasted = ChatSession(restore: false)
         pasted.loadPreview(.done)

@@ -56,12 +56,14 @@ package struct ChatUpload: Codable, Equatable {
 
 /// A message for the open chat.
 package struct SendChatRequest: Codable, Equatable {
-    package init(text: String, origin: ChatOrigin? = nil, files: [URL] = [], uploads: [ChatUpload] = [], reply: ChatReply? = nil) {
+    package init(text: String, origin: ChatOrigin? = nil, files: [URL] = [], uploads: [ChatUpload] = [], reply: ChatReply? = nil,
+                 selection: FrontSelection? = nil) {
         self.text = text
         self.origin = origin
         self.files = files
         self.uploads = uploads
         self.reply = reply
+        self.selection = selection
     }
 
     package var text: String
@@ -73,6 +75,8 @@ package struct SendChatRequest: Codable, Equatable {
     /// Files the sender carries, saved on this Mac first.
     package var uploads: [ChatUpload] = []
     package var reply: ChatReply?
+    /// Text selected in another app when the Mac chat opened. Ignored for remote origins.
+    package var selection: FrontSelection?
 }
 
 package enum ChatSendOutcome: String, Codable {
@@ -98,15 +102,17 @@ package struct ChatSendResult: Codable, Equatable {
 
 /// Mac messages that were cancelled before they started, handed back so the sender can edit them.
 package struct ChatRestoredDraft: Codable, Equatable {
-    package init(text: String, files: [URL], reply: ChatReply? = nil) {
+    package init(text: String, files: [URL], reply: ChatReply? = nil, selection: FrontSelection? = nil) {
         self.text = text
         self.files = files
         self.reply = reply
+        self.selection = selection
     }
 
     package var text: String
     package var files: [URL]
     package var reply: ChatReply?
+    package var selection: FrontSelection?
 }
 
 package struct ChatStopResult: Codable, Equatable {
@@ -561,7 +567,8 @@ package final class ChatAPI {
             throw APIError.invalid("the message is empty")
         }
         guard let origin = request.origin else {
-            return ChatSendResult(outcome: Self.outcome(session.submitLocal(text, files: files, reply: request.reply)))
+            return ChatSendResult(outcome: Self.outcome(session.submitLocal(text, files: files, reply: request.reply,
+                                                                            selection: request.selection)))
         }
         let before = session.queue.count
         session.submit(text, from: origin, files: files, reply: request.reply)
@@ -577,7 +584,9 @@ package final class ChatAPI {
 
     /// Mac messages that a stop or a failed start cancelled, once. A client hears `chat.state` with the id `draft` when there are some.
     package func takeRestoredDraft() async -> ChatRestoredDraft? {
-        session.takeRestoredDraft().map { ChatRestoredDraft(text: $0.text, files: $0.attachments, reply: $0.reply) }
+        session.takeRestoredDraft().map {
+            ChatRestoredDraft(text: $0.text, files: $0.attachments, reply: $0.reply, selection: $0.selection)
+        }
     }
 
     package func removeQueued(_ id: UUID) async { session.removeQueued(id) }

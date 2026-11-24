@@ -54,6 +54,17 @@ final class ChatViewModelTests: XCTestCase {
         XCTAssertNil(h.model.replyingTo)
     }
 
+    func testNeedsFolderRestoresTheFrontSelectionChip() async {
+        h.session.workspace = nil
+        let selection = FrontSelection(text: "keep me", appName: "Notes", windowTitle: nil)
+        h.model.attachedSelection = selection
+        h.model.input = "about this"
+        await h.model.sendNow()
+        await settle()
+        XCTAssertEqual(h.model.input, "about this")
+        XCTAssertEqual(h.model.attachedSelection, selection)
+    }
+
     func testStopGivesQueuedMessagesBackToTheDraftAfterWhatIsThere() async {
         await h.type("running")
         h.model.input = "queued one"

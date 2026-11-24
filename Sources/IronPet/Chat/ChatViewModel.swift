@@ -38,6 +38,8 @@ final class ChatViewModel: ObservableObject {
     }
     /// The message the next send answers. One at a time; choosing another replaces it.
     @Published var replyingTo: ChatReply?
+    /// Text selected in another app when the chat opened. Cleared on send or when the user removes the chip.
+    @Published var attachedSelection: FrontSelection?
     /// Bumps each time Reply is chosen, so the input takes focus even when the same message is chosen again.
     @Published private(set) var replyFocusTick = 0
     /// The Cmd-F find bar. `findFocusTick` counts presses so a second Cmd-F refocuses the field.
@@ -305,13 +307,14 @@ final class ChatViewModel: ObservableObject {
     func sendNow() async {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty || !attachments.isEmpty else { return }
-        let (files, reply) = (attachments, replyingTo)
+        let (files, reply, selection) = (attachments, replyingTo, attachedSelection)
         input = ""
         attachments = []
         replyingTo = nil
-        let result = try? await api.send(SendChatRequest(text: text, origin: nil, files: files, reply: reply))
+        attachedSelection = nil
+        let result = try? await api.send(SendChatRequest(text: text, origin: nil, files: files, reply: reply, selection: selection))
         if result?.outcome == .needsFolder || result == nil {
-            restore(ChatRestoredDraft(text: text, files: files, reply: reply))
+            restore(ChatRestoredDraft(text: text, files: files, reply: reply, selection: selection))
             await refreshOptions()
         }
     }
@@ -341,6 +344,7 @@ final class ChatViewModel: ObservableObject {
         input = existing.isEmpty ? draft.text : (draft.text.isEmpty ? existing : existing + "\n\n" + draft.text)
         attachments += draft.files.filter { !attachments.contains($0) }
         if replyingTo == nil { replyingTo = draft.reply }
+        if attachedSelection == nil { attachedSelection = draft.selection }
     }
 
     // MARK: Approvals, questions and the queue

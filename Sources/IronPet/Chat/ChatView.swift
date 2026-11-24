@@ -1019,6 +1019,21 @@ struct ChatView: View {
 
     private var composerInput: some View {
         VStack(alignment: .leading, spacing: 6) {
+            if let selection = session.attachedSelection {
+                HStack(spacing: 4) {
+                    SelectionContextChip(selection: selection)
+                    Button { session.attachedSelection = nil } label: {
+                        Image(systemName: SharedSymbols.removeAttachment).foregroundStyle(.secondary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Remove selection (Esc)")
+                    .accessibilityLabel("Remove selection")
+                    .accessibilityIdentifier("selection-cancel")
+                    .pointerCursor()
+                }
+                .padding(.horizontal, 4)
+                .padding(.top, 4)
+            }
             if let reply = session.replyingTo {
                 HStack(spacing: 4) {
                     ReplyQuote(reply: reply)
@@ -1078,8 +1093,12 @@ struct ChatView: View {
                     }
                     .onKeyPress(.escape, phases: .down) { _ in
                         if session.dismissSlash() { return .handled }
-                        guard session.replyingTo != nil else { return .ignored }
-                        session.replyingTo = nil
+                        if session.replyingTo != nil {
+                            session.replyingTo = nil
+                            return .handled
+                        }
+                        guard session.attachedSelection != nil else { return .ignored }
+                        session.attachedSelection = nil
                         return .handled
                     }
                     .onChange(of: session.replyFocusTick) { inputFocused = true }
@@ -1261,6 +1280,37 @@ private struct ReplyButton: View {
         .pointerCursor()
         .opacity(visible ? 1 : 0)
         .allowsHitTesting(visible)
+    }
+}
+
+/// Selection from another app waiting to go with the next send.
+private struct SelectionContextChip: View {
+    let selection: FrontSelection
+
+    var body: some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 1.5).fill(Color.accentColor).frame(width: 3)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(selection.sourceLabel).font(.system(size: 11, weight: .semibold))
+                Text(selection.text.prefix(300)).font(.system(size: 11.5)).lineLimit(2).truncationMode(.tail)
+                if selection.trimmed {
+                    Text("Trimmed").font(.system(size: 10)).foregroundStyle(.secondary)
+                }
+            }
+            .foregroundStyle(Color.primary)
+            Spacer(minLength: 0)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(6)
+        .background(Color.primary.opacity(0.07), in: RoundedRectangle(cornerRadius: 8))
+        .accessibilityIdentifier("selection-chip")
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Selection from \(selection.sourceLabel)")
+        .accessibilityValue({
+            var value = String(selection.text.prefix(300))
+            if selection.trimmed { value += ", trimmed" }
+            return value
+        }())
     }
 }
 
