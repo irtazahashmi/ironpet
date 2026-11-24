@@ -33,10 +33,12 @@ struct ComposerTextView: UIViewRepresentable {
         return view
     }
 
-    /// The body font at the size the chat uses, which the text size setting can raise above the system's.
-    private var bodyFont: UIFont {
-        .preferredFont(forTextStyle: .body, compatibleWith: UITraitCollection(preferredContentSizeCategory: typeSize.contentSizeCategory))
+    /// The font at the size the message bubbles use: 15 pt scaled by Dynamic Type, which the text size setting can raise.
+    static func font(for size: DynamicTypeSize) -> UIFont {
+        .systemFont(ofSize: ChatMetrics.macBody * ChatScale.value(.body, size))
     }
+
+    private var bodyFont: UIFont { Self.font(for: typeSize) }
 
     func updateUIView(_ view: PasteTextView, context: Context) {
         context.coordinator.parent = self

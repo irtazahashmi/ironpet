@@ -633,6 +633,7 @@ private struct FormCard: View {
 
 private struct Composer: View {
     @Environment(\.macAccent) private var macAccent
+    @ChatScale(.body) private var bodyScale
     let model: ChatModel
     @Environment(VoiceModel.self) private var voice: VoiceModel?
     @Binding var showFiles: Bool
@@ -708,7 +709,7 @@ private struct Composer: View {
             }
             ZStack(alignment: .topLeading) {
                 if model.draft.isEmpty {
-                    Text("Message").foregroundStyle(.placeholder).padding(.leading, 6).padding(.vertical, ComposerTextView.verticalInset).allowsHitTesting(false).accessibilityHidden(true)
+                    Text("Message").font(.system(size: ChatMetrics.macBody * bodyScale)).foregroundStyle(.placeholder).padding(.leading, 6).padding(.vertical, ComposerTextView.verticalInset).allowsHitTesting(false).accessibilityHidden(true)
                 }
                 ComposerTextView(text: Bindable(model).draft, isFocused: $focused) { data in Task { await model.attachPastedImage(data) } }
                     .padding(.trailing, Self.inlineSendWidth - 4)
