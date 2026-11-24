@@ -336,10 +336,15 @@ package struct Config: Codable, Equatable {
 
     /// Background jobs: work an agent hands off to its own agent session (`jobs_start`), each with a task in the Tasks section.
     package struct Jobs: Codable, Equatable {
-        package init(maxRunning: Int = 3, permissionTimeoutMinutes: Int = 10) {
+        package init(maxRunning: Int = 3, permissionTimeoutMinutes: Int = 10, turnTimeoutMinutes: Int = 60) {
             self.maxRunning = maxRunning
             self.permissionTimeoutMinutes = permissionTimeoutMinutes
+            self.turnTimeoutMinutes = turnTimeoutMinutes
         }
+
+        /// Minutes a job's agent may run before ironpet stops it and marks the job failed.
+        package var turnTimeoutMinutes = 60
+        package static let turnTimeoutRange = 1...1440
 
         /// Minutes a permission request from a job or an automation's own session waits for an answer. After that the agent gets
         /// its reject option and the run records that the request timed out.
@@ -529,13 +534,19 @@ package struct Config: Codable, Equatable {
             reflectAgent: String? = nil,
             reflectModel: String? = nil,
             quietMinutes: Int = Memory.defaultQuietMinutes,
-            tidy: Bool = false
+            tidy: Bool = false,
+            reflectMaxNotes: Int = Memory.defaultReflectMaxNotes,
+            reflectMaxInputChars: Int = Memory.defaultReflectMaxInputChars,
+            reflectTimeoutSeconds: Int = Memory.defaultReflectTimeoutSeconds
         ) {
             self.reflect = reflect
             self.reflectAgent = reflectAgent
             self.reflectModel = reflectModel
             self.quietMinutes = quietMinutes
             self.tidy = tidy
+            self.reflectMaxNotes = reflectMaxNotes
+            self.reflectMaxInputChars = reflectMaxInputChars
+            self.reflectTimeoutSeconds = reflectTimeoutSeconds
         }
 
         package var reflect = true
@@ -550,6 +561,19 @@ package struct Config: Codable, Equatable {
         /// Send a file that grew past its size limit to the reflection agent to merge and shorten. Off by default: the whole file
         /// goes, including notes from chats with other agents and lines the user wrote, which that agent has not seen.
         package var tidy = false
+        /// Most notes one learning pass may save from a chat, meeting or automation answer.
+        package var reflectMaxNotes = Memory.defaultReflectMaxNotes
+        /// Characters of a chat, meeting summary or automation answer that a learning pass reads. The newest part is kept.
+        package var reflectMaxInputChars = Memory.defaultReflectMaxInputChars
+        /// Seconds a learning pass waits for its agent before it gives up and tries again later.
+        package var reflectTimeoutSeconds = Memory.defaultReflectTimeoutSeconds
+
+        package static let defaultReflectMaxNotes = 8
+        package static let defaultReflectMaxInputChars = 24_000
+        package static let defaultReflectTimeoutSeconds = 180
+        package static let reflectMaxNotesRange = 1...20
+        package static let reflectMaxInputCharsRange = 2_000...200_000
+        package static let reflectTimeoutSecondsRange = 30...1_800
 
         /// Agents whose adapter offers a clearly cheap model in every session. Claude Code's `haiku` is its own alias for its
         /// smallest model. The others either list no models or only parameterized ones with no cheap tier, so they use their default.
@@ -669,6 +693,10 @@ package struct Config: Codable, Equatable {
         c.tasks.keepDoneDays = min(365, max(1, c.tasks.keepDoneDays))
         c.jobs.maxRunning = min(Jobs.maxRunningRange.upperBound, max(Jobs.maxRunningRange.lowerBound, c.jobs.maxRunning))
         c.jobs.permissionTimeoutMinutes = min(Jobs.permissionTimeoutRange.upperBound, max(Jobs.permissionTimeoutRange.lowerBound, c.jobs.permissionTimeoutMinutes))
+        c.jobs.turnTimeoutMinutes = min(Jobs.turnTimeoutRange.upperBound, max(Jobs.turnTimeoutRange.lowerBound, c.jobs.turnTimeoutMinutes))
+        c.memory.reflectMaxNotes = min(Memory.reflectMaxNotesRange.upperBound, max(Memory.reflectMaxNotesRange.lowerBound, c.memory.reflectMaxNotes))
+        c.memory.reflectMaxInputChars = min(Memory.reflectMaxInputCharsRange.upperBound, max(Memory.reflectMaxInputCharsRange.lowerBound, c.memory.reflectMaxInputChars))
+        c.memory.reflectTimeoutSeconds = min(Memory.reflectTimeoutSecondsRange.upperBound, max(Memory.reflectTimeoutSecondsRange.lowerBound, c.memory.reflectTimeoutSeconds))
         c.voice.baseUrl = c.voice.baseUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         c.voice.model = c.voice.model.trimmingCharacters(in: .whitespacesAndNewlines)
         c.speech.model = c.speech.model.trimmingCharacters(in: .whitespacesAndNewlines)

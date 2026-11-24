@@ -263,7 +263,7 @@ Open **Settings** (<kbd>⌘,</kbd> or right-click Ghost → Settings…) to rena
   "automations": { "logRetentionDays": 14, "autoFix": true, "autoApprove": false },
   "skills": { "autoUpdate": true },
   "tasks": { "meetingSuggestions": true, "dueReminders": true, "keepDoneDays": 30 },
-  "jobs": { "maxRunning": 3, "permissionTimeoutMinutes": 10 },
+  "jobs": { "maxRunning": 3, "permissionTimeoutMinutes": 10, "turnTimeoutMinutes": 60 },
   "welcomeBack": { "enabled": true },
   "window": { "autoHide": false, "appearance": "system" },
   "integrations": { "shareMCPSignIns": false },
@@ -274,7 +274,7 @@ Open **Settings** (<kbd>⌘,</kbd> or right-click Ghost → Settings…) to rena
   "telegram": { "enabled": false, "allowedUsers": [] },
   "screenCapture": { "enabled": false, "ocr": false, "retentionDays": 30, "excludedApps": [] },
   "desktopControl": { "enabled": false },
-  "memory": { "reflect": true, "reflectAgent": null, "reflectModel": null, "quietMinutes": 30, "tidy": false },
+  "memory": { "reflect": true, "reflectAgent": null, "reflectModel": null, "quietMinutes": 30, "tidy": false, "reflectMaxNotes": 8, "reflectMaxInputChars": 24000, "reflectTimeoutSeconds": 180 },
   "remote": { "enabled": false, "port": 47380, "address": "", "machineName": "" },
   "chat": { "background": "default", "pasteAttachmentChars": 4000, "pasteAttachmentLines": 60, "sessionRolloverMB": 50, "sessionRetentionDays": 14 },
   "openIn": "auto",
@@ -292,7 +292,7 @@ Open **Settings** (<kbd>⌘,</kbd> or right-click Ghost → Settings…) to rena
 - **Automations** (`automations`): `logRetentionDays` (default 14), `autoFix` (on by default: ask the chat agent to fix a failing automation) and `autoApprove` (off by default: skip the Approve bubble for agent-written shell commands, scripts and prompts; see [Automations](#automations)).
 - **Skills** (`skills.autoUpdate`, on by default): install missing skills and update installed ones at launch for the agents found on your Mac. Settings → General → Skills.
 - **Tasks** (`tasks`): `meetingSuggestions` offers a meeting's action items, `dueReminders` says when a task is due, and `keepDoneDays` is how long done tasks are kept. See [Tasks](#tasks).
-- **Background jobs** (`jobs.maxRunning`, 1 to 5) is how many run at once, and `jobs.permissionTimeoutMinutes` (1 to 1440, default 10) is how long a permission request from a job or an automation's own session waits before the agent gets its reject option. See [Background jobs](#background-jobs).
+- **Background jobs** (`jobs.maxRunning`, 1 to 5) is how many run at once, and `jobs.permissionTimeoutMinutes` (1 to 1440, default 10) is how long a permission request from a job or an automation's own session waits before the agent gets its reject option. `jobs.turnTimeoutMinutes` (1 to 1440, default 60) is how long one job's agent may run before ironpet stops it. See [Background jobs](#background-jobs).
 - **Welcome back** (`welcomeBack.enabled`) shows the summary bubble when you return. How long counts as away is `reminders.idleResetMinutes`.
 - **Window auto-hide** (`window.autoHide`, off by default) hides the ironpet window on every section when another app becomes active, and shows it again, on the same section and at the same place, when ironpet is activated (pet click, shortcut, menu bar item). A window you closed with Esc or the close button stays closed. It does not hide while an ironpet sheet, alert or open panel is up, a file drag is over the chat, a screen capture is running, or a voice note is being recorded or transcribed. The voice shortcut shows a hidden window as before. A running chat turn carries on while the window is hidden. Settings → General → "Hide the window when another app is in front" sets it, and a change applies at once.
 - **Telegram** (`telegram`) is covered in [Telegram](#telegram). The bot token is not in this file; it is stored in the Keychain.
@@ -300,7 +300,7 @@ Open **Settings** (<kbd>⌘,</kbd> or right-click Ghost → Settings…) to rena
 - **Voice** (`voice`) is covered in [Voice notes](#voice-notes), **speech** (`speech`, including `speech.speed`) in [Spoken replies](#spoken-replies), and **voice mode** (`voiceMode`) in [Voice mode](#voice-mode). The API key is not in this file; it is stored in the Keychain.
 - **Screen capture** (`screenCapture`) and **desktop control** (`desktopControl`) are covered in [Screen capture](#screen-capture) and [Desktop control](#desktop-control). Both are off by default.
 - **Meetings** (`meetings`, `hotkeys.meeting`) are covered in [Meeting transcripts](#meeting-transcripts).
-- **Memory** (`memory`): `reflect` (on by default) learns from quiet chats, `reflectAgent` is `null` (or empty) for each chat's own agent, or an agent id to have only that agent's text read by it, `reflectModel` is `null` for the agent's cheap model (`haiku` for Claude Code, the default for the others) or a model id for the picked agent (ignored without one), `quietMinutes` (2 to 240) is how long a chat must be quiet, and `tidy` (off by default) lets that agent shorten files that grew past their limit. See [Memory](#memory).
+- **Memory** (`memory`): `reflect` (on by default) learns from quiet chats, `reflectAgent` is `null` (or empty) for each chat's own agent, or an agent id to have only that agent's text read by it, `reflectModel` is `null` for the agent's cheap model (`haiku` for Claude Code, the default for the others) or a model id for the picked agent (ignored without one), `quietMinutes` (2 to 240) is how long a chat must be quiet, and `tidy` (off by default) lets that agent shorten files that grew past their limit. `reflectMaxNotes` (1 to 20, default 8) caps the notes one pass saves, `reflectMaxInputChars` (2,000 to 200,000, default 24,000) is how much of a chat it reads, and `reflectTimeoutSeconds` (30 to 1,800, default 180) is how long it waits for the agent. See [Memory](#memory).
 - If the file doesn't parse, ironpet uses the defaults and shows the error at the bottom of Settings. Saving from Settings then first copies your file to `config.invalid.json`.
 
 ## Telegram

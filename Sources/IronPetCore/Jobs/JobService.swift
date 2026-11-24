@@ -56,7 +56,9 @@ package final class JobService: ObservableObject {
     /// How long a stopped job's turn may take to end after `session/cancel` before its process is closed.
     package var stopGrace: TimeInterval = 5
     /// One agent turn longer than this fails the job, so a stuck agent can't hold a slot forever.
-    package var turnTimeout: TimeInterval = 3_600
+    /// Set by tests. Nil reads `jobs.turnTimeoutMinutes`.
+    package var turnTimeout: TimeInterval?
+    package var turnTimeoutMinutes: () -> Int = { ConfigStore.shared.config.jobs.turnTimeoutMinutes }
     /// True while the chat runs a turn of its own on this session (a thread id). A job must not start a second process on it.
     package var sessionBusy: (String) -> Bool = { _ in false }
     /// Starts the agent's process. `AppDelegate` sets the Mac one.
@@ -352,7 +354,7 @@ package final class JobService: ObservableObject {
     /// One turn. Returns the error that ended it, or nil.
     private func turnResult(_ id: String, run: Run, turn: ACPTurn, agentName: String) async -> String? {
         var failure: String?
-        let timeout = turnTimeout
+        let timeout = turnTimeout ?? TimeInterval(max(1, turnTimeoutMinutes()) * 60)
         let watchdog = Task { [weak self, weak run] in
             try? await Task.sleep(for: .seconds(timeout))
             guard !Task.isCancelled, let self, let run else { return }
@@ -535,14 +537,8 @@ package final class JobService: ObservableObject {
     // MARK: Instructions
 
     /// What the job's agent is told before the request: it runs unattended, and how to end.
+    /// The text is `prompts/job-instructions.md`; the job's id, title and folder are filled in here.
     package nonisolated static func instructions(_ job: Job) -> String {
-        """
-        You are running as a background job (\(job.id), "\(job.title)") that the user handed off through ironpet. Nobody is watching \
-        this session: do not ask questions, make reasonable choices and note them. Work only in \(job.folder) unless the request \
-        says otherwise. Commands that could destroy data wait for the user's approval in ironpet; if one is denied, find another way \
-        or stop. Do not push, open pull requests, or send messages to anyone unless the request asks for it. \
-        End with a short reply whose first sentence says what happened (for example "Fixed the flaky login test: it waited on a \
-        fixed sleep."), then any details. ironpet keeps the task for this job up to date, so you do not need to.
-        """
+        Prompts.render(id: "job-instructions", ["id": job.id, "title": job.title, "folder": job.folder])
     }
 }

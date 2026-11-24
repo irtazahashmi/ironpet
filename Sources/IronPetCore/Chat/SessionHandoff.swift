@@ -7,11 +7,8 @@ package enum SessionHandoff {
     package static let systemLine = "Started a fresh agent session; earlier history is in memory search."
 
     /// The fixed request to the old session. It runs as a turn of its own and never shows as a user message.
-    package static let prompt = """
-    This conversation is moving to a fresh session because this one has grown too large. \
-    Write a handoff summary for the next session, at most 400 words, in plain text: the goal, what was decided, \
-    the current state of the work, open questions and the next step. Do not use any tools and do not start new work.
-    """
+    /// `prompts/session-handoff.md`, read each time it is needed.
+    package static var prompt: String { Prompts.text("session-handoff") }
 
     package static let summaryLimit = 3_000
     package static let recentCount = 10
