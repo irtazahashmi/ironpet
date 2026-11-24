@@ -214,6 +214,8 @@ public struct RemoteDevice: Codable, Equatable, Sendable {
 public struct RemoteEvent: Codable, Equatable, Sendable {
     public static let hello = "hello"
     public static let resync = "resync"
+    /// The Mac replayed every event after the `since` the phone sent. `seq` is where the live stream continues.
+    public static let resumed = "resumed"
     public static let tasksChanged = "tasks.changed"
     public static let suggestionsChanged = "suggestions.changed"
     public static let petMood = "pet.mood"

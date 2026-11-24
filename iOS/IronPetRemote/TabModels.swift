@@ -48,6 +48,8 @@ class SocketModel {
     func handle(_ signal: EventSignal) async {
         switch signal {
         case .connected, .resync: await refresh()
+        // The Mac replayed what this phone missed, so what the screen shows is current.
+        case .resumed: break
         case .unauthorized: onUnauthorized()
         case .event(let event): await handle(event)
         }

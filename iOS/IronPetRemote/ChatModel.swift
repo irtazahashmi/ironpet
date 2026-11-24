@@ -617,7 +617,8 @@ final class ChatModel: SocketModel {
     override func handle(_ signal: EventSignal) async {
         await super.handle(signal)
         switch signal {
-        case .connected, .resync: kickFlush()
+        // After a resume the replayed events are already applied, because the Mac sends them before `resumed`. The waiting messages go out now.
+        case .connected, .resync, .resumed: kickFlush()
         default: break
         }
     }

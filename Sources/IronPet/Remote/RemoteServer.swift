@@ -717,6 +717,8 @@ final class RemoteServer {
             let request = context.request
             guard case .device(let device) = service.authenticate(authorization: request.headers[.authorization], origin: nil, count: false) else { return }
             let since = request.uri.queryParameters["since"].flatMap { Int($0) }
+            // The `epoch` of the Mac launch that numbered `since`. A phone that kept `since` across its own restart sends it.
+            let sinceEpoch = request.uri.queryParameters["epoch"].map(String.init)
             let (frames, send) = AsyncStream<String>.makeStream(bufferingPolicy: .bufferingNewest(2000))
             guard let socket = service.openSocket(device: device.id, close: { send.finish() }) else { return }
             defer { service.socketClosed(socket) }
@@ -728,12 +730,13 @@ final class RemoteServer {
             defer { Task { @MainActor in if let id = connection.sessionID { api.clients.disconnect(id) } } }
             let (subscription, throttle) = await MainActor.run { () -> (APIEventBus.Subscription, RemoteEventThrottle) in
                 let bus = api.events
-                send.yield(Self.text(["kind": "hello", "seq": bus.lastSeq, "capabilities": Self.socketCapabilities]))
-                let gap = since.map { bus.replay(after: $0).gap } ?? false
-                if gap { send.yield(Self.text(["kind": "resync", "seq": bus.lastSeq])) }
+                send.yield(Self.text(["kind": "hello", "seq": bus.lastSeq, "epoch": bus.epoch, "capabilities": Self.socketCapabilities]))
+                let missed = since.map { bus.replay(after: $0) }
+                // A `seq` from another launch of the Mac is outside this numbering, whatever its value.
+                let gap = (missed?.gap ?? false) || (since != nil && sinceEpoch != nil && sinceEpoch != bus.epoch)
                 // A streamed reply changes one message many times a second. The phone reads it again on each event, so it gets at most
                 // one `chat.item` per message per interval, and the last one after the stream pauses. Each carries the message text as it is at that moment.
-                let throttle = RemoteEventThrottle(interval: interval) {
+                let emit: (APIEvent) -> Void = {
                     if $0.kind == .chatItem { HopLog.mark("mac.push") }
                     var frame = Self.describe($0)
                     // The changed message rides along, so the phone does not read it again. An older phone ignores the key.
@@ -741,7 +744,19 @@ final class RemoteServer {
                        let inline = RemoteChat.inlineJSON(item) { frame["item"] = inline }
                     send.yield(Self.text(frame))
                 }
-                return (bus.subscribe(after: gap ? nil : since) { throttle.push($0) }, throttle)
+                let throttle = RemoteEventThrottle(interval: interval, deliver: emit)
+                if let since {
+                    if gap {
+                        Self.resumeLog.info("events resume_from=\(since) too_old=true")
+                        send.yield(Self.text(["kind": "resync", "seq": bus.lastSeq]))
+                    } else if let missed {
+                        // The replay skips the throttle, so every missed event is on the wire, in order, before `resumed` and the live stream.
+                        for event in missed.events { emit(event) }
+                        Self.resumeLog.info("events resume_from=\(since) replayed=\(missed.events.count)")
+                        send.yield(Self.text(["kind": "resumed", "seq": bus.lastSeq, "replayed": missed.events.count]))
+                    }
+                }
+                return (bus.subscribe { throttle.push($0) }, throttle)
             }
             defer { Task { @MainActor in subscription.cancel(); throttle.cancel() } }
             // Reading keeps the library answering pings. A close from the device or a revoke ends the stream and with it the socket.
@@ -773,8 +788,12 @@ final class RemoteServer {
         }
     }
 
-    /// What the hello frame announces. `chat.send` means the socket takes a `chat.send` frame and answers it with `chat.ack`.
-    nonisolated static let socketCapabilities = ["chat.send"]
+    /// One line per resume: `events resume_from=K replayed=N`, or `events resume_from=K too_old=true`. It has no device or message text.
+    nonisolated static let resumeLog = Log(subsystem: "com.ironpet", category: "remote-resume")
+
+    /// What the hello frame announces. `chat.send` means the socket takes a `chat.send` frame and answers it with `chat.ack`. `events.resume`
+    /// means a phone that sent `since` hears `resumed` after the replayed events, or `resync` when the Mac cannot replay.
+    nonisolated static let socketCapabilities = ["chat.send", "events.resume"]
 
     /// The frame when `text` is a `chat.send` frame: `{"kind":"chat.send","client_id","text","reply"?}`.
     private nonisolated static func chatSendFrame(_ text: String) -> [String: Any]? {

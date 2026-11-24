@@ -64,6 +64,9 @@ package final class APIEventBus {
     private static let coalesceWindow = 64
 
     package let capacity: Int
+    /// Names this launch. `seq` restarts at 1 on every launch, so a client that kept a `seq` across launches sends this too, and a
+    /// different value tells the host that the `seq` belongs to another numbering.
+    package let epoch = UUID().uuidString
     package private(set) var lastSeq = 0
     /// The highest `seq` pushed out of a full buffer. Events merged into a newer one do not count: nothing was lost.
     private var evictedThrough = 0

@@ -96,7 +96,21 @@ the message. The Mac keeps the last 512 acks for each device by `client_id`. A s
 /v1/chat/current/messages` with `client_id` in its body, returns the first outcome and creates no message. A refused send is not kept, so
 its retry runs again. Attachments still go through `POST /v1/uploads` and the HTTPS send.
 
-A phone that cannot reach the Mac keeps a typed message in an outbox in its own container and sends it after the next `hello`, oldest
+A phone that reconnects resumes from the last event it applied. It saves the highest event `seq` it applied, and the `epoch` of the Mac
+launch that numbered it, on the phone. `GET /v1/events?since=<seq>&epoch=<epoch>` sends them back. The Mac's hello is
+`{"kind":"hello","seq":n,"epoch":"<id of this launch>","capabilities":["chat.send","events.resume"]}`, and `events.resume` means the Mac answers a
+`since` in one of two ways:
+
+- It replays every event above `since` in order, with no throttling, then sends `{"kind":"resumed","seq":n,"replayed":k}`, and the live stream follows. The phone reads nothing again.
+- It sends `{"kind":"resync","seq":n}` and no events when `since` is below the oldest event it still holds, above its newest event, or `epoch` is not its own. The phone reads each area once and goes on from `seq`.
+
+The Mac holds the last 500 events (`APIEventBus.capacity`), and an event merged into a newer one for the same message does not count as lost.
+It logs `events resume_from=K replayed=N` or `events resume_from=K too_old=true`, with no device or message text. The phone forgets the saved pair when it unpairs or pairs again. A phone sends no `since` on its
+first connection, and a Mac whose hello lacks `events.resume` sends neither `resumed` nor `resync` after a replay, so the phone reads everything again
+on every connect, as it did before. The queued messages of the outbox below go out after `resumed` or `resync`, so the replayed events are
+applied first.
+
+A phone that cannot reach the Mac keeps a typed message in an outbox in its own container and sends it after the next `hello` (after `resumed` or `resync` on a Mac that resumes), oldest
 first, one at a time, each after the Mac answered the one before. A message waits at most 24 hours, and the outbox holds at most 100.
 An older or refused message shows Retry and is not sent on its own. Each resend carries the `client_id` the message was made with, so
 the 512-entry window above covers it. A message waits when the request fails in transport or the relay answers 502, 503 or 504, which means it could not reach the Mac. Any other status comes from the Mac and fails the message with Retry. Messages with attachments do not wait. They fail with Retry when the Mac is out of reach.
