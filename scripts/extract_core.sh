@@ -559,13 +559,15 @@ Meeting/SpeakerDiarizing.swift
 Meeting/SpeakerMatcher.swift
 Meeting/TrackRecorder.swift
 Meeting/VoiceStore.swift
+Memory/EntityMatcher.swift
+Memory/EntityMemoryStore.swift
 Memory/MemoryIndex.swift
 Memory/MemoryMCP.swift
+Memory/MemoryMigration.swift
 Memory/MemoryNote.swift
 Memory/MemoryPreamble.swift
 Memory/MemoryReflector.swift
 Memory/MemoryStore.swift
-Memory/MemoryTidier.swift
 Notifications/NotificationDraft+Sources.swift
 Notifications/NotificationMCP.swift
 Notifications/NotificationModel.swift

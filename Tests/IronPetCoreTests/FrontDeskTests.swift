@@ -33,7 +33,7 @@ final class FrontDeskTests: XCTestCase {
     private var folder: URL!
     private var savedThreads: URL!
     private var agents: [FakeDeskAgent] = []
-    private var memory: FileMemoryStore!
+    private var memory: EntityMemoryStore!
     private var ended: [String] = []
 
     override func setUp() async throws {
@@ -41,7 +41,7 @@ final class FrontDeskTests: XCTestCase {
         try FileManager.default.createDirectory(at: folder.appendingPathComponent("threads"), withIntermediateDirectories: true)
         savedThreads = ThreadStore.directory
         ThreadStore.directory = folder.appendingPathComponent("threads")
-        memory = FileMemoryStore(directory: folder.appendingPathComponent("memory"))
+        memory = EntityMemoryStore(database: Database.open(path: nil, migrations: AppMigrations.all).database)
         agents = []
         ended = []
     }

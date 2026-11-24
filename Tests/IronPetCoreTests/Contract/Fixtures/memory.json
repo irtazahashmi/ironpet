@@ -42,7 +42,7 @@
         "id" : 2,
         "jsonrpc" : "2.0",
         "result" : {
-          "file" : "me.md",
+          "page" : "me",
           "saved" : "Prefers pnpm over npm"
         }
       }
@@ -67,8 +67,8 @@
         "result" : {
           "removed" : [
             {
-              "file" : "me.md",
               "note" : "Prefers pnpm over npm",
+              "page" : "About me",
               "person" : null
             }
           ]

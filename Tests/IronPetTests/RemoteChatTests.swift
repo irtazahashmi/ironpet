@@ -47,6 +47,24 @@ final class RemoteChatTests: XCTestCase {
     private func post(_ path: String, _ body: [String: Any] = [:]) async throws -> RemoteReply { try await h.request("POST", path, token: token, body: body) }
     private func items(_ reply: RemoteReply) -> [[String: Any]] { reply.json["items"] as? [[String: Any]] ?? [] }
 
+    // ETag: the same chat answers 304 to the ETag the phone saved, and a changed chat answers 200 with a new one.
+    func testAnUnchangedChatAnswers304ToItsETagAndAChangedOneAnswers200() async throws {
+        chat.items = [ChatItem(kind: .user("one"))]
+        let first = try await get("/v1/chat/current?limit=50")
+        XCTAssertEqual(first.status, 200)
+        let etag = try XCTUnwrap(first.headers.first { $0.key.lowercased() == "etag" }?.value)
+
+        let same = try await h.request("GET", "/v1/chat/current?limit=50", token: token, headers: ["If-None-Match": etag])
+        XCTAssertEqual(same.status, 304)
+        XCTAssertTrue(same.data.isEmpty, "a 304 sends no body")
+
+        chat.items.append(ChatItem(kind: .user("two")))
+        let changed = try await h.request("GET", "/v1/chat/current?limit=50", token: token, headers: ["If-None-Match": etag])
+        XCTAssertEqual(changed.status, 200, "a new message changes the chat")
+        XCTAssertEqual(items(changed).count, 2)
+        XCTAssertNotEqual(changed.headers.first { $0.key.lowercased() == "etag" }?.value, etag)
+    }
+
     // Paging: the newest page first, then the page before its oldest message, and a whole thread without `limit` as before.
     func testTheChatPagesNewestFirstAndEachBeforeCursorGivesTheOlderPage() async throws {
         chat.items = (1...120).map { ChatItem(kind: .user("m\($0)")) }

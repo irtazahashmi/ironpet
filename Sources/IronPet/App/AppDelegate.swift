@@ -221,7 +221,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         meeting.onOpenInChat = { [weak self] files in self?.openMeetingInChat(files) }
-        meetings.onDeleted = { folder in FileMemoryStore.shared.index?.removeMeeting(folder) }
+        meetings.onDeleted = { folder in EntityMemoryStore.shared.index.removeMeeting(folder) }
         meetings.regenerator.onReplaced = { [weak self] replaced in
             self?.memorySawMeeting(replaced.folder, agent: replaced.agent)
             self?.meetings.reload()
@@ -519,7 +519,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return (chat.agent, configured.isEmpty ? FrontDesk.fastestModel(in: chat.models) ?? chat.model : configured)
         }
         desk.onThreadSaved = { [weak self] thread in self?.chat.threadSaved(thread) }
-        desk.onConversationEnded = { [weak self] thread in self?.memory?.left(thread: thread) }
         let controller = VoiceModeController(frontDesk: desk)
         controller.voiceKey = voiceKey
         controller.petFrame = { [weak self] in self?.pet.panel.frame ?? .zero }
@@ -614,39 +613,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         changeTokens.append(automations.observeDigestShown { [weak self] shown in self?.pet.setTodayShown(shown) })
     }
 
-    /// Builds Ghost's memory on the shared database: the store with its index, the one-time cleanup of the old folder layout, the
-    /// background indexing of saved chats and meetings, and the reflection pass, which reads a chat once it goes quiet.
+    /// Builds Ghost's memory on the shared database: the entity store, the one-time move of the old note files onto pages, the background
+    /// indexing of saved chats and meetings, and the hourly digest that learns from them.
     private func setUpMemory(_ database: Database) {
-        let index = MemoryIndex(database: database)
-        let store = FileMemoryStore(directory: FileMemoryStore.directory, index: index)
-        FileMemoryStore.shared = store
-        store.migrateLayout()
-        // Only when there are note files to index: with none, this would walk `.history` on the main thread at every launch.
-        if index.count(.note) == 0, !store.files().isEmpty { store.reindexAll() }
+        let store = EntityMemoryStore(database: database)
+        EntityMemoryStore.shared = store
+        MemoryMigration.run(into: store)
+        let index = store.index
         ThreadStore.didSave = { [index] thread in index.indexThread(thread) }
-        index.backfill(threads: { ThreadStore.recent(limit: .max, automationLimit: 0) }, meetings: Paths.meetings)
-        let reflector = MemoryReflector(store: store, index: index, spawner: platform.processes)
+        store.index.backfill(threads: { ThreadStore.recent(limit: .max, automationLimit: 0) }, meetings: Paths.meetings)
+        let reflector = MemoryReflector(store: store, index: store.index, spawner: platform.processes)
         reflector.automatic = !TestControl.isEnabled
         reflector.onChange = { [weak self] in self?.settingsModel.memory?.reload() }
         reflector.seedIfNeeded()
+        reflector.tasks = { [weak self] in self?.taskStore?.tasks ?? [] }
+        reflector.captures = { [weak self] in self?.capture?.store.recent(limit: 200) ?? [] }
+        reflector.digestAgent = { [weak self] in self?.chat.agent.id }
+        // A name that stays ambiguous is asked once, not again with a notification every digest.
+        reflector.post = { [weak self] signal in
+            guard let self else { return }
+            signals.add(signal, notify: !signals.signals.contains { $0.id == signal.id })
+        }
         memory = reflector
-        let memorySettings = MemorySettingsModel(store: store, index: index, reflector: reflector)
+        let memorySettings = MemorySettingsModel(api: api.memory ?? MemoryAPI(services: { nil }), reflector: reflector)
         memorySettings.spawner = platform.processes
         settingsModel.memory = memorySettings
-        chat.onTurnEnded = { [weak reflector] id in reflector?.turnEnded(thread: id) }
-        chat.onThreadLeft = { [weak reflector] id in reflector?.left(thread: id) }
-        timers.append(Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak reflector] _ in
+        // Every minute the digest checks whether `memory.digestMinutes` have passed. A minute after launch it runs once, so the agents are
+        // not started while the app is still coming up. An automated run reads only what it sends.
+        timers.append(Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak reflector] _ in
             MainActor.assumeIsolated { reflector?.tick() }
         })
-        // A minute after launch, so the agents are not started while the app is still coming up. An automated run reads only what it sends.
         if !TestControl.isEnabled {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak reflector] in reflector?.catchUp() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak reflector] in reflector?.tick() }
         }
     }
 
     /// A summary was written or regenerated. `agent` wrote it; nil is the summary agent in Settings, which regeneration uses.
     private func memorySawMeeting(_ folder: URL, agent: String?) {
-        FileMemoryStore.shared.index?.indexMeeting(folder)
+        EntityMemoryStore.shared.index.indexMeeting(folder)
         memory?.meetingSummaryWritten(folder, agent: agent ?? config.config.meetings.summaryAgent)
     }
 
@@ -807,7 +811,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// What the `memory_*` tools work on. The chat that is running names the note's source and the default project.
     private var memoryServices: MemoryMCP.Services? {
         guard memory != nil else { return nil }
-        let store = FileMemoryStore.shared
+        let store = EntityMemoryStore.shared
         return MemoryMCP.Services(store: store, index: store.index, screen: capture?.store,
                                   context: { [weak self] in (self?.chat.threadID, self?.chat.workspace) },
                                   jobFolder: { [weak self] id in self?.jobs?.job(id).map { URL(fileURLWithPath: $0.folder) } })

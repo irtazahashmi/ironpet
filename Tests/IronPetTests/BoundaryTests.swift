@@ -6,7 +6,7 @@ import XCTest
 final class BoundaryTests: XCTestCase {
     /// Types that hold app state. A client file that names one is calling around the API.
     static let stores = [
-        "TaskStore", "SignalStore", "BubbleStore", "SessionStore", "AutomationStore", "AutomationService", "ConfigStore",
+        "TaskStore", "EntityMemoryStore", "SignalStore", "BubbleStore", "SessionStore", "AutomationStore", "AutomationService", "ConfigStore",
         "MeetingController", "MeetingLibrary", "MeetingRegenerator", "VoiceStore", "UsageStore", "CaptureStore", "CaptureService",
         "DesktopService", "ChatSession", "ThreadStore", "SpeechPlayer", "CapturePrivacy", "NotificationStore",
     ]

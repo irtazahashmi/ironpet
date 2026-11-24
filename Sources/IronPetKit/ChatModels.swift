@@ -291,6 +291,12 @@ struct Lossy<Element: Decodable>: Decodable {
     private struct DiscardedValue: Decodable {}
 }
 
+/// The answer to a read that sent the ETag of the chat the phone saved: the Mac's `304` (nothing changed), or the chat and its new ETag.
+public enum ChatRead: Equatable, Sendable {
+    case notModified
+    case snapshot(RemoteChatSnapshot, etag: String?)
+}
+
 /// `GET /v1/chat/current`.
 public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
     public var threadID: String?

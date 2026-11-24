@@ -145,6 +145,9 @@ final class ChatModel: SocketModel {
     private(set) var hasOlderHistory = false
     @ObservationIgnored private(set) var loadingOlder = false
     @ObservationIgnored private var lastRead: ContinuousClock.Instant?
+    /// The ETag of the page the Mac last answered and the phone holds as it is. Nil once a message changed on the phone, so the next read asks in full.
+    @ObservationIgnored private var etag: String?
+    @ObservationIgnored private var cache: (any ChatCaching)?
     @ObservationIgnored private var reloadDebounce: Task<Void, Never>?
     var draft = ""
     var attachments: [PendingAttachment] = []
@@ -276,19 +279,54 @@ final class ChatModel: SocketModel {
     /// client retries and reports, so a failure here only leaves the transcript as it was.
     @discardableResult
     private func fetch() async -> Bool {
-        guard let fresh = await read({ try await self.client.chat(limit: Self.pageSize) }) else { return false }
-        snapshot = fresh
-        // The messages before the page's first one stay, since they were loaded on scroll. Only a read with none loaded takes `hasMore`.
-        let older = fresh.items.first.flatMap { first in items.firstIndex { $0.id == first.id } } ?? 0
-        items = Array(items.prefix(older)) + fresh.items
-        if older == 0 { hasOlderHistory = fresh.hasMore ?? false }
+        guard let result = await read({ try await self.client.chatIfChanged(etag: self.etag, limit: Self.pageSize) }) else { return false }
+        // A 304 means the Mac's chat is still the page saved with this ETag: what is shown already is current.
+        switch result {
+        case .notModified: break
+        case .snapshot(let fresh, let newETag): adopt(fresh, etag: newETag)
+        }
         lastRead = ContinuousClock.now
-        fullReads += 1
         errorMessage = nil
         // A sent message of attachments only has no text to match. The full read holds the Mac's copy.
         outbox.removeAll { $0.isAttachmentOnly && $0.state == .sent }
         reconcile()
         return true
+    }
+
+    /// Takes the newest page the Mac answered. It replaces the newest messages, keeps the older pages already loaded, and is saved with
+    /// its ETag for the next launch.
+    private func adopt(_ fresh: RemoteChatSnapshot, etag newETag: String?) {
+        snapshot = fresh
+        // The messages before the page's first one stay, since they were loaded on scroll. Only a read with none loaded takes `hasMore`.
+        let older = fresh.items.first.flatMap { first in items.firstIndex { $0.id == first.id } } ?? 0
+        items = Array(items.prefix(older)) + fresh.items
+        if older == 0 { hasOlderHistory = fresh.hasMore ?? false }
+        fullReads += 1
+        etag = newETag
+        cache?.save(SavedChat(etag: newETag, snapshot: Self.savable(fresh), hasOlderHistory: fresh.hasMore ?? false))
+    }
+
+    /// The part of a page worth keeping on disk: the messages and the chat's name and agent. Approvals, forms, the queue and a running
+    /// turn are the live Mac's, so a saved page never offers them.
+    static func savable(_ page: RemoteChatSnapshot) -> RemoteChatSnapshot {
+        var saved = page
+        saved.approvals = []
+        saved.forms = []
+        saved.queue = []
+        saved.running = false
+        saved.activity = nil
+        saved.runStarted = nil
+        return saved
+    }
+
+    /// Shows the chat saved last time, at once, and saves each page the Mac answers from now on. Only a launch with nothing shown loads it.
+    func useCache(_ cache: any ChatCaching) {
+        self.cache = cache
+        guard let saved = cache.load(), snapshot == nil, items.isEmpty else { return }
+        snapshot = saved.snapshot
+        items = saved.snapshot.items
+        hasOlderHistory = saved.hasOlderHistory
+        etag = saved.etag
     }
 
     override func handle(_ event: RemoteEvent) async {
@@ -322,6 +360,8 @@ final class ChatModel: SocketModel {
     @ObservationIgnored private var stale: Set<String> = []
 
     private func apply(_ item: RemoteChatItem, from source: Source) {
+        // The shown messages no longer match the saved page, so the saved ETag cannot vouch for them. The saved file stays as it was.
+        etag = nil
         if let index = items.firstIndex(where: { $0.id == item.id }) {
             if items[index] != item { items[index] = item }
         } else {
@@ -599,7 +639,7 @@ final class ChatModel: SocketModel {
 
     /// True when the Mac could not be reached. The relay answers 502, 503 or 504 when it cannot reach the Mac (tunnel down, Mac asleep).
     /// Any other status came from the Mac itself, so the message fails with Retry.
-    private static func isUnreachable(_ error: Error) -> Bool {
+    static func isUnreachable(_ error: Error) -> Bool {
         switch error {
         case ClientError.transport: return true
         case ClientError.api(let status, _, _): return [502, 503, 504].contains(status)

@@ -44,14 +44,17 @@ package struct RemoteFailure: Error, Equatable {
 /// `IronPet tasks` command (snake_case, ISO 8601 dates), and answer with the `IronPetKit` types the phone decodes. The device is the author, so each task event says `remote:<device id>`.
 @MainActor
 package struct RemoteTasks {
-    package init(api: IronPetAPI, by: String) {
+    package init(api: IronPetAPI, by: String, ledger: RemoteTaskLedger? = nil) {
         self.api = api
         self.by = by
+        self.ledger = ledger ?? RemoteTaskLedger()
     }
 
     package let api: IronPetAPI
     /// `remote:<device id>`, written to the history of every change.
     package let by: String
+    /// Dedupes the changes that carry a `client_id`. The server shares one across requests.
+    package let ledger: RemoteTaskLedger
 
     private var tasks: TasksAPI { api.tasks }
 
@@ -85,8 +88,36 @@ package struct RemoteTasks {
         return RemoteWire.object(RemoteTaskDetail(task: RemoteTask(detail.task), history: detail.history.map { RemoteTaskEvent($0) }))
     }
 
+    /// The phone's id for one change. A change sent twice with the same id applies once and answers the same both times.
+    private func clientID(_ args: [String: Any]) throws -> String? {
+        guard let raw = args["client_id"], !(raw is NSNull) else { return nil }
+        guard let text = raw as? String else { throw RemoteFailure.invalid("client_id must be a string") }
+        return text
+    }
+
+    /// `base_updated` is the `updated` time of the copy the phone edited. When the task changed on the Mac since, the change is refused
+    /// with 409 and the phone decides field by field what still applies. Times compare to the second, the precision of the wire.
+    private func checkBase(_ args: [String: Any], against task: TaskItem) throws {
+        guard let raw = args["base_updated"], !(raw is NSNull) else { return }
+        guard let text = raw as? String, let base = Self.time(text) else { throw RemoteFailure.invalid("base_updated must be an ISO 8601 time") }
+        if Int(base.timeIntervalSince1970) != Int(task.updated.timeIntervalSince1970) {
+            throw RemoteFailure(status: 409, code: APIError.Code.conflict.rawValue, message: "the task changed on the Mac since the phone read it")
+        }
+    }
+
+    private static func time(_ text: String) -> Date? {
+        if let date = ISO8601DateFormatter().date(from: text) { return date }
+        let fractional = ISO8601DateFormatter()
+        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        return fractional.date(from: text)
+    }
+
     package func create(_ args: [String: Any]) throws -> [String: Any] {
         try available()
+        return try ledger.once(device: by, clientID: try clientID(args)) { try createOnce(args) }
+    }
+
+    private func createOnce(_ args: [String: Any]) throws -> [String: Any] {
         let status = try args["status"].map { $0 is NSNull ? TaskStatus.backlog : try TaskValidator.status($0) } ?? .backlog
         let item = try tasks.create(CreateTaskRequest(
             title: try TaskValidator.title(args["title"]), notes: try TaskValidator.notes(args["notes"]), status: status,
@@ -98,7 +129,12 @@ package struct RemoteTasks {
 
     package func update(_ id: String, _ args: [String: Any]) throws -> [String: Any] {
         try available()
+        return try ledger.once(device: by, clientID: try clientID(args)) { try updateOnce(id, args) }
+    }
+
+    private func updateOnce(_ id: String, _ args: [String: Any]) throws -> [String: Any] {
         let current = try tasks.get(id).task
+        try checkBase(args, against: current)
         var request = UpdateTaskRequest(id: current.id, by: by)
         request.title = try args["title"].map { try TaskValidator.title($0) }
         request.notes = try args["notes"].map { try TaskValidator.notes($0) }
@@ -118,7 +154,12 @@ package struct RemoteTasks {
     /// Closing needs a note that says what shows the task is done, as it does for an agent.
     package func close(_ id: String, _ args: [String: Any]) throws -> [String: Any] {
         try available()
+        return try ledger.once(device: by, clientID: try clientID(args)) { try closeOnce(id, args) }
+    }
+
+    private func closeOnce(_ id: String, _ args: [String: Any]) throws -> [String: Any] {
         let target = try tasks.get(id).task
+        try checkBase(args, against: target)
         let note = try TaskJSON.requiredNote(args["note"], for: "say what shows the task is done")
         return RemoteWire.object(RemoteTask(try tasks.close(CloseTaskRequest(id: target.id, note: note, by: by))))
     }

@@ -21,7 +21,7 @@ class SocketModel {
     /// The error of the last request that failed, for a subclass that treats one status in its own way.
     @ObservationIgnored private(set) var lastError: Error?
     /// True once a read worked, so the screen has data to keep showing while the connection is down.
-    private(set) var loaded = false
+    var loaded = false
     /// The first load finished and nothing came back. The screen shows the full-page error with Retry, and only until a read works.
     private(set) var loadFailed = false
     /// A read in the last refresh failed, so an empty list may only mean the read did not work. "Nothing here" waits for a clean refresh.

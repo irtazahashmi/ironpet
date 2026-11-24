@@ -198,6 +198,55 @@ final class RemoteAPITests: XCTestCase {
         XCTAssertEqual(h.api.tasks.task(task.id)?.status, .done)
     }
 
+    /// The phone queues changes made offline and replays them. A replay with the same `client_id` must not create or change twice.
+    func testAReplayedChangeWithTheSameClientIDAppliesOnce() async throws {
+        let paired = try await h.pairDevice()
+        let id = UUID().uuidString
+        let first = try await h.request("POST", "/v1/tasks", token: paired.token, body: ["title": "Offline idea", "client_id": id])
+        let second = try await h.request("POST", "/v1/tasks", token: paired.token, body: ["title": "Offline idea", "client_id": id])
+        XCTAssertEqual(first.status, 201)
+        XCTAssertEqual(second.status, 201)
+        XCTAssertEqual(first.json["id"] as? String, second.json["id"] as? String, "the second answer is the first one")
+        XCTAssertEqual(h.api.tasks.items.filter { $0.title == "Offline idea" }.count, 1)
+
+        let task = try XCTUnwrap(h.api.tasks.items.first { $0.title == "Offline idea" })
+        let path = "/v1/tasks/\(encoded(task.id))"
+        let note = UUID().uuidString
+        for _ in 0..<2 {
+            let reply = try await h.request("PATCH", path, token: paired.token, body: ["status": "in_progress", "note": "started", "client_id": note])
+            XCTAssertEqual(reply.status, 200)
+        }
+        XCTAssertEqual(h.api.tasks.history(task.id).filter { $0.detail.contains("started") }.count, 1, "the note was written once")
+
+        let bad = try await h.request("POST", "/v1/tasks", token: paired.token, body: ["title": "x", "client_id": "not-a-uuid"])
+        XCTAssertEqual(bad.status, 400)
+    }
+
+    /// `base_updated` is the `updated` time the phone edited. A task that changed since answers 409 and stays as it is.
+    func testAChangeBasedOnAnOlderCopyIsRefusedWith409() async throws {
+        let paired = try await h.pairDevice()
+        let task = try h.api.tasks.create(CreateTaskRequest(title: "Shared task", source: .user))
+        let path = "/v1/tasks/\(encoded(task.id))"
+        // The phone read the task a minute before the Mac's last change. The store stamps changes with the wall clock, so the stale time is set back instead of waiting.
+        let base = ISO8601DateFormatter().string(from: task.updated.addingTimeInterval(-60))
+        var change = UpdateTaskRequest(id: task.id, by: "user")
+        change.notes = "Edited on the Mac"
+        _ = try h.api.tasks.update(change)
+
+        let stale = try await h.request("PATCH", path, token: paired.token, body: ["title": "From the phone", "base_updated": base])
+        XCTAssertEqual(stale.status, 409)
+        XCTAssertEqual((stale.json["error"] as? [String: String])?["code"], "conflict")
+        XCTAssertEqual(h.api.tasks.task(task.id)?.title, "Shared task")
+        let staleClose = try await h.request("POST", path + "/close", token: paired.token, body: ["note": "done", "base_updated": base])
+        XCTAssertEqual(staleClose.status, 409)
+        XCTAssertEqual(h.api.tasks.task(task.id)?.status, .backlog)
+
+        let current = try XCTUnwrap(h.api.tasks.task(task.id))
+        let fresh = try await h.request("PATCH", path, token: paired.token, body: ["title": "From the phone", "base_updated": ISO8601DateFormatter().string(from: current.updated)])
+        XCTAssertEqual(fresh.status, 200)
+        XCTAssertEqual(h.api.tasks.task(task.id)?.title, "From the phone")
+    }
+
     /// The phone's board sets and clears who holds a task with `waiting_on` on the same PATCH route the status uses.
     func testPatchSetsAndClearsWaitingOnAlongsideTheStatus() async throws {
         let paired = try await h.pairDevice()

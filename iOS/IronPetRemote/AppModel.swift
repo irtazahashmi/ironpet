@@ -46,6 +46,7 @@ final class AppModel {
         guard device != nil else { return }
         store.delete()
         DefaultsResumeStore.clearAll(defaults: resumeDefaults)
+        FileChatCache.clearAll()
         forgetPresence()
         notice = "The Mac no longer accepts this device. Pair it again."
         problem = .pairingExpired
@@ -59,6 +60,7 @@ final class AppModel {
         }
         store.delete()
         DefaultsResumeStore.clearAll(defaults: resumeDefaults)
+        FileChatCache.clearAll()
         forgetPresence()
         notice = nil
         phase = .unpaired
@@ -68,5 +70,6 @@ final class AppModel {
     private func forgetPresence() {
         PetSnapshotStore.clear()
         PetPresence.endAll()
+        FileTaskSyncStore.clearAll()
     }
 }

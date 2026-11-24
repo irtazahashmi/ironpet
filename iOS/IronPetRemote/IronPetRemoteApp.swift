@@ -82,10 +82,10 @@ struct MainTabs: View {
         let unauthorized: () -> Void = { [weak model] in model?.handleUnauthorized() }
         let network = Self.makeNetwork()
         _network = State(initialValue: network)
-        let tasksModel = TasksModel(client: client, events: events, network: network, onUnauthorized: unauthorized)
+        // The last task list and the changes made offline live in a file in the app's own container, one per pairing.
+        let tasksModel = TasksModel(client: client, events: events, store: FileTaskSyncStore.forToken(client.token), network: network, onUnauthorized: unauthorized)
         #if DEBUG
-        // UI tests mark every task as waiting to sync, which the task sync queue will do for real once it merges.
-        if ProcessInfo.processInfo.arguments.contains("--pending-sync-all") { tasksModel.pendingSync = DebugPendingSync() }
+        if ProcessInfo.processInfo.arguments.contains("--pending-sync-all") { tasksModel.debugAllPending = true }
         #endif
         _tasks = State(initialValue: tasksModel)
         _pet = State(initialValue: PetModel(client: client, events: events, cache: AssetCache(directory: Self.assetsDirectory), network: network, onUnauthorized: unauthorized))
@@ -94,6 +94,8 @@ struct MainTabs: View {
         chatModel.socket = connection
         // Messages typed without a connection wait in a file in the app's own container until the Mac is back.
         chatModel.useOutbox(FileOutboxStore.forToken(client.token))
+        // The chat the phone saw last shows at once, before the Mac answers.
+        chatModel.useCache(FileChatCache.forToken(client.token))
         _chat = State(initialValue: chatModel)
         _today = State(initialValue: TodayModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
         _agents = State(initialValue: AgentsModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
@@ -201,11 +203,6 @@ struct MainTabs: View {
 }
 
 #if DEBUG
-/// Marks every task as waiting to sync, in UI tests only.
-struct DebugPendingSync: PendingSyncSource {
-    func isPendingSync(taskID: String) -> Bool { true }
-}
-
 /// Stands in for the system prompt in UI tests only.
 struct AlwaysAllow: DeviceAuthenticating {
     func authenticate(reason: String) async -> Bool { true }

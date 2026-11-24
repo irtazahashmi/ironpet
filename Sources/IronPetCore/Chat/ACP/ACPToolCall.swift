@@ -123,10 +123,9 @@ package enum ApprovalRules {
         return readOnlyMCPVerbs.contains { name == $0 || name.hasPrefix($0 + "_") || name.hasPrefix($0) && tool.dropFirst($0.count).first?.isUppercase == true }
     }
 
-    /// ironpet's own task tools only read and write rows in `ironpet.db` and run nothing, like memory-note edits. Delete still asks. The
-    /// `screen_*` tools only read the stored, redacted captures. The `memory_*` tools write notes in `~/.ironpet/memory/` the way a
-    /// memory-file edit does, and `memory_forget` only moves notes to `.history`, so none of them can lose anything. Of the assistant
-    /// tools, those that start, steer or stop a job still ask.
+    /// ironpet's own task tools only read and write rows in `ironpet.db` and run nothing. Delete still asks. The `screen_*` tools only
+    /// read the stored, redacted captures. The `memory_*` tools write claims in `ironpet.db`, and `memory_forget` only moves them to a
+    /// page's history, so none of them can lose anything. Of the assistant tools, those that start, steer or stop a job still ask.
     package static let ownTaskTools: Set<String> = Set(["tasks_list", "tasks_get", "tasks_create", "tasks_update", "tasks_close", "tasks_suggest",
                                          "tasks_suggestions_list", "tasks_suggestion_accept", "tasks_suggestion_reject",
                                          "task_filters_list", "task_filters_upsert", "task_filters_reorder",
@@ -168,19 +167,16 @@ package enum ApprovalRules {
         }
     }
 
-    /// Whether a run with nobody at the chat answers a permission request itself (a read, a memory-note edit, a read-only MCP
+    /// Whether a run with nobody at the chat answers a permission request itself (a read, a read-only MCP
     /// tool, ironpet's own tools) or must ask. The agent only asks about calls its mode treats as risky, and ironpet applies no
     /// pattern of its own: no command is judged by its text. A chat does not use this, it shows a card for every request.
-    package static func policy(for call: ACPToolCall, isMemoryFile: (String) -> Bool = FileMemoryStore.isNoteFile) -> ApprovalPolicy {
+    package static func policy(for call: ACPToolCall) -> ApprovalPolicy {
         switch call.kind {
         case "read", "search", "think", "fetch":
             return .allow
         case "execute":
             return .ask(title: "Run this command?", detail: call.command)
         case "edit", "delete", "move":
-            // Only edits: deleting or moving a note file skips its .history copy.
-            let all = call.allPaths
-            if call.kind == "edit" && !all.isEmpty && all.allSatisfy(isMemoryFile) { return .allow }
             let card = card(for: call)
             return .ask(title: card.title, detail: card.detail)
         default:

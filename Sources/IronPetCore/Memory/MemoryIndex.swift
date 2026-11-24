@@ -1,7 +1,7 @@
 import Foundation
 
-/// A change to the memory files, for Settings → Memory → Recently learned and its Undo.
-package struct MemoryChange: Identifiable, Equatable {
+/// A change to Ghost's memory, for Settings → Memory → Recently learned and its Undo.
+package struct MemoryChange: Identifiable, Equatable, Codable {
     package init(
         id: Int64,
         at: Date,
@@ -11,7 +11,8 @@ package struct MemoryChange: Identifiable, Equatable {
         note: String,
         previous: String?,
         source: String,
-        undone: Bool
+        undone: Bool,
+        claim: Int64? = nil
     ) {
         self.id = id
         self.at = at
@@ -22,31 +23,35 @@ package struct MemoryChange: Identifiable, Equatable {
         self.previous = previous
         self.source = source
         self.undone = undone
+        self.claim = claim
     }
 
-    package enum Action: String {
-        /// A note was added. Undo removes it.
+    package enum Action: String, Codable {
+        /// A claim was added. Undo takes it off the page.
         case added
-        /// A note was removed. Undo puts it back.
+        /// Claims were removed. Undo puts them back; `previous` holds their ids.
         case forgot
-        /// A note replaced older ones (`previous`). Undo puts those back instead.
+        /// A claim replaced older ones (`previous` holds their ids). Undo puts those back and takes the new one off.
         case replaced
-        /// The whole file was rewritten, by a tidy pass or the editor. `previous` is the `.history` file it can go back to.
+        /// Written by the earlier file-based notes. Shown, but Undo cannot reach it.
         case tidied, edited
     }
 
     package let id: Int64
     package let at: Date
-    /// The file's path inside the memory folder, such as `me.md` or `projects/ironpet-1a2b3c4d.md`.
+    /// The page's entity id (`me`, `person:ana`, `project:github.com/o/r`). Changes from the old note files hold a file path.
     package let file: String
-    /// The person, for a note in `people.md`.
+    /// The person, for a claim about someone.
     package let section: String?
     package let action: Action
-    /// The note line, or a short description for a whole-file change.
+    /// The claim's line, or a short description.
     package let note: String
+    /// The ids of the claims this change removed or restored, joined by newlines.
     package let previous: String?
     package let source: String
     package var undone: Bool
+    /// The claim this change added, or the one that replaced others. Nil for changes made before claims.
+    package let claim: Int64?
 }
 
 /// Search over what Ghost has seen and kept, in ironpet's shared database: chat messages, meeting summaries and transcripts, the
@@ -76,13 +81,33 @@ package final class MemoryIndex: @unchecked Sendable { // `database` serializes 
                                         action TEXT NOT NULL, note TEXT NOT NULL, previous TEXT, source TEXT NOT NULL,
                                         undone INTEGER NOT NULL DEFAULT 0);
             """),
+        .init(544, "memory: entity pages, dated claims, typed links; the change log points at claims", sql: """
+            CREATE TABLE memory_entities(id TEXT PRIMARY KEY, type TEXT NOT NULL, name TEXT NOT NULL, aliases TEXT NOT NULL DEFAULT '',
+                                         identifiers TEXT NOT NULL DEFAULT '', mentions INTEGER NOT NULL DEFAULT 0);
+            CREATE TABLE memory_claims(id INTEGER PRIMARY KEY AUTOINCREMENT, entity TEXT NOT NULL REFERENCES memory_entities(id),
+                                       text TEXT NOT NULL, date TEXT NOT NULL DEFAULT '', sources TEXT NOT NULL DEFAULT '',
+                                       invalid_at REAL, pinned INTEGER NOT NULL DEFAULT 0);
+            CREATE INDEX memory_claims_by_entity ON memory_claims(entity, invalid_at);
+            CREATE TABLE memory_links(from_entity TEXT NOT NULL, to_entity TEXT NOT NULL, type TEXT NOT NULL,
+                                      first_seen REAL NOT NULL, last_seen REAL NOT NULL, count INTEGER NOT NULL DEFAULT 1,
+                                      sources TEXT NOT NULL DEFAULT '', PRIMARY KEY(from_entity, to_entity, type));
+            ALTER TABLE memory_changes ADD COLUMN claim INTEGER;
+            """),
+        .init(545, "memory: prefixed refs for pages (page_) and claims (claim_), backfilled", sql: """
+            ALTER TABLE memory_entities ADD COLUMN ref TEXT;
+            ALTER TABLE memory_claims ADD COLUMN ref TEXT;
+            UPDATE memory_entities SET ref = 'page_' || lower(hex(randomblob(3))) WHERE ref IS NULL;
+            UPDATE memory_claims SET ref = 'claim_' || lower(hex(randomblob(3))) WHERE ref IS NULL;
+            CREATE UNIQUE INDEX memory_entities_by_ref ON memory_entities(ref);
+            CREATE UNIQUE INDEX memory_claims_by_ref ON memory_claims(ref);
+            """),
     ]
 
-    package enum Kind: String, CaseIterable {
-        case chat, meeting, note, history
+    package enum Kind: String, CaseIterable, Codable {
+        case chat, meeting, note
     }
 
-    package struct Hit: Equatable {
+    package struct Hit: Equatable, Codable {
         package init(kind: Kind, ref: String, at: Date, title: String, snippet: String) {
             self.kind = kind
             self.ref = ref
@@ -200,28 +225,24 @@ package final class MemoryIndex: @unchecked Sendable { // `database` serializes 
 
     // MARK: Notes
 
-    /// Replaces the index of one memory file's notes. Runs at once: the files are small, and the next search must see the change.
-    package func indexNotes(file: String, title: String, entries: [MemoryDocument.Entry], modified: Date) {
-        let prefix = file + "|"
-        try? database.write { db in
-            try db.execute("DELETE FROM memory_docs WHERE kind = 'note' AND substr(ref, 1, ?) = ?", [prefix.count, prefix])
-            for (n, entry) in entries.enumerated() {
-                let at = entry.note.date.flatMap(Self.dayFormatter.date(from:)) ?? modified
-                let heading = entry.section.map { "\(title) · \($0)" } ?? title
-                try Self.upsert(db, .note, prefix + "\(n)", at: at, title: heading, text: entry.note.text)
-            }
-        }
+    /// Indexes one claim, so `memory_search` finds it. `ref` is `claim:<id>`, and a claim's title says whose page it is.
+    package func indexClaim(_ id: Int64, title: String, text: String, at: Date) {
+        try? database.write { try Self.upsert($0, .note, Self.claimRef(id), at: at, title: title, text: text) }
     }
 
-    package func indexHistory(ref: String, title: String, text: String, at: Date) {
-        try? database.write { try Self.upsert($0, .history, ref, at: at, title: title, text: text) }
+    /// Drops a claim from the index when it stops being part of its page.
+    package func removeClaim(_ id: Int64) {
+        try? database.write { try $0.execute("DELETE FROM memory_docs WHERE kind = 'note' AND ref = ?", [Self.claimRef(id)]) }
     }
 
-    package func removeHistory(ref: String) {
-        try? database.write { try $0.execute("DELETE FROM memory_docs WHERE kind = 'history' AND ref = ?", [ref]) }
+    package static func claimRef(_ id: Int64) -> String { "claim:\(id)" }
+
+    /// Drops every claim document, and the earlier-version documents of the file-based notes, for a rebuild from the database.
+    package func clearClaims() {
+        try? database.write { try $0.execute("DELETE FROM memory_docs WHERE kind IN ('note', 'history')") }
     }
 
-    /// Drops the index of every note and earlier version, and the change log. Chats and meetings stay searchable.
+    /// Drops the index of every claim and the change log. Chats and meetings stay searchable.
     package func clearNotes() {
         try? database.write { db in
             try db.execute("DELETE FROM memory_docs WHERE kind IN ('note', 'history')")
@@ -229,13 +250,6 @@ package final class MemoryIndex: @unchecked Sendable { // `database` serializes 
         }
         database.checkpoint()
     }
-
-    private static let dayFormatter: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "en_US_POSIX")
-        f.dateFormat = "yyyy-MM-dd"
-        return f
-    }()
 
     // MARK: Backfill
 
@@ -303,15 +317,6 @@ package final class MemoryIndex: @unchecked Sendable { // `database` serializes 
         return (row[0] as? String ?? "", row[1] as? String ?? "", Date(timeIntervalSince1970: row[2] as? Double ?? 0))
     }
 
-    /// The `.history` documents of one file, newest first.
-    package func history(of file: String) -> [(ref: String, at: Date)] {
-        let prefix = FileMemoryStore.historyFolder(for: file) + "/"
-        let rows = (try? database.read {
-            try $0.rows("SELECT ref, at FROM memory_docs WHERE kind = 'history' AND substr(ref, 1, ?) = ? ORDER BY at DESC", [prefix.count, prefix])
-        }) ?? []
-        return rows.compactMap { row in (row[0] as? String).map { ($0, Date(timeIntervalSince1970: row[1] as? Double ?? 0)) } }
-    }
-
     package func count(_ kind: Kind) -> Int {
         ((try? database.read { try $0.rows("SELECT COUNT(*) FROM memory_docs WHERE kind = ?", [kind.rawValue]) })?.first?.first as? Int64)
             .map(Int.init) ?? 0
@@ -337,11 +342,13 @@ package final class MemoryIndex: @unchecked Sendable { // `database` serializes 
 
     // MARK: Changes
 
+    /// Logs one change to a page. `claim` is the claim it added, or the claims it removed (in `previous`, as ids), which is what Undo needs.
     @discardableResult
-    package func record(at: Date, file: String, section: String?, action: MemoryChange.Action, note: String, previous: String?, source: String) -> Int64? {
+    package func record(at: Date, file: String, section: String?, action: MemoryChange.Action, note: String, previous: String?, source: String,
+                        claim: Int64? = nil) -> Int64? {
         try? database.write { db in
-            try db.execute("INSERT INTO memory_changes(at, file, section, action, note, previous, source) VALUES(?, ?, ?, ?, ?, ?, ?)",
-                           [at.timeIntervalSince1970, file, section, action.rawValue, note, previous, source])
+            try db.execute("INSERT INTO memory_changes(at, file, section, action, note, previous, source, claim) VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
+                           [at.timeIntervalSince1970, file, section, action.rawValue, note, previous, source, claim])
             return try db.rows("SELECT last_insert_rowid()").first?.first as? Int64
         }
     }
@@ -349,23 +356,15 @@ package final class MemoryIndex: @unchecked Sendable { // `database` serializes 
     /// The newest changes first.
     package func changes(limit: Int = 20) -> [MemoryChange] {
         let rows = (try? database.read {
-            try $0.rows("SELECT id, at, file, section, action, note, previous, source, undone FROM memory_changes ORDER BY id DESC LIMIT ?", [limit])
+            try $0.rows("SELECT id, at, file, section, action, note, previous, source, undone, claim FROM memory_changes ORDER BY id DESC LIMIT ?", [limit])
         }) ?? []
         return rows.compactMap(Self.change)
     }
 
     package func change(_ id: Int64) -> MemoryChange? {
         (try? database.read {
-            try $0.rows("SELECT id, at, file, section, action, note, previous, source, undone FROM memory_changes WHERE id = ?", [id])
+            try $0.rows("SELECT id, at, file, section, action, note, previous, source, undone, claim FROM memory_changes WHERE id = ?", [id])
         })?.first.flatMap(Self.change)
-    }
-
-    /// Whether a change to `file` after `id` is still in place.
-    package func hasLaterChange(to file: String, after id: Int64) -> Bool {
-        let count = (try? database.read {
-            try $0.rows("SELECT COUNT(*) FROM memory_changes WHERE file = ? AND id > ? AND undone = 0", [file, id])
-        })?.first?.first as? Int64 ?? 0
-        return count > 0
     }
 
     package func markUndone(_ id: Int64) {
@@ -376,6 +375,6 @@ package final class MemoryIndex: @unchecked Sendable { // `database` serializes 
         guard let id = row[0] as? Int64, let action = (row[4] as? String).flatMap(MemoryChange.Action.init(rawValue:)) else { return nil }
         return MemoryChange(id: id, at: Date(timeIntervalSince1970: row[1] as? Double ?? 0), file: row[2] as? String ?? "",
                             section: row[3] as? String, action: action, note: row[5] as? String ?? "", previous: row[6] as? String,
-                            source: row[7] as? String ?? "", undone: (row[8] as? Int64 ?? 0) != 0)
+                            source: row[7] as? String ?? "", undone: (row[8] as? Int64 ?? 0) != 0, claim: row[9] as? Int64)
     }
 }

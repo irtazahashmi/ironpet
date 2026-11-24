@@ -69,21 +69,17 @@
             "transcriptCharacters" : 300000
           },
           "memory" : {
-            "catchUpDays" : 7,
-            "catchUpThreads" : 5,
+            "digestMinutes" : 60,
+            "learnFromScreen" : false,
+            "maxClaimsPerEntity" : 30,
             "noteMaxLength" : 240,
-            "quietMinutes" : 30,
             "recallBytesMe" : 4000,
             "recallBytesPeople" : 2000,
             "recallBytesProject" : 6000,
             "reflect" : true,
             "reflectMaxInputChars" : 24000,
             "reflectMaxNotes" : 8,
-            "reflectTimeoutSeconds" : 180,
-            "sizeLimitMe" : 8000,
-            "sizeLimitPeople" : 8000,
-            "sizeLimitProject" : 12000,
-            "tidy" : false
+            "reflectTimeoutSeconds" : 180
           },
           "openIn" : "auto",
           "pet" : {
@@ -247,21 +243,17 @@
             "transcriptCharacters" : 300000
           },
           "memory" : {
-            "catchUpDays" : 7,
-            "catchUpThreads" : 5,
+            "digestMinutes" : 60,
+            "learnFromScreen" : false,
+            "maxClaimsPerEntity" : 30,
             "noteMaxLength" : 240,
-            "quietMinutes" : 30,
             "recallBytesMe" : 4000,
             "recallBytesPeople" : 2000,
             "recallBytesProject" : 6000,
             "reflect" : true,
             "reflectMaxInputChars" : 24000,
             "reflectMaxNotes" : 8,
-            "reflectTimeoutSeconds" : 180,
-            "sizeLimitMe" : 8000,
-            "sizeLimitPeople" : 8000,
-            "sizeLimitProject" : 12000,
-            "tidy" : false
+            "reflectTimeoutSeconds" : 180
           },
           "openIn" : "auto",
           "pet" : {
@@ -422,21 +414,17 @@
             "transcriptCharacters" : 300000
           },
           "memory" : {
-            "catchUpDays" : 7,
-            "catchUpThreads" : 5,
+            "digestMinutes" : 60,
+            "learnFromScreen" : false,
+            "maxClaimsPerEntity" : 30,
             "noteMaxLength" : 240,
-            "quietMinutes" : 30,
             "recallBytesMe" : 4000,
             "recallBytesPeople" : 2000,
             "recallBytesProject" : 6000,
             "reflect" : true,
             "reflectMaxInputChars" : 24000,
             "reflectMaxNotes" : 8,
-            "reflectTimeoutSeconds" : 180,
-            "sizeLimitMe" : 8000,
-            "sizeLimitPeople" : 8000,
-            "sizeLimitProject" : 12000,
-            "tidy" : false
+            "reflectTimeoutSeconds" : 180
           },
           "openIn" : "auto",
           "pet" : {

@@ -18,7 +18,7 @@ package enum AutomationSession {
     /// Nobody is there to answer, so anything that would ask is refused. Edits to Ghost's memory files are refused too: what an
     /// automation learns goes through the memory tools, which mark it as coming from the automation.
     package nonisolated static func decision(for call: ACPToolCall) -> ApprovalDecision {
-        if ["edit", "delete", "move"].contains(call.kind), call.allPaths.contains(where: FileMemoryStore.contains) {
+        if ["edit", "delete", "move"].contains(call.kind), call.allPaths.contains(where: LegacyMemoryFiles.contains) {
             return .deny("Automations may not edit Ghost's memory files")
         }
         if case .allow = ApprovalRules.policy(for: call) { return .allow }
@@ -30,7 +30,7 @@ package enum AutomationSession {
     package enum Route { case answer(ApprovalDecision), ask }
 
     package nonisolated static func route(for call: ACPToolCall, allowed: [String]?, disallowed: [String]?) -> Route {
-        if ["edit", "delete", "move"].contains(call.kind), call.allPaths.contains(where: FileMemoryStore.contains) {
+        if ["edit", "delete", "move"].contains(call.kind), call.allPaths.contains(where: LegacyMemoryFiles.contains) {
             return .answer(.deny("Automations may not edit Ghost's memory files"))
         }
         if let disallowed, disallowed.contains(where: { ToolRule.matches($0, call) }) { return .answer(.deny("This automation may not use that tool")) }
@@ -66,7 +66,6 @@ package enum AutomationSession {
             let created = ACPBackend(agent: agent, spawner: spawner)
             created.usageFeature = .automations
             created.mcpCaller = "automation:\(automation.id)"
-            created.sharesMemoryFolder = false
             created.onPermission = { call, respond in
                 switch Self.route(for: call, allowed: automation.action.allowedTools, disallowed: automation.action.disallowedTools) {
                 case .answer(let decision): respond(decision)
@@ -102,7 +101,7 @@ package enum AutomationSession {
         // The prompt goes in as written: a slash skill such as `/am-check-emails 1` only works as the first thing in the message.
         var preamble: String?
         if let handoff {
-            preamble = SessionHandoff.insert(handoff, into: MemoryPreamble.build(store: FileMemoryStore.shared, workspace: workspace, firstMessage: prompt))
+            preamble = SessionHandoff.insert(handoff, into: MemoryPreamble.build(store: EntityMemoryStore.shared, workspace: workspace, firstMessage: prompt))
         }
         let turn = ACPTurn(prompt: prompt, preamble: preamble, workspace: workspace, resume: resume, model: automation.action.model,
                            images: [], files: [], allowedTools: automation.action.allowedTools, disallowedTools: automation.action.disallowedTools, fork: fork)

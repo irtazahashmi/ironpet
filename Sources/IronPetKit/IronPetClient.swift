@@ -90,7 +90,7 @@ public final class IronPetClient: @unchecked Sendable {
 
     func perform(_ request: URLRequest) async throws -> Data { try await performWithResponse(request).data }
 
-    func performWithResponse(_ request: URLRequest) async throws -> (data: Data, response: HTTPURLResponse) {
+    func performWithResponse(_ request: URLRequest, acceptNotModified: Bool = false) async throws -> (data: Data, response: HTTPURLResponse) {
         let data: Data, response: URLResponse
         do { (data, response) = try await session.data(for: request) } catch {
             // A request the app cancelled is not a transport failure. Only the calling task's own cancellation counts: URLSession also
@@ -99,7 +99,8 @@ public final class IronPetClient: @unchecked Sendable {
             throw ClientError.transport(error.localizedDescription)
         }
         guard let http = response as? HTTPURLResponse else { throw ClientError.invalidResponse }
-        guard (200..<300).contains(http.statusCode) else {
+        // 304 is an answer, not a failure, for a read that sent the ETag it saved.
+        guard (200..<300).contains(http.statusCode) || (acceptNotModified && http.statusCode == 304) else {
             if http.statusCode == 401, token != nil { throw ClientError.unauthorized }
             let detail = (try? decoder.decode(APIErrorBody.self, from: data))?.error
             throw ClientError.api(status: http.statusCode, code: detail?.code ?? "failed", message: detail?.message ?? "The Mac answered \(http.statusCode).")
@@ -116,6 +117,11 @@ public final class IronPetClient: @unchecked Sendable {
     }
 
     private func send<T: Decodable>(_ type: T.Type, _ method: String, _ path: String, body: [String: String] = [:]) async throws -> T {
+        let data = try JSONSerialization.data(withJSONObject: body)
+        return try decode(type, from: try await perform(request(method, path, body: data)))
+    }
+
+    private func sendJSON<T: Decodable>(_ type: T.Type, _ method: String, _ path: String, body: [String: Any]) async throws -> T {
         let data = try JSONSerialization.data(withJSONObject: body)
         return try decode(type, from: try await perform(request(method, path, body: data)))
     }
@@ -158,16 +164,37 @@ public final class IronPetClient: @unchecked Sendable {
         _ = try await perform(request("POST", APIPath.rejectSuggestion(id), body: Data("{}".utf8)))
     }
 
-    public func closeTask(id: String, note: String) async throws -> RemoteTask {
-        try await send(RemoteTask.self, "POST", APIPath.closeTask(id), body: ["note": note])
+    /// The three change calls take the phone's `clientID` for the change and `baseUpdated`, the `updated` time of the copy it edited.
+    /// The Mac applies a `clientID` once, and answers 409 when the task changed after `baseUpdated`. An older Mac ignores both.
+    public func closeTask(id: String, note: String, clientID: String? = nil, baseUpdated: Date? = nil) async throws -> RemoteTask {
+        try await sendJSON(RemoteTask.self, "POST", APIPath.closeTask(id), body: change(["note": note], clientID, baseUpdated))
     }
 
     public func addNote(id: String, note: String) async throws -> RemoteTask {
         try await send(RemoteTask.self, "PATCH", APIPath.task(id), body: ["note": note])
     }
 
-    public func setStatus(id: String, status: TaskStatus, note: String) async throws -> RemoteTask {
-        try await send(RemoteTask.self, "PATCH", APIPath.task(id), body: ["status": status.rawValue, "note": note])
+    public func setStatus(id: String, status: TaskStatus, note: String, clientID: String? = nil, baseUpdated: Date? = nil) async throws -> RemoteTask {
+        try await sendJSON(RemoteTask.self, "PATCH", APIPath.task(id), body: change(["status": status.rawValue, "note": note], clientID, baseUpdated))
+    }
+
+    /// Changes the title, the notes, or both. A nil field stays as it is.
+    public func editTask(id: String, title: String?, notes: String?, clientID: String? = nil, baseUpdated: Date? = nil) async throws -> RemoteTask {
+        var body: [String: Any] = [:]
+        if let title { body["title"] = title }
+        if let notes { body["notes"] = notes }
+        return try await sendJSON(RemoteTask.self, "PATCH", APIPath.task(id), body: change(body, clientID, baseUpdated))
+    }
+
+    public func createTask(title: String, notes: String = "", status: TaskStatus = .backlog, clientID: String? = nil) async throws -> RemoteTask {
+        try await sendJSON(RemoteTask.self, "POST", APIPath.tasks, body: change(["title": title, "notes": notes, "status": status.rawValue], clientID, nil))
+    }
+
+    private func change(_ fields: [String: Any], _ clientID: String?, _ baseUpdated: Date?) -> [String: Any] {
+        var body = fields
+        if let clientID { body["client_id"] = clientID }
+        if let baseUpdated { body["base_updated"] = ISO8601DateFormatter().string(from: baseUpdated) }
+        return body
     }
 
     /// Names who holds the task, or clears that with a nil or blank `name`. A `status` in the same call changes it in the same update.
@@ -243,6 +270,22 @@ public final class IronPetClient: @unchecked Sendable {
 
     /// The chat. With `limit`, the newest `limit` messages, or the ones before `before`; `hasMore` says whether older ones exist. A Mac
     /// older than paging ignores the query and sends the whole thread, with `hasMore` nil.
+    /// The chat, unless it is still the one the phone saved. `etag` is the ETag of that saved chat. The answer is `.notModified` when the
+    /// Mac says nothing changed, or the chat with the ETag to save next time.
+    public func chatIfChanged(etag: String?, limit: Int? = nil, before: String? = nil) async throws -> ChatRead {
+        var query: [URLQueryItem] = []
+        if let limit { query.append(URLQueryItem(name: "limit", value: String(limit))) }
+        if let before { query.append(URLQueryItem(name: "before", value: before)) }
+        var headers: [String: String] = [:]
+        if let etag { headers["If-None-Match"] = etag }
+        var urlRequest = request("GET", APIPath.chat, query: query, headers: headers)
+        // URLSession's own cache would turn a 304 back into the cached 200, so the answer would not be the Mac's.
+        urlRequest.cachePolicy = .reloadIgnoringLocalCacheData
+        let (data, http) = try await performWithResponse(urlRequest, acceptNotModified: true)
+        if http.statusCode == 304 { return .notModified }
+        return .snapshot(try decode(RemoteChatSnapshot.self, from: data), etag: http.value(forHTTPHeaderField: "ETag"))
+    }
+
     public func chat(limit: Int? = nil, before: String? = nil) async throws -> RemoteChatSnapshot {
         var query: [URLQueryItem] = []
         if let limit { query.append(URLQueryItem(name: "limit", value: String(limit))) }

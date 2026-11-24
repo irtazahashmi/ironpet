@@ -68,12 +68,12 @@ final class MemoryIndexTests: XCTestCase {
         let old = Date(timeIntervalSince1970: 1_700_000_000), new = Date(timeIntervalSince1970: 1_795_000_000)
         index.indexThread(thread("t1", [.init(kind: .user("deploy friday"), date: old), .init(kind: .user("deploy monday"), date: new)]))
         index.flush()
-        index.indexNotes(file: "me.md", title: "About me", entries: MemoryDocument("- Never deploy on Fridays <!-- 2026-11-18 chat:a -->").entries, modified: new)
+        index.indexClaim(1, title: "About me", text: "Never deploy on Fridays", at: new.addingTimeInterval(-3_600))
         XCTAssertEqual(index.search("deploy").count, 3)
-        // A note is dated at the start of its day, so it falls before the Monday message.
+        // The claim is dated an hour before the Monday message, so it falls before the cut-off.
         XCTAssertEqual(index.search("deploy", since: new.addingTimeInterval(-60)).count, 1)
         XCTAssertEqual(index.search("deploy", until: new.addingTimeInterval(-60)).count, 2)
-        XCTAssertEqual(index.search("deploy", kinds: [.note]).map(\.ref), ["me.md|0"])
+        XCTAssertEqual(index.search("deploy", kinds: [.note]).map(\.ref), ["claim:1"])
     }
 
     func testCursorsAndChangesPersist() {
