@@ -11,8 +11,9 @@ import Foundation
 /// `ownRunLimit` runs instead.
 @MainActor
 package enum AutomationSession {
-    /// Runs one `own` thread of an agent without a known transcript file holds before the next run starts a fresh thread.
-    package static let ownRunLimit = 50
+    /// Runs one `own` thread of an agent without a known transcript file holds before the next run starts a fresh thread:
+    /// `automations.ownRunLimit`.
+    package static var ownRunLimit: Int { ConfigStore.shared.config.automations.ownRunLimit }
 
     /// Nobody is there to answer, so anything that would ask is refused. Edits to Ghost's memory files are refused too: what an
     /// automation learns goes through the memory tools, which mark it as coming from the automation.
@@ -38,13 +39,13 @@ package enum AutomationSession {
         return .ask
     }
 
-    /// Threads kept per automation. Older ones are deleted after a run.
-    package static let keptThreads = 50
+    /// Threads kept per automation (`automations.keptThreads`). Older ones are deleted after a run.
+    package static var keptThreads: Int { ConfigStore.shared.config.automations.keptThreads }
 
     package typealias TurnRunner = (ACPTurn, @escaping (AgentEvent) -> Void) async -> Void
 
     /// `agentOverride` and `turnRunner` let tests run a scripted agent.
-    package static func run(_ automation: Automation, prompt: String, workspace: URL, spawner: ProcessSpawner, timeout: TimeInterval = 900,
+    package static func run(_ automation: Automation, prompt: String, workspace: URL, spawner: ProcessSpawner, timeout: TimeInterval? = nil,
                     agentOverride: ACPAgent? = nil, turnRunner: TurnRunner? = nil, now: Date = Date(),
                     fork: String? = nil, onNote: ((String) -> Void)? = nil, permissions: BackgroundPermissions? = nil,
                     rolloverLimit: Int64? = nil, handoffTimeout: Duration = .seconds(90)) async -> Result<String, AutomationError> {
@@ -130,9 +131,11 @@ package enum AutomationSession {
                 }
             }
         }
+        // `automations.runTimeoutSeconds` unless a test passes its own.
+        let limit = timeout ?? TimeInterval(ConfigStore.shared.config.automations.runTimeoutSeconds)
         let watchdog = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(timeout))
-            state.finish(.failure(.init(message: "The agent did not finish within \(Int(timeout / 60)) minutes.")))
+            try? await Task.sleep(for: .seconds(limit))
+            state.finish(.failure(.init(message: "The agent did not finish within \(Int(limit / 60)) minutes.")))
         }
         let result = await state.wait()
         watchdog.cancel()

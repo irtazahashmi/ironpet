@@ -36,7 +36,7 @@ package final class JobService: ObservableObject {
     ]
 
     /// Finished jobs older than this are deleted at launch.
-    package static let retention: TimeInterval = 30 * 86_400
+    package static var retention: TimeInterval { TimeInterval(ConfigStore.shared.config.jobs.retentionDays * 86_400) }
     /// Jobs kept in memory for `jobs_list`, newest first.
     package static let listed = 50
     /// Who job changes are recorded as in a task's history.

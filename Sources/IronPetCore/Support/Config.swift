@@ -168,13 +168,17 @@ package struct Config: Codable, Equatable {
             listenWith: String = VoiceMode.ironpet,
             model: String = "",
             silenceSeconds: Int = 20,
-            speakJobUpdates: Bool = true
+            speakJobUpdates: Bool = true,
+            idleShutdownMinutes: Int = 10,
+            fastModelWords: [String] = VoiceMode.defaultFastModelWords
         ) {
             self.enabled = enabled
             self.listenWith = listenWith
             self.model = model
             self.silenceSeconds = silenceSeconds
             self.speakJobUpdates = speakJobUpdates
+            self.idleShutdownMinutes = idleShutdownMinutes
+            self.fastModelWords = fastModelWords
         }
 
         /// Off by default: it opens the microphone and sends what was said to the voice server and the agent.
@@ -187,10 +191,17 @@ package struct Config: Codable, Equatable {
         package var silenceSeconds = 20
         /// Speak up when a job started by voice finishes, fails or needs an OK.
         package var speakJobUpdates = true
+        /// The front desk's agent process is closed after this many minutes without a conversation.
+        package var idleShutdownMinutes = 10
+        /// With no `model` set, the front desk uses the first model whose id or name has one of these words, in this order.
+        package var fastModelWords = VoiceMode.defaultFastModelWords
 
         package static let ironpet = "ironpet"
         package static let wispr = "wispr"
         package static let silenceRange = 5...120
+        package static let idleShutdownRange = 1...120
+        package static let defaultFastModelWords = ["haiku", "flash", "mini", "fast", "lite"]
+        package static let maxFastModelWords = 20
     }
 
     /// Meeting transcripts: the mic and one app's audio go to the voice server in chunks, and an agent summarizes the
@@ -204,7 +215,8 @@ package struct Config: Codable, Equatable {
             autoSummary: Bool = true,
             offerToRecordCalls: Bool = true,
             ignoredMicApps: [String] = [],
-            recogniseSpeakers: Bool = false
+            recogniseSpeakers: Bool = false,
+            transcriptCharacters: Int = Meetings.defaultTranscriptCharacters
         ) {
             self.enabled = enabled
             self.lastApp = lastApp
@@ -214,6 +226,7 @@ package struct Config: Codable, Equatable {
             self.offerToRecordCalls = offerToRecordCalls
             self.ignoredMicApps = ignoredMicApps
             self.recogniseSpeakers = recogniseSpeakers
+            self.transcriptCharacters = transcriptCharacters
         }
 
         /// Off by default: turning it on lets meeting audio leave the Mac and the transcript reach an agent.
@@ -234,6 +247,11 @@ package struct Config: Codable, Equatable {
         /// Splits "Them" into individual speakers and recognises voices the user has named. Off by default because
         /// voiceprints are biometric data. Turning it on downloads the models once.
         package var recogniseSpeakers = false
+        /// The summary reads the last this many characters of a transcript. The start of a longer one is cut, and the summary says so.
+        package var transcriptCharacters = Meetings.defaultTranscriptCharacters
+
+        package static let defaultTranscriptCharacters = 300_000
+        package static let transcriptCharactersRange = 20_000...2_000_000
     }
 
     /// Screen capture: ironpet reads the text of the window you are using through Accessibility and keeps it, redacted, in its local
@@ -293,10 +311,14 @@ package struct Config: Codable, Equatable {
     }
 
     package struct Automations: Codable, Equatable {
-        package init(logRetentionDays: Int = 14, autoFix: Bool = true, autoApprove: Bool = false) {
+        package init(logRetentionDays: Int = 14, autoFix: Bool = true, autoApprove: Bool = false, ownRunLimit: Int = 50,
+                     keptThreads: Int = 50, runTimeoutSeconds: Int = 900) {
             self.logRetentionDays = logRetentionDays
             self.autoFix = autoFix
             self.autoApprove = autoApprove
+            self.ownRunLimit = ownRunLimit
+            self.keptThreads = keptThreads
+            self.runTimeoutSeconds = runTimeoutSeconds
         }
 
         /// Execution logs older than this many days are deleted.
@@ -305,6 +327,16 @@ package struct Config: Codable, Equatable {
         package var autoFix = true
         /// Approve commands, scripts and prompts that an agent writes without asking. Off by default.
         package var autoApprove = false
+        /// An automation's own agent thread without a known transcript file starts a fresh thread after this many runs.
+        package var ownRunLimit = 50
+        /// Threads kept per automation. Older ones are deleted after a run.
+        package var keptThreads = 50
+        /// Seconds an automation's agent run may take before it is stopped.
+        package var runTimeoutSeconds = 900
+
+        package static let ownRunLimitRange = 1...500
+        package static let keptThreadsRange = 1...500
+        package static let runTimeoutSecondsRange = 60...7_200
     }
 
     package struct Skills: Codable, Equatable {
@@ -336,11 +368,16 @@ package struct Config: Codable, Equatable {
 
     /// Background jobs: work an agent hands off to its own agent session (`jobs_start`), each with a task in the Tasks section.
     package struct Jobs: Codable, Equatable {
-        package init(maxRunning: Int = 3, permissionTimeoutMinutes: Int = 10, turnTimeoutMinutes: Int = 60) {
+        package init(maxRunning: Int = 3, permissionTimeoutMinutes: Int = 10, turnTimeoutMinutes: Int = 60, retentionDays: Int = 30) {
             self.maxRunning = maxRunning
             self.permissionTimeoutMinutes = permissionTimeoutMinutes
             self.turnTimeoutMinutes = turnTimeoutMinutes
+            self.retentionDays = retentionDays
         }
+
+        /// Finished jobs older than this many days are deleted at launch.
+        package var retentionDays = 30
+        package static let retentionDaysRange = 1...365
 
         /// Minutes a job's agent may run before ironpet stops it and marks the job failed.
         package var turnTimeoutMinutes = 60
@@ -537,7 +574,16 @@ package struct Config: Codable, Equatable {
             tidy: Bool = false,
             reflectMaxNotes: Int = Memory.defaultReflectMaxNotes,
             reflectMaxInputChars: Int = Memory.defaultReflectMaxInputChars,
-            reflectTimeoutSeconds: Int = Memory.defaultReflectTimeoutSeconds
+            reflectTimeoutSeconds: Int = Memory.defaultReflectTimeoutSeconds,
+            recallBytesMe: Int = 4_000,
+            recallBytesProject: Int = 6_000,
+            recallBytesPeople: Int = 2_000,
+            sizeLimitMe: Int = 8_000,
+            sizeLimitProject: Int = 12_000,
+            sizeLimitPeople: Int = 8_000,
+            catchUpDays: Int = 7,
+            catchUpThreads: Int = 5,
+            noteMaxLength: Int = 240
         ) {
             self.reflect = reflect
             self.reflectAgent = reflectAgent
@@ -547,6 +593,15 @@ package struct Config: Codable, Equatable {
             self.reflectMaxNotes = reflectMaxNotes
             self.reflectMaxInputChars = reflectMaxInputChars
             self.reflectTimeoutSeconds = reflectTimeoutSeconds
+            self.recallBytesMe = recallBytesMe
+            self.recallBytesProject = recallBytesProject
+            self.recallBytesPeople = recallBytesPeople
+            self.sizeLimitMe = sizeLimitMe
+            self.sizeLimitProject = sizeLimitProject
+            self.sizeLimitPeople = sizeLimitPeople
+            self.catchUpDays = catchUpDays
+            self.catchUpThreads = catchUpThreads
+            self.noteMaxLength = noteMaxLength
         }
 
         package var reflect = true
@@ -567,6 +622,19 @@ package struct Config: Codable, Equatable {
         package var reflectMaxInputChars = Memory.defaultReflectMaxInputChars
         /// Seconds a learning pass waits for its agent before it gives up and tries again later.
         package var reflectTimeoutSeconds = Memory.defaultReflectTimeoutSeconds
+        /// Characters of notes that go into the chat's context, per file: about the user, about the project, and about people.
+        package var recallBytesMe = 4_000
+        package var recallBytesProject = 6_000
+        package var recallBytesPeople = 2_000
+        /// A memory file that grows past this many bytes is shortened by the tidier, when `tidy` is on.
+        package var sizeLimitMe = 8_000
+        package var sizeLimitProject = 12_000
+        package var sizeLimitPeople = 8_000
+        /// On launch, chats updated this many days back that were not reflected yet are read, at most `catchUpThreads` of them.
+        package var catchUpDays = 7
+        package var catchUpThreads = 5
+        /// Most characters one memory note may have.
+        package var noteMaxLength = 240
 
         package static let defaultReflectMaxNotes = 8
         package static let defaultReflectMaxInputChars = 24_000
@@ -574,6 +642,11 @@ package struct Config: Codable, Equatable {
         package static let reflectMaxNotesRange = 1...20
         package static let reflectMaxInputCharsRange = 2_000...200_000
         package static let reflectTimeoutSecondsRange = 30...1_800
+        package static let recallBytesRange = 500...50_000
+        package static let sizeLimitRange = 1_000...200_000
+        package static let catchUpDaysRange = 1...90
+        package static let catchUpThreadsRange = 1...50
+        package static let noteMaxLengthRange = 40...2_000
 
         /// Agents whose adapter offers a clearly cheap model in every session. Claude Code's `haiku` is its own alias for its
         /// smallest model. The others either list no models or only parameterized ones with no cheap tier, so they use their default.
@@ -697,6 +770,27 @@ package struct Config: Codable, Equatable {
         c.memory.reflectMaxNotes = min(Memory.reflectMaxNotesRange.upperBound, max(Memory.reflectMaxNotesRange.lowerBound, c.memory.reflectMaxNotes))
         c.memory.reflectMaxInputChars = min(Memory.reflectMaxInputCharsRange.upperBound, max(Memory.reflectMaxInputCharsRange.lowerBound, c.memory.reflectMaxInputChars))
         c.memory.reflectTimeoutSeconds = min(Memory.reflectTimeoutSecondsRange.upperBound, max(Memory.reflectTimeoutSecondsRange.lowerBound, c.memory.reflectTimeoutSeconds))
+        func clamp(_ value: Int, _ range: ClosedRange<Int>) -> Int { min(range.upperBound, max(range.lowerBound, value)) }
+        c.memory.recallBytesMe = clamp(c.memory.recallBytesMe, Memory.recallBytesRange)
+        c.memory.recallBytesProject = clamp(c.memory.recallBytesProject, Memory.recallBytesRange)
+        c.memory.recallBytesPeople = clamp(c.memory.recallBytesPeople, Memory.recallBytesRange)
+        c.memory.sizeLimitMe = clamp(c.memory.sizeLimitMe, Memory.sizeLimitRange)
+        c.memory.sizeLimitProject = clamp(c.memory.sizeLimitProject, Memory.sizeLimitRange)
+        c.memory.sizeLimitPeople = clamp(c.memory.sizeLimitPeople, Memory.sizeLimitRange)
+        c.memory.catchUpDays = clamp(c.memory.catchUpDays, Memory.catchUpDaysRange)
+        c.memory.catchUpThreads = clamp(c.memory.catchUpThreads, Memory.catchUpThreadsRange)
+        c.memory.noteMaxLength = clamp(c.memory.noteMaxLength, Memory.noteMaxLengthRange)
+        c.jobs.retentionDays = clamp(c.jobs.retentionDays, Jobs.retentionDaysRange)
+        c.voiceMode.idleShutdownMinutes = clamp(c.voiceMode.idleShutdownMinutes, VoiceMode.idleShutdownRange)
+        var seen = Set<String>()
+        c.voiceMode.fastModelWords = c.voiceMode.fastModelWords
+            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
+            .filter { !$0.isEmpty && seen.insert($0).inserted }
+            .prefix(VoiceMode.maxFastModelWords).map { $0 }
+        c.automations.ownRunLimit = clamp(c.automations.ownRunLimit, Automations.ownRunLimitRange)
+        c.automations.keptThreads = clamp(c.automations.keptThreads, Automations.keptThreadsRange)
+        c.automations.runTimeoutSeconds = clamp(c.automations.runTimeoutSeconds, Automations.runTimeoutSecondsRange)
+        c.meetings.transcriptCharacters = clamp(c.meetings.transcriptCharacters, Meetings.transcriptCharactersRange)
         c.voice.baseUrl = c.voice.baseUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         c.voice.model = c.voice.model.trimmingCharacters(in: .whitespacesAndNewlines)
         c.speech.model = c.speech.model.trimmingCharacters(in: .whitespacesAndNewlines)

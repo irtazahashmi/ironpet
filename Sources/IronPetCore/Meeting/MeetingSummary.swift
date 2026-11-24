@@ -44,7 +44,7 @@ package enum MeetingSummary {
     /// The wording is `prompts/meeting-summary.md`. The three section headings and the action-item line format are parsed by
     /// `Tasks/ActionItems.swift`, so they are the contract for anyone who edits that file.
     package static func prompt(transcript: String) -> String {
-        let limit = 300_000
+        let limit = ConfigStore.shared.config.meetings.transcriptCharacters
         var body = transcript
         var note = ""
         if body.count > limit {

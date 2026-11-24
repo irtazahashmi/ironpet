@@ -5,7 +5,11 @@ import Foundation
 @MainActor
 package enum MemoryPreamble {
     /// How much of each file reaches the prompt. Whole notes only, newest first.
-    package static let budget: [MemoryScope: Int] = [.me: 4_000, .project: 6_000, .people: 2_000]
+    /// Bytes of each scope's notes the chat context carries: `memory.recallBytesMe`, `memory.recallBytesProject` and `memory.recallBytesPeople`.
+    package static var budget: [MemoryScope: Int] {
+        let memory = ConfigStore.shared.config.memory
+        return [.me: memory.recallBytesMe, .project: memory.recallBytesProject, .people: memory.recallBytesPeople]
+    }
 
     /// What the system prompt says about tasks and regular checks. Editable: `prompts/task-instructions.md`.
     package static var taskInstructions: String { Prompts.text("task-instructions") }

@@ -25,7 +25,8 @@ package struct MemoryNote: Equatable, Hashable {
     package var date: String?
     package var source: String
 
-    package static let maxLength = 240
+    /// Most characters one note may have: `memory.noteMaxLength`.
+    package static var maxLength: Int { Config.load().config.memory.noteMaxLength }
     /// At most this many notes go in one forget or replace, so a vague request cannot empty a file.
     package static let maxForget = 5
     package static let userSource = "user"
