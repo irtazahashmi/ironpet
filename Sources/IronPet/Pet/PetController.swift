@@ -22,7 +22,8 @@ final class PetController: NSObject {
     private var agentList: AgentsAPI { agents ?? fallbackAgents }
     private lazy var fallbackAlerts = AlertsAPI(store: signals)
     private var alertList: AlertsAPI { alerts ?? fallbackAlerts }
-    private let windowModel = IronPetWindowModel()
+    /// Internal so tests can read which section a click opened.
+    let windowModel = IronPetWindowModel()
     private var builtWindow: IronPetPanel?
     /// Built on first use, so it gets the stores the app hands over after `init`.
     var window: IronPetPanel {
@@ -110,6 +111,7 @@ final class PetController: NSObject {
         super.init()
 
         view.onClick = { [weak self] in self?.handleClick() }
+        view.onBadgeClick = { [weak self] in self?.handleBadgeClick() }
         view.onDragEnded = { [weak self] in self?.saveOrigin() }
         view.contextMenu = { [weak self] in self?.makeMenu() ?? NSMenu() }
 
@@ -267,13 +269,26 @@ final class PetController: NSObject {
         [.idle, .sleeping, .listening, .working, .done, .failed, .needsInput].firstIndex(of: mood) ?? 0
     }
 
-    /// Watched agents or alerts that need attention take the click; otherwise it opens the chat.
-    private func handleClick() {
+    /// A click on the pet's body always opens the chat, whatever needs attention.
+    func handleClick() {
         lastActivity = Date()
-        if [.needsInput, .failed, .done].contains(store.summary.status) || !signals.signals.isEmpty || onChatToggle == nil {
+        if let onChatToggle {
+            onChatToggle()
+        } else if let builtWindow, builtWindow.isVisible, windowModel.section == .chat {
             toggleWindow()
         } else {
-            onChatToggle?()
+            showWindow(.chat)
+        }
+    }
+
+    /// A click on the number badge opens the section the number counts, as `needingAttention` picks it.
+    func handleBadgeClick() {
+        lastActivity = Date()
+        let target = IronPetSection.needingAttention(agents: agentList, alerts: alertList, tasks: taskList)
+        if let builtWindow, builtWindow.isVisible, windowModel.section == target {
+            toggleWindow()
+        } else {
+            showWindow(nil)
         }
     }
 

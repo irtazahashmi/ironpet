@@ -3,6 +3,8 @@ import IronPetCore
 
 final class PetView: NSView {
     var onClick: (() -> Void)?
+    /// A click on the number badge, which opens what the number counts.
+    var onBadgeClick: (() -> Void)?
     var onDragEnded: (() -> Void)?
     var contextMenu: (() -> NSMenu)?
     var onRecordingClick: (() -> Void)?
@@ -19,6 +21,24 @@ final class PetView: NSView {
     private var atlas: Atlas?
     private(set) var mood: PetMood = .idle
     private var badge = 0
+    static let badgeDiameter: CGFloat = 22
+    /// Extra points around the drawn badge circle that still count as a click on it.
+    static let badgeSlop: CGFloat = 4
+
+    /// The drawn badge circle, in the top right corner of a view with these bounds.
+    static func badgeRect(in bounds: CGRect) -> CGRect {
+        CGRect(x: bounds.maxX - badgeDiameter - 2, y: bounds.maxY - badgeDiameter - 2, width: badgeDiameter, height: badgeDiameter)
+    }
+
+    /// Whether `point` hits the badge: its circle plus `badgeSlop`. False while no badge is drawn.
+    static func badgeHit(_ point: CGPoint, in bounds: CGRect, badgeShown: Bool) -> Bool {
+        guard badgeShown else { return false }
+        let rect = badgeRect(in: bounds)
+        let radius = rect.width / 2 + badgeSlop
+        return hypot(point.x - rect.midX, point.y - rect.midY) <= radius
+    }
+
+    private var badgeShown: Bool { badge > 0 && [.needsInput, .failed, .done].contains(mood) }
     private var row: AtlasRow = .idle
     private var frameIndex = 0
     private var frameElapsed: Double = 0
@@ -121,7 +141,7 @@ final class PetView: NSView {
             drawPlaceholder(ctx)
         }
         ctx.restoreGState()
-        if badge > 0, [.needsInput, .failed, .done].contains(mood) { drawBadge() }
+        if badgeShown { drawBadge() }
         if recording == .hidden { drawRecordingButton() }
     }
 
@@ -162,8 +182,7 @@ final class PetView: NSView {
         case .failed: .systemRed
         default: .systemGreen
         }
-        let d: CGFloat = 22
-        let rect = CGRect(x: bounds.maxX - d - 2, y: bounds.maxY - d - 2, width: d, height: d)
+        let rect = Self.badgeRect(in: bounds)
         color.setFill()
         NSBezierPath(ovalIn: rect).fill()
         let text = NSAttributedString(string: "\(badge)", attributes: [
@@ -197,6 +216,8 @@ final class PetView: NSView {
             onDragEnded?()
         } else if recording == .hidden, recordingRect.contains(convert(event.locationInWindow, from: nil)) {
             onRecordingClick?()
+        } else if Self.badgeHit(convert(event.locationInWindow, from: nil), in: bounds, badgeShown: badgeShown) {
+            onBadgeClick?()
         } else {
             onClick?()
         }
