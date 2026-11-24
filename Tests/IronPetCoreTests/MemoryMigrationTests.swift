@@ -29,7 +29,7 @@ final class MemoryMigrationTests: XCTestCase {
         try write("# demo\n\nRepo: github.com/you/demo\n\n- Tests run with swift test <!-- 2026-11-03 chat:b -->\n", "projects/demo-0a1b2c3d.md")
     }
 
-    func testEachOldNoteBecomesAClaimOnItsPage() throws {
+    func testEachOldNoteBecomesAClaimOnItsPage() async throws {
         try writeOldFiles()
         XCTAssertEqual(MemoryMigration.run(into: store, folder: folder), 3)
         XCTAssertEqual(store.claims(of: "me").map(\.text), ["Prefers pnpm"])
@@ -42,7 +42,7 @@ final class MemoryMigrationTests: XCTestCase {
         XCTAssertEqual(store.claims(of: "project:github.com/you/demo").map(\.text), ["Tests run with swift test"])
     }
 
-    func testTheMigrationRunsOnceAndLeavesTheFilesAlone() throws {
+    func testTheMigrationRunsOnceAndLeavesTheFilesAlone() async throws {
         try writeOldFiles()
         _ = MemoryMigration.run(into: store, folder: folder)
         XCTAssertEqual(MemoryMigration.run(into: store, folder: folder), 0, "a second launch writes nothing")
@@ -50,12 +50,12 @@ final class MemoryMigrationTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: folder.appendingPathComponent("me.md").path), "the old file stays on disk")
     }
 
-    func testAFolderWithNoFilesStillRecordsTheRun() {
+    func testAFolderWithNoFilesStillRecordsTheRun() async {
         XCTAssertEqual(MemoryMigration.run(into: store, folder: folder), 0)
         XCTAssertNotNil(store.index.cursor(MemoryMigration.doneKey))
     }
 
-    func testANoteAlreadyOnThePageIsNotAddedTwice() throws {
+    func testANoteAlreadyOnThePageIsNotAddedTwice() async throws {
         _ = try store.remember("Prefers pnpm", scope: .me, source: "chat:z").get()
         try writeOldFiles()
         XCTAssertEqual(MemoryMigration.run(into: store, folder: folder), 2, "the me note is already there")
