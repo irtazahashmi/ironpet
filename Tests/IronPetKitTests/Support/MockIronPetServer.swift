@@ -288,7 +288,7 @@ final class MockIronPetServer: @unchecked Sendable {
         listener.stateUpdateHandler = { state in if case .ready = state { ready.signal() } }
         listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
         listener.start(queue: queue)
-        guard ready.wait(timeout: .now() + 5) == .success, let port = listener.port?.rawValue else { throw URLError(.cannotConnectToHost) }
+        guard ready.wait(timeout: .now() + 20) == .success, let port = listener.port?.rawValue else { throw URLError(.cannotConnectToHost) }
         self.port = port
         self.listener = listener
     }
