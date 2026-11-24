@@ -129,4 +129,42 @@ final class ChatReplyTests: XCTestCase {
         XCTAssertEqual(h.model.replyingTo?.text, "whole message")
         XCTAssertNil(h.model.replyingTo?.selection)
     }
+
+    func testFrontSelectionGoesInTheAgentPromptAndClearsTheChip() async {
+        let selection = FrontSelection(text: "selected paragraph", appName: "Notes", windowTitle: "Ideas")
+        h.model.attachedSelection = selection
+        h.model.input = "summarize this"
+        await h.model.sendNow()
+        await settle()
+        XCTAssertNil(h.model.attachedSelection)
+        let prompt = turns.first?.prompt ?? ""
+        XCTAssertTrue(prompt.hasPrefix("> From Notes — Ideas:"), prompt)
+        XCTAssertTrue(prompt.contains("> selected paragraph\n\nsummarize this"), prompt)
+        guard case .user(let shown) = session.items.last?.kind else { return XCTFail("user item expected") }
+        XCTAssertEqual(shown, "summarize this")
+    }
+
+    func testFrontSelectionAndReplyBothReachTheAgent() async {
+        let original = assistantItem("earlier answer")
+        h.model.reply(to: original)
+        h.model.attachedSelection = FrontSelection(text: "from slack", appName: "Slack", windowTitle: nil)
+        h.model.input = "combine these"
+        await h.model.sendNow()
+        await settle()
+        let prompt = turns.first?.prompt ?? ""
+        XCTAssertTrue(prompt.hasPrefix("> From Slack:"), prompt)
+        XCTAssertTrue(prompt.contains("> Replying to "), prompt)
+        XCTAssertTrue(prompt.hasSuffix("\n\ncombine these"), prompt)
+    }
+
+    func testFrontSelectionSurvivesTheQueue() async {
+        h.model.input = "start"
+        await h.model.sendNow()
+        await settle()
+        h.model.attachedSelection = FrontSelection(text: "queued context", appName: "Mail", windowTitle: "Inbox")
+        h.model.input = "about that"
+        await h.model.sendNow()
+        XCTAssertEqual(session.queue.first?.selection?.text, "queued context")
+        XCTAssertNil(h.model.attachedSelection)
+    }
 }

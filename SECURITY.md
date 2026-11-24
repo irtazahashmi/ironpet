@@ -64,6 +64,7 @@ The builds on the GitHub Releases page come from `.github/workflows/release.yml`
 - With the welcome back summary on (`welcomeBack.enabled`, on by default): the system idle time and screen-lock state every 2 s, wake-from-sleep notifications, and, once you have been idle past `reminders.idleResetMinutes` (or right after the Mac wakes), which apps are capturing microphone input (Core Audio's process list: bundle id and pid, no audio and no permission prompt). This decides whether you are away or on a call; nothing is stored or sent.
 - Wispr Flow's local database, to pick up dictation while the chat is open.
 - The general pasteboard, briefly, after you select text in a chat message and release the mouse. ironpet sends the same copy command as Cmd-C to read the selection for the "Ask about this" button, then puts your earlier pasteboard contents back. It never reads the pasteboard otherwise, and the selected text stays in the chat unless you send it.
+- When you open the chat from another app and Accessibility is already trusted (for screen capture or desktop control), the focused element's `AXSelectedText` once, so a removable context chip can offer that selection with your next message. Secure text fields, ironpet itself, denylisted and user-excluded apps, and private browser windows are skipped. Nothing is read in the background, and ironpet never prompts for Accessibility for this alone. The selection reaches the agent only if you send the message (or you remove the chip first).
 
 ## Data in `~/.ironpet`
 
