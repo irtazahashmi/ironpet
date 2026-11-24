@@ -5,7 +5,7 @@ import XCTest
 @MainActor
 final class MemoryMCPTests: XCTestCase {
     private var dir: URL!
-    private var store: FileMemoryStore!
+    private var store: EntityMemoryStore!
     private var index: MemoryIndex!
     private var screen: CaptureStore!
     private var threads: [String: ChatThread] = [:]
@@ -16,9 +16,9 @@ final class MemoryMCPTests: XCTestCase {
         workspace = dir.appendingPathComponent("app")
         try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
         let database = try Database(path: nil, migrations: AppMigrations.all)
-        index = MemoryIndex(database: database)
         screen = CaptureStore(database: database)
-        store = FileMemoryStore(directory: dir.appendingPathComponent("memory"), index: index)
+        store = EntityMemoryStore(database: database)
+        index = store.index
     }
 
     override func tearDownWithError() throws {
@@ -40,21 +40,21 @@ final class MemoryMCPTests: XCTestCase {
         return (value, result["isError"] as? Bool ?? false, text)
     }
 
-    func testRememberWritesTheNoteWithTheChatAsItsSource() async throws {
+    func testRememberWritesTheClaimWithTheChatAsItsSource() async throws {
         let saved = try await call("memory_remember", ["text": "Prefers pnpm over npm", "scope": "me"])
         XCTAssertFalse(saved.isError, saved.text)
-        XCTAssertEqual(saved.value["file"] as? String, "me.md")
-        XCTAssertEqual(store.document(store.aboutMe)?.notes.first?.source, "chat:3f2a9c1d")
+        XCTAssertEqual(saved.value["page"] as? String, "me")
+        XCTAssertEqual(store.claims(of: "me").first?.sources, ["chat:3f2a9c1d"])
         let project = try await call("memory_remember", ["text": "Tests run with swift test", "scope": "project"])
         XCTAssertFalse(project.isError, project.text)
-        XCTAssertEqual(store.document(store.projectFile(ProjectKey.of(workspace)))?.notes.map(\.text), ["Tests run with swift test"])
+        XCTAssertEqual(store.claims(of: "project:" + ProjectKey.of(workspace).key).map(\.text), ["Tests run with swift test"])
     }
 
     func testRememberRefusesSecretsAndMissingFields() async throws {
         let secret = try await call("memory_remember", ["text": "AWS key AKIAIOSFODNN7EXAMPLE", "scope": "me"])
         XCTAssertTrue(secret.isError)
         XCTAssertTrue(secret.text.contains("not saved"))
-        XCTAssertFalse(FileManager.default.fileExists(atPath: store.aboutMe.path))
+        XCTAssertTrue(store.claims(of: "me").isEmpty)
         let noScope = try await call("memory_remember", ["text": "x"])
         XCTAssertTrue(noScope.isError)
         let badScope = try await call("memory_remember", ["text": "x", "scope": "world"])
@@ -63,20 +63,19 @@ final class MemoryMCPTests: XCTestCase {
         XCTAssertTrue(noPerson.text.contains("person's name"))
     }
 
-    func testForgetMovesTheNoteToHistoryAndSaysWhatWentAway() async throws {
+    func testForgetMovesTheClaimToHistoryAndSaysWhatWentAway() async throws {
         _ = try await call("memory_remember", ["text": "Prefers pnpm over npm", "scope": "me"])
         _ = try await call("memory_remember", ["text": "Works in Helsinki", "scope": "me"])
         let forgot = try await call("memory_forget", ["query": "pnpm"])
         XCTAssertFalse(forgot.isError, forgot.text)
         XCTAssertEqual((forgot.value["removed"] as? [[String: Any]])?.first?["note"] as? String, "Prefers pnpm over npm")
-        XCTAssertEqual(store.document(store.aboutMe)?.notes.map(\.text), ["Works in Helsinki"])
-        let copies = try FileManager.default.contentsOfDirectory(atPath: store.historyRoot.appendingPathComponent("me.md").path)
-        XCTAssertFalse(copies.isEmpty, "the note is in .history")
+        XCTAssertEqual(store.claims(of: "me").map(\.text), ["Works in Helsinki"])
+        XCTAssertEqual(store.history(of: "me").map(\.text), ["Prefers pnpm over npm"], "the claim is kept for undo")
         let again = try await call("memory_forget", ["query": "pnpm"])
         XCTAssertTrue(again.isError)
     }
 
-    func testSearchFindsChatsNotesHistoryAndTheScreen() async throws {
+    func testSearchFindsChatsNotesAndTheScreenButNotForgottenClaims() async throws {
         let item = ChatSession.Item(kind: .user("I always use pnpm, never npm"))
         let thread = ChatThread(id: "t1", title: "Packages", workspace: workspace.path, updatedAt: Date(),
                                 items: [item, .init(kind: .assistant("Got it, pnpm."))], agent: "claude")
@@ -89,9 +88,9 @@ final class MemoryMCPTests: XCTestCase {
                               lines: ["pnpm install is fast"])
         let all = try await call("memory_search", ["query": "pnpm"])
         let kinds = (all.value["hits"] as? [[String: Any]] ?? []).compactMap { $0["kind"] as? String }
-        XCTAssertEqual(Set(kinds), ["chat", "screen"], "the forgotten note is not found by default")
+        XCTAssertEqual(Set(kinds), ["chat", "screen"], "the forgotten note is not found")
         let history = try await call("memory_search", ["query": "pnpm", "kinds": ["history"]])
-        XCTAssertEqual((history.value["hits"] as? [[String: Any]])?.first?["kind"] as? String, "history", "only when asked for")
+        XCTAssertTrue(history.isError, "history is not a search kind; memory_page shows it")
         let chats = try await call("memory_search", ["query": "never npm", "kinds": ["chat"]])
         let hit = try XCTUnwrap((chats.value["hits"] as? [[String: Any]])?.first)
         XCTAssertEqual(hit["id"] as? String, "chat:t1/\(item.id.uuidString)")
@@ -109,12 +108,12 @@ final class MemoryMCPTests: XCTestCase {
         XCTAssertTrue(me.text.contains("may not save notes about the user"))
         let forget = try await call("memory_forget", ["query": "tea"], caller: "automation:mail")
         XCTAssertTrue(forget.isError)
-        XCTAssertEqual(store.document(store.aboutMe)?.notes.map(\.text), ["Prefers tea"])
+        XCTAssertEqual(store.claims(of: "me").map(\.text), ["Prefers tea"])
         let project = try await call("memory_remember", ["text": "Uses Make", "scope": "project"], caller: "automation:mail")
         XCTAssertTrue(project.isError, "no project is taken from the chat that happens to be open")
         let person = try await call("memory_remember", ["text": "Sends the invoices", "scope": "people", "person": "Ana"], caller: "automation:mail")
         XCTAssertFalse(person.isError, person.text)
-        XCTAssertEqual(store.document(store.people)?.notes.first?.source, "automation:mail")
+        XCTAssertEqual(store.claims(of: EntityMatcher.personID("Ana")).first?.sources, ["automation:mail"])
     }
 
     func testAnAutomationSessionNamesItselfToTheIronpetServerOnly() {
@@ -132,16 +131,16 @@ final class MemoryMCPTests: XCTestCase {
         XCTAssertTrue(backend.sessionMCPServers.isEmpty)
     }
 
-    func testAnAutomationSessionMayNotEditMemoryFiles() {
-        let memoryEdit = ACPToolCall(id: "1", title: "Edit", kind: "edit", paths: [FileMemoryStore.directory.appendingPathComponent("me.md").path])
+    func testAnAutomationSessionMayNotEditFilesInTheOldMemoryFolder() {
+        let memoryEdit = ACPToolCall(id: "1", title: "Edit", kind: "edit", paths: [LegacyMemoryFiles.directory.appendingPathComponent("me.md").path])
         XCTAssertFalse(AutomationSession.decision(for: memoryEdit).allow)
         XCTAssertFalse(AutomationPrompt.decision(for: memoryEdit).allow, "the {{item.*}} run carries outside text")
-        let moveIn = ACPToolCall(id: "3", title: "Move", kind: "move", rawInput: ["source": "/tmp/x.md", "destination": FileMemoryStore.directory.appendingPathComponent("me.md").path],
+        let moveIn = ACPToolCall(id: "3", title: "Move", kind: "move", rawInput: ["source": "/tmp/x.md", "destination": LegacyMemoryFiles.directory.appendingPathComponent("me.md").path],
                                  paths: ["/tmp/x.md"])
-        XCTAssertFalse(AutomationSession.decision(for: moveIn).allow, "a move into the memory folder counts")
+        XCTAssertFalse(AutomationSession.decision(for: moveIn).allow, "a move into the old memory folder asks")
         XCTAssertTrue(AutomationPrompt.decision(for: ACPToolCall(id: "2", title: "Read", kind: "read", paths: ["/tmp/x"])).allow)
         let otherEdit = ACPToolCall(id: "2", title: "Edit", kind: "edit", paths: ["/tmp/work/app.swift"])
-        XCTAssertFalse(AutomationSession.decision(for: otherEdit).allow, "an edit outside the memory folder is not answered without asking")
+        XCTAssertFalse(AutomationSession.decision(for: otherEdit).allow, "an edit is not answered without asking")
     }
 
     func testScreenIsLeftOutWhenCaptureHasNoData() async throws {
@@ -150,18 +149,33 @@ final class MemoryMCPTests: XCTestCase {
         XCTAssertEqual(result.value["count"] as? Int, 0)
     }
 
-    func testGetReadsANoteWithItsEarlierVersionsAndRefusesUnknownIds() async throws {
+    func testGetReadsANoteAndRefusesUnknownIds() async throws {
         _ = try await call("memory_remember", ["text": "Uses zsh", "scope": "me"])
-        _ = try await call("memory_remember", ["text": "Uses vim", "scope": "me"])
         let found = try await call("memory_search", ["query": "zsh", "kinds": ["note"]])
         let hit = try XCTUnwrap((found.value["hits"] as? [[String: Any]])?.first { ($0["id"] as? String)?.hasPrefix("note:") == true })
         let note = try await call("memory_get", ["id": hit["id"] as! String])
         XCTAssertEqual(note.value["note"] as? String, "Uses zsh")
-        XCTAssertEqual((note.value["earlier_versions"] as? [[String: Any]])?.count, 1)
         let unknown = try await call("memory_get", ["id": "chat:nope/none"])
         XCTAssertTrue(unknown.isError)
         let bad = try await call("memory_get", ["id": "nonsense"])
         XCTAssertTrue(bad.isError)
+    }
+
+    func testPageReadsAnEntityWithItsClaimsAndRefusesUnknownNames() async throws {
+        _ = try await call("memory_remember", ["text": "Leads payments", "scope": "people", "person": "Ana"])
+        _ = try await call("memory_remember", ["text": "Owns auth", "scope": "people", "person": "Ana"])
+        let page = try await call("memory_page", ["name": "Ana"])
+        XCTAssertFalse(page.isError, page.text)
+        XCTAssertEqual(page.value["entity"] as? String, "Ana")
+        XCTAssertEqual(page.value["type"] as? String, "person")
+        let claims = try XCTUnwrap(page.value["claims"] as? [[String: Any]])
+        XCTAssertEqual(Set(claims.compactMap { $0["text"] as? String }), ["Leads payments", "Owns auth"])
+        XCTAssertTrue(claims.allSatisfy { ($0["id"] as? String)?.hasPrefix("claim_") == true })
+        XCTAssertEqual((page.value["ref"] as? String)?.hasPrefix("page_"), true)
+        let links = try await call("memory_links", ["name": "Ana"])
+        XCTAssertEqual((links.value["links"] as? [Any])?.count, 0, "no links until the digest writes some")
+        let unknown = try await call("memory_page", ["name": "Nobody"])
+        XCTAssertTrue(unknown.isError)
     }
 
     func testBadTimesAndKindsAreErrors() async throws {
@@ -178,7 +192,7 @@ final class MemoryMCPTests: XCTestCase {
         XCTAssertTrue(String(decoding: data, as: UTF8.self).contains("memory is not available"))
     }
 
-    func testTheNoProjectFolderHasNoProjectFile() {
+    func testTheNoProjectFolderHasNoProject() {
         XCTAssertNil(MemoryMCP.project(ChatSession.scratchWorkspace))
         XCTAssertNil(MemoryMCP.project(nil))
         XCTAssertEqual(MemoryMCP.source(thread: nil), "agent")
