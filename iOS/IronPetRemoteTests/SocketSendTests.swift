@@ -11,6 +11,8 @@ final class FakeChatSocket: ChatSocket, @unchecked Sendable {
     var answer: Answer
     /// A message with one of these texts is refused, whatever `answer` says.
     var refuseTexts: Set<String> = []
+    /// Runs when a message is written, before the answer. A test reads the model's state here to see what the phone had applied by then.
+    var onSend: (@Sendable () async -> Void)?
 
     init(open: Bool = true, answer: Answer = .ack) { _open = open; self.answer = answer }
 
@@ -20,6 +22,7 @@ final class FakeChatSocket: ChatSocket, @unchecked Sendable {
 
     func sendChat(clientID: String, text: String, reply: RemoteReplyRef?) async throws -> ChatAck {
         lock.lock(); _sent.append((clientID, text)); lock.unlock()
+        await onSend?()
         if refuseTexts.contains(text) { throw SocketSendError.refused(code: "invalid", message: "the message is empty") }
         switch answer {
         case .ack: return ChatAck(clientID: clientID, outcome: "sent", itemID: nil, seq: 1)

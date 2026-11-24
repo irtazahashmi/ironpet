@@ -1,3 +1,4 @@
+import CryptoKit
 import IronPetKit
 import SwiftUI
 
@@ -69,7 +70,8 @@ struct MainTabs: View {
         let client = IronPetClient(endpoint: device.endpoint, token: device.token)
         self.client = client
         // The Mac allows three sockets per device and five screens want events, so they share one.
-        let connection = EventConnection(client: client)
+        // The last event seq survives a restart of the app, so the first connection after a launch can resume too.
+        let connection = EventConnection(client: client, store: DefaultsResumeStore(key: "events.resume." + SHA256.hash(data: Data((client.token ?? "").utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()))
         let events = SharedEventSource(connection)
         let unauthorized: () -> Void = { [weak model] in model?.handleUnauthorized() }
         _tasks = State(initialValue: TasksModel(client: client, events: events, onUnauthorized: unauthorized))

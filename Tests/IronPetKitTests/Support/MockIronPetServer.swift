@@ -39,6 +39,9 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _seq = 0
     private var buffer: [RemoteEvent] = []
     private var _gapOnNextConnect = false
+    private var _resumeSupported = false
+    private var _epoch = "mock-epoch-1"
+    private var _bufferFloor = 0
     private var _socketURLs: [String] = []
     private var _pet = RemotePet(name: "Ghost", mood: "idle", badge: 0, tricks: ["Wave", "Jump", "Dance", "Zoomies"])
     private var _bubbles: [RemoteBubble] = MockIronPetServer.sampleBubbles
@@ -147,6 +150,13 @@ final class MockIronPetServer: @unchecked Sendable {
     var tokenValid: Bool { get { lock.lock(); defer { lock.unlock() }; return _tokenValid } set { lock.lock(); _tokenValid = newValue; lock.unlock() } }
     /// The next socket that connects gets `resync` after `hello`, as if the buffer had lost its events.
     var gapOnNextConnect: Bool { get { lock.lock(); defer { lock.unlock() }; return _gapOnNextConnect } set { lock.lock(); _gapOnNextConnect = newValue; lock.unlock() } }
+    /// True makes the mock a Mac that can resume: its hello announces `events.resume` and an epoch, and a socket opened with `since`
+    /// gets the missed events and then `resumed`, or `resync` when the `since` is too old or from another epoch. False is an older Mac.
+    var resumeSupported: Bool { get { lock.lock(); defer { lock.unlock() }; return _resumeSupported } set { lock.lock(); _resumeSupported = newValue; lock.unlock() } }
+    /// Names this launch of the mock Mac. Changing it is a Mac restart: a phone that sends the old one gets `resync`.
+    var epoch: String { get { lock.lock(); defer { lock.unlock() }; return _epoch } set { lock.lock(); _epoch = newValue; lock.unlock() } }
+    /// Events with a seq at or below this are gone from the mock's buffer, so a `since` below it is too old.
+    var bufferFloor: Int { get { lock.lock(); defer { lock.unlock() }; return _bufferFloor } set { lock.lock(); _bufferFloor = newValue; lock.unlock() } }
     /// The request target of every socket upgrade, such as `/v1/events?since=3`.
     var socketURLs: [String] { lock.lock(); defer { lock.unlock() }; return _socketURLs }
     var openSocketCount: Int { lock.lock(); defer { lock.unlock() }; return sockets.count }
@@ -574,25 +584,34 @@ final class MockIronPetServer: @unchecked Sendable {
             let kv = pair.split(separator: "=")
             return kv.count == 2 && kv[0] == "since" ? Int(kv[1]) : nil
         }.first
+        let sinceEpoch = request.query.split(separator: "&").compactMap { pair -> String? in
+            let kv = pair.split(separator: "=")
+            return kv.count == 2 && kv[0] == "epoch" ? String(kv[1]) : nil
+        }.first
         lock.lock()
         _socketURLs.append(request.query.isEmpty ? request.path : "\(request.path)?\(request.query)")
-        let gap = _gapOnNextConnect
+        var gap = _gapOnNextConnect
         _gapOnNextConnect = false
+        let resume = _resumeSupported
+        if resume, let since, since < _bufferFloor || since > _seq || sinceEpoch.map({ $0 != _epoch }) == true { gap = true }
         let hello = RemoteEvent(seq: _seq, kind: RemoteEvent.hello)
+        let helloRaw = #"{"kind":"hello","seq":\#(_seq),"epoch":"\#(_epoch)","capabilities":["events.resume"]}"#
         let replay = since.map { floor in buffer.filter { $0.seq > floor } } ?? []
+        let seqNow = _seq
         lock.unlock()
         connection.send(content: Data(head.utf8), completion: .contentProcessed { [weak self] _ in
             guard let self else { return }
-            self.sendText(hello, on: connection)
+            if resume { self.sendPayload(Data(helloRaw.utf8), on: connection) } else { self.sendText(hello, on: connection) }
             if gap { self.sendText(RemoteEvent(seq: self.currentSeq, kind: RemoteEvent.resync), on: connection) } else {
                 for event in replay { self.sendText(event, on: connection) }
+                if resume, since != nil { self.sendPayload(Data(#"{"kind":"resumed","seq":\#(seqNow),"replayed":\#(replay.count)}"#.utf8), on: connection) }
             }
             self.lock.lock(); self.sockets.append(connection); self.lock.unlock()
             self.drain(connection)
         })
     }
 
-    private var currentSeq: Int { lock.lock(); defer { lock.unlock() }; return _seq }
+    var currentSeq: Int { lock.lock(); defer { lock.unlock() }; return _seq }
 
     /// Reads and drops client frames so a close from the phone ends the socket.
     private func drain(_ connection: NWConnection) {
@@ -608,7 +627,10 @@ final class MockIronPetServer: @unchecked Sendable {
     }
 
     private func sendText(_ event: RemoteEvent, on connection: NWConnection) {
-        let payload = (try? encoder.encode(event)) ?? Data()
+        sendPayload((try? encoder.encode(event)) ?? Data(), on: connection)
+    }
+
+    private func sendPayload(_ payload: Data, on connection: NWConnection) {
         var frame = Data([0x81])
         if payload.count < 126 { frame.append(UInt8(payload.count)) } else {
             frame.append(126)

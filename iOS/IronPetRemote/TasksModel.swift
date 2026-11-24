@@ -74,6 +74,7 @@ final class TasksModel {
     func handle(_ signal: EventSignal) async {
         switch signal {
         case .connected, .resync: await reload()
+        case .resumed: break
         case .unauthorized: onUnauthorized()
         case .event(let event):
             switch event.kind {
