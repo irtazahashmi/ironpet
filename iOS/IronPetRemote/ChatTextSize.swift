@@ -84,7 +84,10 @@ struct ChatScale: DynamicProperty {
 
     init(_ style: UIFont.TextStyle) { self.style = style }
 
-    var wrappedValue: CGFloat {
+    var wrappedValue: CGFloat { Self.value(style, size) }
+
+    /// The multiplier for a text style at a Dynamic Type size. The composer calls this too, so its font matches the bubbles.
+    static func value(_ style: UIFont.TextStyle, _ size: DynamicTypeSize) -> CGFloat {
         let metrics = UIFontMetrics(forTextStyle: style)
         let reference = UITraitCollection(preferredContentSizeCategory: .large)
         let current = UITraitCollection(preferredContentSizeCategory: size.contentSizeCategory)
