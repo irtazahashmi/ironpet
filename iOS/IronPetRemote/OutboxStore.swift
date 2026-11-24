@@ -15,14 +15,32 @@ struct OutboxRecord: Codable, Equatable {
     var replySelection: String?
     /// Set when the message stopped waiting without being sent: the Mac refused it, or it waited past the age limit.
     var failure: String?
+    /// A voice message. Its audio is in the file `audioName` until the text is known.
+    var isVoice: Bool?
+    var audioName: String?
+    /// Photos and files that go with the message. Their bytes are in the store, under `name`.
+    var files: [OutboxFileRef]?
 
     var reply: RemoteReplyRef? { replyItemID.map { RemoteReplyRef(itemID: $0, selectionText: replySelection) } }
+}
+
+/// One attachment of a waiting message. The bytes live in a separate file so the record stays small.
+struct OutboxFileRef: Codable, Equatable {
+    var name: String
+    var fileName: String
+    var contentType: String
+    var isImage: Bool
 }
 
 /// Where the outbox lives between launches.
 protocol OutboxStoring: AnyObject {
     func load() -> [OutboxRecord]
     func save(_ records: [OutboxRecord])
+    /// Keeps the bytes of one attachment or recording of a waiting message.
+    func writeFile(_ data: Data, name: String)
+    func readFile(name: String) -> Data?
+    /// Deletes every saved file whose name is not in `names`.
+    func prune(keeping names: Set<String>)
 }
 
 /// One JSON file in the app's own Application Support folder. It is not in the shared app group and is left out of backups, so it
@@ -41,10 +59,32 @@ final class FileOutboxStore: OutboxStoring {
     static func forToken(_ token: String?) -> FileOutboxStore {
         let name = "outbox-" + SHA256.hash(data: Data((token ?? "").utf8)).prefix(6).map { String(format: "%02x", $0) }.joined() + ".json"
         let names = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
-        for old in names where old.hasPrefix("outbox") && old.hasSuffix(".json") && old != name {
+        let filesName = String(name.dropLast(".json".count)) + ".files"
+        for old in names where old.hasPrefix("outbox") && old != name && old != filesName {
             try? FileManager.default.removeItem(at: folder.appendingPathComponent(old))
         }
         return FileOutboxStore(url: folder.appendingPathComponent(name))
+    }
+
+    /// The folder with the bytes of attachments and recordings, next to the JSON file.
+    private var filesFolder: URL { url.deletingPathExtension().appendingPathExtension("files") }
+
+    func writeFile(_ data: Data, name: String) {
+        let folder = filesFolder
+        try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        var excluded = folder
+        try? excluded.setResourceValues(values)
+        try? data.write(to: folder.appendingPathComponent(name), options: [.atomic, .completeFileProtectionUntilFirstUserAuthentication])
+    }
+
+    func readFile(name: String) -> Data? { try? Data(contentsOf: filesFolder.appendingPathComponent(name)) }
+
+    func prune(keeping names: Set<String>) {
+        let present = (try? FileManager.default.contentsOfDirectory(atPath: filesFolder.path)) ?? []
+        for file in present where !names.contains(file) { try? FileManager.default.removeItem(at: filesFolder.appendingPathComponent(file)) }
+        if names.isEmpty { try? FileManager.default.removeItem(at: filesFolder) }
     }
 
     func load() -> [OutboxRecord] {
@@ -83,9 +123,13 @@ final class FileOutboxStore: OutboxStoring {
 /// Keeps the records in memory. Tests share one between two models to stand for a relaunch.
 final class MemoryOutboxStore: OutboxStoring {
     private(set) var records: [OutboxRecord]
+    private(set) var files: [String: Data] = [:]
 
     init(_ records: [OutboxRecord] = []) { self.records = records }
 
     func load() -> [OutboxRecord] { records }
     func save(_ records: [OutboxRecord]) { self.records = records }
+    func writeFile(_ data: Data, name: String) { files[name] = data }
+    func readFile(name: String) -> Data? { files[name] }
+    func prune(keeping names: Set<String>) { files = files.filter { names.contains($0.key) } }
 }
