@@ -15,8 +15,8 @@ import re
 import sys
 
 SHARDS = [
-    # Shard 1 (24 tests)
-    ["BackgroundUITests", "ChatTextSizeUITests", "ChatFileLinksUITests"],
+    # Shard 1 (28 tests)
+    ["BackgroundUITests", "ChatTextSizeUITests", "ChatFileLinksUITests", "ChatSwipeReplyUITests", "ChatMenuKeyboardUITests"],
     # Shard 2 (24 tests)
     ["PasteUITests", "QuickFilterUITests", "PhaseThreeUITests", "TasksBoardUITests", "ChatStreamingUITests"],
     # Shard 3 (24 tests)
