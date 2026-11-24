@@ -43,6 +43,75 @@ final class QuickFilterUITests: XCTestCase {
         add(shot)
     }
 
+    /// The large title sits above the chip row, and the chips do not cover the first list row.
+    func testTheTitleIsAboveTheChipsAtRest() {
+        pairAndOpenTasks()
+        let all = app.buttons["quick-filter-all"]
+        XCTAssertTrue(all.waitForExistence(timeout: 30))
+        let title = app.navigationBars["Tasks"].staticTexts["Tasks"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        attach("tasks-at-rest")
+        let bar = app.navigationBars["Tasks"]
+        XCTAssertTrue(app.collectionViews.firstMatch.buttons["quick-filter-all"].exists,
+                      "the chips are rows of the list, not a bar pinned over it, so the large title cannot scroll under them")
+        XCTAssertLessThanOrEqual(title.frame.maxY, all.frame.minY, "the Tasks title ends above the chip row")
+        XCTAssertLessThanOrEqual(bar.frame.maxY, all.frame.minY + 1, "the chip row starts below the whole navigation bar, large title included")
+        let firstRow = app.buttons["task-t-needs"]
+        XCTAssertTrue(firstRow.waitForExistence(timeout: 10))
+        XCTAssertGreaterThanOrEqual(firstRow.frame.minY, all.frame.maxY, "the chips do not cover the first row")
+    }
+
+    /// The Board view keeps the title above the chips too.
+    func testTheTitleIsAboveTheChipsInBoardMode() {
+        pairAndOpenTasks()
+        let all = app.buttons["quick-filter-all"]
+        XCTAssertTrue(all.waitForExistence(timeout: 30))
+        let board = app.segmentedControls["tasks-view-mode"].buttons["Board"]
+        XCTAssertTrue(board.waitForExistence(timeout: 10))
+        board.tap()
+        XCTAssertTrue(all.waitForExistence(timeout: 10))
+        let title = app.navigationBars["Tasks"].staticTexts["Tasks"]
+        XCTAssertTrue(title.waitForExistence(timeout: 10))
+        attach("tasks-board-at-rest")
+        XCTAssertLessThanOrEqual(title.frame.maxY, all.frame.minY, "the Tasks title ends above the chip row in Board mode")
+        XCTAssertLessThanOrEqual(app.navigationBars["Tasks"].frame.maxY, all.frame.minY + 1, "the chip row starts below the whole navigation bar in Board mode")
+    }
+
+    /// Scrolling collapses the large title, and the chips scroll with the content instead of covering rows.
+    func testScrollingCollapsesTheTitleAndTheChipsNeverCoverRows() {
+        server.tasks = (1...30).map { RemoteTask(id: "t-\($0)", title: "Task number \($0)", status: .backlog) }
+        pairAndOpenTasks()
+        let all = app.buttons["quick-filter-all"]
+        XCTAssertTrue(all.waitForExistence(timeout: 30))
+        let list = app.collectionViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 10))
+        let bar = app.navigationBars["Tasks"]
+        let largeHeight = bar.frame.height
+        for _ in 0..<3 { list.swipeUp() }
+        attach("tasks-scrolled")
+        XCTAssertLessThan(bar.frame.height, largeHeight, "the large title collapses to the inline bar")
+        let visibleRows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'task-t-'")).allElementsBoundByIndex.filter { $0.isHittable }
+        XCTAssertFalse(visibleRows.isEmpty)
+        if all.exists && all.isHittable {
+            for row in visibleRows { XCTAssertFalse(row.frame.intersects(all.frame), "a visible chip never covers a row") }
+        }
+    }
+
+    /// Pulling the list down asks the Mac for the tasks again.
+    func testPullToRefreshReloads() {
+        pairAndOpenTasks()
+        XCTAssertTrue(app.buttons["quick-filter-all"].waitForExistence(timeout: 30))
+        let list = app.collectionViews.firstMatch
+        XCTAssertTrue(list.waitForExistence(timeout: 10))
+        let before = server.requests.count
+        list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
+            .press(forDuration: 0.1, thenDragTo: list.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.9)))
+        let deadline = Date().addingTimeInterval(15)
+        while server.requests.count == before, Date() < deadline { Thread.sleep(forTimeInterval: 0.5) }
+        XCTAssertGreaterThan(server.requests.count, before, "pulling down asks the Mac for the tasks again")
+        XCTAssertTrue(app.buttons["task-t-needs"].waitForExistence(timeout: 10))
+    }
+
     /// S4
     func testTheChipsShowAndFilterTheListAndRemoveCallsTheMac() {
         pairAndOpenTasks()

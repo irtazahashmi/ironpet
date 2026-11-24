@@ -60,7 +60,6 @@ struct QuickFilterChips: View {
             .padding(.vertical, 8)
         }
         .scrollIndicators(.never)
-        .background(.bar)
         .accessibilityIdentifier("quick-filters")
     }
 
