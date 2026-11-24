@@ -120,6 +120,11 @@ public final class IronPetClient: @unchecked Sendable {
         return try decode(type, from: try await perform(request(method, path, body: data)))
     }
 
+    private func sendJSON<T: Decodable>(_ type: T.Type, _ method: String, _ path: String, body: [String: Any]) async throws -> T {
+        let data = try JSONSerialization.data(withJSONObject: body)
+        return try decode(type, from: try await perform(request(method, path, body: data)))
+    }
+
     // MARK: Pairing
 
     public func pair(_ body: PairRequest) async throws -> PairAccepted {
@@ -158,16 +163,37 @@ public final class IronPetClient: @unchecked Sendable {
         _ = try await perform(request("POST", APIPath.rejectSuggestion(id), body: Data("{}".utf8)))
     }
 
-    public func closeTask(id: String, note: String) async throws -> RemoteTask {
-        try await send(RemoteTask.self, "POST", APIPath.closeTask(id), body: ["note": note])
+    /// The three change calls take the phone's `clientID` for the change and `baseUpdated`, the `updated` time of the copy it edited.
+    /// The Mac applies a `clientID` once, and answers 409 when the task changed after `baseUpdated`. An older Mac ignores both.
+    public func closeTask(id: String, note: String, clientID: String? = nil, baseUpdated: Date? = nil) async throws -> RemoteTask {
+        try await sendJSON(RemoteTask.self, "POST", APIPath.closeTask(id), body: change(["note": note], clientID, baseUpdated))
     }
 
     public func addNote(id: String, note: String) async throws -> RemoteTask {
         try await send(RemoteTask.self, "PATCH", APIPath.task(id), body: ["note": note])
     }
 
-    public func setStatus(id: String, status: TaskStatus, note: String) async throws -> RemoteTask {
-        try await send(RemoteTask.self, "PATCH", APIPath.task(id), body: ["status": status.rawValue, "note": note])
+    public func setStatus(id: String, status: TaskStatus, note: String, clientID: String? = nil, baseUpdated: Date? = nil) async throws -> RemoteTask {
+        try await sendJSON(RemoteTask.self, "PATCH", APIPath.task(id), body: change(["status": status.rawValue, "note": note], clientID, baseUpdated))
+    }
+
+    /// Changes the title, the notes, or both. A nil field stays as it is.
+    public func editTask(id: String, title: String?, notes: String?, clientID: String? = nil, baseUpdated: Date? = nil) async throws -> RemoteTask {
+        var body: [String: Any] = [:]
+        if let title { body["title"] = title }
+        if let notes { body["notes"] = notes }
+        return try await sendJSON(RemoteTask.self, "PATCH", APIPath.task(id), body: change(body, clientID, baseUpdated))
+    }
+
+    public func createTask(title: String, notes: String = "", status: TaskStatus = .backlog, clientID: String? = nil) async throws -> RemoteTask {
+        try await sendJSON(RemoteTask.self, "POST", APIPath.tasks, body: change(["title": title, "notes": notes, "status": status.rawValue], clientID, nil))
+    }
+
+    private func change(_ fields: [String: Any], _ clientID: String?, _ baseUpdated: Date?) -> [String: Any] {
+        var body = fields
+        if let clientID { body["client_id"] = clientID }
+        if let baseUpdated { body["base_updated"] = ISO8601DateFormatter().string(from: baseUpdated) }
+        return body
     }
 
     /// Names who holds the task, or clears that with a nil or blank `name`. A `status` in the same call changes it in the same update.

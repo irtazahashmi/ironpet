@@ -115,6 +115,7 @@ final class RemoteServer {
     private let uploads: RemoteUploads
     /// The messages phones sent over the event socket, so a resend creates nothing.
     private let sends = RemoteSendLedger()
+    private let taskChanges = RemoteTaskLedger()
     /// How often one message's `chat.item` event may reach a socket.
     var itemInterval: Duration = .milliseconds(100)
     private var tasks: [Task<Void, Never>] = []
@@ -710,9 +711,9 @@ final class RemoteServer {
     /// Runs a task call on the main actor, as every other client of `IronPetAPI` does, and turns its result or error into a response.
     private func call(_ context: RemoteContext, status: Int = 200, _ body: @MainActor (RemoteTasks) throws -> [String: Any]) async throws -> Response {
         guard let device = context.device else { return Self.error(401, "unauthorized", "unauthorized") }
-        let api = api
+        let api = api, ledger = taskChanges
         return await MainActor.run {
-            do { return Self.json(status, try body(RemoteTasks(api: api, by: "remote:\(device.id)"))) } catch {
+            do { return Self.json(status, try body(RemoteTasks(api: api, by: "remote:\(device.id)", ledger: ledger))) } catch {
                 return Self.errorResponse(RemoteFailure(error))
             }
         }

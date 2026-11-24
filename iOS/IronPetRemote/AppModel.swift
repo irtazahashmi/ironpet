@@ -67,5 +67,6 @@ final class AppModel {
     private func forgetPresence() {
         PetSnapshotStore.clear()
         PetPresence.endAll()
+        FileTaskSyncStore.clearAll()
     }
 }

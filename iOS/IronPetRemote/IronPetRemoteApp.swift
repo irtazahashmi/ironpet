@@ -76,7 +76,8 @@ struct MainTabs: View {
         let events = SharedEventSource(connection)
         self.events = events
         let unauthorized: () -> Void = { [weak model] in model?.handleUnauthorized() }
-        _tasks = State(initialValue: TasksModel(client: client, events: events, onUnauthorized: unauthorized))
+        // The last task list and the changes made offline live in a file in the app's own container, one per pairing.
+        _tasks = State(initialValue: TasksModel(client: client, events: events, store: FileTaskSyncStore.forToken(client.token), onUnauthorized: unauthorized))
         _pet = State(initialValue: PetModel(client: client, events: events, cache: AssetCache(directory: Self.assetsDirectory), onUnauthorized: unauthorized))
         let chatModel = ChatModel(client: client, events: events, onUnauthorized: unauthorized)
         // Typed messages go over the same socket the events arrive on.
