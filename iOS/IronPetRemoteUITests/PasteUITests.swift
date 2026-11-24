@@ -359,8 +359,24 @@ final class AttachPhotoUITests: XCTestCase {
         // The grid's cells are labelled "Photo, <date>". The first image in the sheet is the privacy banner's icon.
         let image = app.scrollViews.images.matching(NSPredicate(format: "label BEGINSWITH 'Photo'")).firstMatch
         guard image.waitForExistence(timeout: 15) else { throw XCTSkip("the simulator's photo library is empty") }
-        image.tap()
-        for label in ["Add", "Done"] where app.buttons[label].waitForExistence(timeout: 2) { app.buttons[label].tap(); break }
+        // The cell exists as soon as the sheet starts to slide in. The picker runs out of process, so `isHittable` is never true and a
+        // plain `tap()` fails on it. Wait for the cell's frame to stop moving, then tap its centre.
+        var frame = image.frame
+        for _ in 0..<20 {
+            Thread.sleep(forTimeInterval: 0.25)
+            let next = image.frame
+            if next == frame { break }
+            frame = next
+        }
+        image.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        // Depending on the picker's mode, the photo is added at once or after a tap on Add or Done. The button can take longer than
+        // 2 s to show on a loaded simulator, and a fixed short wait skipped it, so the thumbnail never came. Poll for either outcome.
+        let thumbnail = any("attachment-thumbnail-0")
+        let end = Date().addingTimeInterval(20)
+        while Date() < end, !thumbnail.exists {
+            if let button = ["Add", "Done"].map({ app.buttons[$0] }).first(where: { $0.exists }) { button.tap(); break }
+            Thread.sleep(forTimeInterval: 0.25)
+        }
         XCTAssertTrue(any("attachment-thumbnail-0").waitForExistence(timeout: 15), "the picked photo shows in the composer")
     }
 

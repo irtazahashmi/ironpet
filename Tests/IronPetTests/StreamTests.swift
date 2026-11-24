@@ -265,9 +265,12 @@ final class EventCoalescerTests: XCTestCase {
         let c = EventCoalescer(debounce: 0.2)
         var got: [(Int, Int)] = []
         c.fire = { event, count, done in got.append((event["n"] as? Int ?? 0, count)); done() }
-        for n in 1...5 { c.submit(["n": n]); try? await Task.sleep(nanoseconds: 50_000_000) }
+        // The burst runs without a suspension point, so the debounce timer cannot fire inside it however loaded the machine is.
+        // Spacing the submits with real sleeps let one slow sleep outlast the 0.2 s window and fire early, giving [3, 5].
+        for n in 1...5 { c.submit(["n": n]) }
         XCTAssertTrue(got.isEmpty)
-        try? await Task.sleep(nanoseconds: 400_000_000)
+        let deadline = Date().addingTimeInterval(10)
+        while got.isEmpty, Date() < deadline { try? await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertEqual(got.map(\.0), [5])
         XCTAssertEqual(got.map(\.1), [5])
     }
