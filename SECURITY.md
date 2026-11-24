@@ -72,6 +72,7 @@ The builds on the GitHub Releases page come from `.github/workflows/release.yml`
 | `config.json` | Your settings |
 | `threads/` | Saved chats (agent, ACP session id, folder and the visible transcript, plus the system notices an automation posted, with the text the agent read) |
 | `runtime/` | Bun, only if you allowed the download |
+| `prompts/` | The text of the prompts Ghost sends to agents on its own, copied from the defaults shipped with the app the first time and edited in Settings → Prompts. `.defaults/` records the default each file was made from. Contains no personal data unless you write some into a prompt |
 | `memory/` | Markdown notes Ghost keeps about you (`me.md`), the people you work with (`people.md`) and your projects (`projects/`), each note with the day and where it came from (a chat, a meeting folder name or an automation id). `.history/` holds every earlier version of each file. You can edit them; Settings → Memory → Forget Everything deletes them |
 | `screenshots/` | Screen captures you attached to chats, and `attachments/` with files you attached. Text pasted into the chat over 4,000 characters or 60 lines (both adjustable in Settings > General) is saved there as `pasted-text.txt` and attached instead of staying in the input. A draft over 64 KB is handled the same way |
 | `scratch/` | Working folder for chats that aren't about a project. `scratch/memory/` is the empty working folder of the memory reflection pass |

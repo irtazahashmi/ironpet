@@ -27,8 +27,20 @@ package enum AutomationDefaults {
                    note: "What agents finished, tasks closed, alerts resolved, meetings held and what is still open. Built from data on this Mac; no agent runs.")
     }
 
+    package static let taskReviewID = "task-review"
+
+    /// The built-in task review: every 20 minutes of clock time, in its own agent session that reports to the chat. Its prompt is
+    /// `prompts/task-review.md`, read on each run. A reply of NOTHING posts nothing. On by default, as the issue asks.
+    package static func taskReview(enabled: Bool = true) -> Automation {
+        Automation(id: taskReviewID, name: "Task review", enabled: enabled,
+                   trigger: .init(type: "interval", minutes: 20, clock: "wall"),
+                   action: .init(type: "prompt", prompt: "{{prompt.\(taskReviewID)}}", session: "own", report: "chat"),
+                   presentation: .init(symbol: "checklist"), createdBy: "user",
+                   note: "Looks at open tasks and suggestions every 20 minutes and posts only what changed. Its prompt is in Settings → Prompts.")
+    }
+
     /// Every built-in, added to the file when its id is missing.
-    package static var builtIns: [Automation] { [morningBrief(), dayRecap()] }
+    package static var builtIns: [Automation] { [morningBrief(), dayRecap(), taskReview()] }
 
     /// The `gh` binary, which the GitHub script runs.
     package static var ghExecutable: URL? {

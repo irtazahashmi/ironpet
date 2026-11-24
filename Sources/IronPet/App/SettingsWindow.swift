@@ -31,6 +31,8 @@ final class SettingsModel: ObservableObject {
     var desktopLog: () -> [ActivityEvent] = { [] }
     /// Ghost's memory, built with the database. Nil only before the app has started.
     var memory: MemorySettingsModel?
+    /// The prompts ironpet sends on its own. Nil in preview renders until one sets it.
+    var prompts: PromptsAPI?
     /// Opens the main window on its Screen section.
     var showScreenSection: () -> Void = {}
     /// Opens the execution log window, for one automation or all of them.
@@ -150,6 +152,7 @@ struct SettingsView: View {
     static let pages = [
         Page(tag: "general", title: "General", symbol: SharedSymbols.settings),
         Page(tag: "memory", title: "Memory", symbol: "brain"),
+        Page(tag: "prompts", title: "Prompts", symbol: "text.bubble"),
         Page(tag: "integrations", title: "Integrations", symbol: "puzzlepiece.extension"),
         Page(tag: "voice", title: "Voice", symbol: SharedSymbols.microphone),
         Page(tag: "meetings", title: "Meetings", symbol: "person.2.wave.2"),
@@ -204,6 +207,7 @@ struct SettingsView: View {
     @ViewBuilder private var content: some View {
         switch model.tab {
         case "memory": MemorySettings(model: model)
+        case "prompts": PromptsSettings(model: model)
         case "integrations": IntegrationsSettings(telegram: model.telegram)
         case "voice": VoiceSettings(model: model)
         case "meetings": MeetingSettings(model: model)

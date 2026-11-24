@@ -80,6 +80,8 @@ package final class IronPetAPI {
     package let chat: ChatAPI
     package let meetings: MeetingsAPI
     package let settings: SettingsAPI
+    /// The prompts ironpet sends on its own, for Settings → Prompts. Mac app only for now: not in `session.hello`.
+    package let prompts: PromptsAPI
     package let voice: VoiceAPI
     package let today: TodayAPI
     package private(set) var usage: UsageAPI?
@@ -119,6 +121,7 @@ package final class IronPetAPI {
         stores.meetingLibrary.events = events
         stores.config.events = events
         settings = SettingsAPI(store: stores.config)
+        prompts = PromptsAPI()
         pet = PetAPI(settings: settings, assets: stores.petAssets)
         voice = VoiceAPI(speech: stores.speech, settings: settings)
         pet.events = events

@@ -316,6 +316,10 @@ Ghost's notes and search over past chats, meetings and the screen.
 
 `memory.call` runs one `memory_*` tool. `params` is `{"name", "arguments", "caller"}` where `name` is `memory_remember`, `memory_forget`, `memory_search` or `memory_get`, and `arguments` is that tool's input object. The result is the tool's JSON output. A failure of the tool is `invalid` with the tool's message. It fails with `unavailable` until the host attaches the memory services.
 
+### `prompts`
+
+The prompts ironpet sends to agents on its own: the chat context and rules, the automation run wrapper, the meeting summary and the built-in task review. Each one's text is `~/.ironpet/prompts/<id>.md`, copied from the default the app ships the first time. `PromptsAPI` lists them with their default and whether a newer default is waiting, and saves, resets or keeps the user's text. Settings → Prompts is its only client today, so no RPC method or REST route exists yet.
+
 ### `settings`
 
 `config.json`.
