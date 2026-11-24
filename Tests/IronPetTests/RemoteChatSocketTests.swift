@@ -85,6 +85,23 @@ final class RemoteChatSocketTests: XCTestCase {
         XCTAssertEqual(chat.queue.map(\.text), ["second"])
     }
 
+    // Offline outbox S3: the ack was lost with the old socket, and the phone resends from its outbox on a new socket after the reconnect.
+    func testAResendOnANewSocketAfterALostAckCreatesOneMessage() async throws {
+        let id = UUID().uuidString.lowercased()
+        let first = try await connection.sendChat(clientID: id, text: "ack lost", reply: nil)
+        // The phone never saw `first`. It reconnects, which is a new socket on the same device.
+        let reconnected = EventConnection(client: client)
+        let signals = reconnected.signals()
+        let reading = Task { for await _ in signals {} }
+        defer { reading.cancel() }
+        for _ in 0..<200 where !reconnected.canSendChat { try await Task.sleep(nanoseconds: 20_000_000) }
+        XCTAssertTrue(reconnected.canSendChat)
+        let second = try await reconnected.sendChat(clientID: id, text: "ack lost", reply: nil)
+        XCTAssertEqual(second, first, "the resend gets the first ack")
+        XCTAssertEqual(userTexts, ["ack lost"])
+        XCTAssertEqual(turns.count, 1)
+    }
+
     // S2
     func testTwoFramesWithOneClientIDAtTheSameTimeCreateOneMessage() async throws {
         let id = UUID().uuidString.lowercased()

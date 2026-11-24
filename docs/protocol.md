@@ -96,6 +96,11 @@ the message. The Mac keeps the last 512 acks for each device by `client_id`. A s
 /v1/chat/current/messages` with `client_id` in its body, returns the first outcome and creates no message. A refused send is not kept, so
 its retry runs again. Attachments still go through `POST /v1/uploads` and the HTTPS send.
 
+A phone that cannot reach the Mac keeps a typed message in an outbox in its own container and sends it after the next `hello`, oldest
+first, one at a time, each after the Mac answered the one before. A message waits at most 24 hours, and the outbox holds at most 100.
+An older or refused message shows Retry and is not sent on its own. Each resend carries the `client_id` the message was made with, so
+the 512-entry window above covers it. Messages with attachments do not wait. They fail with Retry when the Mac is out of reach.
+
 ### Over stdio
 
 A host with no session of its own opens one when it gets `session.hello`. The stdio host executable comes after core PR 12, so no stdio client

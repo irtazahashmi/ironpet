@@ -226,13 +226,13 @@ final class ChatParityUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["The agent stopped: it could not reach the model."].waitForExistence(timeout: 20))
         XCTAssertTrue(app.staticTexts["Failed"].exists || app.staticTexts["chat-subtitle"].exists || any("chat-subtitle").label.contains("Failed"))
         attach("error-reply")
-        // The Mac goes away: the failed send shows on its own row with Retry, and no banner repeats it.
+        // The Mac goes away: the message waits on its own row, and no banner repeats it. Offline messages wait instead of failing.
         server.stop()
         let input = app.textViews["chat-input"]
         input.tap()
         input.typeText("hello?")
         app.buttons["send-button"].tap()
-        XCTAssertTrue(any("outgoing-retry").waitForExistence(timeout: 20), "a failed send shows Retry on its row")
+        XCTAssertTrue(any("outgoing-waiting").waitForExistence(timeout: 20), "an unreachable Mac leaves the message waiting on its row")
         XCTAssertFalse(any("chat-error").exists, "no banner for a failed send")
         XCTAssertFalse(any("chat-connection-lost").exists)
         attach("connection-lost")

@@ -77,6 +77,8 @@ struct MainTabs: View {
         let chatModel = ChatModel(client: client, events: events, onUnauthorized: unauthorized)
         // Typed messages go over the same socket the events arrive on.
         chatModel.socket = connection
+        // Messages typed without a connection wait in a file in the app's own container until the Mac is back.
+        chatModel.useOutbox(FileOutboxStore.forToken(client.token))
         _chat = State(initialValue: chatModel)
         _today = State(initialValue: TodayModel(client: client, events: events, onUnauthorized: unauthorized))
         _agents = State(initialValue: AgentsModel(client: client, events: events, onUnauthorized: unauthorized))

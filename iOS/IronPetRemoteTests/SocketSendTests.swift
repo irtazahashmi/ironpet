@@ -9,14 +9,18 @@ final class FakeChatSocket: ChatSocket, @unchecked Sendable {
     private var _sent: [(clientID: String, text: String)] = []
     private var _open: Bool
     var answer: Answer
+    /// A message with one of these texts is refused, whatever `answer` says.
+    var refuseTexts: Set<String> = []
 
     init(open: Bool = true, answer: Answer = .ack) { _open = open; self.answer = answer }
 
     var canSendChat: Bool { lock.lock(); defer { lock.unlock() }; return _open }
+    func setOpen(_ open: Bool) { lock.lock(); _open = open; lock.unlock() }
     var sent: [(clientID: String, text: String)] { lock.lock(); defer { lock.unlock() }; return _sent }
 
     func sendChat(clientID: String, text: String, reply: RemoteReplyRef?) async throws -> ChatAck {
         lock.lock(); _sent.append((clientID, text)); lock.unlock()
+        if refuseTexts.contains(text) { throw SocketSendError.refused(code: "invalid", message: "the message is empty") }
         switch answer {
         case .ack: return ChatAck(clientID: clientID, outcome: "sent", itemID: nil, seq: 1)
         case .closed: throw SocketSendError.closed
