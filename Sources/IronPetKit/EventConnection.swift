@@ -120,6 +120,10 @@ public final class EventConnection: @unchecked Sendable {
     private var open: URLSessionWebSocketTask?
     private var chatSendAnnounced = false
     private var waiting: [String: CheckedContinuation<ChatAck, Error>] = [:]
+    /// The back-off wait between two tries, so `reconnectNow` can end it early.
+    private var pause: Task<Void, Never>?
+    /// Set by `reconnectNow`: the next try starts from the first delay.
+    private var resetRequested = false
 
     public init(client: IronPetClient, backoff: Backoff = Backoff(), store: (any EventResumeStoring)? = nil) {
         self.client = client
@@ -133,6 +137,19 @@ public final class EventConnection: @unchecked Sendable {
 
     /// The highest `seq` seen so far.
     public var lastSeq: Int? { lock.lock(); defer { lock.unlock() }; return last }
+
+    /// Tries the socket now instead of waiting out the back-off, and starts the next back-off from the first delay. The app calls it when
+    /// it comes to the foreground, since the socket was dropped while it was in the background.
+    public func reconnectNow() {
+        lock.lock()
+        resetRequested = true
+        let wait = pause
+        lock.unlock()
+        wait?.cancel()
+    }
+
+    private func setPause(_ task: Task<Void, Never>?) { lock.lock(); pause = task; lock.unlock() }
+    private func takeReset() -> Bool { lock.lock(); defer { lock.unlock() }; let reset = resetRequested; resetRequested = false; return reset }
 
     public var canSendChat: Bool { lock.lock(); defer { lock.unlock() }; return open != nil && chatSendAnnounced }
 
@@ -322,8 +339,13 @@ public final class EventConnection: @unchecked Sendable {
             closed(socket)
             socket.cancel(with: .goingAway, reason: nil)
             if Task.isCancelled { break }
-            try? await Task.sleep(for: backoff.delay(attempt: attempt))
-            attempt += 1
+            let delay = backoff.delay(attempt: attempt)
+            let pause = Task { do { try await Task.sleep(for: delay) } catch {} }
+            setPause(pause)
+            await pause.value
+            setPause(nil)
+            // `reconnectNow` ended the wait early, so the next try starts from the first delay again.
+            attempt = takeReset() ? 0 : attempt + 1
         }
         continuation.finish()
     }

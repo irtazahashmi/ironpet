@@ -307,6 +307,8 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
     /// Something only the Mac can do, such as choosing a folder or signing in.
     public var notice: String?
     public var items: [RemoteChatItem]
+    /// Whether older messages exist before `items`. Set only for a paged read; nil from a Mac that sends the whole thread.
+    public var hasMore: Bool?
     public var approvals: [RemoteApproval]
     public var forms: [RemoteForm]
     public var queue: [RemoteQueued]
@@ -317,6 +319,7 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
         case runStarted = "run_started"
         case threadID = "thread_id"
         case folderLabel = "folder_label"
+        case hasMore = "has_more"
     }
 
     public init(threadID: String? = nil, title: String = "New chat", state: String = "idle", running: Bool = false, activity: String? = nil,
@@ -343,6 +346,7 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
         model = try c.decodeIfPresent(String.self, forKey: .model)
         notice = try c.decodeIfPresent(String.self, forKey: .notice)
         items = try c.decodeIfPresent(Lossy<RemoteChatItem>.self, forKey: .items)?.elements ?? []
+        hasMore = try c.decodeIfPresent(Bool.self, forKey: .hasMore)
         approvals = try c.decodeIfPresent(Lossy<RemoteApproval>.self, forKey: .approvals)?.elements ?? []
         forms = try c.decodeIfPresent(Lossy<RemoteForm>.self, forKey: .forms)?.elements ?? []
         queue = try c.decodeIfPresent(Lossy<RemoteQueued>.self, forKey: .queue)?.elements ?? []
@@ -362,6 +366,7 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
         try c.encodeIfPresent(model, forKey: .model)
         try c.encodeIfPresent(notice, forKey: .notice)
         try c.encode(items, forKey: .items)
+        try c.encodeIfPresent(hasMore, forKey: .hasMore)
         try c.encode(approvals, forKey: .approvals)
         try c.encode(forms, forKey: .forms)
         try c.encode(queue, forKey: .queue)

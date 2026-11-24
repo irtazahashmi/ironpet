@@ -4,6 +4,12 @@ import Foundation
 /// Anything that yields the event socket's signals. `EventConnection` is the real one.
 public protocol EventSignalSource: Sendable {
     func signals() -> AsyncStream<EventSignal>
+    /// Tries the socket now instead of waiting out the back-off. Sources that do not reconnect ignore it.
+    func reconnectNow()
+}
+
+public extension EventSignalSource {
+    func reconnectNow() {}
 }
 
 extension EventConnection: EventSignalSource, ChatSocket {}
@@ -19,6 +25,8 @@ public final class SharedEventSource: EventSignalSource, @unchecked Sendable {
     private var pumpID: UUID?
 
     public init(_ source: EventSignalSource) { self.source = source }
+
+    public func reconnectNow() { source.reconnectNow() }
 
     public func signals() -> AsyncStream<EventSignal> {
         AsyncStream { continuation in

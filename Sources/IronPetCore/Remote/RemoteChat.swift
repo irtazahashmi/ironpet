@@ -72,15 +72,28 @@ package struct RemoteChat {
 
     // MARK: Reading
 
-    package func current() async -> [String: Any] {
+    /// The chat as the phone shows it. With `limit`, `items` is the newest `limit` visible messages, or the `limit` before the message
+    /// `before` names, and `has_more` says whether older ones exist. Without `limit` the whole thread comes back, as older phones expect.
+    /// An unknown `before` gives no items, so a phone never merges a page it cannot place.
+    package func current(limit: Int? = nil, before: String? = nil) async -> [String: Any] {
         let snapshot = api.chat.snapshot()
         let status = snapshot.status, options = snapshot.options
+        let visible = snapshot.messages.filter(Self.isVisible)
+        var page = visible
+        var hasMore: Bool?
+        if let limit {
+            let end = before.map { id in visible.firstIndex { $0.id.uuidString == id } ?? 0 } ?? visible.count
+            let start = max(0, end - limit)
+            page = Array(visible[start..<end])
+            hasMore = start > 0
+        }
         var object: [String: Any] = [
             "title": status.title, "state": status.state, "running": status.running, "folder_label": options.folderLabel,
             "agent": ["id": options.agent.id, "name": options.agent.name],
-            "items": snapshot.messages.filter(Self.isVisible).map(Self.json), "approvals": snapshot.approvals.map(Self.json),
+            "items": page.map(Self.json), "approvals": snapshot.approvals.map(Self.json),
             "forms": snapshot.forms.map(Self.json), "queue": snapshot.queue.map(Self.json)
         ]
+        if let hasMore { object["has_more"] = hasMore }
         if let id = status.threadID { object["thread_id"] = id }
         if let model = options.model { object["model"] = model }
         if let activity = status.activity { object["activity"] = activity }

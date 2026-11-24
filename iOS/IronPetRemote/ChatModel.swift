@@ -139,6 +139,13 @@ final class ChatModel: SocketModel {
 
     private(set) var snapshot: RemoteChatSnapshot?
     private(set) var items: [RemoteChatItem] = []
+    /// The newest messages a read asks for, and the page before the oldest one shown.
+    static let pageSize = 50
+    /// Whether messages exist before `items`. Older pages load when the top of the transcript shows.
+    private(set) var hasOlderHistory = false
+    @ObservationIgnored private(set) var loadingOlder = false
+    @ObservationIgnored private var lastRead: ContinuousClock.Instant?
+    @ObservationIgnored private var reloadDebounce: Task<Void, Never>?
     var draft = ""
     var attachments: [PendingAttachment] = []
     /// The message the next one answers, with the part of it the user selected, if any.
@@ -244,18 +251,52 @@ final class ChatModel: SocketModel {
     override func stop() {
         quietRetry?.cancel()
         quietRetry = nil
+        reloadDebounce?.cancel()
+        reloadDebounce = nil
         super.stop()
+    }
+
+    /// Loads the page of messages before the oldest one shown. The transcript calls it when its top comes into view, so a long chat
+    /// reads a page at a time. A failure leaves the top as it was; the next time the top shows, it tries again.
+    func loadOlder() async {
+        guard hasOlderHistory, !loadingOlder, let oldest = items.first?.id else { return }
+        loadingOlder = true
+        defer { loadingOlder = false }
+        do {
+            let page = try await client.chat(limit: Self.pageSize, before: oldest)
+            let shown = Set(items.map(\.id))
+            items = page.items.filter { !shown.contains($0.id) } + items
+            hasOlderHistory = page.hasMore ?? false
+        } catch ClientError.unauthorized {
+            onUnauthorized()
+        } catch {}
+    }
+
+    /// A reload after a burst of `chat.state` events. It waits until the events stop, so a turn that changes the state many times reads
+    /// the chat once.
+    private func scheduleReload() {
+        reloadDebounce?.cancel()
+        reloadDebounce = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(300))
+            guard !Task.isCancelled, let self else { return }
+            await self.reload()
+        }
     }
 
     override func message(for error: Error) -> String { PlainError.message(for: error) }
 
-    /// Reads the whole chat. Returns false when the read failed. A failure retries quietly, and only a run of them shows the banner.
+    /// Reads the newest page of chat, and keeps the older pages already loaded before it. Returns false when the read failed. A failure
+    /// retries quietly, and only a run of them shows the banner.
     @discardableResult
     private func fetch() async -> Bool {
         do {
-            let fresh = try await client.chat()
+            let fresh = try await client.chat(limit: Self.pageSize)
             snapshot = fresh
-            items = fresh.items
+            // The messages before the page's first one stay, since they were loaded on scroll. Only a read with none loaded takes `hasMore`.
+            let older = fresh.items.first.flatMap { first in items.firstIndex { $0.id == first.id } } ?? 0
+            items = Array(items.prefix(older)) + fresh.items
+            if older == 0 { hasOlderHistory = fresh.hasMore ?? false }
+            lastRead = ContinuousClock.now
             fullReads += 1
             errorMessage = nil
             readSucceeded()
@@ -306,6 +347,8 @@ final class ChatModel: SocketModel {
         switch event.kind {
         case RemoteEvent.chatItem:
             guard let id = event.id else { return await reload() }
+            // With older pages loaded, a message the phone does not hold may sit above the end. The newest page places it.
+            if hasOlderHistory, !items.contains(where: { $0.id == id }) { return scheduleReload() }
             if let item = event.item, item.id == id {
                 // The Mac sent the message with the event: no read needed.
                 PhoneHopLog.mark("phone.event")
@@ -316,7 +359,7 @@ final class ChatModel: SocketModel {
                 requestRefresh(id)
             }
         case RemoteEvent.chatState:
-            await reload()
+            scheduleReload()
         default: break
         }
     }
@@ -707,7 +750,9 @@ final class ChatModel: SocketModel {
     }
 
     override func handle(_ signal: EventSignal) async {
-        await super.handle(signal)
+        // The socket's connect refresh repeats the read that launch just made. A read from the last two seconds covers it.
+        let repeatsRead = signal == .connected && (lastRead.map { ContinuousClock.now - $0 < .seconds(2) } ?? false)
+        if !repeatsRead { await super.handle(signal) }
         switch signal {
         // After a resume the replayed events are already applied, because the Mac sends them before `resumed`. The waiting messages go out now.
         case .connected, .resync, .resumed: kickFlush()
