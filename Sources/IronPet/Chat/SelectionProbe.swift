@@ -1,5 +1,6 @@
 import AppKit
 import IronPetCore
+import os
 
 /// Reads the text selected in a transcript message. SwiftUI's selectable `Text` does not expose its selection, so the
 /// probe sends the responder chain the same `copy:` that Cmd-C sends, reads what it put on the pasteboard, and puts the
@@ -28,6 +29,48 @@ enum SelectionProbe {
         guard range.length > 0, NSMaxRange(range) <= storage.length else { return nil }
         let text = MarkdownText.plainText(of: storage, in: range).trimmingCharacters(in: .whitespacesAndNewlines)
         return text.isEmpty ? nil : text
+    }
+
+    /// Why the Ask button was not shown or was hidden. One line per reason goes to the log, never message content.
+    enum Skip: String, Error {
+        case noMessageID = "text view has no message id"
+        case emptySelection = "selection is empty or only whitespace"
+        case noWindow = "text view is not in a window"
+        case scrolledOut = "end of the selection is scrolled out of view"
+        case notKeyWindow = "mouse-up outside the key window"
+        case noSelectionOwner = "no focused reply text view and no hovered message with a selection"
+        case messageGone = "selected message is no longer in the transcript"
+        case scrolling = "scroll wheel hides the button until the selection is re-read"
+        case focusNotInReply = "focus left the reply text views"
+    }
+
+    private static let logger = Logger(subsystem: "com.ironpet", category: "ask-about-selection")
+
+    /// Logs why the button is not shown. Read with
+    /// `log stream --level debug --predicate 'subsystem == "com.ironpet" AND category == "ask-about-selection"'`.
+    static func logSkip(_ reason: Skip, source: String) {
+        logger.debug("skipped source=\(source, privacy: .public) reason=\(reason.rawValue, privacy: .public)")
+    }
+
+    /// Where the Ask button goes for the selection in `view`: the message, and the end of the selection in window
+    /// coordinates with a top-left origin. Fails with the reason when the view has no message, nothing is selected,
+    /// or the end of the selection is scrolled out of view.
+    static func resolveAnchor(for view: ChatTextView) -> Result<(id: UUID, point: CGPoint), Skip> {
+        guard let id = view.messageID else { return .failure(.noMessageID) }
+        guard selectedText(in: view) != nil else { return .failure(.emptySelection) }
+        guard let window = view.window else { return .failure(.noWindow) }
+        let range = view.selectedRange()
+        let last = NSRange(location: NSMaxRange(range) - 1, length: 1)
+        let screen = view.firstRect(forCharacterRange: last, actualRange: nil)
+        let rect = window.convertFromScreen(screen)
+        // A selection scrolled out of the transcript's visible area has no place for the button.
+        guard view.visibleRect.intersects(view.convert(rect, from: nil)) else { return .failure(.scrolledOut) }
+        let height = window.contentView?.bounds.height ?? 0
+        return .success((id, CGPoint(x: rect.maxX, y: height - rect.minY)))
+    }
+
+    static func anchor(for view: ChatTextView) -> (id: UUID, point: CGPoint)? {
+        try? resolveAnchor(for: view).get()
     }
 
     private static func snapshot(_ board: NSPasteboard) -> [[(NSPasteboard.PasteboardType, Data)]] {

@@ -65,6 +65,7 @@ struct ChatView: View {
     @State private var selectionAsk: SelectionAsk?
     @State private var hoverTracker = HoverTracker()
     @State private var selectionMonitor: Any?
+    @State private var selectionObserver: Any?
     /// `--render-previews` only: draw the settings popover's content on its own, since a popover can't render offscreen.
     var settingsOnly = false
     static let minimumSize = CGSize(width: 360, height: 320)
@@ -399,7 +400,12 @@ struct ChatView: View {
             .onChange(of: findScrollTick) { revealCurrentMatch(proxy) }
             .overlay { selectionButton }
             .onAppear(perform: installSelectionMonitor)
-            .onDisappear { if let monitor = selectionMonitor { NSEvent.removeMonitor(monitor); selectionMonitor = nil }; selectionAsk = nil }
+            .onDisappear {
+                if let monitor = selectionMonitor { NSEvent.removeMonitor(monitor); selectionMonitor = nil }
+                if let observer = selectionObserver { NotificationCenter.default.removeObserver(observer); selectionObserver = nil }
+                hoverTracker.refresh?.cancel()
+                selectionAsk = nil
+            }
             .onChange(of: jumpTick) { if let request = jumpTick { jump(to: request.target, proxy) } }
             // A new chat or another thread starts with the default window again.
             .onChange(of: session.items.first?.id) { shownItems = TranscriptGroup.pageSize }
@@ -656,6 +662,8 @@ struct ChatView: View {
         /// The message the pointer was over at mouse-down. A drag that ends outside the row still selected text there.
         var pressed: UUID?
         var buttonFrame: CGRect = .zero
+        /// The pending re-read of the selection. Not state, because it is set while SwiftUI updates a view.
+        var refresh: DispatchWorkItem?
     }
 
     private func hoverChanged(_ id: UUID, _ hovering: Bool) {
@@ -681,19 +689,79 @@ struct ChatView: View {
         if selectionAsk != nil, hoverTracker.buttonFrame.contains(CGPoint(x: event.locationInWindow.x, y: event.locationInWindow.y)) { return }
         let pressed = hoverTracker.pressed
         hoverTracker.pressed = nil
-        guard let id = pressed ?? hoverTracker.current, let item = session.items.first(where: { $0.id == id }),
-              let window = event.window, window == NSApp.keyWindow else { selectionAsk = nil; return }
+        guard let window = event.window, window == NSApp.keyWindow else {
+            SelectionProbe.logSkip(.notKeyWindow, source: "mouse-up")
+            selectionAsk = nil
+            return
+        }
         let point = CGPoint(x: event.locationInWindow.x, y: (window.contentView?.bounds.height ?? 0) - event.locationInWindow.y)
+        let hovered = pressed ?? hoverTracker.current
         DispatchQueue.main.async {
-            if SelectionProbe.selectedText() != nil { selectionAsk = SelectionAsk(item: item, point: point) } else { selectionAsk = nil }
+            // A reply's text view names its message, so the answer does not depend on where the pointer was.
+            var reason = SelectionProbe.Skip.noSelectionOwner
+            if let view = window.firstResponder as? ChatTextView {
+                switch SelectionProbe.resolveAnchor(for: view) {
+                case .success(let anchor):
+                    if let item = session.items.first(where: { $0.id == anchor.id }) {
+                        selectionAsk = SelectionAsk(item: item, point: point)
+                        return
+                    }
+                    reason = .messageGone
+                case .failure(let skip):
+                    reason = skip
+                }
+            } else if let hovered, let item = session.items.first(where: { $0.id == hovered }), SelectionProbe.selectedText() != nil {
+                selectionAsk = SelectionAsk(item: item, point: point)
+                return
+            }
+            SelectionProbe.logSkip(reason, source: "mouse-up")
+            selectionAsk = nil
         }
     }
 
+    /// Re-reads the selection in the focused reply and moves the button to its end, or hides the button when it is empty.
+    /// Covers selections that end without a mouse-up, such as shift-arrow, and the button after a scroll or a streamed update.
+    private func refreshSelectionAsk() {
+        hoverTracker.refresh?.cancel()
+        let work = DispatchWorkItem {
+            guard NSEvent.pressedMouseButtons & 1 == 0 else { return }
+            guard let view = NSApp.keyWindow?.firstResponder as? ChatTextView else {
+                if selectionAsk != nil { SelectionProbe.logSkip(.focusNotInReply, source: "refresh") }
+                return
+            }
+            switch SelectionProbe.resolveAnchor(for: view) {
+            case .success(let anchor):
+                if let item = session.items.first(where: { $0.id == anchor.id }) {
+                    selectionAsk = SelectionAsk(item: item, point: anchor.point)
+                } else {
+                    SelectionProbe.logSkip(.messageGone, source: "refresh")
+                }
+            case .failure(let skip):
+                SelectionProbe.logSkip(skip, source: "refresh")
+                if selectionAsk?.item.id == view.messageID { selectionAsk = nil }
+            }
+        }
+        hoverTracker.refresh = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15, execute: work)
+    }
+
     private func installSelectionMonitor() {
+        if selectionObserver == nil {
+            selectionObserver = NotificationCenter.default.addObserver(forName: NSTextView.didChangeSelectionNotification, object: nil, queue: .main) { note in
+                guard note.object is ChatTextView else { return }
+                MainActor.assumeIsolated { refreshSelectionAsk() }
+            }
+        }
         guard selectionMonitor == nil else { return }
         selectionMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .leftMouseUp, .scrollWheel]) { event in
             if event.type == .leftMouseDown { hoverTracker.pressed = hoverTracker.current; return event }
-            if event.type == .scrollWheel { if selectionAsk != nil { selectionAsk = nil } } else { selectionMayHaveChanged(event) }
+            if event.type == .scrollWheel {
+                if selectionAsk != nil {
+                    SelectionProbe.logSkip(.scrolling, source: "scroll")
+                    selectionAsk = nil
+                }
+                refreshSelectionAsk()
+            } else { selectionMayHaveChanged(event) }
             return event
         }
     }
@@ -807,6 +875,7 @@ struct ChatView: View {
                                 onHoverChange: { hoverChanged(item.id, $0) }, find: highlights[item.id],
                                 speech: config.config.speech.canSpeak ? SpeakButton.State(speaking: session.speakingID == item.id,
                                                                                          toggle: { session.toggleSpeech(item) }) : nil)
+                    .environment(\.chatMessageID, item.id)
             case .tool:
                 EmptyView()
             case .form(let record):

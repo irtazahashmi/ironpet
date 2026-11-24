@@ -214,14 +214,17 @@ enum MarkdownText {
 struct MarkdownTextView: NSViewRepresentable {
     let content: NSAttributedString
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.chatMessageID) private var messageID
 
     func makeNSView(context: Context) -> ChatTextView {
         let view = ChatTextView.make()
         view.delegate = context.coordinator
+        view.messageID = messageID
         return view
     }
 
     func updateNSView(_ view: ChatTextView, context: Context) {
+        view.messageID = messageID
         view.appearance = NSAppearance(named: colorScheme == .dark ? .darkAqua : .aqua)
         view.setContent(content)
     }
@@ -248,7 +251,19 @@ struct MarkdownTextView: NSViewRepresentable {
     }
 }
 
+/// The transcript message a text view belongs to, so a selection in it maps to its message without the pointer.
+private struct ChatMessageIDKey: EnvironmentKey { static let defaultValue: UUID? = nil }
+
+extension EnvironmentValues {
+    var chatMessageID: UUID? {
+        get { self[ChatMessageIDKey.self] }
+        set { self[ChatMessageIDKey.self] = newValue }
+    }
+}
+
 final class ChatTextView: NSTextView {
+    /// The message this view shows, set by `MarkdownTextView`. Nil outside the transcript.
+    var messageID: UUID?
     private var version = 0
     private var measured: (width: CGFloat?, version: Int, size: CGSize)?
 
