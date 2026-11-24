@@ -162,12 +162,13 @@ final class ConfigTests: XCTestCase {
         XCTAssertNil(Config.load(from: file).config.meetings.summaryModel)
     }
 
-    func testMemoryReflectsByDefaultWithEachChatsOwnAgentAfterHalfAnHour() throws {
+    func testMemoryLearnsByDefaultWithEachChatsOwnAgentEveryHour() throws {
         let memory = Config().memory
         XCTAssertTrue(memory.reflect)
         XCTAssertNil(memory.reflectAgent, "nil is the chat's own agent")
         XCTAssertNil(memory.reflectModel, "nil is the agent's cheap model")
-        XCTAssertEqual(memory.quietMinutes, 30)
+        XCTAssertEqual(memory.digestMinutes, 60)
+        XCTAssertFalse(memory.learnFromScreen, "the screen is off until the user turns it on")
         try write(#"{"pet":{"name":"Ghost"}}"#)
         XCTAssertEqual(Config.load(from: file).config.memory, memory, "an old file without the key gets the defaults")
     }
@@ -193,15 +194,15 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(memory.reader(for: "claude")?.model, "sonnet")
     }
 
-    func testMemoryQuietTimeIsClampedAndBlankValuesMeanDefaults() throws {
-        try write(#"{"memory":{"quietMinutes":0,"reflectModel":"  ","reflectAgent":" "}}"#)
+    func testMemoryDigestIntervalIsClampedAndBlankValuesMeanDefaults() throws {
+        try write(#"{"memory":{"digestMinutes":0,"reflectModel":"  ","reflectAgent":" "}}"#)
         var memory = Config.load(from: file).config.memory
-        XCTAssertEqual(memory.quietMinutes, 2)
+        XCTAssertEqual(memory.digestMinutes, 15)
         XCTAssertNil(memory.reflectModel, "a blank model is the agent's cheap default")
         XCTAssertNil(memory.reflectAgent, "a blank agent is the chat's own")
-        try write(#"{"memory":{"quietMinutes":10000,"reflectModel":"sonnet"}}"#)
+        try write(#"{"memory":{"digestMinutes":10000,"reflectModel":"sonnet"}}"#)
         memory = Config.load(from: file).config.memory
-        XCTAssertEqual(memory.quietMinutes, 240)
+        XCTAssertEqual(memory.digestMinutes, 1_440)
         XCTAssertNil(memory.reflectModel, "a model without a picked agent means nothing")
         try write(#"{"memory":{"reflectAgent":"claude","reflectModel":"sonnet"}}"#)
         memory = Config.load(from: file).config.memory

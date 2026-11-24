@@ -506,6 +506,9 @@ final class TestControl {
             case .thread(let id): job = "thread:\(id)"
             case .meeting(let folder, _): job = "meeting:\(folder.path)"
             case .automation(let id, _, _, _): job = "automation:\(id)"
+            case .tasks: job = "tasks"
+            case .screen: job = "screen"
+            case .merge(let entity, _): job = "merge:\(entity)"
             }
             outcome = ["job": job, "saved": last.saved, "dropped": last.dropped, "error": last.error ?? NSNull(), "skipped": last.skipped]
         }
@@ -514,7 +517,7 @@ final class TestControl {
             "ok": true,
             "reflect": ConfigStore.shared.config.memory.reflect,
             "running": memory.running != nil || !memory.queue.isEmpty,
-            "due": Array(memory.due.keys),
+            "queued": memory.queue.count,
             "lastOutcome": outcome,
             "thread": chat.threadID ?? "",
             "project": project ?? NSNull(),
