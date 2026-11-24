@@ -50,8 +50,13 @@ final class VoiceModel {
 
     /// What happens to a voice message sent at once, by the id of its stream. The chat draws it as a pending message.
     enum SendEvent: Equatable {
-        /// Stop was tapped. The audio is on its way and the text is not known yet.
-        case started(id: String)
+        /// Stop was tapped. The audio is on its way and the text is not known yet. With `carry` the phone sends the text itself, with
+        /// the attachments of the composer, so the message holds them from now on.
+        case started(id: String, carry: Bool)
+        /// The text of a recording the phone sends itself (`carry`). Nothing is in the chat yet.
+        case text(id: String, text: String)
+        /// The Mac could not be reached while recording or at Stop. The audio waits on the phone.
+        case offline(id: String, audio: Data)
         case transcribed(id: String, text: String)
         /// The upload failed, the Mac refused it or did not answer in time. `resend` sends the same audio again.
         case failed(id: String, reason: String)
@@ -59,6 +64,20 @@ final class VoiceModel {
         case discarded(id: String)
     }
     @ObservationIgnored var onSend: (SendEvent) -> Void = { _ in }
+    /// True when the composer holds attachments. A voice message sent at once then carries them, so the phone sends it itself.
+    @ObservationIgnored var hasAttachments: () -> Bool = { false }
+    /// True when an earlier message waits to be sent. A voice message recorded now goes behind it, so the Mac sees them in order.
+    @ObservationIgnored var hasEarlierMessages: () -> Bool = { false }
+    /// The recording as raw PCM, kept to save it when the Mac cannot be reached.
+    @ObservationIgnored private var recordedPCM = Data()
+    /// The Mac could not be reached since this recording began. The mic keeps recording and nothing more is sent.
+    @ObservationIgnored private var offline = false
+    /// True for a recording the phone sends itself: the Mac only transcribes it.
+    @ObservationIgnored private var carry = false
+    /// A saved recording whose text the app waits for.
+    /// Streams the phone sends itself, so `resend` asks the Mac only for the text.
+    @ObservationIgnored private var carried: Set<String> = []
+    @ObservationIgnored private var savedWaiter: CheckedContinuation<SavedTranscript, Never>?
 
     @ObservationIgnored let player: ReplyPlayer
     @ObservationIgnored private let openChannel: () -> any VoiceChannel
@@ -173,25 +192,52 @@ final class VoiceModel {
         mic = source
         streamID = id
         streamMode = sendAtOnce ? .send : .draft
+        // With attachments in the composer the phone sends the message itself, so the Mac only turns the audio into text.
+        carry = streamMode == .send && hasAttachments()
+        offline = false
+        recorded = []
+        recordedPCM = Data()
         state = .recording
         startMetering()
-        do { try await channel.send(text: VoiceClientMessage.start(id: id, mode: streamMode).json) } catch {
-            fail("The Mac is not reachable.")
-            return
+        // The Mac hears a message sent at once as a transcript to send (`send`), or as a plain transcript the phone sends (`draft`).
+        let wireMode: VoiceMode = carry ? .draft : streamMode
+        do { try await channel.send(text: VoiceClientMessage.start(id: id, mode: wireMode).json) } catch {
+            // A message sent at once keeps recording without the Mac, and waits on the phone.
+            guard streamMode == .send else {
+                fail("The Mac is not reachable.")
+                return
+            }
+            offline = true
         }
         let levels = levels
-        recorded = []
         pump = Task { [weak self] in
             var framer = VoiceFramer()
             for await pcm in audio {
                 levels.record(Self.level(of: pcm))
+                self?.recordedPCM.append(pcm)
                 for frame in framer.append(pcm) {
                     self?.recorded.append(frame)
-                    do { try await channel.send(binary: frame) } catch { self?.fail("The Mac is not reachable."); return framer }
+                    guard self?.offline != true else { continue }
+                    do { try await channel.send(binary: frame) } catch {
+                        guard self?.streamMode == .send else { self?.fail("The Mac is not reachable."); return framer }
+                        self?.offline = true
+                    }
                 }
             }
             return framer
         }
+    }
+
+    /// Hands the recording to the chat, which keeps it until the Mac is back.
+    private func saveOffline(_ id: String) {
+        let audio = recordedPCM
+        recordedPCM = Data()
+        retained[id] = nil
+        carried.remove(id)
+        streamID = nil
+        state = .idle
+        offline = false
+        onSend(.offline(id: id, audio: audio))
     }
 
     /// Resets the waveform and ticks it 25 times a second until the recording ends.
@@ -230,10 +276,16 @@ final class VoiceModel {
         mic?.stop()
         mic = nil
         state = .transcribing
+        if carry { carried.insert(id) }
         // The chat shows the message before the last frames go out, so Stop answers at once.
-        if streamMode == .send { onSend(.started(id: id)) }
+        if streamMode == .send { onSend(.started(id: id, carry: carry)) }
         var framer = await pump?.value ?? VoiceFramer()
         pump = nil
+        // The Mac was out of reach, or an earlier message still waits. The recording is saved and sent after it.
+        if streamMode == .send, offline || hasEarlierMessages() {
+            if !offline { await send(.cancel(id: id)) }
+            return saveOffline(id)
+        }
         PhoneHopLog.mark("phone.voice.upload.start")
         do {
             let last = framer.flush()
@@ -255,6 +307,7 @@ final class VoiceModel {
         Task { [weak self] in
             try? await Task.sleep(for: timeout)
             guard let self, state == .transcribing, streamID == id else { return }
+            finishSaved(.failed("The Mac did not send the text back. Try again."))
             fail("The Mac did not send the text back. Try again.")
         }
     }
@@ -271,10 +324,11 @@ final class VoiceModel {
         state = .transcribing
         streamID = id
         streamMode = .send
+        carry = carried.contains(id)
         guard let channel = ensureChannel() else { return fail("The Mac is not reachable.") }
         PhoneHopLog.mark("phone.voice.upload.start")
         do {
-            try await channel.send(text: VoiceClientMessage.start(id: id, mode: .send).json)
+            try await channel.send(text: VoiceClientMessage.start(id: id, mode: carry ? .draft : .send).json)
             for frame in frames { try await channel.send(binary: frame) }
             try await channel.send(text: VoiceClientMessage.end(id: id).json)
         } catch {
@@ -282,6 +336,45 @@ final class VoiceModel {
         }
         PhoneHopLog.mark("phone.voice.upload.done")
         watchForText(id)
+    }
+
+    /// Asks the Mac for the text of a recording saved on the phone. Nothing goes in the chat: the app sends the text itself.
+    /// Returns `.unreachable` when the Mac cannot be reached or the model is busy with another recording, so the message keeps waiting.
+    func transcribeSaved(_ id: String, _ pcm: Data) async -> SavedTranscript {
+        guard state == .idle, savedWaiter == nil, let channel = ensureChannel() else { return .unreachable }
+        errorMessage = nil
+        state = .transcribing
+        streamID = id
+        streamMode = .draft
+        carry = false
+        return await withCheckedContinuation { (continuation: CheckedContinuation<SavedTranscript, Never>) in
+            savedWaiter = continuation
+            Task { [weak self] in
+                do {
+                    try await channel.send(text: VoiceClientMessage.start(id: id, mode: .draft).json)
+                    var framer = VoiceFramer()
+                    for frame in framer.append(pcm) { try await channel.send(binary: frame) }
+                    if let last = framer.flush() { try await channel.send(binary: last) }
+                    try await channel.send(text: VoiceClientMessage.end(id: id).json)
+                } catch {
+                    self?.finishSaved(.unreachable)
+                    self?.resetAfterSaved()
+                    return
+                }
+                self?.watchForText(id)
+            }
+        }
+    }
+
+    private func finishSaved(_ result: SavedTranscript) {
+        guard let waiter = savedWaiter else { return }
+        savedWaiter = nil
+        waiter.resume(returning: result)
+    }
+
+    private func resetAfterSaved() {
+        streamID = nil
+        state = .idle
     }
 
     /// Cuts the reply that plays or arrives. The player stops before `tts.stop` goes out.
@@ -366,6 +459,7 @@ final class VoiceModel {
     private func channelClosed(_ closed: any VoiceChannel) {
         guard channel === closed else { return }
         channel = nil
+        finishSaved(.unreachable)
         if state == .transcribing, streamMode == .send, let id = streamID {
             onSend(.failed(id: id, reason: "The connection to the Mac closed."))
         }
@@ -415,7 +509,17 @@ final class VoiceModel {
                 PhoneHopLog.mark("phone.voice.ack")
                 streamID = nil
                 state = .idle
-                if streamMode == .send {
+                if let waiter = savedWaiter {
+                    // A saved recording: the app sends the text itself.
+                    savedWaiter = nil
+                    waiter.resume(returning: text.isEmpty ? .empty : .text(text))
+                    return
+                }
+                if streamMode == .send, carry {
+                    retained[id] = nil
+                    carried.remove(id)
+                    onSend(.text(id: id, text: text))
+                } else if streamMode == .send {
                     retained[id] = nil
                     if text.isEmpty {
                         onSend(.discarded(id: id))
@@ -426,6 +530,10 @@ final class VoiceModel {
                 }
                 if !text.isEmpty { onTranscript(text, streamMode) }
             case .error(let id, let message):
+                if let waiter = savedWaiter, id == streamID {
+                    savedWaiter = nil
+                    waiter.resume(returning: .failed(message))
+                }
                 errorMessage = message
                 if let id, awaitingChat.remove(id) != nil { onSend(.failed(id: id, reason: message)) }
                 if let id, id == streamID {

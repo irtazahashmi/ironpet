@@ -96,6 +96,8 @@ the message. The Mac keeps the last 512 acks for each device by `client_id`. A s
 /v1/chat/current/messages` with `client_id` in its body, returns the first outcome and creates no message. A refused send is not kept, so
 its retry runs again. Attachments still go through `POST /v1/uploads` and the HTTPS send.
 
+A message the phone could not send for lack of a connection waits on the phone and goes out after the next `connected`, `resumed` or `resync`, in order. A voice message recorded offline, or sent while photos are staged in the composer, does not use `voice.start` with `mode: "send"`. The phone sends `voice.start` with `mode: "draft"`, the saved audio frames and `voice.end`, the Mac answers `voice.transcript` and adds nothing to the chat, and the phone then sends the text, with its photos, as one message whose `client_id` is the voice stream id. Transcribing twice has no effect on the chat, and the ledger above makes the send once, so a replay after a lost reply creates no second message. No new frame or capability is involved, so an older Mac takes the same stream.
+
 A phone that reconnects resumes from the last event it applied. It saves the highest event `seq` it applied, and the `epoch` of the Mac
 launch that numbered it, on the phone. `GET /v1/events?since=<seq>&epoch=<epoch>` sends them back. The Mac's hello is
 `{"kind":"hello","seq":n,"epoch":"<id of this launch>","capabilities":["chat.send","events.resume"]}`, and `events.resume` means the Mac answers a
@@ -113,7 +115,7 @@ applied first.
 A phone that cannot reach the Mac keeps a typed message in an outbox in its own container and sends it after the next `hello` (after `resumed` or `resync` on a Mac that resumes), oldest
 first, one at a time, each after the Mac answered the one before. A message waits at most 24 hours, and the outbox holds at most 100.
 An older or refused message shows Retry and is not sent on its own. Each resend carries the `client_id` the message was made with, so
-the 512-entry window above covers it. A message waits when the request fails in transport or the relay answers 502, 503 or 504, which means it could not reach the Mac. Any other status comes from the Mac and fails the message with Retry. Messages with attachments do not wait. They fail with Retry when the Mac is out of reach.
+the 512-entry window above covers it. A message waits when the request fails in transport or the relay answers 502, 503 or 504, which means it could not reach the Mac. Any other status comes from the Mac and fails the message with Retry. Messages with attachments wait too, with their files, and upload again when they are sent.
 
 ### Over stdio
 

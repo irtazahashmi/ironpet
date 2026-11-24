@@ -43,6 +43,14 @@ struct OutgoingMessage: Identifiable, Equatable {
     var reply: RemoteReplyRef?
     /// A message dictated and sent at once. Its text is empty until the Mac sends the transcript back.
     var isVoice = false
+    /// Photos and files that upload when the message is sent. They stay on the message until it is delivered, so a waiting message can
+    /// be sent after a relaunch.
+    var files: [StagedFile] = []
+    /// The recording of a voice message that could not be sent live, as 16 kHz mono 16-bit PCM. Dropped once the text is known.
+    var audio: Data?
+    /// A voice message the phone turns into text first and then sends itself, with the client id. Set when it carries attachments or
+    /// was recorded offline. The Mac never claims its text, so no pushed item can settle it by mistake.
+    var local = false
     /// When the message first started waiting for the connection. The age limit counts from here. Retry clears it.
     var queuedAt: Date?
     /// Loaded from the saved outbox after a launch. The transcript cannot hold its copy, since the phone does not know whether an
@@ -54,6 +62,9 @@ struct OutgoingMessage: Identifiable, Equatable {
     /// A voice message whose text the Mac has not sent yet.
     var isTranscribing: Bool { isVoice && text.isEmpty }
 
+    /// A message of photos or files with no text. The Mac's copy has no text to match, so a full read settles it.
+    var isAttachmentOnly: Bool { !isVoice && text.isEmpty && !files.isEmpty }
+
     var isFailed: Bool {
         if case .failed = state { return true }
         return false
@@ -63,7 +74,7 @@ struct OutgoingMessage: Identifiable, Equatable {
     static func itemID(_ id: UUID) -> String { "pending-\(id.uuidString)" }
     static func isPending(_ itemID: String) -> Bool { itemID.hasPrefix("pending-") }
 
-    var item: RemoteChatItem { RemoteChatItem(id: itemID, kind: "user", date: date, origin: "ios", text: isTranscribing ? (isFailed ? "Voice message" : "Transcribing…") : text) }
+    var item: RemoteChatItem { RemoteChatItem(id: itemID, kind: "user", date: date, origin: "ios", text: isTranscribing ? (isFailed ? "Voice message" : "Transcribing…") : (isAttachmentOnly ? (files.allSatisfy(\.isImage) ? "Photo" : "Attachment") : text)) }
 }
 
 /// Plain wording for a failed request. URLSession's own text ("The request timed out.", "The network connection was lost.") never reaches the chat.
@@ -85,6 +96,24 @@ enum PlainError {
 
 private struct SendTimedOut: LocalizedError {
     var errorDescription: String? { "The Mac did not answer in time." }
+}
+
+/// A photo or file of a message that has left the composer. Its bytes stay on the phone until the Mac has the message.
+struct StagedFile: Equatable {
+    var fileName: String
+    var contentType: String
+    var data: Data
+    var isImage: Bool
+}
+
+/// What the Mac made of a saved recording.
+enum SavedTranscript: Equatable {
+    case text(String)
+    /// The Mac heard no speech.
+    case empty
+    /// The phone could not reach the Mac. The recording keeps waiting.
+    case unreachable
+    case failed(String)
 }
 
 /// A photo, file or pasted image for the next message. It uploads when the message is sent.
@@ -128,6 +157,8 @@ final class ChatModel: SocketModel {
     @ObservationIgnored private var outboxStore: (any OutboxStoring)?
     @ObservationIgnored var now: () -> Date = Date.init
     @ObservationIgnored private var flushing = false
+    /// The names of the files already written to the outbox store, so a save does not write them again.
+    @ObservationIgnored private var savedFiles: Set<String> = []
     /// How long the Mac has to answer a send before the message is marked failed.
     @ObservationIgnored var sendTimeout: Duration = .seconds(15)
     /// The Mac's reason for refusing to open a thread or start a chat, shown as an alert.
@@ -188,7 +219,7 @@ final class ChatModel: SocketModel {
         var settled = Set<UUID>()
         for transcribing in [false, true] {
             // A waiting message never reached the Mac, so no item in the transcript can be its copy.
-            for message in outbox where message.isTranscribing == transcribing && !message.isWaiting && !message.restored {
+            for message in outbox where message.isTranscribing == transcribing && !message.isWaiting && !message.restored && !message.isAttachmentOnly && !(transcribing && message.local) {
                 guard let match = items.first(where: { $0.kind == "user" && $0.origin == "ios" && (transcribing || $0.text == message.text) && !message.known.contains($0.id) && !claimed.contains($0.id) }) else { continue }
                 claimed.insert(match.id)
                 settled.insert(message.id)
@@ -230,6 +261,8 @@ final class ChatModel: SocketModel {
             readSucceeded()
             quietRetry?.cancel()
             quietRetry = nil
+            // A sent message of attachments only has no text to match. The full read holds the Mac's copy.
+            outbox.removeAll { $0.isAttachmentOnly && $0.state == .sent }
             reconcile()
             return true
         } catch ClientError.unauthorized {
@@ -425,29 +458,25 @@ final class ChatModel: SocketModel {
             if replyTo == nil { replyTo = quoted }
         }
         let quote = quoted.map { RemoteReplyRef(itemID: $0.id) }
-        // A message with only attachments has no text to show, so the photo or file row appears when the Mac confirms it.
-        var outgoing: UUID?
-        if !text.isEmpty {
-            let message = OutgoingMessage(id: UUID(), text: text, date: Date(), state: .sending, known: userItemIDs, reply: quote)
-            outbox.append(message)
-            outgoing = message.id
+        // Every message goes through the outbox, with its attachments, so one that cannot be sent now waits with its photos.
+        var message = OutgoingMessage(id: UUID(), text: text, date: Date(), state: .sending, known: userItemIDs, reply: quote)
+        message.files = pending.map { StagedFile(fileName: $0.fileName, contentType: $0.contentType, data: $0.data, isImage: $0.isImage) }
+        outbox.append(message)
+        // A message the Mac or the connection refuses stays in the transcript with Retry, and its attachments stay with it.
+        let result = await deliver(message.id, restoreOnUploadFailure: true)
+        if case .uploadFailed(let reason) = result {
+            outbox.removeAll { $0.id == message.id }
+            // A sign-out leaves no reason, and then there is nothing to retry.
+            errorMessage = reason.isEmpty ? nil : reason
+            uploadFailure = reason.isEmpty ? nil : "The upload failed. \(reason)"
+            return restore()
         }
-        var ids: [String] = []
-        var photos: [String: Data] = [:]
-        for attachment in pending {
-            guard let upload = await run({ try await self.client.upload(attachment.data, fileName: attachment.fileName, contentType: attachment.contentType) }) else {
-                outbox.removeAll { $0.id == outgoing }
-                // `run` already put the reason in `errorMessage`. A sign-out leaves none, and then there is nothing to retry.
-                uploadFailure = errorMessage.map { "The upload failed. \($0)" }
-                return restore()
-            }
-            ids.append(upload.id)
-            if attachment.isImage, let stored = upload.storedName { photos[stored] = attachment.data }
+        // A message of attachments only has no text to show or retry, so a send the Mac refused gives the composer its content back.
+        if text.isEmpty, result == .failed || result == .refused {
+            outbox.removeAll { $0.id == message.id }
+            persistOutbox()
+            restore()
         }
-        if let outgoing, let index = outbox.firstIndex(where: { $0.id == outgoing }) { outbox[index].uploadIDs = ids }
-        // An attachment-only message has no local copy to retry, so a failed send gives the composer its content back.
-        let delivered = await deliver(outgoing, text: text, uploadIDs: ids, reply: quote, photos: photos)
-        if delivered != .delivered, outgoing == nil { restore() }
     }
 
     /// Sends `text` as its own message and leaves the composer, its attachments and its reply as they are. The Tasks tab uses it for
@@ -457,7 +486,7 @@ final class ChatModel: SocketModel {
         guard !text.isEmpty else { return }
         let message = OutgoingMessage(id: UUID(), text: text, date: Date(), state: .sending, known: userItemIDs, reply: nil)
         outbox.append(message)
-        await deliver(message.id, text: text, uploadIDs: [], reply: nil, photos: [:])
+        await deliver(message.id)
     }
 
     /// Sends a failed message again. The state changes before the first await, so a second tap does nothing.
@@ -469,37 +498,71 @@ final class ChatModel: SocketModel {
         outbox[index].restored = false
         let message = outbox[index]
         // A voice message without text sends its audio again. One with text only needs the Mac to put it in the chat.
-        if message.isTranscribing { return await resendVoice(id.uuidString.lowercased()) }
-        await deliver(id, text: message.text, uploadIDs: message.uploadIDs, reply: message.reply, photos: [:])
+        if message.isTranscribing {
+            if message.audio != nil { await sendSavedVoice(id) } else { await resendVoice(id.uuidString.lowercased()) }
+            return
+        }
+        await deliver(id)
     }
 
-    private enum Delivery {
+    private enum Delivery: Equatable {
         case delivered
         /// The Mac answered that it will not take the message.
         case refused
         /// The phone could not reach the Mac, and the message now waits in the outbox.
         case offline
+        /// An attachment could not be uploaded for a reason other than a missing connection. Only returned when the caller asked for it.
+        case uploadFailed(String)
         /// Anything else: the Mac did not answer in time, the token is gone, or the outbox is full.
         case failed
     }
 
+    /// Sends the message of the outbox with this id: uploads its attachments, then sends the text with their ids. A message the phone
+    /// cannot send for lack of a connection waits, and `flushOutbox` sends it later.
     @discardableResult
-    private func deliver(_ id: UUID?, text: String, uploadIDs: [String], reply: RemoteReplyRef?, photos: [String: Data]) async -> Delivery {
+    private func deliver(_ id: UUID, restoreOnUploadFailure: Bool = false) async -> Delivery {
+        guard let first = outbox.first(where: { $0.id == id }) else { return .failed }
         func mark(_ state: OutgoingMessage.State) {
             if let index = outbox.firstIndex(where: { $0.id == id }) { outbox[index].state = state }
             persistOutbox()
         }
-        // Only a plain text message can wait. Attachments upload first, and a voice message has its own path.
-        let canQueue = id != nil && uploadIDs.isEmpty && !text.isEmpty
         // A message typed while an earlier one waits or is on its way from the outbox goes behind it, so the Mac sees them in order.
-        if canQueue, let id, let index = outbox.firstIndex(where: { $0.id == id }), outbox[..<index].contains(where: { $0.queuedAt != nil && ($0.isWaiting || $0.state == .sending) }) {
+        if let index = outbox.firstIndex(where: { $0.id == id }), outbox[..<index].contains(where: { $0.queuedAt != nil && ($0.isWaiting || $0.state == .sending) }) {
             enqueue(id)
             kickFlush()
             return .offline
         }
         let client = self.client, timeout = sendTimeout
+        let text = first.text, reply = first.reply
+        var uploadIDs = first.uploadIDs
+        var photos: [String: Data] = [:]
+        if uploadIDs.isEmpty {
+            for file in first.files {
+                do {
+                    let upload = try await client.upload(file.data, fileName: file.fileName, contentType: file.contentType)
+                    uploadIDs.append(upload.id)
+                    if file.isImage, let stored = upload.storedName { photos[stored] = file.data }
+                } catch ClientError.unauthorized {
+                    onUnauthorized()
+                    if restoreOnUploadFailure { return .uploadFailed("") }
+                    mark(.failed("Sign in again to send."))
+                    return .failed
+                } catch is CancellationError {
+                    mark(.failed("The send was cancelled."))
+                    return .failed
+                } catch where Self.isUnreachable(error) {
+                    enqueue(id)
+                    return outbox.contains { $0.id == id && $0.isWaiting } ? .offline : .failed
+                } catch {
+                    if restoreOnUploadFailure { return .uploadFailed(PlainError.message(for: error)) }
+                    mark(.failed("The upload failed. \(PlainError.message(for: error))"))
+                    return .failed
+                }
+            }
+            if let index = outbox.firstIndex(where: { $0.id == id }) { outbox[index].uploadIDs = uploadIDs }
+        }
         // The id is the message's own, so a Retry sends the same id and the Mac creates the message once.
-        let clientID = (id ?? UUID()).uuidString.lowercased()
+        let clientID = id.uuidString.lowercased()
         do {
             try await Self.withTimeout(timeout) { [socket] in
                 // The open event socket carries messages without attachments. Without it, or when the Mac did not announce `chat.send`,
@@ -530,9 +593,11 @@ final class ChatModel: SocketModel {
         } catch is CancellationError {
             mark(.failed("The send was cancelled."))
             return .failed
-        } catch where canQueue && Self.isUnreachable(error) {
-            // The Mac is out of reach (no network, asleep, relay down). Keep the message and send it on the next connect.
-            if let id { enqueue(id) }
+        } catch where Self.isUnreachable(error) {
+            // The Mac is out of reach (no network, asleep, relay down). Keep the message and send it on the next connect. The
+            // attachments upload again then, since the Mac may not have kept these.
+            if let index = outbox.firstIndex(where: { $0.id == id }) { outbox[index].uploadIDs = [] }
+            enqueue(id)
             return outbox.contains { $0.id == id && $0.isWaiting } ? .offline : .failed
         } catch {
             // The failed row under the message carries the reason and its Retry. No banner repeats it.
@@ -566,6 +631,15 @@ final class ChatModel: SocketModel {
         let restored = store.load().filter { record in !outbox.contains { $0.id == record.id } }
         for record in restored.prefix(Self.outboxCapacity) {
             var message = OutgoingMessage(id: record.id, text: record.text, date: record.date, state: record.failure.map { .failed($0) } ?? .waiting, known: [], reply: record.reply)
+            message.isVoice = record.isVoice ?? false
+            message.local = message.isVoice
+            message.audio = record.audioName.flatMap { store.readFile(name: $0) }
+            message.files = (record.files ?? []).compactMap { ref in
+                store.readFile(name: ref.name).map { StagedFile(fileName: ref.fileName, contentType: ref.contentType, data: $0, isImage: ref.isImage) }
+            }
+            // A recording or photo whose file is gone cannot be sent. The text, if any, still can.
+            if message.isVoice, message.text.isEmpty, message.audio == nil { continue }
+            if !message.isVoice, message.text.isEmpty, message.files.isEmpty { continue }
             message.queuedAt = record.queuedAt
             message.restored = true
             outbox.append(message)
@@ -583,9 +657,27 @@ final class ChatModel: SocketModel {
             case .failed(let reason): failure = reason
             case .sent: return nil
             }
-            return OutboxRecord(id: message.id, text: message.text, date: message.date, queuedAt: queuedAt, replyItemID: message.reply?.itemID, replySelection: message.reply?.selectionText, failure: failure)
+            var record = OutboxRecord(id: message.id, text: message.text, date: message.date, queuedAt: queuedAt, replyItemID: message.reply?.itemID, replySelection: message.reply?.selectionText, failure: failure)
+            if message.isVoice { record.isVoice = true }
+            // The recording is only needed until the Mac has turned it into text.
+            if message.isVoice, message.text.isEmpty, let audio = message.audio {
+                let name = message.id.uuidString.lowercased() + ".pcm"
+                if savedFiles.insert(name).inserted { outboxStore.writeFile(audio, name: name) }
+                record.audioName = name
+            }
+            if !message.files.isEmpty {
+                record.files = message.files.enumerated().map { offset, file in
+                    let name = message.id.uuidString.lowercased() + "-\(offset)"
+                    if savedFiles.insert(name).inserted { outboxStore.writeFile(file.data, name: name) }
+                    return OutboxFileRef(name: name, fileName: file.fileName, contentType: file.contentType, isImage: file.isImage)
+                }
+            }
+            return record
         }
         outboxStore.save(records)
+        let kept = Set(records.flatMap { [$0.audioName].compactMap { $0 } + ($0.files ?? []).map(\.name) })
+        savedFiles.formIntersection(kept)
+        outboxStore.prune(keeping: kept)
     }
 
     /// Marks a message as waiting for the connection. A full outbox fails the new message instead, which then shows Retry.
@@ -642,9 +734,10 @@ final class ChatModel: SocketModel {
             // Messages the Mac showed while this one waited are not its copy.
             outbox[index].known = userItemIDs
             persistOutbox()
-            switch await deliver(message.id, text: message.text, uploadIDs: [], reply: message.reply, photos: [:]) {
+            let result = message.isTranscribing && message.audio != nil ? await sendSavedVoice(message.id) : await deliver(message.id)
+            switch result {
             case .delivered, .refused: continue
-            case .offline, .failed: return
+            case .offline, .failed, .uploadFailed: return
             }
         }
     }
@@ -654,15 +747,79 @@ final class ChatModel: SocketModel {
     /// Sends the audio of a failed voice message again. Set by the app to `VoiceModel.resend`.
     @ObservationIgnored var resendVoice: (String) async -> Void = { _ in }
 
+    /// Turns a saved recording into text on the Mac, without putting anything in the chat. Set by the app to
+    /// `VoiceModel.transcribeSaved`. The phone sends the text itself afterwards, with the message id as the client id, so the Mac
+    /// makes the message once however often the transcription ran.
+    @ObservationIgnored var transcribeSaved: (String, Data) async -> SavedTranscript = { _, _ in .unreachable }
+
+    /// True while an earlier message waits or is on its way from the outbox. A voice message recorded now goes behind it.
+    var hasEarlierMessages: Bool { outbox.contains { $0.queuedAt != nil && ($0.isWaiting || $0.state == .sending) } }
+
+    /// Sends a saved recording: the Mac transcribes it, then the phone sends the text with the attachments of the message.
+    @discardableResult
+    private func sendSavedVoice(_ id: UUID) async -> Delivery {
+        guard let audio = outbox.first(where: { $0.id == id })?.audio else { return .failed }
+        let result = await transcribeSaved(id.uuidString.lowercased(), audio)
+        guard let index = outbox.firstIndex(where: { $0.id == id }) else { return .failed }
+        switch result {
+        case .text(let text):
+            outbox[index].text = text
+            outbox[index].audio = nil
+            outbox[index].known = userItemIDs
+            persistOutbox()
+            return await deliver(id)
+        case .empty:
+            discardSilent(id)
+            return .delivered
+        case .unreachable:
+            enqueue(id)
+            return outbox.contains { $0.id == id && $0.isWaiting } ? .offline : .failed
+        case .failed(let reason):
+            outbox[index].state = .failed(reason)
+            persistOutbox()
+            return .failed
+        }
+    }
+
+    /// The Mac heard no speech. Nothing is sent, and the photos go back to the composer.
+    private func discardSilent(_ id: UUID) {
+        guard let index = outbox.firstIndex(where: { $0.id == id }) else { return }
+        let files = outbox[index].files
+        outbox.remove(at: index)
+        attachments = files.map { PendingAttachment(fileName: $0.fileName, contentType: $0.contentType, data: $0.data, isImage: $0.isImage) } + attachments
+        persistOutbox()
+    }
+
     /// Applies what happened to a voice message sent at once. The stream id is the message id, so the pending item is the one Stop made.
     func voiceEvent(_ event: VoiceModel.SendEvent) {
         func index(_ id: String) -> Int? { UUID(uuidString: id).flatMap { uuid in outbox.firstIndex { $0.id == uuid } } }
         switch event {
-        case .started(let id):
+        case .started(let id, let carry):
             guard let uuid = UUID(uuidString: id), index(id) == nil else { return }
             var message = OutgoingMessage(id: uuid, text: "", date: Date(), state: .sending, known: userItemIDs)
             message.isVoice = true
+            if carry {
+                // The attachments in the composer go with the voice message as one message.
+                message.local = true
+                message.files = attachments.map { StagedFile(fileName: $0.fileName, contentType: $0.contentType, data: $0.data, isImage: $0.isImage) }
+                attachments = []
+                uploadFailure = nil
+            }
             outbox.append(message)
+        case .text(let id, let text):
+            // The text of a recording the phone sends itself. A recording with no speech sends nothing.
+            guard let at = index(id), let uuid = UUID(uuidString: id) else { return }
+            if text.isEmpty { return discardSilent(uuid) }
+            outbox[at].text = text
+            outbox[at].known = userItemIDs
+            Task { [weak self] in await self?.deliver(uuid) }
+        case .offline(let id, let audio):
+            // The phone could not reach the Mac while it recorded. The recording waits like a typed message.
+            guard let at = index(id), let uuid = UUID(uuidString: id) else { return }
+            outbox[at].audio = audio
+            outbox[at].local = true
+            enqueue(uuid)
+            kickFlush()
         case .transcribed(let id, let text):
             guard let at = index(id) else { return }
             outbox[at].text = text

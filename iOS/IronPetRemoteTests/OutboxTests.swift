@@ -159,14 +159,18 @@ final class OutboxTests: XCTestCase {
         XCTAssertEqual(store.records.first?.failure, "the message is empty")
     }
 
-    func testAMessageWithAnAttachmentStillFailsOfflineAsBefore() async {
-        let model = model(socket: FakeChatSocket(open: false), store: MemoryOutboxStore())
+    func testAMessageWithAnAttachmentWaitsOfflineWithItsAttachment() async {
+        let store = MemoryOutboxStore()
+        let model = model(socket: FakeChatSocket(open: false), store: store)
         model.attachments = [PendingAttachment(fileName: "a.txt", contentType: "text/plain", data: Data([1]), isImage: false)]
         model.draft = "with a file"
         await model.send()
-        XCTAssertTrue(model.outbox.isEmpty, "the upload failed, so nothing waits and the composer has its content back")
-        XCTAssertEqual(model.draft, "with a file")
-        XCTAssertEqual(model.attachments.count, 1)
+        XCTAssertEqual(model.outbox.map(\.text), ["with a file"])
+        XCTAssertTrue(model.outbox[0].isWaiting)
+        XCTAssertEqual(model.outbox[0].files.count, 1)
+        XCTAssertTrue(model.draft.isEmpty)
+        XCTAssertTrue(model.attachments.isEmpty)
+        XCTAssertEqual(store.records.first?.files?.count, 1)
     }
 
     func testTheOutboxHoldsAtMostOneHundredMessages() async {
