@@ -24,6 +24,16 @@ final class VoiceController: ObservableObject {
     /// The last recording, kept while its transcription has failed so Retry can re-send it.
     private(set) var retryAudio: Data?
 
+    /// `--render-previews` only: shows the recording state with a made-up waveform, without touching the microphone.
+    func loadPreview() {
+        for index in 0..<120 {
+            levels.record(index % 40 > 24 ? Float(0.25 + 0.5 * abs(sin(Double(index)))) : 0.04)
+            levels.tick()
+        }
+        startedAt = Date().addingTimeInterval(-3)
+        phase = .recording
+    }
+
     var onTranscript: ((String) -> Void)?
     /// A message for the chat, and whether Retry makes sense for it.
     var onFailure: ((String, Bool) -> Void)?

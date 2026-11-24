@@ -2,18 +2,20 @@ import IronPetCore
 import IronPetKit
 import SwiftUI
 
-/// Replaces the whole composer while a voice note is recording or being transcribed: cancel, a live waveform across
-/// the full width, the elapsed time, and stop. Nothing else from the composer stays visible.
+/// The content of the composer field while a voice note is recording or being transcribed: a live waveform across
+/// the full width and the elapsed time. Cancel and stop sit outside the field, see `VoiceCancelButton` and `VoiceStopButton`.
 struct VoiceBar: View {
     @ObservedObject var voice: VoiceController
+
+    /// The idle field is `GlassCircleButtonStyle.size` tall including its 4 pt padding, so the bar fits inside it and the composer does not grow.
+    private static let contentHeight = GlassCircleButtonStyle.size - 8
 
     private var transcribing: Bool { voice.phase == .transcribing }
 
     var body: some View {
         HStack(spacing: 10) {
-            circleButton(SharedSymbols.deny, help: transcribing ? "Cancel transcription" : "Discard recording") { voice.cancel() }
             VoiceWaveform(levels: voice.levels, paused: transcribing)
-                .frame(height: 34)
+                .frame(height: Self.contentHeight)
                 .frame(maxWidth: .infinity)
                 .opacity(transcribing ? 0.3 : 1)
                 .animation(.easeOut(duration: 0.2), value: transcribing)
@@ -25,32 +27,47 @@ struct VoiceBar: View {
                 .transition(.opacity)
             } else {
                 ElapsedTime(since: voice.startedAt)
-                Button { voice.stop() } label: {
-                    Image(systemName: SharedSymbols.stop)
-                        .font(.system(size: 11, weight: .bold))
-                        .foregroundStyle(.white)
-                        .frame(width: 28, height: 28)
-                        .background(Color.red, in: Circle())
-                }
-                .buttonStyle(.plain)
-                .help("Stop and transcribe")
             }
         }
-        .frame(minHeight: 34)
+        .padding(.horizontal, 6)
+        .frame(minHeight: Self.contentHeight)
         .accessibilityElement(children: .contain)
         .accessibilityLabel(transcribing ? "Transcribing voice note" : "Recording voice note")
     }
+}
 
-    private func circleButton(_ symbol: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 11, weight: .bold))
-                .foregroundStyle(.secondary)
-                .frame(width: 28, height: 28)
-                .background(Color.primary.opacity(0.08), in: Circle())
+/// Cancel, left of the field, the same size as the idle composer's attach button.
+struct VoiceCancelButton: View {
+    @ObservedObject var voice: VoiceController
+
+    var body: some View {
+        Button { voice.cancel() } label: { Image(systemName: SharedSymbols.deny) }
+            .buttonStyle(GlassCircleButtonStyle())
+            .help(voice.phase == .transcribing ? "Cancel transcription" : "Discard recording")
+    }
+}
+
+/// Stop, right of the field, the same size as the idle composer's mic button. While transcribing it stays in the layout
+/// but is invisible, so the field does not change width.
+struct VoiceStopButton: View {
+    @ObservedObject var voice: VoiceController
+
+    private var transcribing: Bool { voice.phase == .transcribing }
+
+    var body: some View {
+        Button { voice.stop() } label: {
+            Image(systemName: SharedSymbols.stop)
+                .font(.system(size: 13, weight: .bold))
+                .foregroundStyle(.white)
+                .frame(width: GlassCircleButtonStyle.size, height: GlassCircleButtonStyle.size)
+                .background(Color.red, in: Circle())
         }
         .buttonStyle(.plain)
-        .help(help)
+        .pointerCursor()
+        .help("Stop and transcribe")
+        .opacity(transcribing ? 0 : 1)
+        .allowsHitTesting(!transcribing)
+        .accessibilityHidden(transcribing)
     }
 }
 
