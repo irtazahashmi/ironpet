@@ -131,6 +131,7 @@ final class ChatSwipeReplyUITests: XCTestCase {
         XCTAssertFalse(replyBar.waitForExistence(timeout: 1.5), "an edge swipe is the back swipe, not a reply")
 
         // And on a pushed screen the edge swipe goes back.
+        app.buttons["chat-more-button"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         app.buttons["threads-button"].tap()
         let thread = app.buttons["thread-th-1"]
         XCTAssertTrue(thread.waitForExistence(timeout: 10))
