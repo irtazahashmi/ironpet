@@ -39,8 +39,33 @@ package enum AutomationDefaults {
                    note: "Looks at open tasks and suggestions every 20 minutes and posts only what changed. Its prompt is in Settings → Prompts.")
     }
 
+    package static let screenReviewID = "screen-review"
+
+    /// The built-in screen review: every hour, in its own agent session that reports to the chat. It reads what changed on the
+    /// screen and proposes tasks. Its prompt is `prompts/screen-review.md`. Off until the user turns it on.
+    package static func screenReview(enabled: Bool = false) -> Automation {
+        Automation(id: screenReviewID, name: "Screen review", enabled: enabled,
+                   trigger: .init(type: "interval", minutes: 60, clock: "wall"),
+                   action: .init(type: "prompt", prompt: "{{prompt.\(screenReviewID)}}", session: "own", report: "chat"),
+                   presentation: .init(symbol: "display"), createdBy: "user",
+                   note: "Reads what changed on your screen each hour and suggests tasks for it. Needs screen capture. Its prompt is in Settings → Prompts.")
+    }
+
+    package static let mailCalendarID = "mail-calendar"
+
+    /// The built-in mail and calendar checks: every hour, in its own agent session that reports to the chat. It proposes tasks
+    /// from new mail and upcoming events, using whatever mail and calendar tools the agent has. Its prompt is
+    /// `prompts/mail-calendar.md`. Off until the user turns it on.
+    package static func mailCalendar(enabled: Bool = false) -> Automation {
+        Automation(id: mailCalendarID, name: "Mail and calendar checks", enabled: enabled,
+                   trigger: .init(type: "interval", minutes: 60, clock: "wall"),
+                   action: .init(type: "prompt", prompt: "{{prompt.\(mailCalendarID)}}", session: "own", report: "chat"),
+                   presentation: .init(symbol: "envelope.badge"), createdBy: "user",
+                   note: "Checks new mail and the next 48 hours of events each hour and suggests tasks. Needs a mail or calendar tool the agent can use. Its prompt is in Settings → Prompts.")
+    }
+
     /// Every built-in, added to the file when its id is missing.
-    package static var builtIns: [Automation] { [morningBrief(), dayRecap(), taskReview()] }
+    package static var builtIns: [Automation] { [morningBrief(), dayRecap(), taskReview(), screenReview(), mailCalendar()] }
 
     /// The `gh` binary, which the GitHub script runs.
     package static var ghExecutable: URL? {

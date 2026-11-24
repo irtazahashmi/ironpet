@@ -1,0 +1,1 @@
+This conversation is moving to a fresh session because this one has grown too large. Write a handoff summary for the next session, at most 400 words, in plain text: the goal, what was decided, the current state of the work, open questions and the next step. Do not use any tools and do not start new work.
