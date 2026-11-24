@@ -12,15 +12,15 @@ private final class Channel: VoiceChannel, @unchecked Sendable {
 
     init() { (stream, continuation) = AsyncThrowingStream.makeStream() }
 
-    var sentTexts: [String] { lock.lock(); defer { lock.unlock() }; return texts }
-    var binaryCount: Int { lock.lock(); defer { lock.unlock() }; return binaries }
+    var sentTexts: [String] { lock.withLock { texts } }
+    var binaryCount: Int { lock.withLock { binaries } }
 
     func send(text: String) async throws {
         if failEnd, case .end? = VoiceClientMessage.parse(text) { throw URLError(.notConnectedToInternet) }
-        lock.lock(); texts.append(text); lock.unlock()
+        lock.withLock { texts.append(text) }
     }
 
-    func send(binary: Data) async throws { lock.lock(); binaries += 1; lock.unlock() }
+    func send(binary: Data) async throws { lock.withLock { binaries += 1 } }
     func incoming() -> AsyncThrowingStream<VoiceInbound, Error> { stream }
     func close() { continuation.finish() }
 }
@@ -202,8 +202,10 @@ final class VoiceSendTests: XCTestCase {
 
     // S4
     func testThePhoneMarksEachVoiceHopWithoutContent() async throws {
+        // The chat's own reads and events log `phone.item`, `phone.event` and `phone.confirmed` at times the test does not control, and
+        // one of them landed between the voice hops. This test is about the voice hops, so it records only those.
         var hops: [String] = []
-        PhoneHopLog.tap = { hops.append($0) }
+        PhoneHopLog.tap = { if $0.hasPrefix("phone.voice.") { hops.append($0) } }
         defer { PhoneHopLog.tap = nil }
         let (chat, voice, channel) = await rig()
         await voice.micTapped()
