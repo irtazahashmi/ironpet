@@ -12,6 +12,7 @@ struct TasksView: View {
     /// A card dropped on Waiting on others, until the person says who holds it.
     @State private var holdingTask: String?
     @State private var holder = ""
+    @State private var creating = false
 
     private var mode: TasksViewMode { TasksViewMode(rawValue: modeRaw) ?? .list }
 
@@ -34,7 +35,13 @@ struct TasksView: View {
             .navigationTitle("Tasks")
             .navigationBarTitleDisplayMode(.inline)
             .themedScreen()
-            .toolbar { modeToolbar }
+            .toolbar {
+                modeToolbar
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { creating = true } label: { Label("New task", systemImage: "plus") }.accessibilityIdentifier("new-task")
+                }
+            }
+            .sheet(isPresented: $creating) { TaskEditSheet(mode: .create) { title, notes in await model.create(title: title, notes: notes) } }
             .navigationDestination(for: RemoteTask.self) { TaskDetailView(model: model, task: $0) }
             .alert("Waiting on whom?", isPresented: Binding(get: { holdingTask != nil }, set: { if !$0 { holdingTask = nil } })) {
                 TextField("Name", text: $holder).accessibilityIdentifier("waiting-name-field")

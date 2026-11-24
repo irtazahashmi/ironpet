@@ -657,7 +657,7 @@ final class ChatModel: SocketModel {
 
     /// True when the Mac could not be reached. The relay answers 502, 503 or 504 when it cannot reach the Mac (tunnel down, Mac asleep).
     /// Any other status came from the Mac itself, so the message fails with Retry.
-    private static func isUnreachable(_ error: Error) -> Bool {
+    static func isUnreachable(_ error: Error) -> Bool {
         switch error {
         case ClientError.transport: return true
         case ClientError.api(let status, _, _): return [502, 503, 504].contains(status)

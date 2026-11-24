@@ -9,7 +9,7 @@ struct TaskDetailView: View {
     @Environment(\.dismiss) private var dismiss
 
     enum Sheet: Identifiable {
-        case close, note, status
+        case close, note, status, edit
         var id: Self { self }
     }
 
@@ -59,6 +59,7 @@ struct TaskDetailView: View {
                         Button("Close with a note", systemImage: "checkmark.circle") { sheet = .close }
                         Button("Add a note", systemImage: "note.text.badge.plus") { sheet = .note }
                         Button("Change status", systemImage: "arrow.triangle.2.circlepath") { sheet = .status }
+                        Button("Edit title and notes", systemImage: "pencil") { sheet = .edit }
                     } label: { Label("Actions", systemImage: SharedSymbols.more) }
                         .accessibilityIdentifier("task-actions")
                 }
@@ -76,6 +77,10 @@ struct TaskDetailView: View {
             case .note:
                 NoteSheet(title: "Add a note", prompt: "Note", action: "Add") { note, _ in
                     await model.addNote(task.id, note: note)
+                }
+            case .edit:
+                TaskEditSheet(mode: .edit(title: current.title, notes: current.notes)) { title, notes in
+                    await model.edit(task.id, title: title, notes: notes)
                 }
             case .status:
                 NoteSheet(title: "Change status", prompt: "Say why the status changes", action: "Change", statuses: TaskStatus.allCases, initial: current.status) { note, status in
@@ -132,6 +137,59 @@ struct NoteSheet: View {
                 }
             }
             .onAppear { status = initial }
+        }
+        .presentationDetents([.medium])
+    }
+}
+
+
+/// A title and notes form, for a new task or for editing one. The sheet closes when `submit` returns true, which it does for a change
+/// that is saved on the phone and waiting for the Mac.
+struct TaskEditSheet: View {
+    enum Mode {
+        case create
+        case edit(title: String, notes: String)
+    }
+
+    let mode: Mode
+    let submit: (String, String) async -> Bool
+
+    @State private var title = ""
+    @State private var notes = ""
+    @State private var working = false
+    @Environment(\.dismiss) private var dismiss
+
+    private var heading: String { if case .create = mode { return "New task" } else { return "Edit task" } }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Group {
+                    Section("Title") { TextField("Title", text: $title).accessibilityIdentifier("task-title-field") }
+                    Section("Notes") { TextField("Notes", text: $notes, axis: .vertical).lineLimit(2...8).accessibilityIdentifier("task-notes-field") }
+                }.listRowBackground(SharedTheme.card)
+            }
+            .navigationTitle(heading)
+            .themedScreen()
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("Cancel") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("Save") {
+                        working = true
+                        Task {
+                            let ok = await submit(title, notes)
+                            working = false
+                            if ok { dismiss() }
+                        }
+                    }
+                    .disabled(working || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .accessibilityIdentifier("task-save")
+                }
+            }
+            .onAppear {
+                if case .edit(let current, let currentNotes) = mode { title = current; notes = currentNotes }
+            }
         }
         .presentationDetents([.medium])
     }

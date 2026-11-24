@@ -31,6 +31,8 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _suggestions: [RemoteSuggestion]
     private var _taskFilters: [QuickFilter] = []
     private var _taskFiltersSupported = true
+    /// The answers to task changes that carried a `client_id`, as the Mac's ledger keeps them: a replay gets the first answer back.
+    private var _taskAnswers: [String: RemoteTask] = [:]
     private var _requests: [Recorded] = []
     private var _outcome: PairingOutcome = .allow
     private var _pendingPolls = 1
@@ -420,6 +422,7 @@ final class MockIronPetServer: @unchecked Sendable {
             respond(connection, 200, RemoteDeleted(deleted: parts[2]))
             publish(RemoteEvent.settingsChanged)
         case ("GET", 2) where parts[1] == "suggestions": respond(connection, 200, SuggestionListResponse(suggestions: suggestions))
+        case ("POST", 2) where parts[1] == "tasks": createTask(request, connection)
         case ("GET", 3) where parts[1] == "tasks": detail(parts[2], connection)
         case ("PATCH", 3) where parts[1] == "tasks": patch(parts[2], request, connection)
         case ("POST", 4) where parts[1] == "tasks" && parts[3] == "close": close(parts[2], request, connection)
@@ -520,21 +523,65 @@ final class MockIronPetServer: @unchecked Sendable {
         respond(connection, 200, RemoteTaskDetail(task: task, history: history))
     }
 
+    /// The Mac's `client_id` and `base_updated` rules for the three task change routes. Returns true when it answered and the caller stops.
+    /// Call with the lock held; it unlocks before answering.
+    private func replayOrConflict(_ index: Int?, _ request: Recorded, _ connection: NWConnection) -> Bool {
+        if let clientID = request.json["client_id"] as? String, let known = _taskAnswers[clientID] {
+            lock.unlock()
+            respond(connection, request.method == "POST" && request.path == APIPath.tasks ? 201 : 200, known)
+            return true
+        }
+        if let index, let raw = request.json["base_updated"] as? String, let base = ISO8601DateFormatter().date(from: raw),
+           Int(base.timeIntervalSince1970) != Int(_tasks[index].updated.timeIntervalSince1970) {
+            lock.unlock()
+            fail(connection, 409, "conflict", "the task changed on the Mac since the phone read it")
+            return true
+        }
+        return false
+    }
+
+    /// Records the answer for a change's `client_id`. Call with the lock held.
+    private func remember(_ request: Recorded, _ task: RemoteTask) {
+        if let clientID = request.json["client_id"] as? String { _taskAnswers[clientID] = task }
+    }
+
+    private func createTask(_ request: Recorded, _ connection: NWConnection) {
+        guard let title = (request.json["title"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !title.isEmpty else {
+            return fail(connection, 400, "invalid", "title is required")
+        }
+        lock.lock()
+        if replayOrConflict(nil, request, connection) { return }
+        let status = (request.json["status"] as? String).flatMap(TaskStatus.init(rawValue:)) ?? .backlog
+        let now = Date()
+        let task = RemoteTask(id: "t-new-\(_tasks.count + 1)", title: title, notes: request.json["notes"] as? String ?? "", status: status, source: "user",
+                              created: now, updated: now)
+        _tasks.append(task)
+        remember(request, task)
+        lock.unlock()
+        respond(connection, 201, task)
+        publish(RemoteEvent.tasksChanged, id: task.id)
+    }
+
     private func patch(_ id: String, _ request: Recorded, _ connection: NWConnection) {
         lock.lock()
         guard let index = _tasks.firstIndex(where: { $0.id == id }) else {
             lock.unlock()
             return fail(connection, 404, "not_found", "no task \(id)")
         }
+        if replayOrConflict(index, request, connection) { return }
         if let raw = request.json["status"] as? String, let status = TaskStatus(rawValue: raw) {
             _tasks[index].status = status
             _tasks[index].closed = status == .done ? Date() : nil
         }
+        if let title = request.json["title"] as? String { _tasks[index].title = title }
+        if let notes = request.json["notes"] as? String { _tasks[index].notes = notes }
         if let name = request.json["waiting_on"] as? String {
             let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
             _tasks[index].waitingOn = trimmed.isEmpty ? nil : trimmed
         }
+        _tasks[index].updated = max(Date(), _tasks[index].updated.addingTimeInterval(1))
         let task = _tasks[index]
+        remember(request, task)
         lock.unlock()
         respond(connection, 200, task)
         publish(RemoteEvent.tasksChanged, id: id)
@@ -546,9 +593,12 @@ final class MockIronPetServer: @unchecked Sendable {
         guard let index = _tasks.firstIndex(where: { $0.id == id }) else {
             lock.unlock(); return fail(connection, 404, "not_found", "no task \(id)")
         }
+        if replayOrConflict(index, request, connection) { return }
         _tasks[index].status = .done
         _tasks[index].closed = Date()
+        _tasks[index].updated = max(Date(), _tasks[index].updated.addingTimeInterval(1))
         let task = _tasks[index]
+        remember(request, task)
         lock.unlock()
         respond(connection, 200, task)
         publish(RemoteEvent.tasksChanged, id: id)
