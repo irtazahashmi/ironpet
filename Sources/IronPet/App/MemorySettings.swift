@@ -175,15 +175,19 @@ struct MemorySettingsBody: View {
                 LabeledContent("Model") { Text("Haiku for Claude Code, each agent's default for the others").foregroundStyle(.secondary) }
             }
             Stepper {
-                Text("Learn after \(config.quietMinutes) min of quiet")
+                Text("Learn every \(config.digestMinutes) min")
             } onIncrement: {
-                let q = config.quietMinutes
-                store.update { $0.memory.quietMinutes = min(Config.Memory.quietRange.upperBound, q < 10 ? q + 1 : q + 5) }
+                let d = config.digestMinutes
+                store.update { $0.memory.digestMinutes = min(Config.Memory.digestMinutesRange.upperBound, d < 60 ? d + 15 : d + 60) }
             } onDecrement: {
-                let q = config.quietMinutes
-                store.update { $0.memory.quietMinutes = max(Config.Memory.quietRange.lowerBound, q > 10 ? max(10, q - 5) : q - 1) }
+                let d = config.digestMinutes
+                store.update { $0.memory.digestMinutes = max(Config.Memory.digestMinutesRange.lowerBound, d > 60 ? d - 60 : d - 15) }
             }
+            .help("Once an hour, Ghost reads what is new in chats, meeting summaries and tasks, and merges any page that has grown too long.")
             .disabled(!config.reflect)
+            Toggle("Learn from the screen", isOn: Binding(get: { config.learnFromScreen }, set: { on in store.update { $0.memory.learnFromScreen = on } }))
+                .disabled(!config.reflect || (!store.config.screenCapture.enabled && !config.learnFromScreen))
+                .help("Also reads the text of the screen captures that screen capture saves, with the same agent as the chats. Off by default.")
             if config.reflect, let error = memory.lastError {
                 Label("The last pass failed: \(error)", systemImage: SharedSymbols.warning)
                     .font(.caption).foregroundStyle(.orange).textSelection(.enabled)
@@ -191,7 +195,7 @@ struct MemorySettingsBody: View {
         } header: {
             Text("Learning")
         } footer: {
-Text("When a chat goes quiet, \(petName) sends its new messages to the agent that already had them, which names the facts worth keeping. Each pass uses that agent's quota and shows as Memory in the Usage tab.")
+Text("Once an hour, \(petName) sends what is new to the agent that already had it, which names the facts worth keeping. Each pass uses that agent's quota and shows as Memory in the Usage tab.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

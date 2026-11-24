@@ -570,29 +570,29 @@ package struct Config: Codable, Equatable {
             reflect: Bool = true,
             reflectAgent: String? = nil,
             reflectModel: String? = nil,
-            quietMinutes: Int = Memory.defaultQuietMinutes,
+            digestMinutes: Int = Memory.defaultDigestMinutes,
             reflectMaxNotes: Int = Memory.defaultReflectMaxNotes,
             reflectMaxInputChars: Int = Memory.defaultReflectMaxInputChars,
             reflectTimeoutSeconds: Int = Memory.defaultReflectTimeoutSeconds,
             recallBytesMe: Int = 4_000,
             recallBytesProject: Int = 6_000,
             recallBytesPeople: Int = 2_000,
-            catchUpDays: Int = 7,
-            catchUpThreads: Int = 5,
+            learnFromScreen: Bool = false,
+            maxClaimsPerEntity: Int = Memory.defaultMaxClaimsPerEntity,
             noteMaxLength: Int = 240
         ) {
             self.reflect = reflect
             self.reflectAgent = reflectAgent
             self.reflectModel = reflectModel
-            self.quietMinutes = quietMinutes
+            self.digestMinutes = digestMinutes
             self.reflectMaxNotes = reflectMaxNotes
             self.reflectMaxInputChars = reflectMaxInputChars
             self.reflectTimeoutSeconds = reflectTimeoutSeconds
             self.recallBytesMe = recallBytesMe
             self.recallBytesProject = recallBytesProject
             self.recallBytesPeople = recallBytesPeople
-            self.catchUpDays = catchUpDays
-            self.catchUpThreads = catchUpThreads
+            self.learnFromScreen = learnFromScreen
+            self.maxClaimsPerEntity = maxClaimsPerEntity
             self.noteMaxLength = noteMaxLength
         }
 
@@ -603,8 +603,8 @@ package struct Config: Codable, Equatable {
         /// nil: the agent's cheap model when it has one (`cheapModels`), else its default. Only used with `reflectAgent` set, since a
         /// model id means nothing to another agent.
         package var reflectModel: String?
-        /// A chat is reflected on this long after its last turn, or at once when the user moves on.
-        package var quietMinutes = Memory.defaultQuietMinutes
+        /// The digest reads what is new in chats, meetings and tasks this often (and the screen, when `learnFromScreen` is on).
+        package var digestMinutes = Memory.defaultDigestMinutes
         /// Most notes one learning pass may save from a chat, meeting or automation answer.
         package var reflectMaxNotes = Memory.defaultReflectMaxNotes
         /// Characters of a chat, meeting summary or automation answer that a learning pass reads. The newest part is kept.
@@ -615,9 +615,10 @@ package struct Config: Codable, Equatable {
         package var recallBytesMe = 4_000
         package var recallBytesProject = 6_000
         package var recallBytesPeople = 2_000
-        /// On launch, chats updated this many days back that were not reflected yet are read, at most `catchUpThreads` of them.
-        package var catchUpDays = 7
-        package var catchUpThreads = 5
+        /// Off: the digest also reads the text of the user's screen captures, and only sends it to the agent the user picked for the digest.
+        package var learnFromScreen = false
+        /// A page with more valid claims than this is merged by the digest: the oldest unpinned facts are combined into fewer ones.
+        package var maxClaimsPerEntity = Memory.defaultMaxClaimsPerEntity
         /// Most characters one memory note may have.
         package var noteMaxLength = 240
 
@@ -628,14 +629,15 @@ package struct Config: Codable, Equatable {
         package static let reflectMaxInputCharsRange = 2_000...200_000
         package static let reflectTimeoutSecondsRange = 30...1_800
         package static let recallBytesRange = 500...50_000
-        package static let catchUpDaysRange = 1...90
-        package static let catchUpThreadsRange = 1...50
+        package static let digestMinutesRange = 15...1_440
+        package static let maxClaimsPerEntityRange = 10...200
         package static let noteMaxLengthRange = 40...2_000
 
         /// Agents whose adapter offers a clearly cheap model in every session. Claude Code's `haiku` is its own alias for its
         /// smallest model. The others either list no models or only parameterized ones with no cheap tier, so they use their default.
         package static let cheapModels = ["claude": "haiku"]
-        package static let defaultQuietMinutes = 30
+        package static let defaultDigestMinutes = 60
+        package static let defaultMaxClaimsPerEntity = 30
 
         /// Who reads text that `source` already had, and with which model. Nil when a set `reflectAgent` is another agent, so the
         /// text is skipped rather than sent to a provider that did not have it.
@@ -646,7 +648,6 @@ package struct Config: Codable, Equatable {
             }
             return (source, Self.cheapModels[source])
         }
-        package static let quietRange = 2...240
     }
 
     /// The ironpet window (chat, agents, tasks and the other sections).
@@ -758,8 +759,8 @@ package struct Config: Codable, Equatable {
         c.memory.recallBytesMe = clamp(c.memory.recallBytesMe, Memory.recallBytesRange)
         c.memory.recallBytesProject = clamp(c.memory.recallBytesProject, Memory.recallBytesRange)
         c.memory.recallBytesPeople = clamp(c.memory.recallBytesPeople, Memory.recallBytesRange)
-        c.memory.catchUpDays = clamp(c.memory.catchUpDays, Memory.catchUpDaysRange)
-        c.memory.catchUpThreads = clamp(c.memory.catchUpThreads, Memory.catchUpThreadsRange)
+        c.memory.digestMinutes = clamp(c.memory.digestMinutes, Memory.digestMinutesRange)
+        c.memory.maxClaimsPerEntity = clamp(c.memory.maxClaimsPerEntity, Memory.maxClaimsPerEntityRange)
         c.memory.noteMaxLength = clamp(c.memory.noteMaxLength, Memory.noteMaxLengthRange)
         c.jobs.retentionDays = clamp(c.jobs.retentionDays, Jobs.retentionDaysRange)
         c.voiceMode.idleShutdownMinutes = clamp(c.voiceMode.idleShutdownMinutes, VoiceMode.idleShutdownRange)
@@ -790,7 +791,6 @@ package struct Config: Codable, Equatable {
         if c.memory.reflectAgent?.isEmpty == true { c.memory.reflectAgent = nil }
         c.memory.reflectModel = c.memory.reflectModel?.trimmingCharacters(in: .whitespacesAndNewlines)
         if c.memory.reflectModel?.isEmpty == true || c.memory.reflectAgent == nil { c.memory.reflectModel = nil }
-        c.memory.quietMinutes = min(Memory.quietRange.upperBound, max(Memory.quietRange.lowerBound, c.memory.quietMinutes))
         if !Remote.portRange.contains(c.remote.port) || Remote.reservedPorts.contains(c.remote.port) { c.remote.port = Remote.defaultPort }
         c.remote.baseUrl = c.remote.baseUrl.trimmingCharacters(in: .whitespacesAndNewlines)
         if c.remote.address.trimmingCharacters(in: .whitespaces).isEmpty { c.remote.address = c.remote.baseUrl }

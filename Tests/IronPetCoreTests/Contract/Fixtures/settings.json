@@ -69,10 +69,10 @@
             "transcriptCharacters" : 300000
           },
           "memory" : {
-            "catchUpDays" : 7,
-            "catchUpThreads" : 5,
+            "digestMinutes" : 60,
+            "learnFromScreen" : false,
+            "maxClaimsPerEntity" : 30,
             "noteMaxLength" : 240,
-            "quietMinutes" : 30,
             "recallBytesMe" : 4000,
             "recallBytesPeople" : 2000,
             "recallBytesProject" : 6000,
@@ -243,10 +243,10 @@
             "transcriptCharacters" : 300000
           },
           "memory" : {
-            "catchUpDays" : 7,
-            "catchUpThreads" : 5,
+            "digestMinutes" : 60,
+            "learnFromScreen" : false,
+            "maxClaimsPerEntity" : 30,
             "noteMaxLength" : 240,
-            "quietMinutes" : 30,
             "recallBytesMe" : 4000,
             "recallBytesPeople" : 2000,
             "recallBytesProject" : 6000,
@@ -414,10 +414,10 @@
             "transcriptCharacters" : 300000
           },
           "memory" : {
-            "catchUpDays" : 7,
-            "catchUpThreads" : 5,
+            "digestMinutes" : 60,
+            "learnFromScreen" : false,
+            "maxClaimsPerEntity" : 30,
             "noteMaxLength" : 240,
-            "quietMinutes" : 30,
             "recallBytesMe" : 4000,
             "recallBytesPeople" : 2000,
             "recallBytesProject" : 6000,

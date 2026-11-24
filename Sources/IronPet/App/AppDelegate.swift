@@ -519,7 +519,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return (chat.agent, configured.isEmpty ? FrontDesk.fastestModel(in: chat.models) ?? chat.model : configured)
         }
         desk.onThreadSaved = { [weak self] thread in self?.chat.threadSaved(thread) }
-        desk.onConversationEnded = { [weak self] thread in self?.memory?.left(thread: thread) }
         let controller = VoiceModeController(frontDesk: desk)
         controller.voiceKey = voiceKey
         controller.petFrame = { [weak self] in self?.pet.panel.frame ?? .zero }
@@ -615,7 +614,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Builds Ghost's memory on the shared database: the entity store, the one-time move of the old note files onto pages, the background
-    /// indexing of saved chats and meetings, and the reflection pass, which reads a chat once it goes quiet.
+    /// indexing of saved chats and meetings, and the hourly digest that learns from them.
     private func setUpMemory(_ database: Database) {
         let store = EntityMemoryStore(database: database)
         EntityMemoryStore.shared = store
@@ -627,18 +626,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         reflector.automatic = !TestControl.isEnabled
         reflector.onChange = { [weak self] in self?.settingsModel.memory?.reload() }
         reflector.seedIfNeeded()
+        reflector.tasks = { [weak self] in self?.taskStore?.tasks ?? [] }
+        reflector.captures = { [weak self] in self?.capture?.store.recent(limit: 200) ?? [] }
+        reflector.digestAgent = { [weak self] in self?.chat.agent.id }
+        // A name that stays ambiguous is asked once, not again with a notification every digest.
+        reflector.post = { [weak self] signal in
+            guard let self else { return }
+            signals.add(signal, notify: !signals.signals.contains { $0.id == signal.id })
+        }
         memory = reflector
         let memorySettings = MemorySettingsModel(api: api.memory ?? MemoryAPI(services: { nil }), reflector: reflector)
         memorySettings.spawner = platform.processes
         settingsModel.memory = memorySettings
-        chat.onTurnEnded = { [weak reflector] id in reflector?.turnEnded(thread: id) }
-        chat.onThreadLeft = { [weak reflector] id in reflector?.left(thread: id) }
-        timers.append(Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak reflector] _ in
+        // Every minute the digest checks whether `memory.digestMinutes` have passed. A minute after launch it runs once, so the agents are
+        // not started while the app is still coming up. An automated run reads only what it sends.
+        timers.append(Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak reflector] _ in
             MainActor.assumeIsolated { reflector?.tick() }
         })
-        // A minute after launch, so the agents are not started while the app is still coming up. An automated run reads only what it sends.
         if !TestControl.isEnabled {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak reflector] in reflector?.catchUp() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak reflector] in reflector?.tick() }
         }
     }
 

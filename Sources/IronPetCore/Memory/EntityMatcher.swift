@@ -48,10 +48,18 @@ package enum EntityMatcher {
         guard !wanted.isEmpty else { return .none }
         let ids = kept.filter { entity in ([entity.name] + entity.aliases).contains { normalize($0) == wanted } }.map(\.id)
         switch ids.count {
-        case 0: return .none
         case 1: return .found(ids[0])
-        default: return .ambiguous(ids)
+        case 2...: return .ambiguous(ids)
+        default: break
         }
+        // A first name that several full names start with (`Ana` for "Ana Silva" and "Ana Lopez") fits all of them, so it is ambiguous.
+        // A first name that fits one full name is not taken for it: it becomes a page of its own, as a name that matches nothing does.
+        guard !wanted.contains(" ") else { return .none }
+        let fits = kept.filter { entity in
+            let full = normalize(entity.name)
+            return full.contains(" ") && full.hasPrefix(wanted + " ")
+        }.map(\.id)
+        return fits.count > 1 ? .ambiguous(fits) : .none
     }
 
     /// The form names are compared in: lowercase, one space between words, no edge punctuation.

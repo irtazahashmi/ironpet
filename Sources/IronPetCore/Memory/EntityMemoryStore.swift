@@ -62,7 +62,7 @@ package struct EntityPage: Equatable {
 @MainActor
 package final class EntityMemoryStore: MemoryStore {
     /// How many times a person must come up before the preamble names them unasked, so one-off names stay out.
-    package static let stubMentions = 2
+    package nonisolated static let stubMentions = 2
     /// Where Export writes Markdown copies of the pages. Read at each export, so a test can point it at a temp folder.
     package nonisolated(unsafe) static var exportDirectory = Paths.root.appendingPathComponent("memory-export")
 
@@ -243,6 +243,81 @@ package final class EntityMemoryStore: MemoryStore {
             }
             return .success(written.note)
         }
+    }
+
+    /// The hourly merge pass: one claim takes the place of several on one page. Every named claim must be valid and unpinned, or nothing
+    /// changes. The merged claims stay in the page's history, so Undo brings them back.
+    package func merge(_ entity: String, replacing ids: [Int64], with raw: String, source: String) -> Result<MemoryNote, MemoryError> {
+        let text: String
+        switch MemoryNote.clean(raw) {
+        case .success(let cleaned): text = cleaned
+        case .failure(let rejection): return .failure(MemoryError(message: rejection.message))
+        }
+        guard Set(ids).count >= 2, let page = entities().first(where: { $0.id == entity }) else {
+            return .failure(MemoryError(message: "a merge needs a page and two or more claims"))
+        }
+        let at = now()
+        let day = MemoryNote.day(at, calendar: calendar)
+        let wanted = Set(ids)
+        let outcome: Result<(claim: Int64, merged: [MemoryClaim]), MemoryError>
+        do {
+            outcome = try database.write { db -> Result<(claim: Int64, merged: [MemoryClaim]), MemoryError> in
+                let valid = try Self.claims(db, where: "entity = ? AND invalid_at IS NULL", [entity])
+                let merged = valid.filter { wanted.contains($0.id) }
+                guard merged.count == wanted.count, merged.allSatisfy({ !$0.pinned }) else {
+                    return .failure(MemoryError(message: "some of those claims are pinned or no longer hold"))
+                }
+                let sources = merged.reduce([String]()) { Self.merged($0, $1.sources) }
+                try db.execute("INSERT INTO memory_claims(entity, text, date, sources, invalid_at, pinned) VALUES(?, ?, ?, ?, NULL, 0)",
+                               [entity, text, day, Self.joined(sources)])
+                let claim = try Self.lastID(db)
+                for old in merged { try db.execute("UPDATE memory_claims SET invalid_at = ? WHERE id = ?", [at.timeIntervalSince1970, old.id]) }
+                return .success((claim, merged))
+            }
+        } catch {
+            return .failure(MemoryError(message: "could not merge the claims: \(error.localizedDescription)"))
+        }
+        switch outcome {
+        case .failure(let failure):
+            return .failure(failure)
+        case .success(let written):
+            let target = Target(id: entity, type: page.type, name: page.name, identifiers: page.identifiers,
+                                person: page.type == .person ? page.name : nil)
+            index.record(at: at, file: entity, section: target.person, action: .replaced, note: MemoryNote(text: text, date: day, source: source).line,
+                         previous: Self.joined(written.merged.map { String($0.id) }), source: source, claim: written.claim)
+            index.indexClaim(written.claim, title: Self.title(target), text: text, at: at)
+            written.merged.forEach { index.removeClaim($0.id) }
+            return .success(MemoryNote(text: text, date: day, source: source))
+        }
+    }
+
+    /// Records that two entities are linked, such as a person who works on a project. Each pair and type is kept once: when it comes up
+    /// again its count and last-seen time move.
+    @discardableResult
+    package func link(from: String, to: String, type: String, source: String) -> Bool {
+        let at = now().timeIntervalSince1970
+        do {
+            try database.write { db in
+                if let row = try db.rows("SELECT sources FROM memory_links WHERE from_entity = ? AND to_entity = ? AND type = ?",
+                                         [from, to, type]).first {
+                    let sources = Self.merged(Self.lines(row.first as? String), [source])
+                    try db.execute("UPDATE memory_links SET count = count + 1, last_seen = ?, sources = ? WHERE from_entity = ? AND to_entity = ? AND type = ?",
+                                   [at, Self.joined(sources), from, to, type])
+                } else {
+                    try db.execute("INSERT INTO memory_links(from_entity, to_entity, type, first_seen, last_seen, count, sources) VALUES(?, ?, ?, ?, ?, 1, ?)",
+                                   [from, to, type, at, at, source])
+                }
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
+
+    /// The pages a person's name could mean, when it matches more than one. Nil when it matches none or one, so nothing needs asking.
+    package func ambiguousPeople(_ name: String) -> [String]? {
+        if case .ambiguous(let ids) = EntityMatcher.match(name: name, type: .person, in: records()) { return names(ids) }
+        return nil
     }
 
     package func forget(_ query: String, scope: MemoryScope? = nil, person: String? = nil, project: ProjectKey? = nil,
