@@ -252,6 +252,22 @@ enum PreviewRenderer {
                        to: dir, name + suffix, scheme: scheme)
             }
         }
+        // Settings → Prompts: the chat context with an edit of the user's and a newer default waiting, so the update notice shows.
+        // The prompt files are in a temp folder, and the default is changed for the render only.
+        let promptFolder = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-preview-prompts-\(UUID().uuidString)")
+        let shippedDefault = PromptStore.defaultText
+        let savedFolder = PromptStore.directory
+        PromptStore.directory = promptFolder
+        if let shipped = Prompts.defaultText("chat-preamble") {
+            PromptStore.save("chat-preamble", text: shipped.replacingOccurrences(of: "Be concise", with: "Keep replies short"))
+            PromptStore.defaultText = { id in id == "chat-preamble" ? shipped.replacingOccurrences(of: "Be concise", with: "Keep replies brief, one idea each") : shippedDefault(id) }
+        }
+        for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
+            render(PromptsSettingsBody(api: PromptsAPI()).frame(width: 560, height: 1000).panel(), to: dir, "settings-prompts" + suffix, scheme: scheme)
+        }
+        PromptStore.defaultText = shippedDefault
+        PromptStore.directory = savedFolder
+        try? FileManager.default.removeItem(at: promptFolder)
         // Settings → Voice with spoken replies on, and a reply being read aloud with its Stop button showing.
         var speechOn = patterned
         speechOn.voice.enabled = true
