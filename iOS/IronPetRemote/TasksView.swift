@@ -32,6 +32,7 @@ struct TasksView: View {
                 Text("The filter goes from the Mac and the phone. Tasks are not changed.")
             }
             .navigationTitle("Tasks")
+            .navigationBarTitleDisplayMode(.inline)
             .themedScreen()
             .toolbar { modeToolbar }
             .navigationDestination(for: RemoteTask.self) { TaskDetailView(model: model, task: $0) }
@@ -75,7 +76,7 @@ struct TasksView: View {
         if mode == .board { board } else { list }
     }
 
-    /// The chips sit in the page content, below the large title. A top safe area inset would pin them to the bar and the title would scroll under them.
+    /// The chips sit in the page content, below the inline title bar. A top safe area inset would pin them to the bar.
     @ViewBuilder private var chips: some View {
         if model.filtersSupported {
             QuickFilterChips(filters: model.filters, selection: Bindable(model).selectedFilterID,

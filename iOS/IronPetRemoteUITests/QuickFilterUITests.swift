@@ -43,7 +43,7 @@ final class QuickFilterUITests: XCTestCase {
         add(shot)
     }
 
-    /// The large title sits above the chip row, and the chips do not cover the first list row.
+    /// The inline title sits above the chip row, and the chips do not cover the first list row.
     func testTheTitleIsAboveTheChipsAtRest() {
         pairAndOpenTasks()
         let all = app.buttons["quick-filter-all"]
@@ -53,9 +53,9 @@ final class QuickFilterUITests: XCTestCase {
         attach("tasks-at-rest")
         let bar = app.navigationBars["Tasks"]
         XCTAssertTrue(app.collectionViews.firstMatch.buttons["quick-filter-all"].exists,
-                      "the chips are rows of the list, not a bar pinned over it, so the large title cannot scroll under them")
+                      "the chips are rows of the list, not a bar pinned over it, so the title cannot scroll under them")
         XCTAssertLessThanOrEqual(title.frame.maxY, all.frame.minY, "the Tasks title ends above the chip row")
-        XCTAssertLessThanOrEqual(bar.frame.maxY, all.frame.minY + 1, "the chip row starts below the whole navigation bar, large title included")
+        XCTAssertLessThanOrEqual(bar.frame.maxY, all.frame.minY + 1, "the chip row starts below the whole navigation bar")
         let firstRow = app.buttons["task-t-needs"]
         XCTAssertTrue(firstRow.waitForExistence(timeout: 10))
         XCTAssertGreaterThanOrEqual(firstRow.frame.minY, all.frame.maxY, "the chips do not cover the first row")
@@ -77,8 +77,8 @@ final class QuickFilterUITests: XCTestCase {
         XCTAssertLessThanOrEqual(app.navigationBars["Tasks"].frame.maxY, all.frame.minY + 1, "the chip row starts below the whole navigation bar in Board mode")
     }
 
-    /// Scrolling collapses the large title, and the chips scroll with the content instead of covering rows.
-    func testScrollingCollapsesTheTitleAndTheChipsNeverCoverRows() {
+    /// The title is inline, so scrolling does not change the bar, and the chips scroll with the content instead of covering rows.
+    func testScrollingKeepsTheBarAndTheChipsNeverCoverRows() {
         server.tasks = (1...30).map { RemoteTask(id: "t-\($0)", title: "Task number \($0)", status: .backlog) }
         pairAndOpenTasks()
         let all = app.buttons["quick-filter-all"]
@@ -86,10 +86,10 @@ final class QuickFilterUITests: XCTestCase {
         let list = app.collectionViews.firstMatch
         XCTAssertTrue(list.waitForExistence(timeout: 10))
         let bar = app.navigationBars["Tasks"]
-        let largeHeight = bar.frame.height
+        let restHeight = bar.frame.height
         for _ in 0..<3 { list.swipeUp() }
         attach("tasks-scrolled")
-        XCTAssertLessThan(bar.frame.height, largeHeight, "the large title collapses to the inline bar")
+        XCTAssertEqual(bar.frame.height, restHeight, accuracy: 1, "the inline bar keeps its height while the list scrolls")
         let visibleRows = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'task-t-'")).allElementsBoundByIndex.filter { $0.isHittable }
         XCTAssertFalse(visibleRows.isEmpty)
         if all.exists && all.isHittable {

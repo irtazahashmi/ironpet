@@ -39,6 +39,7 @@ struct AutomationsView: View {
             }.listRowBackground(SharedTheme.card)
         }
         .navigationTitle("Automations")
+        .navigationBarTitleDisplayMode(.inline)
         .themedScreen()
         .refreshable { await model.refresh() }
         .toolbar {

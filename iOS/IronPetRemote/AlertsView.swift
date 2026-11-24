@@ -41,6 +41,7 @@ struct AlertsView: View {
             }.listRowBackground(SharedTheme.card)
         }
         .navigationTitle("Alerts")
+        .navigationBarTitleDisplayMode(.inline)
         .themedScreen()
         .refreshable { await model.refresh() }
         .toolbar {

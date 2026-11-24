@@ -22,6 +22,7 @@ struct AgentsView: View {
                 }.listRowBackground(SharedTheme.card)
             }
             .navigationTitle("Agents")
+            .navigationBarTitleDisplayMode(.inline)
             .themedScreen()
             .refreshable { await model.refresh() }
             .navigationDestination(for: String.self) { id in AgentDetailView(model: model, id: id) }

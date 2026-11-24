@@ -39,6 +39,7 @@ struct ScreenView: View {
             if model.gate.isUnlocked { unlocked } else { locked }
         }
         .navigationTitle("Screen")
+        .navigationBarTitleDisplayMode(.inline)
         .themedScreen()
         .screenPrivacy()
         .onChange(of: scenePhase) { _, phase in
