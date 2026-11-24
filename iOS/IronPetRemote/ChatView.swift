@@ -183,6 +183,7 @@ private struct Transcript: View {
             // The first screen of a chat opens at its newest message. After that, `follow` decides whether new content scrolls.
             .defaultScrollAnchor(.bottom)
             .scrollDismissesKeyboard(.interactively)
+            .hidesKeyboardOnHold()
             .softBottomEdge()
             .onGeometryChange(for: CGRect.self, of: { $0.frame(in: .global) }) { frame in
                 viewport = frame
@@ -342,6 +343,7 @@ struct MessageRow: View {
             openFilePath(path)
             return .handled
         })
+        .swipeToReply(onReply)
         .contextMenu {
             if let onReply { Button { onReply() } label: { Label("Reply", systemImage: SharedSymbols.reply) } }
             if let text = item.text, !text.isEmpty { Button { UIPasteboard.general.string = text } label: { Label("Copy", systemImage: SharedSymbols.copy) } }
