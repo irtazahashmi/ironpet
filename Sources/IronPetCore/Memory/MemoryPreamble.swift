@@ -1,10 +1,9 @@
 import Foundation
 
 /// Context prepended to the first turn of a thread: who Ghost is, what it remembers about the user, the project and the people
-/// the message names, and how to use the memory and task tools. Reading the notes creates no file.
+/// the message names, and how to use the memory and task tools. Reading the notes writes nothing.
 @MainActor
 package enum MemoryPreamble {
-    /// How much of each file reaches the prompt. Whole notes only, newest first.
     /// Bytes of each scope's notes the chat context carries: `memory.recallBytesMe`, `memory.recallBytesProject` and `memory.recallBytesPeople`.
     package static var budget: [MemoryScope: Int] {
         let memory = ConfigStore.shared.config.memory
@@ -24,20 +23,17 @@ package enum MemoryPreamble {
         let project = MemoryMCP.project(workspace)
         func block(_ scope: MemoryScope, about: String? = nil) -> String {
             let label = store.location(scope, project: project) ?? scope.rawValue
-            let path = store.editableFolder.map { " path=\"\($0.appendingPathComponent(label).path)\"" } ?? ""
             let subject = about.map { " about=\"\($0)\"" } ?? ""
             let notes = store.recall(scope, project: project, bytes: budget[scope]!, naming: firstMessage)
-            return "<memory file=\"\(label)\"\(path)\(subject)>\n\(notes.isEmpty ? "(none yet)" : notes)\n</memory>"
+            return "<memory page=\"\(label)\"\(subject)>\n\(notes.isEmpty ? "(none yet)" : notes)\n</memory>"
         }
         var blocks = [block(.me)]
         if let project {
             blocks.append(block(.project, about: project.isRepo ? "the \(project.name) repo (\(project.key))" : "the \(project.name) folder"))
         }
         blocks.append(block(.people))
-        let files = store.editableFolder.map { " They are plain files in \($0.path), which you may also edit directly, though only memory_remember and memory_forget keep the earlier version." } ?? ""
         return Prompts.render(id: "chat-preamble", [
             "name": name,
-            "files": files,
             "blocks": blocks.joined(separator: "\n"),
             "memory": memoryInstructions,
             "tasks": keepsTasks ? "\n" + taskInstructions + "\n" : "",

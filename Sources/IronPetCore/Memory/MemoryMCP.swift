@@ -1,7 +1,8 @@
 import Foundation
 
-/// The `memory_*` MCP tools: save and forget notes, and search what Ghost has seen. ironpet writes the files itself, adds the date and
-/// the source, and refuses notes with secrets. Search reads the local index and, when screen capture has data, the stored captures.
+/// The `memory_*` MCP tools: save and forget notes, read an entity's page and links, and search what Ghost has seen. ironpet writes the
+/// claims itself, adds the date and the source, and refuses notes with secrets. Search reads the local index and, when screen capture
+/// has data, the stored captures.
 @MainActor
 package enum MemoryMCP {
     package static let guide = """
@@ -26,29 +27,41 @@ package enum MemoryMCP {
                              "required": ["text", "scope"]]],
             ["name": "memory_forget",
              "description": "Remove the notes that contain every word of query, when the user asks you to forget something. Removed notes are kept in "
-                + "the memory folder's history, so the user can undo it in Settings; memory_search does not return them unless asked for kind history. "
+                + "the page's history, so the user can undo it in Settings. "
                 + "Refuses when nothing matches or more than \(MemoryNote.maxForget) notes do. Tell the user what you removed.\n\n" + guide,
              "inputSchema": ["type": "object",
                              "properties": ["query": ["type": "string", "minLength": 1, "description": "Words in the note, such as \"pnpm\""],
                                             "scope": scope, "person": text("Only this person's notes"),
                                             "project": text("The project folder. Defaults to the chat's folder")],
                              "required": ["query"]]],
+            ["name": "memory_page",
+             "description": "Read one entity's page: the dated facts on it, each with where it came from, and its links to other entities. The name "
+                + "can be a person, a project, a tool or the user's own page (me). Use it when the user asks what is known about someone or something, "
+                + "or before you answer a question about a person or project.\n\n" + guide,
+             "inputSchema": ["type": "object",
+                             "properties": ["name": ["type": "string", "minLength": 1, "description": "The name, an alias or a repo, such as \"Ana\" or \"ironpet\""]],
+                             "required": ["name"]]],
+            ["name": "memory_links",
+             "description": "List how an entity is linked to others, such as works_on, part_of, owns or uses, in either direction, with how often it came up.\n\n" + guide,
+             "inputSchema": ["type": "object",
+                             "properties": ["name": ["type": "string", "minLength": 1, "description": "The entity's name or alias"],
+                                            "type": text("Only links of this type, such as works_on")],
+                             "required": ["name"]]],
             ["name": "memory_search",
              "description": "Search past chats with Ghost (the user's and Ghost's messages), meeting summaries and transcripts, saved notes and, "
-                + "when screen capture is on, the user's screen captures. Earlier versions of the note files, including forgotten notes, only come "
-                + "back with kind history. Every word of query must appear. Use it when the user "
+                + "when screen capture is on, the user's screen captures. Every word of query must appear. Use it when the user "
                 + "refers to something from before (\"what did we decide about…\", \"last week you said…\"). Returns hits with an id, time, title and "
                 + "snippet, best match first; read one with memory_get.\n\n" + guide,
              "inputSchema": ["type": "object",
                              "properties": ["query": ["type": "string", "minLength": 1, "description": "Words to find"],
-                                            "kinds": ["type": "array", "items": ["type": "string", "enum": ["chat", "meeting", "note", "history", "screen"]],
+                                            "kinds": ["type": "array", "items": ["type": "string", "enum": ["chat", "meeting", "note", "screen"]],
                                                       "description": "Only these kinds. Default chat, meeting, note and screen"],
                                             "since": text("Only hits at or after this time"), "until": text("Only hits before this time"),
                                             "limit": ["type": "integer", "minimum": 1, "maximum": 30, "description": "Default 10"]],
                              "required": ["query"]]],
             ["name": "memory_get",
              "description": "Read one hit from memory_search by its id: the messages around a chat hit, a meeting's summary or part of its "
-                + "transcript, a note with the earlier versions of its file, or a screen capture.\n\n" + guide,
+                + "transcript, a note, or a screen capture.\n\n" + guide,
              "inputSchema": ["type": "object",
                              "properties": ["id": ["type": "string", "minLength": 1, "description": "An id from memory_search"],
                                             "around": ["type": "integer", "minimum": 0, "maximum": 20, "description": "Messages before and after a chat hit. Default 4"]],
@@ -56,7 +69,7 @@ package enum MemoryMCP {
         ]
     }
 
-    package nonisolated static let names: Set<String> = ["memory_remember", "memory_forget", "memory_search", "memory_get"]
+    package nonisolated static let names: Set<String> = ["memory_remember", "memory_forget", "memory_page", "memory_links", "memory_search", "memory_get"]
 
     package struct Failure: Error { let message: String }
 
@@ -127,7 +140,7 @@ package enum MemoryMCP {
             case .success(let scope?):
                 switch services.store.remember(note, scope: scope, person: text("person"), project: project, source: source) {
                 case .success(let saved):
-                    return .success(["saved": saved.text, "file": services.store.location(scope, project: project) ?? ""])
+                    return .success(["saved": saved.text, "page": services.store.location(scope, project: project) ?? ""])
                 case .failure(let failure): return .failure(Failure(message: failure.message))
                 }
             }
@@ -139,9 +152,21 @@ package enum MemoryMCP {
             case .success(let scope):
                 switch services.store.forget(query, scope: scope, person: text("person"), project: project, source: source) {
                 case .success(let removed):
-                    return .success(["removed": removed.map { ["note": $0.note.text, "file": $0.file, "person": $0.section ?? NSNull()] as [String: Any] }])
+                    return .success(["removed": removed.map { ["note": $0.note.text, "page": $0.page, "person": $0.section ?? NSNull()] as [String: Any] }])
                 case .failure(let failure): return .failure(Failure(message: failure.message))
                 }
+            }
+        case "memory_page":
+            guard let name = text("name") else { return .failure(Failure(message: "name is required")) }
+            switch services.store.page(name) {
+            case .success(let page): return .success(pageJSON(page))
+            case .failure(let failure): return .failure(Failure(message: failure.message))
+            }
+        case "memory_links":
+            guard let name = text("name") else { return .failure(Failure(message: "name is required")) }
+            switch services.store.links(name, type: text("type")) {
+            case .success(let links): return .success(["links": links.map(linkJSON)])
+            case .failure(let failure): return .failure(Failure(message: failure.message))
             }
         case "memory_search":
             guard let query = text("query") else { return .failure(Failure(message: "query is required")) }
@@ -151,7 +176,7 @@ package enum MemoryMCP {
             case (.success(let a), .success(let b)): (since, until) = (a, b)
             }
             let wanted = Set((args["kinds"] as? [String] ?? []).map { $0.lowercased() })
-            let unknown = wanted.subtracting(["chat", "meeting", "note", "history", "screen"])
+            let unknown = wanted.subtracting(["chat", "meeting", "note", "screen"])
             guard unknown.isEmpty else { return .failure(Failure(message: "unknown kinds: \(unknown.sorted().joined(separator: ", "))")) }
             let limit = min(30, max(1, (args["limit"] as? Int) ?? 10))
             return .success(search(query, kinds: wanted, since: since, until: until, limit: limit, services: services, calendar: calendar))
@@ -178,8 +203,6 @@ package enum MemoryMCP {
         if wanted.isEmpty || wanted.contains("chat") { kinds.insert(.chat) }
         if wanted.isEmpty || wanted.contains("meeting") { kinds.insert(.meeting) }
         if wanted.isEmpty || wanted.contains("note") { kinds.insert(.note) }
-        // Earlier versions hold forgotten notes, so they come back only when asked for.
-        if wanted.contains("history") { kinds.insert(.history) }
         var hits: [[String: Any]] = []
         if !kinds.isEmpty, let index = services.index {
             hits = index.search(query, kinds: kinds, since: since, until: until, limit: limit).map { hit in
@@ -215,20 +238,34 @@ package enum MemoryMCP {
             return .success(["thread": thread.title, "workspace": thread.workspace, "messages": window.map { message in
                 ["role": roles[message.id] ?? "assistant", "time": format(message.at, calendar), "text": message.text, "hit": message.id == parts[1]] as [String: Any]
             }])
-        case "meeting", "history":
-            guard let kind = MemoryIndex.Kind(rawValue: kind), let document = services.index?.document(kind, ref) else { return .failure(missing) }
+        case "meeting":
+            guard let document = services.index?.document(.meeting, ref) else { return .failure(missing) }
             return .success(["title": document.title, "time": format(document.at, calendar), "text": document.text])
         case "note":
             guard let document = services.index?.document(.note, ref) else { return .failure(missing) }
-            let file = String(ref.split(separator: "|").first ?? "")
-            let history = services.index?.history(of: file).map { ["id": "history:\($0.ref)", "time": format($0.at, calendar)] } ?? []
-            return .success(["note": document.text, "title": document.title, "file": file, "earlier_versions": history])
+            return .success(["note": document.text, "title": document.title, "time": format(document.at, calendar)])
         case "screen":
             guard let captureID = Int64(ref), let capture = services.screen?.capture(id: captureID) else { return .failure(missing) }
             return .success(["time": format(capture.at, calendar), "app": capture.appName, "window": capture.window, "text": capture.text])
         default:
             return .failure(Failure(message: "not an id from memory_search: \(id)"))
         }
+    }
+
+    private static func pageJSON(_ page: EntityPage) -> [String: Any] {
+        [
+            "entity": page.entity.name, "id": page.entity.id, "type": page.entity.type.rawValue,
+            "aliases": page.entity.aliases,
+            "claims": page.claims.map { claim in
+                ["id": "note:\(MemoryIndex.claimRef(claim.id))", "text": claim.text, "date": claim.date,
+                 "sources": claim.sources, "pinned": claim.pinned] as [String: Any]
+            },
+            "links": page.links.map(linkJSON),
+        ]
+    }
+
+    private static func linkJSON(_ link: MemoryLink) -> [String: Any] {
+        ["type": link.type, "from": link.from, "to": link.to, "count": link.count, "sources": link.sources]
     }
 
     private static func format(_ date: Date, _ calendar: Calendar) -> String {

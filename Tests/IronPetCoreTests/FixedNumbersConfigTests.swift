@@ -8,9 +8,6 @@ final class FixedNumbersConfigTests: XCTestCase {
         XCTAssertEqual(config.memory.recallBytesMe, 4_000)
         XCTAssertEqual(config.memory.recallBytesProject, 6_000)
         XCTAssertEqual(config.memory.recallBytesPeople, 2_000)
-        XCTAssertEqual(config.memory.sizeLimitMe, 8_000)
-        XCTAssertEqual(config.memory.sizeLimitProject, 12_000)
-        XCTAssertEqual(config.memory.sizeLimitPeople, 8_000)
         XCTAssertEqual(config.memory.catchUpDays, 7)
         XCTAssertEqual(config.memory.catchUpThreads, 5)
         XCTAssertEqual(config.memory.noteMaxLength, 240)
@@ -27,8 +24,6 @@ final class FixedNumbersConfigTests: XCTestCase {
         var config = Config()
         config.memory.recallBytesMe = 1
         config.memory.recallBytesProject = 10_000_000
-        config.memory.sizeLimitMe = 0
-        config.memory.sizeLimitPeople = 10_000_000
         config.memory.catchUpDays = 0
         config.memory.catchUpThreads = 0
         config.memory.noteMaxLength = 10_000
@@ -41,8 +36,6 @@ final class FixedNumbersConfigTests: XCTestCase {
         let clean = config.sanitized()
         XCTAssertEqual(clean.memory.recallBytesMe, Config.Memory.recallBytesRange.lowerBound)
         XCTAssertEqual(clean.memory.recallBytesProject, Config.Memory.recallBytesRange.upperBound)
-        XCTAssertEqual(clean.memory.sizeLimitMe, Config.Memory.sizeLimitRange.lowerBound)
-        XCTAssertEqual(clean.memory.sizeLimitPeople, Config.Memory.sizeLimitRange.upperBound)
         XCTAssertEqual(clean.memory.catchUpDays, Config.Memory.catchUpDaysRange.lowerBound)
         XCTAssertEqual(clean.memory.catchUpThreads, Config.Memory.catchUpThreadsRange.lowerBound)
         XCTAssertEqual(clean.memory.noteMaxLength, Config.Memory.noteMaxLengthRange.upperBound)
@@ -68,13 +61,11 @@ final class FixedNumbersConfigTests: XCTestCase {
         defer { ConfigStore.shared.usePreview(saved) }
         var config = saved
         config.memory.recallBytesMe = 1_000
-        config.memory.sizeLimitProject = 20_000
         config.automations.ownRunLimit = 7
         config.automations.keptThreads = 9
         config.jobs.retentionDays = 3
         ConfigStore.shared.usePreview(config)
         XCTAssertEqual(MemoryPreamble.budget[.me], 1_000)
-        XCTAssertEqual(FileMemoryStore.sizeLimit[.project], 20_000)
         XCTAssertEqual(AutomationSession.ownRunLimit, 7)
         XCTAssertEqual(AutomationSession.keptThreads, 9)
         XCTAssertEqual(JobService.retention, 3 * 86_400)

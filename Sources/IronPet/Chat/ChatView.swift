@@ -173,8 +173,8 @@ struct ChatView: View {
                 .pointerCursor()
                 historyMenu
                 Button {
-                    try? FileManager.default.createDirectory(at: FileMemoryStore.directory, withIntermediateDirectories: true)
-                    NSWorkspace.shared.open(FileMemoryStore.directory)
+                    // Notes live in the database now; the folder holds a fresh Markdown copy of each page.
+                    if case .success(let folder)? = MemoryAPI.live?.exportMarkdown() { NSWorkspace.shared.open(folder) }
                     showSettings = false
                 } label: { Label("Memory folder", systemImage: "brain") }
                 .pointerCursor()

@@ -324,7 +324,6 @@ package final class MemoryReflector {
                 outcome.error = "the agent did not answer with the notes JSON"
                 return outcome
             }
-            var touched: Set<MemoryScope> = []
             // Like forget, one pass may replace at most `maxForget` notes in all, so a misled pass cannot empty a file.
             var replaced = 0
             for proposal in proposals.prefix(Self.maxNotes) {
@@ -341,19 +340,11 @@ package final class MemoryReflector {
                                      project: input.project, source: input.source) {
                 case .success(let note):
                     outcome.saved.append(note.text)
-                    touched.insert(proposal.scope)
                 case .failure(let failure):
                     outcome.dropped.append("\(proposal.text) (\(failure.message))")
                 }
             }
             if let cursor = input.cursor { index.setCursor(cursor.key, item: cursor.item, at: now()) }
-            // Tidying rewrites whole files, so only the file store has it.
-            if config.tidy, !input.outside, let files = store as? FileMemoryStore {
-                for scope in touched {
-                    guard let url = files.file(scope, project: input.project), let limit = FileMemoryStore.sizeLimit[scope] else { continue }
-                    await MemoryTidier.tidy(url, limit: limit, store: files, reader: reader, runner: runner)
-                }
-            }
             return outcome
         }
     }

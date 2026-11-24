@@ -26,7 +26,6 @@ package enum Prompts {
         PromptInfo(id: "job-instructions", title: "Jobs: what the background agent is told", placeholders: ["id", "title", "folder"], required: []),
         PromptInfo(id: "memory-reflection", title: "Memory: learning from a chat",
                    placeholders: ["pet", "kind", "scopes", "notes", "rule", "input", "maxLength", "maxNotes"], required: []),
-        PromptInfo(id: "memory-tidier", title: "Memory: tidying a big file", placeholders: ["limit", "file"], required: []),
         PromptInfo(id: "session-handoff", title: "Chat: handoff to a new session", placeholders: [], required: []),
         PromptInfo(id: "automation-new", title: "Automations: asking the chat agent to create one", placeholders: ["request", "cli"], required: ["request"]),
         PromptInfo(id: "automation-fix", title: "Automations: asking the chat agent to fix a failed one", placeholders: ["name", "id", "trigger", "error", "cli"], required: ["error"]),

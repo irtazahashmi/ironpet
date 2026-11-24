@@ -4,7 +4,7 @@ import XCTest
 @MainActor
 final class MemoryReflectorTests: XCTestCase {
     private var dir: URL!
-    private var store: FileMemoryStore!
+    private var store: EntityMemoryStore!
     private var index: MemoryIndex!
     private var reflector: MemoryReflector!
     private var threads: [String: ChatThread] = [:]
@@ -22,7 +22,7 @@ final class MemoryReflectorTests: XCTestCase {
         workspace = dir.appendingPathComponent("app")
         try FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
         index = MemoryIndex(database: try Database(path: nil, migrations: AppMigrations.all))
-        store = FileMemoryStore(directory: dir.appendingPathComponent("memory"), index: index)
+        store = EntityMemoryStore(database: index.database, index: index)
         store.now = { [unowned self] in clock }
         reflector = MemoryReflector(store: store, index: index) { [unowned self] prompt, reader in
             prompts.append(prompt)
@@ -48,6 +48,10 @@ final class MemoryReflectorTests: XCTestCase {
         return thread
     }
 
+    private func peopleClaims() -> Int {
+        store.entities().filter { $0.type == .person }.reduce(0) { $0 + store.claims(of: $1.id).count }
+    }
+
     private func notes(_ json: String) -> Result<String, MemoryReflector.RunError> { .success(json) }
 
     private func waitIdle() async {
@@ -68,8 +72,8 @@ final class MemoryReflectorTests: XCTestCase {
         XCTAssertEqual(prompts.count, 1)
         XCTAssertTrue(prompts[0].contains("User: I always use pnpm, never npm"))
         XCTAssertTrue(prompts[0].contains("Ghost: Noted."))
-        XCTAssertEqual(store.document(store.aboutMe)?.notes.map(\.text), ["Prefers pnpm over npm."])
-        XCTAssertEqual(store.document(store.aboutMe)?.notes.first?.source, "chat:t1")
+        XCTAssertEqual(store.claims(of: "me").map(\.text), ["Prefers pnpm over npm."])
+        XCTAssertEqual(store.claims(of: "me").first?.sources.last, "chat:t1")
         XCTAssertEqual(reflector.lastOutcome?.saved, ["Prefers pnpm over npm."])
     }
 
@@ -135,9 +139,9 @@ final class MemoryReflectorTests: XCTestCase {
         await waitIdle()
         XCTAssertFalse(prompts[0].contains("\"me\" for"), "the prompt does not offer me.md")
         XCTAssertTrue(prompts[0].contains("never use scope \"me\""))
-        XCTAssertNil(store.document(store.aboutMe))
-        XCTAssertEqual(store.document(store.people)?.entries.map(\.section), ["Ana"])
-        XCTAssertEqual(store.document(store.people)?.notes.first?.source, "meeting:2026-11-18-1000")
+        XCTAssertTrue(store.claims(of: "me").isEmpty)
+        XCTAssertEqual(store.entities().filter { $0.type == .person }.map(\.name), ["Ana"])
+        XCTAssertEqual(store.claims(of: EntityMatcher.personID("Ana")).first?.sources.last, "meeting:2026-11-18-1000")
         XCTAssertEqual(reflector.lastOutcome?.dropped.count, 2)
         reflector.meetingSummaryWritten(folder, agent: "claude")
         await waitIdle()
@@ -163,8 +167,8 @@ final class MemoryReflectorTests: XCTestCase {
         reflector.automationFinished(id: "prs", name: "PR watcher", answer: "Bo reviewed PR 12, as he does on Mondays.", agent: "claude")
         await waitIdle()
         XCTAssertTrue(prompts[0].contains("the automation \"PR watcher\""))
-        XCTAssertNil(store.document(store.aboutMe))
-        XCTAssertEqual(store.document(store.people)?.notes.first?.source, "automation:prs")
+        XCTAssertTrue(store.claims(of: "me").isEmpty)
+        XCTAssertEqual(store.claims(of: EntityMatcher.personID("Bo")).first?.sources.last, "automation:prs")
     }
 
     func testEachTextIsReadByTheAgentThatAlreadyHadIt() async throws {
@@ -209,33 +213,19 @@ final class MemoryReflectorTests: XCTestCase {
         XCTAssertFalse(prompts[0].contains("I use zsh"), "what was skipped stays unread")
     }
 
-    func testAFailedTidyIsNotRetriedUntilTheFileChanges() async throws {
-        config.tidy = true
-        for n in 0..<200 { _ = try store.remember("Note \(n) that repeats itself a little", scope: .me, source: "chat:old").get() }
-        chat("t1", [.init(kind: .user("I like tea"))])
-        answers = [notes(#"{"notes":[{"scope":"me","text":"Likes tea"}]}"#), notes("no")]
-        reflector.left(thread: "t1")
-        await waitIdle()
-        XCTAssertEqual(prompts.count, 2, "one reflection and one tidy")
-        let url = store.aboutMe
-        let skipped = await MemoryTidier.tidy(url, limit: 8_000, store: store, reader: .init(agent: "claude", model: "haiku"), runner: { _, _ in .success("{}") })
-        XCTAssertFalse(skipped)
-        XCTAssertEqual(prompts.count, 2, "the same file is not sent again")
-    }
-
     func testOutsideTextCannotReplaceNotesAndNoProposalReplacesMoreThanFive() async throws {
         for name in ["a", "b", "c", "d", "e", "f"] { _ = try store.remember("Ana fact \(name)", scope: .people, person: "Ana", source: "chat:x").get() }
         answers = [notes(#"{"notes":[{"scope":"people","person":"Ana","text":"Ana left","replaces":["Ana fact a"]}]}"#)]
         reflector.automationFinished(id: "mail", name: "Mail", answer: "Ana left the company", agent: "claude")
         await waitIdle()
-        XCTAssertEqual(store.document(store.people)?.notes.count, 6)
+        XCTAssertEqual(peopleClaims(), 6)
         XCTAssertTrue(reflector.lastOutcome?.dropped.first?.contains("may not replace") == true)
         chat("t1", [.init(kind: .user("Ana changed teams"))])
         let all = ["a", "b", "c", "d", "e", "f"].map { "\"Ana fact \($0)\"" }.joined(separator: ",")
         answers = [notes(#"{"notes":[{"scope":"people","person":"Ana","text":"Ana is on growth","replaces":["# + all + "]}]}")]
         reflector.left(thread: "t1")
         await waitIdle()
-        XCTAssertEqual(store.document(store.people)?.notes.count, 6, "a proposal may not wipe a section")
+        XCTAssertEqual(peopleClaims(), 6, "a proposal may not wipe a section")
     }
 
     func testAutomationQuietRepliesAndRepeatsAreNotRead() async {
@@ -267,8 +257,8 @@ final class MemoryReflectorTests: XCTestCase {
         answers = [notes(#"{"notes":[{"scope":"me","text":"Uses pnpm","replaces":["Uses npm"]},"# + many + "]}")]
         reflector.left(thread: "t1")
         await waitIdle()
-        XCTAssertEqual(store.document(store.aboutMe)?.notes.map(\.text), ["Uses pnpm"])
-        XCTAssertEqual(store.document(store.projectFile(ProjectKey.of(workspace)))?.notes.count, MemoryReflector.maxNotes - 1)
+        XCTAssertEqual(store.claims(of: "me").map(\.text), ["Uses pnpm"])
+        XCTAssertEqual(store.claims(of: "project:" + ProjectKey.of(workspace).key).count, MemoryReflector.maxNotes - 1)
     }
 
     func testOnePassReplacesAtMostFiveNotesInAll() async throws {
@@ -279,7 +269,7 @@ final class MemoryReflectorTests: XCTestCase {
             + #"{"scope":"me","text":"New C","replaces":["Old fact 6","Old fact 7"]}]}"#)]
         reflector.left(thread: "t1")
         await waitIdle()
-        let texts = store.document(store.aboutMe)?.notes.map(\.text) ?? []
+        let texts = store.claims(of: "me").map(\.text)
         XCTAssertTrue(texts.contains("New A"))
         XCTAssertFalse(texts.contains("New B"), "3 + 3 would pass 5")
         XCTAssertTrue(texts.contains("New C"), "3 + 2 fits")
@@ -316,51 +306,6 @@ final class MemoryReflectorTests: XCTestCase {
         await waitIdle()
         XCTAssertEqual(prompts.count, 1, "a second seed changes nothing")
         XCTAssertFalse(prompts[0].contains("I use tabs"))
-    }
-
-    func testAFileOverItsLimitIsLeftAloneWhileTidyingIsOff() async throws {
-        for n in 0..<200 { _ = try store.remember("Note \(n) that repeats itself a little", scope: .me, source: "chat:old").get() }
-        chat("t1", [.init(kind: .user("I like tea"))])
-        answers = [notes(#"{"notes":[{"scope":"me","text":"Likes tea"}]}"#)]
-        reflector.left(thread: "t1")
-        await waitIdle()
-        XCTAssertEqual(prompts.count, 1, "no tidy pass, which would send the whole file")
-        XCTAssertFalse(prompts[0].contains("Note 0 that"), "the reflection prompt holds only the preamble's share of the notes")
-    }
-
-    func testAFileOverItsLimitIsTidiedWhenTheResultChecksOut() async throws {
-        config.tidy = true
-        for n in 0..<200 { _ = try store.remember("Note \(n) that repeats itself a little", scope: .me, source: "chat:old").get() }
-        let before = store.text(store.aboutMe)
-        let kept = MemoryDocument(before).notes.prefix(70).map(\.line).joined(separator: "\n")
-        chat("t1", [.init(kind: .user("I like tea"))])
-        let tidied = try JSONSerialization.data(withJSONObject: ["file": "# About me\n\n" + kept + "\n"])
-        answers = [notes(#"{"notes":[{"scope":"me","text":"Likes tea"}]}"#), notes(String(decoding: tidied, as: UTF8.self))]
-        reflector.left(thread: "t1")
-        await waitIdle()
-        XCTAssertEqual(prompts.count, 2)
-        XCTAssertTrue(prompts[1].contains("over its size limit"))
-        XCTAssertEqual(store.document(store.aboutMe)?.notes.count, 70)
-        let change = try XCTUnwrap(store.recentChanges().first)
-        XCTAssertEqual(change.action, .tidied)
-        try store.undo(change).get()
-        XCTAssertGreaterThan(store.document(store.aboutMe)?.notes.count ?? 0, 200, "undo goes back to the version before the tidy")
-    }
-
-    func testTidyRejectsAnswersThatAddOrChangeNotes() async {
-        let original = "# About me\n\n- One <!-- 2026-11-01 chat:a -->\n- Two <!-- 2026-11-02 chat:b -->\n- Hand written\n"
-        func answer(_ file: String) -> String { String(decoding: try! JSONSerialization.data(withJSONObject: ["file": file]), as: UTF8.self) }
-        XCTAssertEqual(try MemoryTidier.validate(original: original, answer: answer("# About me\n\n- One and two <!-- 2026-11-02 chat:b -->\n- Hand written\n")).get(),
-                       "# About me\n\n- One and two <!-- 2026-11-02 chat:b -->\n- Hand written\n")
-        XCTAssertEqual(MemoryTidier.validate(original: original, answer: answer("# About me\n\n- New <!-- 2026-11-18 chat:z -->\n")),
-                       .failure(.unknownTrailer("- New <!-- 2026-11-18 chat:z -->")))
-        XCTAssertEqual(MemoryTidier.validate(original: original, answer: answer("# Me\n\n- One <!-- 2026-11-01 chat:a -->\n")), .failure(.headingsChanged))
-        XCTAssertEqual(MemoryTidier.validate(original: original, answer: answer("# About me\n\n- Invented by hand\n")), .failure(.unknownLine("- Invented by hand")))
-        XCTAssertEqual(MemoryTidier.validate(original: original, answer: answer(original + "- Two <!-- 2026-11-02 chat:b -->\n")), .failure(.notSmaller))
-        XCTAssertEqual(MemoryTidier.validate(original: original, answer: "sure, here you go"), .failure(.notJSON))
-        let many = "# About me\n\n" + (0..<9).map { "- Note \($0) <!-- 2026-11-0\($0 + 1) chat:a -->" }.joined(separator: "\n") + "\n"
-        XCTAssertEqual(MemoryTidier.validate(original: many, answer: answer("# About me\n\n- Note 8 <!-- 2026-11-09 chat:a -->\n")), .failure(.tooFew),
-                       "a tidy may not drop most of the notes")
     }
 
     func testWithReflectionOffNothingIsScheduledOrRun() async {
@@ -412,7 +357,7 @@ final class MemoryReflectorTests: XCTestCase {
         await waitIdle()
         XCTAssertTrue(reflector.due.isEmpty)
         XCTAssertEqual(prompts.count, 1, "the queued thread never ran")
-        XCTAssertNil(store.document(store.aboutMe), "the run in flight saved nothing")
+        XCTAssertTrue(store.claims(of: "me").isEmpty, "the run in flight saved nothing")
     }
 
     func testReflectNowWaitsForItsOutcome() async {

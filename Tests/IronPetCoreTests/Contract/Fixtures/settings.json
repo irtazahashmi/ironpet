@@ -79,11 +79,7 @@
             "reflect" : true,
             "reflectMaxInputChars" : 24000,
             "reflectMaxNotes" : 8,
-            "reflectTimeoutSeconds" : 180,
-            "sizeLimitMe" : 8000,
-            "sizeLimitPeople" : 8000,
-            "sizeLimitProject" : 12000,
-            "tidy" : false
+            "reflectTimeoutSeconds" : 180
           },
           "openIn" : "auto",
           "pet" : {
@@ -257,11 +253,7 @@
             "reflect" : true,
             "reflectMaxInputChars" : 24000,
             "reflectMaxNotes" : 8,
-            "reflectTimeoutSeconds" : 180,
-            "sizeLimitMe" : 8000,
-            "sizeLimitPeople" : 8000,
-            "sizeLimitProject" : 12000,
-            "tidy" : false
+            "reflectTimeoutSeconds" : 180
           },
           "openIn" : "auto",
           "pet" : {
@@ -432,11 +424,7 @@
             "reflect" : true,
             "reflectMaxInputChars" : 24000,
             "reflectMaxNotes" : 8,
-            "reflectTimeoutSeconds" : 180,
-            "sizeLimitMe" : 8000,
-            "sizeLimitPeople" : 8000,
-            "sizeLimitProject" : 12000,
-            "tidy" : false
+            "reflectTimeoutSeconds" : 180
           },
           "openIn" : "auto",
           "pet" : {

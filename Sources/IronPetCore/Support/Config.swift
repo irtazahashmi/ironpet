@@ -562,7 +562,7 @@ package struct Config: Codable, Equatable {
         package static let pasteLinesRange = 10...2_000
     }
 
-    /// Ghost's memory: notes in `~/.ironpet/memory/`. After a chat goes quiet, a background pass sends the new messages to the agent
+    /// Ghost's memory: entity pages in `ironpet.db`. After a chat goes quiet, a background pass sends the new messages to the agent
     /// that already had them, which only answers, and ironpet saves the lasting facts it names as notes. On by default: nothing
     /// reaches a provider that did not have it, but each pass spends quota, so it has its own switch and Usage feature.
     package struct Memory: Codable, Equatable {
@@ -571,16 +571,12 @@ package struct Config: Codable, Equatable {
             reflectAgent: String? = nil,
             reflectModel: String? = nil,
             quietMinutes: Int = Memory.defaultQuietMinutes,
-            tidy: Bool = false,
             reflectMaxNotes: Int = Memory.defaultReflectMaxNotes,
             reflectMaxInputChars: Int = Memory.defaultReflectMaxInputChars,
             reflectTimeoutSeconds: Int = Memory.defaultReflectTimeoutSeconds,
             recallBytesMe: Int = 4_000,
             recallBytesProject: Int = 6_000,
             recallBytesPeople: Int = 2_000,
-            sizeLimitMe: Int = 8_000,
-            sizeLimitProject: Int = 12_000,
-            sizeLimitPeople: Int = 8_000,
             catchUpDays: Int = 7,
             catchUpThreads: Int = 5,
             noteMaxLength: Int = 240
@@ -589,16 +585,12 @@ package struct Config: Codable, Equatable {
             self.reflectAgent = reflectAgent
             self.reflectModel = reflectModel
             self.quietMinutes = quietMinutes
-            self.tidy = tidy
             self.reflectMaxNotes = reflectMaxNotes
             self.reflectMaxInputChars = reflectMaxInputChars
             self.reflectTimeoutSeconds = reflectTimeoutSeconds
             self.recallBytesMe = recallBytesMe
             self.recallBytesProject = recallBytesProject
             self.recallBytesPeople = recallBytesPeople
-            self.sizeLimitMe = sizeLimitMe
-            self.sizeLimitProject = sizeLimitProject
-            self.sizeLimitPeople = sizeLimitPeople
             self.catchUpDays = catchUpDays
             self.catchUpThreads = catchUpThreads
             self.noteMaxLength = noteMaxLength
@@ -613,9 +605,6 @@ package struct Config: Codable, Equatable {
         package var reflectModel: String?
         /// A chat is reflected on this long after its last turn, or at once when the user moves on.
         package var quietMinutes = Memory.defaultQuietMinutes
-        /// Send a file that grew past its size limit to the reflection agent to merge and shorten. Off by default: the whole file
-        /// goes, including notes from chats with other agents and lines the user wrote, which that agent has not seen.
-        package var tidy = false
         /// Most notes one learning pass may save from a chat, meeting or automation answer.
         package var reflectMaxNotes = Memory.defaultReflectMaxNotes
         /// Characters of a chat, meeting summary or automation answer that a learning pass reads. The newest part is kept.
@@ -626,10 +615,6 @@ package struct Config: Codable, Equatable {
         package var recallBytesMe = 4_000
         package var recallBytesProject = 6_000
         package var recallBytesPeople = 2_000
-        /// A memory file that grows past this many bytes is shortened by the tidier, when `tidy` is on.
-        package var sizeLimitMe = 8_000
-        package var sizeLimitProject = 12_000
-        package var sizeLimitPeople = 8_000
         /// On launch, chats updated this many days back that were not reflected yet are read, at most `catchUpThreads` of them.
         package var catchUpDays = 7
         package var catchUpThreads = 5
@@ -643,7 +628,6 @@ package struct Config: Codable, Equatable {
         package static let reflectMaxInputCharsRange = 2_000...200_000
         package static let reflectTimeoutSecondsRange = 30...1_800
         package static let recallBytesRange = 500...50_000
-        package static let sizeLimitRange = 1_000...200_000
         package static let catchUpDaysRange = 1...90
         package static let catchUpThreadsRange = 1...50
         package static let noteMaxLengthRange = 40...2_000
@@ -774,9 +758,6 @@ package struct Config: Codable, Equatable {
         c.memory.recallBytesMe = clamp(c.memory.recallBytesMe, Memory.recallBytesRange)
         c.memory.recallBytesProject = clamp(c.memory.recallBytesProject, Memory.recallBytesRange)
         c.memory.recallBytesPeople = clamp(c.memory.recallBytesPeople, Memory.recallBytesRange)
-        c.memory.sizeLimitMe = clamp(c.memory.sizeLimitMe, Memory.sizeLimitRange)
-        c.memory.sizeLimitProject = clamp(c.memory.sizeLimitProject, Memory.sizeLimitRange)
-        c.memory.sizeLimitPeople = clamp(c.memory.sizeLimitPeople, Memory.sizeLimitRange)
         c.memory.catchUpDays = clamp(c.memory.catchUpDays, Memory.catchUpDaysRange)
         c.memory.catchUpThreads = clamp(c.memory.catchUpThreads, Memory.catchUpThreadsRange)
         c.memory.noteMaxLength = clamp(c.memory.noteMaxLength, Memory.noteMaxLengthRange)

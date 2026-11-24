@@ -21,7 +21,7 @@ final class AgentModeRoutingTests: XCTestCase {
         chat.receiveModes(current: "auto", modes: [AgentMode(id: "auto", name: "Auto")])
         for call in [shell("rm -rf .build"), shell("ls"), ACPToolCall(id: "r", title: "Read", kind: "read", rawInput: ["path": "a"]),
                      ACPToolCall(id: "m", title: "mcp__sentry__search_issues", kind: "other"),
-                     ACPToolCall(id: "n", title: "Edit note", kind: "edit", rawInput: ["file_path": FileMemoryStore.directory.appendingPathComponent("a.md").path])] {
+                     ACPToolCall(id: "n", title: "Edit note", kind: "edit", rawInput: ["file_path": LegacyMemoryFiles.directory.appendingPathComponent("a.md").path])] {
             XCTAssertNil(decide(chat, call), call.title)
         }
         XCTAssertEqual(chat.approvals.count, 5)

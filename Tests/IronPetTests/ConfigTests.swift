@@ -168,7 +168,6 @@ final class ConfigTests: XCTestCase {
         XCTAssertNil(memory.reflectAgent, "nil is the chat's own agent")
         XCTAssertNil(memory.reflectModel, "nil is the agent's cheap model")
         XCTAssertEqual(memory.quietMinutes, 30)
-        XCTAssertFalse(memory.tidy, "tidying sends whole files, so it is off until turned on")
         try write(#"{"pet":{"name":"Ghost"}}"#)
         XCTAssertEqual(Config.load(from: file).config.memory, memory, "an old file without the key gets the defaults")
     }

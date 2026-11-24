@@ -152,5 +152,8 @@ package final class IronPetAPI {
     package func attach(assistant context: AssistantContext) { assistant = AssistantAPI(context: context) }
 
     /// `services` is asked each time a `memory_*` tool runs, since it names the chat that is open then.
-    package func attach(memory services: @escaping () -> MemoryMCP.Services?) { memory = MemoryAPI(services: services) }
+    package func attach(memory services: @escaping () -> MemoryMCP.Services?) {
+        memory = MemoryAPI(services: services)
+        MemoryAPI.live = memory
+    }
 }

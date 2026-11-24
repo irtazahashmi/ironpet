@@ -76,7 +76,7 @@ package final class JobService: ObservableObject {
     /// The text a job's first turn starts with, before the request.
     package var preamble: (Job) -> String = { job in
         JobService.instructions(job) + "\n\n"
-            + MemoryPreamble.build(store: FileMemoryStore.shared, workspace: URL(fileURLWithPath: job.folder), firstMessage: job.prompt, keepsTasks: false)
+            + MemoryPreamble.build(store: EntityMemoryStore.shared, workspace: URL(fileURLWithPath: job.folder), firstMessage: job.prompt, keepsTasks: false)
     }
     /// Where a request from a job waits for an answer: an alert, the Mac's bubble and notification, Telegram and the phone. The app
     /// replaces it with the shared one.
