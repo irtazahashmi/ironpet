@@ -36,13 +36,13 @@ final class EntityMemoryStoreTests: XCTestCase {
         try store.remember(text, scope: .me, source: source).get()
     }
 
-    func testTheUsersPageExistsFromTheStart() {
+    func testTheUsersPageExistsFromTheStart() async {
         XCTAssertEqual(store.entities().first?.id, "me")
         XCTAssertEqual(store.entities().count, 1)
         XCTAssertTrue(store.claims(of: "me").isEmpty)
     }
 
-    func testRememberSavesADatedClaimWithItsSource() throws {
+    func testRememberSavesADatedClaimWithItsSource() async throws {
         _ = try me("Prefers pnpm over npm.")
         let claim = try XCTUnwrap(store.claims(of: "me").first)
         XCTAssertEqual(claim.text, "Prefers pnpm over npm.")
@@ -52,7 +52,7 @@ final class EntityMemoryStoreTests: XCTestCase {
         XCTAssertEqual(store.recentChanges().first?.action, .added)
     }
 
-    func testTheSameFactTwiceIsOneClaimThatMovesToTodayAndGainsASource() throws {
+    func testTheSameFactTwiceIsOneClaimThatMovesToTodayAndGainsASource() async throws {
         _ = try me("Prefers pnpm over npm.", source: "chat:a")
         clock = clock.addingTimeInterval(86_400)
         _ = try me("Prefers pnpm over npm.", source: "chat:b")
@@ -63,19 +63,19 @@ final class EntityMemoryStoreTests: XCTestCase {
         XCTAssertEqual(store.recentChanges().count, 1, "the second save is not a change")
     }
 
-    func testSecretsAreRefusedAndNothingIsSaved() {
+    func testSecretsAreRefusedAndNothingIsSaved() async {
         let result = store.remember("AWS key AKIAIOSFODNN7EXAMPLE", scope: .me, source: "chat:a")
         guard case .failure(let failure) = result else { return XCTFail("a key is refused") }
         XCTAssertTrue(failure.message.contains("not saved"))
         XCTAssertTrue(store.claims(of: "me").isEmpty)
     }
 
-    func testAPersonNeedsANameAndAProjectNeedsAFolder() {
+    func testAPersonNeedsANameAndAProjectNeedsAFolder() async {
         XCTAssertFalse(store.remember("Likes tea", scope: .people, source: "chat:a").isSuccess)
         XCTAssertFalse(store.remember("Uses Make", scope: .project, source: "chat:a").isSuccess)
     }
 
-    func testPersonIsAStubUntilTheyHaveComeUpTwice() throws {
+    func testPersonIsAStubUntilTheyHaveComeUpTwice() async throws {
         _ = try store.remember("Leads payments", scope: .people, person: "Ana", source: "chat:a").get()
         XCTAssertTrue(try XCTUnwrap(store.page("Ana").successValue).entity.isStub)
         _ = try store.remember("Owns auth", scope: .people, person: "ana", source: "chat:b").get()
@@ -84,13 +84,13 @@ final class EntityMemoryStoreTests: XCTestCase {
         XCTAssertEqual(page.claims.map(\.text), ["Owns auth", "Leads payments"])
     }
 
-    func testProjectNotesStayOnTheProjectPage() throws {
+    func testProjectNotesStayOnTheProjectPage() async throws {
         _ = try store.remember("Tests run with swift test", scope: .project, project: workspace, source: "chat:a").get()
         XCTAssertEqual(store.claims(of: "project:github.com/you/demo").map(\.text), ["Tests run with swift test"])
         XCTAssertTrue(store.claims(of: "me").isEmpty)
     }
 
-    func testANewerClaimReplacesTheOneItMakesWrongAndKeepsItInHistory() throws {
+    func testANewerClaimReplacesTheOneItMakesWrongAndKeepsItInHistory() async throws {
         _ = try me("Uses npm")
         _ = try store.replace(["Uses npm"], with: "Uses pnpm", scope: .me, source: "chat:b").get()
         XCTAssertEqual(store.claims(of: "me").map(\.text), ["Uses pnpm"])
@@ -98,7 +98,7 @@ final class EntityMemoryStoreTests: XCTestCase {
         XCTAssertEqual(store.recentChanges().first?.action, .replaced)
     }
 
-    func testReplacingWithAFactAlreadyOnThePageStillRetiresTheOldOne() throws {
+    func testReplacingWithAFactAlreadyOnThePageStillRetiresTheOldOne() async throws {
         _ = try me("Uses npm")
         _ = try me("Uses pnpm")
         _ = try store.replace(["Uses npm"], with: "Uses pnpm", scope: .me, source: "chat:b").get()
@@ -110,7 +110,7 @@ final class EntityMemoryStoreTests: XCTestCase {
         XCTAssertEqual(Set(store.claims(of: "me").map(\.text)), ["Uses npm", "Uses pnpm"])
     }
 
-    func testARefusedReplaceLeavesNoMentionOrClaimBehind() throws {
+    func testARefusedReplaceLeavesNoMentionOrClaimBehind() async throws {
         let old = (0..<6).map { "Old fact \($0)" }
         for text in old { _ = try store.remember(text, scope: .people, person: "Ana", source: "chat:a").get() }
         let mentions = store.entities().first { $0.id == "person:ana" }?.mentions
@@ -119,7 +119,7 @@ final class EntityMemoryStoreTests: XCTestCase {
         XCTAssertEqual(store.claims(of: "person:ana").count, 6)
     }
 
-    func testUndoOfAReplaceBringsTheOldClaimBack() throws {
+    func testUndoOfAReplaceBringsTheOldClaimBack() async throws {
         _ = try me("Uses npm")
         _ = try store.replace(["Uses npm"], with: "Uses pnpm", scope: .me, source: "chat:b").get()
         let change = try XCTUnwrap(store.recentChanges().first)
@@ -129,14 +129,14 @@ final class EntityMemoryStoreTests: XCTestCase {
         XCTAssertTrue(store.recentChanges().first?.undone == true)
     }
 
-    func testUndoOfAnAddRemovesTheClaim() throws {
+    func testUndoOfAnAddRemovesTheClaim() async throws {
         _ = try me("Works in Helsinki")
         try store.undo(try XCTUnwrap(store.recentChanges().first)).get()
         XCTAssertTrue(store.claims(of: "me").isEmpty)
         XCTAssertEqual(store.history(of: "me").map(\.text), ["Works in Helsinki"])
     }
 
-    func testForgetMovesTheMatchesToHistoryAndUndoBringsThemBack() throws {
+    func testForgetMovesTheMatchesToHistoryAndUndoBringsThemBack() async throws {
         _ = try me("Prefers pnpm over npm")
         _ = try me("Works in Helsinki")
         let removed = try store.forget("pnpm", scope: nil, person: nil, project: nil, source: "chat:c").get()
@@ -146,26 +146,26 @@ final class EntityMemoryStoreTests: XCTestCase {
         XCTAssertEqual(store.claims(of: "me").count, 2)
     }
 
-    func testForgetRefusesWhenNothingMatches() throws {
+    func testForgetRefusesWhenNothingMatches() async throws {
         _ = try me("Works in Helsinki")
         XCTAssertFalse(store.forget("pnpm", scope: nil, person: nil, project: nil, source: "chat:c").isSuccess)
         XCTAssertEqual(store.claims(of: "me").count, 1)
     }
 
-    func testForgetRefusesMoreThanFiveAndRemovesNothing() throws {
+    func testForgetRefusesMoreThanFiveAndRemovesNothing() async throws {
         for n in 0..<6 { _ = try me("Fact \(n) about the same thing") }
         XCTAssertFalse(store.forget("fact", scope: nil, person: nil, project: nil, source: "chat:c").isSuccess)
         XCTAssertEqual(store.claims(of: "me").count, 6)
     }
 
-    func testReplaceRefusesMoreThanFiveAndSavesNothing() throws {
+    func testReplaceRefusesMoreThanFiveAndSavesNothing() async throws {
         let old = (0..<6).map { "Old fact \($0)" }
         for text in old { _ = try me(text) }
         XCTAssertFalse(store.replace(old, with: "New", scope: .me, source: "chat:c").isSuccess)
         XCTAssertEqual(store.claims(of: "me").count, 6)
     }
 
-    func testAPinnedClaimIsNotReplacedAndTheNewOneSitsBesideIt() throws {
+    func testAPinnedClaimIsNotReplacedAndTheNewOneSitsBesideIt() async throws {
         _ = try me("Uses npm")
         let claim = try XCTUnwrap(store.claims(of: "me").first)
         XCTAssertTrue(store.setPinned(claim.id, true))
@@ -174,7 +174,7 @@ final class EntityMemoryStoreTests: XCTestCase {
         XCTAssertTrue(store.claims(of: "me").first { $0.text == "Uses npm" }?.pinned == true)
     }
 
-    func testRecallIsNewestFirstAndSaysWhatWasLeftOut() throws {
+    func testRecallIsNewestFirstAndSaysWhatWasLeftOut() async throws {
         _ = try me("First fact")
         clock = clock.addingTimeInterval(3_600)
         _ = try me("Second fact")
@@ -184,7 +184,7 @@ final class EntityMemoryStoreTests: XCTestCase {
         XCTAssertEqual(none, "(2 older notes not shown; use memory_search to find them.)")
     }
 
-    func testPeopleNamedInTheMessageComeFirst() throws {
+    func testPeopleNamedInTheMessageComeFirst() async throws {
         _ = try store.remember("Leads payments", scope: .people, person: "Ana", source: "chat:a").get()
         _ = try store.remember("Reviews PRs", scope: .people, person: "Bo", source: "chat:a").get()
         _ = try store.remember("Reviews PRs", scope: .people, person: "Bo", source: "chat:a").get()
@@ -192,7 +192,7 @@ final class EntityMemoryStoreTests: XCTestCase {
         XCTAssertTrue(text.contains("## Ana\n- Leads payments"))
     }
 
-    func testForgetEverythingKeepsTheUsersPageAndEmptiesTheRest() throws {
+    func testForgetEverythingKeepsTheUsersPageAndEmptiesTheRest() async throws {
         _ = try me("Uses zsh")
         _ = try store.remember("Leads payments", scope: .people, person: "Ana", source: "chat:a").get()
         store.forgetEverything()
@@ -201,7 +201,7 @@ final class EntityMemoryStoreTests: XCTestCase {
         XCTAssertTrue(store.recentChanges().isEmpty)
     }
 
-    func testForgetEverythingDeletesTheOldNotesAndTheMarkdownCopies() throws {
+    func testForgetEverythingDeletesTheOldNotesAndTheMarkdownCopies() async throws {
         let legacy = LegacyMemoryFiles.directory
         try FileManager.default.createDirectory(at: legacy, withIntermediateDirectories: true)
         try "- Leads payments".write(to: legacy.appendingPathComponent("people.md"), atomically: true, encoding: .utf8)
@@ -212,7 +212,7 @@ final class EntityMemoryStoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.path))
     }
 
-    func testReindexRebuildsTheSearchDocumentsFromTheClaims() throws {
+    func testReindexRebuildsTheSearchDocumentsFromTheClaims() async throws {
         _ = try me("Prefers pnpm over npm")
         XCTAssertEqual(store.index.search("pnpm", kinds: [.note]).count, 1)
         store.index.clearClaims()
@@ -221,11 +221,11 @@ final class EntityMemoryStoreTests: XCTestCase {
         XCTAssertEqual(store.index.search("pnpm", kinds: [.note]).count, 1)
     }
 
-    func testLinksAreRefusedForAnUnknownName() {
+    func testLinksAreRefusedForAnUnknownName() async {
         XCTAssertFalse(store.links("Nobody", type: nil).isSuccess)
     }
 
-    func testExportWritesEachPageAsMarkdown() throws {
+    func testExportWritesEachPageAsMarkdown() async throws {
         _ = try me("Prefers pnpm over npm")
         _ = try store.remember("Leads payments", scope: .people, person: "Ana", source: "chat:a").get()
         _ = try store.remember("Tests run with swift test", scope: .project, project: workspace, source: "chat:a").get()
@@ -240,7 +240,7 @@ final class EntityMemoryStoreTests: XCTestCase {
         XCTAssertTrue(projects.first?.hasPrefix("demo-") == true)
     }
 
-    func testExportNoLongerHoldsANoteThatWasForgotten() throws {
+    func testExportNoLongerHoldsANoteThatWasForgotten() async throws {
         _ = try store.remember("Leads payments", scope: .people, person: "Ana", source: "chat:a").get()
         _ = try store.remember("Tests run with swift test", scope: .project, project: workspace, source: "chat:a").get()
         _ = try store.exportMarkdown().get()
