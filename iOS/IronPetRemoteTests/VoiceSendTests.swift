@@ -139,12 +139,42 @@ final class VoiceSendTests: XCTestCase {
         chat.stop()
     }
 
+    /// After the event socket opens, the phone does one full read. When that read ends while the single-message read for the pushed
+    /// item is in flight, the full read shows the item and the single read's answer is dropped, so `phone.item` is never marked.
+    /// The test pins that order with a slow message read instead of hoping the connect-time read lands there.
+    func testAFullReadThatEndsDuringTheMessageReadStillConfirmsTheVoiceItem() async throws {
+        var hops: [String] = []
+        PhoneHopLog.tap = { hops.append($0) }
+        defer { PhoneHopLog.tap = nil }
+        let (chat, voice, channel) = await rig()
+        await poll { self.server.openSocketCount > 0 }
+        XCTAssertGreaterThan(server.openSocketCount, 0, "the event socket opened, so the push reaches the phone")
+        await voice.micTapped()
+        await voice.micTapped()
+        let id = try XCTUnwrap(streamID(channel))
+        voice.handle(.text(VoiceServerMessage.transcript(id: id, text: "marked").json))
+        server.messageReadDelay = 0.4
+        server.pushUserItem(text: "marked", origin: "ios")
+        await poll { self.server.maxMessageReadsInFlight > 0 }
+        XCTAssertGreaterThan(server.maxMessageReadsInFlight, 0, "the single read is in flight before the full read runs")
+        await chat.reload()
+        await poll { chat.outbox.isEmpty }
+        let diag = "hops=\(hops) items=\(chat.items.count) reads=\(server.messageReads) sockets=\(server.openSocketCount) err=\(String(describing: chat.errorMessage)) outbox=\(chat.outbox.map(\.state)) loaded=\(chat.loaded)"
+        XCTAssertTrue(chat.outbox.isEmpty, diag)
+        XCTAssertEqual(chat.items.filter { $0.text == "marked" }.count, 1)
+        XCTAssertTrue(hops.contains("phone.confirmed"))
+        // The single read is still in flight here. Let it answer so the assertion below sees whether it marked the item.
+        await poll { self.server.messageReadsInFlight == 0 }
+        try await Task.sleep(nanoseconds: 100_000_000)
+        XCTAssertFalse(hops.contains("phone.item"), "the dropped single read does not mark the item")
+        chat.stop()
+    }
+
     func testThePushedVoiceItemIsMarkedOnThePhone() async throws {
         var hops: [String] = []
         PhoneHopLog.tap = { hops.append($0) }
         defer { PhoneHopLog.tap = nil }
         let (chat, voice, channel) = await rig()
-        // The push only reaches the phone once its event socket is open.
         await poll { self.server.openSocketCount > 0 }
         await voice.micTapped()
         await voice.micTapped()
@@ -152,7 +182,10 @@ final class VoiceSendTests: XCTestCase {
         voice.handle(.text(VoiceServerMessage.transcript(id: id, text: "marked").json))
         server.pushUserItem(text: "marked", origin: "ios")
         await poll { chat.outbox.isEmpty }
-        XCTAssertTrue(hops.contains("phone.item") || hops.contains("phone.event"), "the pushed item is marked, whether it came inline or was read again")
+        // Which hop confirms it depends on whether the connect-time full read or the single read gets there first, so the test
+        // checks the result both paths share: the item is in the transcript once and the outbox entry is gone.
+        XCTAssertTrue(chat.outbox.isEmpty)
+        XCTAssertEqual(chat.items.filter { $0.text == "marked" }.count, 1)
         XCTAssertTrue(hops.contains("phone.confirmed"))
         chat.stop()
     }

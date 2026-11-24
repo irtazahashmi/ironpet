@@ -246,6 +246,8 @@ final class MockIronPetServer: @unchecked Sendable {
     var legacyEvents: Bool { get { lock.lock(); defer { lock.unlock() }; return _legacyEvents } set { lock.lock(); _legacyEvents = newValue; lock.unlock() } }
     /// Seconds `GET /v1/chat/messages/:id` takes to answer, as a slow route to the Mac does.
     var messageReadDelay: TimeInterval { get { lock.lock(); defer { lock.unlock() }; return _messageReadDelay } set { lock.lock(); _messageReadDelay = newValue; lock.unlock() } }
+    /// The single-message reads waiting for an answer now.
+    var messageReadsInFlight: Int { lock.lock(); defer { lock.unlock() }; return _readsInFlight }
     /// The most single-message reads that were waiting for an answer at one time.
     var maxMessageReadsInFlight: Int { lock.lock(); defer { lock.unlock() }; return _maxReadsInFlight }
     /// How many times a single message was read with a GET.
