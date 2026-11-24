@@ -99,7 +99,7 @@ its retry runs again. Attachments still go through `POST /v1/uploads` and the HT
 A phone that cannot reach the Mac keeps a typed message in an outbox in its own container and sends it after the next `hello`, oldest
 first, one at a time, each after the Mac answered the one before. A message waits at most 24 hours, and the outbox holds at most 100.
 An older or refused message shows Retry and is not sent on its own. Each resend carries the `client_id` the message was made with, so
-the 512-entry window above covers it. Messages with attachments do not wait. They fail with Retry when the Mac is out of reach.
+the 512-entry window above covers it. A message waits when the request fails in transport or the relay answers 502, 503 or 504, which means it could not reach the Mac. Any other status comes from the Mac and fails the message with Retry. Messages with attachments do not wait. They fail with Retry when the Mac is out of reach.
 
 ### Over stdio
 

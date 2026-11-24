@@ -178,4 +178,26 @@ final class OutboxTests: XCTestCase {
         XCTAssertEqual(model.outbox.last?.isFailed, true)
         XCTAssertEqual(model.outbox.filter(\.isWaiting).count, ChatModel.outboxCapacity)
     }
+
+    // A relay answers 502, 503 or 504 when it cannot reach the Mac. Other statuses come from the Mac.
+    func testARelayGatewayErrorQueuesTheMessageButAMacErrorFailsIt() async throws {
+        let server = MockIronPetServer()
+        try server.start()
+        defer { server.stop() }
+        let client = IronPetClient(endpoint: ServerEndpoint(baseURL: server.baseURL), token: server.token)
+        // A new model for each status, since a message typed behind a waiting one waits without being tried.
+        for status in [502, 503, 504, 500, 409] {
+            let model = ChatModel(client: client, events: SharedEventSource(EventConnection(client: client)), onUnauthorized: {})
+            model.socket = FakeChatSocket(open: false)
+            model.useOutbox(MemoryOutboxStore())
+            server.brokenRoutes = ["/v1/chat/current/messages": status]
+            model.draft = "status \(status)"
+            await model.send()
+            if [502, 503, 504].contains(status) {
+                XCTAssertEqual(model.outbox.last?.state, .waiting, "\(status) means the relay did not reach the Mac")
+            } else {
+                XCTAssertEqual(model.outbox.last?.isFailed, true, "\(status) came from the Mac")
+            }
+        }
+    }
 }
