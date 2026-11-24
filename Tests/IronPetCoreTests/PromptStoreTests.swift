@@ -1,7 +1,6 @@
 import XCTest
 @testable import IronPetCore
 
-@MainActor
 final class PromptStoreTests: XCTestCase {
     private var directory: URL!
     private let id = "task-review"
@@ -144,6 +143,7 @@ final class PromptStoreTests: XCTestCase {
         }
     }
 
+    @MainActor
     func testTheMeetingSummaryDefaultIsUnchanged() throws {
         let golden = URL(fileURLWithPath: #filePath).deletingLastPathComponent()
             .appendingPathComponent("Fixtures/prompts/meeting-summary.txt")
@@ -169,6 +169,7 @@ final class PromptStoreTests: XCTestCase {
         XCTAssertTrue(AutomationDefaults.builtIns.contains { $0.id == "task-review" })
     }
 
+    @MainActor
     func testTheTaskReviewPromptReadsTheEditablePromptAndIsNotItemData() {
         let review = AutomationDefaults.taskReview()
         let prompt = review.action.prompt ?? ""
