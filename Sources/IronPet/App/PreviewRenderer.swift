@@ -30,6 +30,14 @@ enum PreviewRenderer {
             session.loadPreview(preview)
             render(ChatView(session: Self.chatModel(session)).frame(width: 520, height: 640).panel(), to: dir, file)
         }
+        // The composer while a voice note records.
+        for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
+            let session = ChatSession(restore: false)
+            session.loadPreview(.done)
+            let model = Self.chatModel(session)
+            model.voice.loadPreview()
+            render(ChatView(session: model).frame(width: 520, height: 640).panel(), to: dir, "chat-voice-recording" + suffix, scheme: scheme)
+        }
         // The reply markdown sample at the narrow chat width and a wider one, in both appearances, and with find open.
         for width in [420.0, 520.0] {
             for (suffix, scheme) in [("dark", ColorScheme.dark), ("light", .light)] {

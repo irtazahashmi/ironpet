@@ -951,18 +951,20 @@ struct ChatView: View {
     private var composerBar: some View {
         GlassGroup {
             HStack(alignment: .bottom, spacing: 8) {
-                if !voiceActive {
+                if voiceActive {
+                    VoiceCancelButton(voice: session.voice)
+                } else {
                     Button(action: chooseFiles) { Image(systemName: SharedSymbols.attach) }
                         .buttonStyle(GlassCircleButtonStyle())
                         .help("Attach files")
                 }
                 composerField
-                if !voiceActive {
-                    if config.config.voice.enabled {
-                        Button { session.voice.start() } label: { Image(systemName: SharedSymbols.microphone) }
-                            .buttonStyle(GlassCircleButtonStyle())
-                            .help("Record a voice note")
-                    }
+                if voiceActive {
+                    VoiceStopButton(voice: session.voice)
+                } else if config.config.voice.enabled {
+                    Button { session.voice.start() } label: { Image(systemName: SharedSymbols.microphone) }
+                        .buttonStyle(GlassCircleButtonStyle())
+                        .help("Record a voice note")
                 }
             }
         }

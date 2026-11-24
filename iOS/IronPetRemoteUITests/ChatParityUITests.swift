@@ -168,9 +168,9 @@ final class ChatParityUITests: XCTestCase {
         for index in 1...40 { server.streamChunk(item: "m-stream", "word\(index) ") }
         let bubble = any("bubble-m-stream")
         XCTAssertTrue(bubble.waitForExistence(timeout: 10))
-        // The 40 chunks arrive over the socket one by one, so wait for the last one instead of reading the label once.
-        let grown = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS 'word40'"), object: bubble)
-        XCTAssertEqual(XCTWaiter().wait(for: [grown], timeout: 20), .completed, "the reply grew in place: \(bubble.label)")
+        // The bubble exists after the first chunk. The other 40 are still on their way, so wait for the last one.
+        let grew = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS 'word40'"), object: bubble)
+        XCTAssertEqual(XCTWaiter().wait(for: [grew], timeout: 10), .completed, "the reply grew in place: \(bubble.label)")
         XCTAssertTrue(bubble.isHittable, "a reader at the end follows the stream")
         XCTAssertFalse(jump.exists)
         attach("stream-following")

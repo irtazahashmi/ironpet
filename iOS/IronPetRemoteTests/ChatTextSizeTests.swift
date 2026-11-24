@@ -27,3 +27,20 @@ final class ChatTextSizeTests: XCTestCase {
         XCTAssertEqual(DynamicTypeSize.large.contentSizeCategory, .large)
     }
 }
+
+final class ComposerFontTests: XCTestCase {
+    func testComposerFontMatchesBubbleFontAtEverySize() {
+        for size in DynamicTypeSize.allCases {
+            let bubble = ChatMetrics.macBody * ChatScale.value(.body, size)
+            XCTAssertEqual(ComposerTextView.font(for: size).pointSize, bubble, accuracy: 0.001)
+        }
+    }
+
+    func testComposerFontIsFifteenPointsAtTheSystemDefault() {
+        XCTAssertEqual(ComposerTextView.font(for: .large).pointSize, 15, accuracy: 0.001)
+    }
+
+    func testComposerFontGrowsWithDynamicType() {
+        XCTAssertGreaterThan(ComposerTextView.font(for: .xxxLarge).pointSize, ComposerTextView.font(for: .small).pointSize)
+    }
+}
