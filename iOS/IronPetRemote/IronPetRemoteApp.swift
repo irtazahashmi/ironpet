@@ -64,6 +64,7 @@ struct MainTabs: View {
     @State private var voice: VoiceModel
     @State private var morePath: [MoreDestination] = []
     private let client: IronPetClient
+    private let events: SharedEventSource
 
     init(model: AppModel, device: PairedDevice) {
         self.model = model
@@ -73,6 +74,7 @@ struct MainTabs: View {
         // The last event seq survives a restart of the app, so the first connection after a launch can resume too.
         let connection = EventConnection(client: client, store: DefaultsResumeStore(key: DefaultsResumeStore.keyPrefix + SHA256.hash(data: Data((client.token ?? "").utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()))
         let events = SharedEventSource(connection)
+        self.events = events
         let unauthorized: () -> Void = { [weak model] in model?.handleUnauthorized() }
         _tasks = State(initialValue: TasksModel(client: client, events: events, onUnauthorized: unauthorized))
         _pet = State(initialValue: PetModel(client: client, events: events, cache: AssetCache(directory: Self.assetsDirectory), onUnauthorized: unauthorized))
@@ -145,6 +147,8 @@ struct MainTabs: View {
         // The five minutes count from the app going to the background, whichever screen is open. Watching only inside the Meetings
         // screen would leave the text unlocked after the person left it and then left the app.
         .onChange(of: scenePhase) { _, phase in
+            // The socket was dropped in the background. Reconnect now instead of after the back-off.
+            if phase == .active { events.reconnectNow() }
             meetings.gate.scenePhaseChanged(phase)
             screen.gate.scenePhaseChanged(phase)
         }

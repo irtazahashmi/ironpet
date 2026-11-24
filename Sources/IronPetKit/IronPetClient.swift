@@ -240,7 +240,14 @@ public final class IronPetClient: @unchecked Sendable {
         _ = try await perform(request("POST", path, body: try JSONSerialization.data(withJSONObject: json)))
     }
 
-    public func chat() async throws -> RemoteChatSnapshot { try await get(RemoteChatSnapshot.self, APIPath.chat) }
+    /// The chat. With `limit`, the newest `limit` messages, or the ones before `before`; `hasMore` says whether older ones exist. A Mac
+    /// older than paging ignores the query and sends the whole thread, with `hasMore` nil.
+    public func chat(limit: Int? = nil, before: String? = nil) async throws -> RemoteChatSnapshot {
+        var query: [URLQueryItem] = []
+        if let limit { query.append(URLQueryItem(name: "limit", value: String(limit))) }
+        if let before { query.append(URLQueryItem(name: "before", value: before)) }
+        return try await get(RemoteChatSnapshot.self, APIPath.chat, query: query)
+    }
 
     public func chatMessage(id: String) async throws -> RemoteChatItem { try await get(RemoteChatItem.self, APIPath.chatMessage(id)) }
 

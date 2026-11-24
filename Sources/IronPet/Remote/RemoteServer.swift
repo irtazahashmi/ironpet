@@ -507,7 +507,13 @@ final class RemoteServer {
 
     /// The shared chat and uploads (phase 3).
     private func addChatRoutes(to router: Router<RemoteContext>) {
-        router.get("/v1/chat/current") { [self] _, context in await self.chat(context) { await $0.current() } }
+        router.get("/v1/chat/current") { [self] request, context in
+            // `limit` and `before` page the thread (newest first, then older). Without `limit` the whole thread comes back.
+            let query = Self.query(request)
+            let limit = query["limit"]?.first.flatMap { Int($0) }.map { min(max($0, 1), 200) }
+            let before = query["before"]?.first
+            return await self.chat(context) { await $0.current(limit: limit, before: before) }
+        }
         router.get("/v1/chat/messages/:id") { [self] _, context in
             let id = Self.parameter(context, "id")
             return await self.chat(context) { try await $0.message(id) }

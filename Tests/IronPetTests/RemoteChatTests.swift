@@ -47,6 +47,36 @@ final class RemoteChatTests: XCTestCase {
     private func post(_ path: String, _ body: [String: Any] = [:]) async throws -> RemoteReply { try await h.request("POST", path, token: token, body: body) }
     private func items(_ reply: RemoteReply) -> [[String: Any]] { reply.json["items"] as? [[String: Any]] ?? [] }
 
+    // Paging: the newest page first, then the page before its oldest message, and a whole thread without `limit` as before.
+    func testTheChatPagesNewestFirstAndEachBeforeCursorGivesTheOlderPage() async throws {
+        chat.items = (1...120).map { ChatItem(kind: .user("m\($0)")) }
+        let ids = chat.items.map { $0.id.uuidString }
+
+        let newest = try await get("/v1/chat/current?limit=50")
+        XCTAssertEqual(items(newest).count, 50)
+        XCTAssertEqual(items(newest).first?["id"] as? String, ids[70])
+        XCTAssertEqual(items(newest).last?["id"] as? String, ids[119])
+        XCTAssertEqual(newest.json["has_more"] as? Bool, true)
+
+        let middle = try await get("/v1/chat/current?limit=50&before=\(ids[70])")
+        XCTAssertEqual(items(middle).first?["id"] as? String, ids[20])
+        XCTAssertEqual(items(middle).last?["id"] as? String, ids[69])
+        XCTAssertEqual(middle.json["has_more"] as? Bool, true)
+
+        let oldest = try await get("/v1/chat/current?limit=50&before=\(ids[20])")
+        XCTAssertEqual(items(oldest).count, 20)
+        XCTAssertEqual(items(oldest).first?["id"] as? String, ids[0])
+        XCTAssertEqual(oldest.json["has_more"] as? Bool, false)
+
+        let unknown = try await get("/v1/chat/current?limit=50&before=gone")
+        XCTAssertEqual(items(unknown).count, 0, "a cursor the Mac does not hold gives nothing to merge")
+        XCTAssertEqual(unknown.json["has_more"] as? Bool, false)
+
+        let whole = try await get("/v1/chat/current")
+        XCTAssertEqual(items(whole).count, 120, "without limit the whole thread comes back, as an older phone expects")
+        XCTAssertNil(whole.json["has_more"])
+    }
+
     private func socket(since: Int? = nil) -> URLSessionWebSocketTask {
         var request = URLRequest(url: URL(string: "ws://127.0.0.1:\(h.port)/v1/events" + (since.map { "?since=\($0)" } ?? ""))!)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")

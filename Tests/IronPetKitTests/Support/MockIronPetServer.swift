@@ -662,6 +662,18 @@ extension MockIronPetServer {
     static let sampleThreads = [RemoteChatThread(id: "th-1", title: "Old chat", folderLabel: "demo-app"),
                                 RemoteChatThread(id: "th-2", title: "Another chat", folderLabel: "api", updated: Date(timeIntervalSince1970: 1_700_000_500))]
 
+    /// The chat as the Mac pages it: the `limit` messages before `before`, with `has_more`. Without `limit` the whole thread, as an old Mac.
+    fileprivate static func page(of chat: RemoteChatSnapshot, query: String) -> RemoteChatSnapshot {
+        let pairs = query.split(separator: "&").map { $0.split(separator: "=", maxSplits: 1).map(String.init) }
+        func value(_ key: String) -> String? { pairs.first { $0.first == key }.flatMap { $0.count > 1 ? $0[1] : nil } }
+        guard let limit = value("limit").flatMap(Int.init) else { return chat }
+        let end = value("before").map { before in chat.items.firstIndex { $0.id == before } ?? 0 } ?? chat.items.count
+        var page = chat
+        page.items = Array(chat.items[max(0, end - limit)..<end])
+        page.hasMore = end - limit > 0
+        return page
+    }
+
     /// Answers the chat and upload routes. Returns false for any other request.
     fileprivate func routeChat(_ request: Recorded, _ parts: [String], _ connection: NWConnection) -> Bool {
         guard parts.count >= 2, parts[0] == "v1" else { return false }
@@ -697,7 +709,7 @@ extension MockIronPetServer {
             if drop { fail(connection, 503, "unavailable", "the Mac could not answer"); return true }
         }
         switch (parts.count, parts.dropFirst(2).first ?? "") {
-        case (3, "current") where get: respond(connection, 200, chat)
+        case (3, "current") where get: respond(connection, 200, Self.page(of: chat, query: request.query))
         case (4, "messages") where get:
             guard let item = chat.items.first(where: { $0.id == parts[3] }) else { fail(connection, 404, "not_found", "no message"); return true }
             lock.lock(); _messageReads += 1; _readsInFlight += 1; _maxReadsInFlight = max(_maxReadsInFlight, _readsInFlight); let delay = _messageReadDelay; lock.unlock()

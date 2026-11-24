@@ -179,6 +179,11 @@ private struct Transcript: View {
                 // The end marker sits outside the lazy stack, so it keeps reporting its position while the rows around it are not built.
                 VStack(spacing: 0) {
                     LazyVStack(alignment: .leading, spacing: 10) {
+                        // The row above the oldest loaded message. Coming into view loads the page before it.
+                        if model.hasOlderHistory {
+                            ProgressView().frame(maxWidth: .infinity).padding(.vertical, 8)
+                                .onAppear { Task { await model.loadOlder() } }
+                        }
                         ForEach(RemoteTranscriptGroup.make(model.displayItems)) { group in
                             TranscriptGroupView(group: group, photos: model.sentPhotos, images: model.images, avatar: avatar, expanded: expandedMessages,
                                                 toggleExpand: { id in if !expandedMessages.insert(id).inserted { expandedMessages.remove(id) } },

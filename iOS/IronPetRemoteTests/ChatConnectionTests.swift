@@ -21,7 +21,10 @@ final class ChatConnectionTests: XCTestCase {
         model.retryBase = .milliseconds(30)
         model.start()
         await poll { model.loaded && model.snapshot != nil }
-        // The socket's own connect refresh can still be in flight and would take the failure a test arms next.
+        // The socket's own connect refresh can still be in flight and would take the failure a test arms next. The socket opens
+        // after the first read, sometimes long after on a slow runner, so wait for it to open before the reads settle.
+        await poll { !server.socketURLs.isEmpty }
+        try? await Task.sleep(nanoseconds: 500_000_000)
         var seen = -1
         while seen != server.count("GET /v1/chat/current") {
             seen = server.count("GET /v1/chat/current")
