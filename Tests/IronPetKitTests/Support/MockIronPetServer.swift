@@ -709,7 +709,15 @@ extension MockIronPetServer {
             if drop { fail(connection, 503, "unavailable", "the Mac could not answer"); return true }
         }
         switch (parts.count, parts.dropFirst(2).first ?? "") {
-        case (3, "current") where get: respond(connection, 200, Self.page(of: chat, query: request.query))
+        case (3, "current") where get:
+            // The ETag is a hash of the body, as the Mac sends it. The phone's `If-None-Match` gets 304 with no body.
+            let body = (try? encoder.encode(Self.page(of: chat, query: request.query))) ?? Data("{}".utf8)
+            let etag = "\"" + String(body.reduce(0) { ($0 &* 31) &+ Int($1) }) + "\""
+            if request.headers["if-none-match"] == etag {
+                respond(connection, 304, Data(), contentType: "application/json; charset=utf-8", headers: ["ETag": etag])
+            } else {
+                respond(connection, 200, body, contentType: "application/json; charset=utf-8", headers: ["ETag": etag])
+            }
         case (4, "messages") where get:
             guard let item = chat.items.first(where: { $0.id == parts[3] }) else { fail(connection, 404, "not_found", "no message"); return true }
             lock.lock(); _messageReads += 1; _readsInFlight += 1; _maxReadsInFlight = max(_maxReadsInFlight, _readsInFlight); let delay = _messageReadDelay; lock.unlock()

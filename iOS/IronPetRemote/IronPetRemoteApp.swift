@@ -83,6 +83,8 @@ struct MainTabs: View {
         chatModel.socket = connection
         // Messages typed without a connection wait in a file in the app's own container until the Mac is back.
         chatModel.useOutbox(FileOutboxStore.forToken(client.token))
+        // The chat the phone saw last shows at once, before the Mac answers.
+        chatModel.useCache(FileChatCache.forToken(client.token))
         _chat = State(initialValue: chatModel)
         _today = State(initialValue: TodayModel(client: client, events: events, onUnauthorized: unauthorized))
         _agents = State(initialValue: AgentsModel(client: client, events: events, onUnauthorized: unauthorized))
