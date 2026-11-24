@@ -11,6 +11,8 @@ struct ChatView: View {
     var backgroundImage: UIImage?
     /// The pet's face, which marks the agent's replies as it does on the Mac.
     var avatar: CGImage?
+    /// The pet's name, shown beside its face in the header, as the Mac does.
+    var petName = ""
     @State private var showThreads = false
     @State private var showSettings = false
     @State private var showFiles = false
@@ -69,23 +71,33 @@ struct ChatView: View {
                     .accessibilityHidden(true)
                     .accessibilityIdentifier("chat-background-\(backgroundID)")
             }
-            .navigationTitle(model.title)
+            .navigationTitle(petName.isEmpty ? "Chat" : petName)
             .themedScreen()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .principal) {
-                    VStack(spacing: 0) {
-                        Text(model.title).font(.headline).lineLimit(1).accessibilityIdentifier("chat-title")
-                        Text(model.subtitle).font(.caption2).foregroundStyle(.secondary).lineLimit(1).accessibilityIdentifier("chat-subtitle")
+                    HStack(spacing: 6) {
+                        if let avatar {
+                            Image(decorative: avatar, scale: 1).resizable().scaledToFit().frame(width: 24, height: 24)
+                        }
+                        Text(petName.isEmpty ? "Chat" : petName).font(.headline).lineLimit(1).accessibilityIdentifier("chat-title")
                     }
                 }
-                ToolbarItemGroup(placement: .topBarTrailing) {
-                    Button { find.open() } label: { Image(systemName: SharedSymbols.find) }
-                        .accessibilityLabel("Find in chat").accessibilityIdentifier("chat-find-button")
-                    Button { showSettings = true } label: { Image(systemName: SharedSymbols.chatOptions) }
-                        .accessibilityLabel("Chat settings").accessibilityIdentifier("chat-settings-button")
-                    Button { showThreads = true } label: { Image(systemName: SharedSymbols.history) }
-                        .accessibilityLabel("Chats").accessibilityIdentifier("threads-button")
+                ToolbarItem(placement: .topBarTrailing) {
+                    Menu {
+                        // The session the pet is working in. It used to sit under the title.
+                        Section {
+                            Text(model.title).accessibilityIdentifier("chat-session-title")
+                            Text(model.subtitle).accessibilityIdentifier("chat-subtitle")
+                        }
+                        Button { find.open() } label: { Label("Find in chat", systemImage: SharedSymbols.find) }
+                            .accessibilityIdentifier("chat-find-button")
+                        Button { showSettings = true } label: { Label("Chat settings", systemImage: SharedSymbols.chatOptions) }
+                            .accessibilityIdentifier("chat-settings-button")
+                        Button { showThreads = true } label: { Label("Chats", systemImage: SharedSymbols.history) }
+                            .accessibilityIdentifier("threads-button")
+                    } label: { Image(systemName: "ellipsis") }
+                        .accessibilityLabel("More").accessibilityIdentifier("chat-more-button")
                 }
             }
             .onChange(of: findKey) { find.update(model.displayItems) }

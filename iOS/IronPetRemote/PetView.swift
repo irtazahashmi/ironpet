@@ -29,6 +29,7 @@ struct PetView: View {
                 .padding()
             }
             .navigationTitle(model.pet?.name ?? "Pet")
+            .navigationBarTitleDisplayMode(.inline)
             .themedScreen()
             .refreshable { await model.refresh(); await today.refresh() }
             .toolbar {

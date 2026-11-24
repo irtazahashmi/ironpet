@@ -14,6 +14,7 @@ struct MeetingsView: View {
             if model.gate.isUnlocked { unlocked } else { locked }
         }
         .navigationTitle("Meetings")
+        .navigationBarTitleDisplayMode(.inline)
         .themedScreen()
         .privacySensitive()
         .onChange(of: scenePhase) { _, phase in

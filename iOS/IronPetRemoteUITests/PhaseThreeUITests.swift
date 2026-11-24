@@ -104,6 +104,8 @@ final class PhaseThreeUITests: XCTestCase {
         server.openConflict = "The agent is working. Stop it first, or wait for it to finish."
         pair()
         openChat()
+        XCTAssertTrue(app.buttons["chat-more-button"].waitForExistence(timeout: 20))
+        app.buttons["chat-more-button"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         app.buttons["threads-button"].tap()
         let thread = app.buttons["thread-th-1"]
         XCTAssertTrue(thread.waitForExistence(timeout: 10))

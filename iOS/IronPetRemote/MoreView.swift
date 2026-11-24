@@ -41,6 +41,7 @@ struct MoreView: View {
                 }.listRowBackground(SharedTheme.card)
             }
             .navigationTitle("More")
+            .navigationBarTitleDisplayMode(.inline)
             .themedScreen()
             .navigationDestination(for: MoreDestination.self) { destination in
                 switch destination {

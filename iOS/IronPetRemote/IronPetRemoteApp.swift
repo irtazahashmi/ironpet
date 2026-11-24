@@ -121,7 +121,7 @@ struct MainTabs: View {
         TabView(selection: $tab) {
             PetView(model: pet, today: today, app: model, client: client, open: open)
                 .tabItem { Label("Pet", systemImage: AppTab.pet.symbol) }.tag(AppTab.pet)
-            ChatView(model: chat, backgroundID: pet.backgroundID, backgroundImage: pet.backgroundImage, avatar: PetAvatar.face(of: pet.atlas))
+            ChatView(model: chat, backgroundID: pet.backgroundID, backgroundImage: pet.backgroundImage, avatar: PetAvatar.face(of: pet.atlas), petName: pet.pet?.name ?? "")
                 .tabItem { Label("Chat", systemImage: AppTab.chat.symbol) }.badge(chat.approvals.count + chat.forms.count).tag(AppTab.chat)
             TasksView(model: tasks, onAsk: { [chat] text in
                 tab = .chat

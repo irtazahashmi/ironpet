@@ -84,6 +84,7 @@ struct PhoneSettingsView: View {
             }.listRowBackground(SharedTheme.card)
         }
         .navigationTitle("Settings")
+        .navigationBarTitleDisplayMode(.inline)
         .themedScreen()
         .refreshable { await model.refresh() }
         .task { model.start() }
