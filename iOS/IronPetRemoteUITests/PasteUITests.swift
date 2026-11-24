@@ -298,8 +298,11 @@ final class ChatModeUITests: XCTestCase {
         let tab = app.tabBars.buttons["Chat"]
         XCTAssertTrue(tab.waitForExistence(timeout: 20))
         tab.tap()
+        let more = app.buttons["chat-more-button"]
+        XCTAssertTrue(more.waitForExistence(timeout: 20))
+        more.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         let settings = app.buttons["chat-settings-button"]
-        XCTAssertTrue(settings.waitForExistence(timeout: 20))
+        XCTAssertTrue(settings.waitForExistence(timeout: 10))
         settings.tap()
         XCTAssertFalse(app.switches["settings-auto"].exists, "no invented auto toggle")
         // Four modes do not fit the half-height sheet, so open it to full height.

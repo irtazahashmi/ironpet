@@ -224,7 +224,13 @@ final class ChatParityUITests: XCTestCase {
         pair()
         openChat()
         XCTAssertTrue(app.staticTexts["The agent stopped: it could not reach the model."].waitForExistence(timeout: 20))
-        XCTAssertTrue(app.staticTexts["Failed"].exists || app.staticTexts["chat-subtitle"].exists || any("chat-subtitle").label.contains("Failed"))
+        // The session line moved into the More menu.
+        let more = app.buttons["chat-more-button"]
+        XCTAssertTrue(more.waitForExistence(timeout: 10))
+        more.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
+        XCTAssertTrue(any("chat-subtitle").waitForExistence(timeout: 5))
+        XCTAssertTrue(any("chat-subtitle").label.contains("Failed"))
+        app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         attach("error-reply")
         // The Mac goes away: the message waits on its own row, and no banner repeats it. Offline messages wait instead of failing.
         server.stop()

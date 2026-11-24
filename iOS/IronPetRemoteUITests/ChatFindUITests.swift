@@ -55,6 +55,8 @@ final class ChatFindUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["bubble-m-28"].waitForExistence(timeout: 20) || app.otherElements["bubble-m-28"].waitForExistence(timeout: 5))
         attach("find-1-chat")
 
+        XCTAssertTrue(app.buttons["chat-more-button"].waitForExistence(timeout: 20))
+        app.buttons["chat-more-button"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         app.buttons["chat-find-button"].tap()
         let field = app.textFields["find-field"]
         XCTAssertTrue(field.waitForExistence(timeout: 10))
