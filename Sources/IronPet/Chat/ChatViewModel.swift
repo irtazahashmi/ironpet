@@ -268,9 +268,6 @@ final class ChatViewModel: ObservableObject {
     /// Appends files to the current attachments, skipping ones already there.
     func attach(_ files: [URL]) { attachments += files.filter { !attachments.contains($0) } }
 
-    /// Stages selection from another app as context for the next send. Replaces any previous selection chip.
-    func attachSelection(_ selection: FrontSelection) { attachedSelection = selection }
-
     /// Starts a reply to a user or assistant message. Tool steps, screenshots and errors cannot be replied to.
     func reply(to item: ChatItem, selection: String? = nil) {
         let sender: String

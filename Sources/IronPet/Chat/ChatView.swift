@@ -1026,7 +1026,7 @@ struct ChatView: View {
                         Image(systemName: SharedSymbols.removeAttachment).foregroundStyle(.secondary)
                     }
                     .buttonStyle(.plain)
-                    .help("Remove selection")
+                    .help("Remove selection (Esc)")
                     .accessibilityLabel("Remove selection")
                     .accessibilityIdentifier("selection-cancel")
                     .pointerCursor()
@@ -1306,6 +1306,11 @@ private struct SelectionContextChip: View {
         .accessibilityIdentifier("selection-chip")
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Selection from \(selection.sourceLabel)")
+        .accessibilityValue({
+            var value = String(selection.text.prefix(300))
+            if selection.trimmed { value += ", trimmed" }
+            return value
+        }())
     }
 }
 
