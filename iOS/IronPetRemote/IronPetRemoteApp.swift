@@ -1,3 +1,4 @@
+import CryptoKit
 import IronPetKit
 import SwiftUI
 
@@ -12,6 +13,7 @@ struct IronPetRemoteApp: App {
         if ProcessInfo.processInfo.arguments.contains("--reset-credentials") {
             store.delete()
             UserDefaults.standard.removeObject(forKey: TasksViewMode.key)
+            UserDefaults.standard.removeObject(forKey: QuickFilterSelection.key)
         }
         #endif
         _model = State(initialValue: AppModel(store: store))
@@ -68,11 +70,18 @@ struct MainTabs: View {
         let client = IronPetClient(endpoint: device.endpoint, token: device.token)
         self.client = client
         // The Mac allows three sockets per device and five screens want events, so they share one.
-        let events = SharedEventSource(EventConnection(client: client))
+        // The last event seq survives a restart of the app, so the first connection after a launch can resume too.
+        let connection = EventConnection(client: client, store: DefaultsResumeStore(key: DefaultsResumeStore.keyPrefix + SHA256.hash(data: Data((client.token ?? "").utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()))
+        let events = SharedEventSource(connection)
         let unauthorized: () -> Void = { [weak model] in model?.handleUnauthorized() }
         _tasks = State(initialValue: TasksModel(client: client, events: events, onUnauthorized: unauthorized))
         _pet = State(initialValue: PetModel(client: client, events: events, cache: AssetCache(directory: Self.assetsDirectory), onUnauthorized: unauthorized))
-        _chat = State(initialValue: ChatModel(client: client, events: events, onUnauthorized: unauthorized))
+        let chatModel = ChatModel(client: client, events: events, onUnauthorized: unauthorized)
+        // Typed messages go over the same socket the events arrive on.
+        chatModel.socket = connection
+        // Messages typed without a connection wait in a file in the app's own container until the Mac is back.
+        chatModel.useOutbox(FileOutboxStore.forToken(client.token))
+        _chat = State(initialValue: chatModel)
         _today = State(initialValue: TodayModel(client: client, events: events, onUnauthorized: unauthorized))
         _agents = State(initialValue: AgentsModel(client: client, events: events, onUnauthorized: unauthorized))
         _alerts = State(initialValue: AlertsModel(client: client, events: events, onUnauthorized: unauthorized))
@@ -81,7 +90,16 @@ struct MainTabs: View {
         _screen = State(initialValue: ScreenModel(client: client, events: events, gate: TranscriptGate(authenticator: Self.authenticator, reason: "Show screen text"),
                                                   onUnauthorized: unauthorized))
         _phoneSettings = State(initialValue: PhoneSettingsModel(client: client, events: events, onUnauthorized: unauthorized))
-        _voice = State(initialValue: VoiceModel(player: ReplyPlayer(engine: AudioPlayerEngine()), openChannel: { client.openVoiceChannel() }, makeMic: { EngineMicSource() }))
+        _voice = State(initialValue: Self.makeVoice(client: client))
+    }
+
+    private static func makeVoice(client: IronPetClient) -> VoiceModel {
+        #if DEBUG
+        if DebugVoice.enabled {
+            return VoiceModel(player: ReplyPlayer(engine: AudioPlayerEngine()), openChannel: { SilentVoiceChannel() }, makeMic: { PulseMicSource() })
+        }
+        #endif
+        return VoiceModel(player: ReplyPlayer(engine: AudioPlayerEngine()), openChannel: { client.openVoiceChannel() }, makeMic: { EngineMicSource() })
     }
 
     /// Face ID or the passcode. UI tests launch with `--auto-unlock`, because a simulator cannot answer the system prompt.
@@ -105,7 +123,10 @@ struct MainTabs: View {
                 .tabItem { Label("Pet", systemImage: AppTab.pet.symbol) }.tag(AppTab.pet)
             ChatView(model: chat, backgroundID: pet.backgroundID, backgroundImage: pet.backgroundImage, avatar: PetAvatar.face(of: pet.atlas))
                 .tabItem { Label("Chat", systemImage: AppTab.chat.symbol) }.badge(chat.approvals.count + chat.forms.count).tag(AppTab.chat)
-            TasksView(model: tasks)
+            TasksView(model: tasks, onAsk: { [chat] text in
+                tab = .chat
+                Task { await chat.sendPrompt(text) }
+            })
                 .tabItem { Label("Tasks", systemImage: AppTab.tasks.symbol) }.tag(AppTab.tasks)
             AgentsView(model: agents)
                 .tabItem { Label("Agents", systemImage: AppTab.agents.symbol) }.tag(AppTab.agents)
@@ -114,12 +135,13 @@ struct MainTabs: View {
                 .tag(AppTab.more)
         }
         .themedTabBar()
+        .environment(\.macBackground, MacBackground(id: pet.backgroundID, image: pet.backgroundImage))
         .environment(voice)
         // The Mac's accent colour, when it has one. `nil` leaves the app's own tint, the system blue.
         .tint(pet.accent)
         .environment(\.macAccent, pet.accent ?? .accentColor)
         // The alert count and the waiting approvals are on their tabs before the user opens it.
-        .task { alerts.start(); chat.start(); pet.start(); automations.start(); voice.onTranscript = { [chat] text, mode in if mode == .draft { chat.insertDictation(text) } }; voice.start() }
+        .task { alerts.start(); chat.start(); pet.start(); automations.start(); voice.onTranscript = { [chat] text, mode in if mode == .draft { chat.insertDictation(text) } }; voice.onSend = { [chat] in chat.voiceEvent($0) }; chat.resendVoice = { [voice] in await voice.resend($0) }; voice.start() }
         // The five minutes count from the app going to the background, whichever screen is open. Watching only inside the Meetings
         // screen would leave the text unlocked after the person left it and then left the app.
         .onChange(of: scenePhase) { _, phase in

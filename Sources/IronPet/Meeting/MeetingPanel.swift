@@ -1,6 +1,7 @@
 import AppKit
 import enum IronPetKit.SharedSymbols
 import IronPetCore
+import IronPetKit
 import SwiftUI
 
 /// The floating panel that is on screen for the whole time ironpet records a meeting. It does not take focus, so the

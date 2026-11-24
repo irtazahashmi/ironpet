@@ -232,6 +232,19 @@ package struct RemoteChat {
         return ["outcome": Self.name(result.outcome)]
     }
 
+    /// A message the phone sent over the event socket. The phone made `clientID`, so a second frame with the same id returns the first
+    /// ack and sends nothing. `body` is the same object `send` takes.
+    package func send(clientID: String, _ body: [String: Any], ledger: RemoteSendLedger) async throws -> RemoteSendAck {
+        guard UUID(uuidString: clientID) != nil else { throw RemoteFailure.invalid("client_id must be a UUID") }
+        return try await ledger.once(device: device, clientID: clientID) {
+            let outcome = try await send(body)["outcome"] as? String ?? ChatSendOutcome.sent.rawValue
+            // A message that started a turn is the newest user item. A queued one has no item until its turn comes.
+            let itemID = outcome == ChatSendOutcome.sent.rawValue
+                ? await api.chat.messages().last { if case .user = $0.kind { true } else { false } }?.id.uuidString : nil
+            return RemoteSendAck(clientID: clientID, outcome: outcome, itemID: itemID, seq: api.events.lastSeq)
+        }
+    }
+
     /// The quote of a user or assistant message, as the Mac builds it. A tool step, a screenshot or an error cannot be replied to.
     private func replyTo(_ id: UUID, selection: String?) async throws -> ChatReply {
         let item: ChatItem
@@ -359,6 +372,20 @@ package struct RemoteChat {
     package static func isVisible(_ item: ChatItem) -> Bool {
         if case .notice(let text) = item.kind { return !text.isEmpty }
         return true
+    }
+
+    /// The most text of one message a `chat.item` event carries. A longer message makes the phone read it with a GET.
+    package nonisolated static let maxInlineTextBytes = 16 * 1024
+
+    /// The message as the socket sends it inside a `chat.item` event, so the phone needs no read. Nil for a message the phone must
+    /// read itself: one with a file or a form, or text over `maxInlineTextBytes`.
+    package static func inlineJSON(_ item: ChatItem) -> [String: Any]? {
+        switch item.kind {
+        case .user(let text), .assistant(let text), .error(let text), .tool(let text, _), .notice(let text):
+            guard text.utf8.count <= maxInlineTextBytes else { return nil }
+            return json(item)
+        case .screenshot, .form: return nil
+        }
     }
 
     package static func json(_ item: ChatItem) -> [String: Any] {

@@ -4,7 +4,7 @@ import IronPetCore
 import SwiftUI
 import UniformTypeIdentifiers
 
-/// `--render-previews <dir> [--sprite <sheet.png>]`: renders the main UI with made-up sample data to PNGs, plus an
+/// `--render-previews <dir> [--sprite <sheet.png>] [--background <id>]`: renders the main UI with made-up sample data to PNGs, plus an
 /// animated `pet.gif` of Ghost reacting to an agent, for checking the design without clicking through it and for the
 /// README (`scripts/screenshots.sh`).
 /// Nothing here reads your sessions, alerts or chats.
@@ -18,6 +18,9 @@ enum PreviewRenderer {
         // Default settings (the pet is called Ghost), whatever is in your config.json.
         var config = Config()
         config.pet.sprite = sprite
+        if let id = arguments.firstIndex(of: "--background").flatMap({ arguments.count > $0 + 1 ? arguments[$0 + 1] : nil }) {
+            config.chat.background = id
+        }
         ConfigStore.shared.usePreview(config)
         let atlas = Atlas.loadDefault(sprite: sprite)
         let name = config.pet.name
@@ -74,6 +77,7 @@ enum PreviewRenderer {
                 .frame(width: 780, height: 560).panel()
         }
         render(list(sessions, tasks: tasks, on: .chat), to: dir, "window-chat")
+        render(list(sessions, tasks: tasks, on: .chat), to: dir, "window-chat-light", scheme: .light)
         render(list(sessions, tasks: tasks, on: .transcripts), to: dir, "transcripts")
         // The same section mid-run: the row and the header show the stage, and Regenerate is disabled for the other meeting.
         meetingLibrary.regenerator.loadPreview(active: "2026-11-16-0930", .transcribing(chunk: 2, of: 5))
@@ -133,12 +137,12 @@ enum PreviewRenderer {
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks")
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks-light", scheme: .light)
         for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
-            render(TaskBoardView(columns: TaskBoard.columns(tasks.all, label: nil, query: ""), onOpen: { _ in }, onDrop: { _, _ in })
+            render(TaskBoardView(columns: TaskBoard.columns(tasks.all, filter: nil, query: ""), onOpen: { _ in }, onDrop: { _, _ in })
                 .frame(width: 1240, height: 520).panel(), to: dir, "tasks-board" + suffix, scheme: scheme)
         }
         if let sample = tasks.all.first {
-            render(TaskDetailPage(tasks: tasks, id: sample.id, onBack: {}, onOpen: { _ in }).frame(width: 760, height: 640).panel(), to: dir, "task-detail")
-            render(TaskDetailPage(tasks: tasks, id: sample.id, onBack: {}, onOpen: { _ in }).frame(width: 760, height: 640).panel(), to: dir, "task-detail-light", scheme: .light)
+            render(TaskDetailPage(tasks: tasks, id: sample.id, onBack: {}, onOpen: { _ in }).frame(width: 760, height: 1000).panel(), to: dir, "task-detail")
+            render(TaskDetailPage(tasks: tasks, id: sample.id, onBack: {}, onOpen: { _ in }).frame(width: 760, height: 1000).panel(), to: dir, "task-detail-light", scheme: .light)
         }
         render(LabelPopover(others: [["merge": "auto", "repo": "app"], ["merge": "manual"]], own: [:], onAdd: { _, _ in nil }, onDone: {})
             .frame(width: 260).padding(8).panel(), to: dir, "task-label-popover")
@@ -248,6 +252,22 @@ enum PreviewRenderer {
                        to: dir, name + suffix, scheme: scheme)
             }
         }
+        // Settings → Prompts: the chat context with an edit of the user's and a newer default waiting, so the update notice shows.
+        // The prompt files are in a temp folder, and the default is changed for the render only.
+        let promptFolder = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-preview-prompts-\(UUID().uuidString)")
+        let shippedDefault = PromptStore.defaultText
+        let savedFolder = PromptStore.directory
+        PromptStore.directory = promptFolder
+        if let shipped = Prompts.defaultText("chat-preamble") {
+            PromptStore.save("chat-preamble", text: shipped.replacingOccurrences(of: "Be concise", with: "Keep replies short"))
+            PromptStore.defaultText = { id in id == "chat-preamble" ? shipped.replacingOccurrences(of: "Be concise", with: "Keep replies brief, one idea each") : shippedDefault(id) }
+        }
+        for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
+            render(PromptsSettingsBody(api: PromptsAPI()).frame(width: 560, height: 1000).panel(), to: dir, "settings-prompts" + suffix, scheme: scheme)
+        }
+        PromptStore.defaultText = shippedDefault
+        PromptStore.directory = savedFolder
+        try? FileManager.default.removeItem(at: promptFolder)
         // Settings → Voice with spoken replies on, and a reply being read aloud with its Stop button showing.
         var speechOn = patterned
         speechOn.voice.enabled = true
@@ -263,6 +283,26 @@ enum PreviewRenderer {
             settingsModel.tab = tab
             for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
                 render(SettingsView(model: settingsModel).frame(height: 600), to: dir, "settings-window-\(tab)" + suffix, scheme: scheme)
+            }
+        }
+        // The detail pages of Screen, Transcripts and Automations, and the automation log window, as cards.
+        let slackCapture = capturesStore.recent(limit: 50).first
+        for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
+            render(ScreenCaptureDetail(title: slackCapture.map { "\($0.appName): \(ScreenSectionText.windowLabel($0))" } ?? "Slack: ana (DM) - Acme",
+                                       app: slackCapture?.appName ?? "Slack", at: slackCapture?.at ?? Date(),
+                                       text: slackCapture?.text ?? "Ana\nCan you review PR 4649 before lunch?", onBack: {})
+                .frame(width: 780, height: 460).panel(), to: dir, "screen-detail" + suffix, scheme: scheme)
+            render(TranscriptsView(meetings: meetings, focus: .constant(meetingLibrary.meetings.first?.id))
+                .frame(width: 780, height: 560).panel(), to: dir, "transcript-detail" + suffix, scheme: scheme)
+            render(AutomationsSettings(model: settingsModel).frame(width: 780, height: 1100).panel(), to: dir, "automations" + suffix, scheme: scheme)
+            render(AutomationsSettings(model: settingsModel, open: settingsModel.automations?.automations.first?.id).frame(width: 780, height: 640).panel(),
+                   to: dir, "automation-detail" + suffix, scheme: scheme)
+            if let api = settingsModel.automations {
+                let logModel = AutomationLogModel()
+                logModel.api = api
+                logModel.reload()
+                logModel.selection = logModel.logs.first { $0.outcome == "failed" }?.id
+                render(AutomationLogView(model: logModel).frame(width: 860, height: 520).panel(), to: dir, "automation-logs" + suffix, scheme: scheme)
             }
         }
         // Voice mode's pill in each state, with what was heard.
@@ -464,7 +504,13 @@ enum PreviewRenderer {
             storage: .init(users: { [] }, add: { _ in }, remove: { _ in }, offset: { 0 }, setOffset: { _ in }))
         let model = SettingsModel(actions: .init(suspendHotKeys: { _ in }, buildPet: { _ in }),
                                   announcer: Announcer(notifier: Notifier()), telegram: telegram)
-        model.automations = AutomationsAPI(service: AutomationService(store: store, engine: AutomationEngine(env: .init())))
+        let service = AutomationService(store: store, engine: AutomationEngine(env: .init()))
+        let api = AutomationsAPI(service: service)
+        let sample = api.automations.first?.id ?? AutomationDefaults.githubID
+        service.log(sample, "failed", "gh: could not reach api.github.com", detail: "gh pr list --author @me\nerror connecting to api.github.com\ncheck your internet connection", duration: 1.25)
+        service.log(sample, "fired", "2 pull requests changed", detail: "#4649 Add screen capture: approved\n#4651 Fix the flaky login test: checks passed", duration: 0.8)
+        service.log(sample, "baseline", "First look at your pull requests", duration: 0.6)
+        model.automations = api
         return model
     }
 
@@ -663,7 +709,7 @@ enum PreviewRenderer {
             notes: "## Why now\n\nThe canary has been **green for an hour**. Steps:\n\n- check the `rate_limit` dashboard\n- read https://example.com/runbook\n- ask ops@example.com if unsure\n\nSee [the PR](https://github.com/you/api-server/pull/17).",
             links: [TaskLink(kind: .url, ref: "https://github.com/you/api-server/pull/17", label: "PR #17"),
                     TaskLink(kind: .thread, ref: "t1", label: nil), TaskLink(kind: .file, ref: "/Users/you/notes/deploy.md", label: nil)])
-        _ = try? store.update(store.ordered[0].id, addLabels: ["merge": "auto", "repo": "api-server"], by: "agent:mcp")
+        _ = try? store.update(store.ordered[0].id, addLabels: ["merge": "auto", "repo": "api-server", "project": "payments"], by: "agent:mcp")
         add("Fix the flaky login test", .inProgress, .chat, ago: 1500, due: today.addingTimeInterval(-day),
             links: [TaskLink(kind: .session, ref: "3", label: nil), TaskLink(kind: .thread, ref: "t1", label: nil)])
         add("Make the settings page work on mobile", .inProgress, .telegram, ago: 3 * 3600,
@@ -684,7 +730,11 @@ enum PreviewRenderer {
                                             url: URL(string: "https://mail.google.com/mail/u/0/#inbox/1"))],
                       automation: "gmail-watch", name: "Gmail watcher")
         clock = Date()
-        return TasksAPI(store: store)
+        let api = TasksAPI(store: store)
+        _ = try? api.upsertQuickFilter(id: nil, name: "Open", query: ["not": ["status": "done"]])
+        _ = try? api.upsertQuickFilter(id: nil, name: "Needs me", query: ["status": "needs_you"])
+        _ = try? api.upsertQuickFilter(id: nil, name: "Due soon", query: ["and": [["due": ["before": "2099-01-01"]], ["not": ["status": "done"]]]])
+        return api
     }
 
     private static var sampleSignals: [Signal] {

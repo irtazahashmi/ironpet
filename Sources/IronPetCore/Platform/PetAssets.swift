@@ -32,10 +32,13 @@ package protocol PetAssets: Sendable {
     func folderSignature() -> [String]
     /// Copies an image into the backgrounds folder under a fresh name, removes `replacing`, and returns the new file name.
     func importBackground(from source: URL, replacing: String?) throws -> String
+    /// A copy of the background image `name` that is small enough to send to a phone, or nil to send the file as it is.
+    func phoneBackground(named name: String) -> URL?
 }
 
 extension PetAssets {
     package var isSupported: Bool { true }
+    package func phoneBackground(named name: String) -> URL? { nil }
 }
 
 /// Has no pets and no backgrounds.

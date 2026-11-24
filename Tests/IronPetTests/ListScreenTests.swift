@@ -3,6 +3,7 @@ import SwiftUI
 import XCTest
 @testable import IronPet
 @testable import IronPetCore
+import enum IronPetKit.QuickFilterNode
 
 @MainActor
 final class ListScreenTests: XCTestCase {
@@ -56,7 +57,8 @@ final class ListScreenTests: XCTestCase {
         XCTAssertEqual(NotificationsModel.filter(items, query: "STAND").map(\.id), ["1"])
     }
 
-    func testTasksCombineTheLabelFilterAndTheSearch() {
+    func testTasksCombineTheQuickFilterAndTheSearch() {
+        let merge = QuickFilterNode.label(key: "merge", value: "auto")
         let now = Date()
         func task(_ id: String, _ title: String, notes: String, labels: [String: String]) -> TaskItem {
             TaskItem(id: id, title: title, notes: notes, status: .backlog, source: .chat, due: nil, links: [],
@@ -64,11 +66,11 @@ final class ListScreenTests: XCTestCase {
         }
         let a = task("a", "Ship the release", notes: "tag it", labels: ["merge": "auto"])
         let b = task("b", "Write docs", notes: "release notes", labels: [:])
-        XCTAssertTrue(TaskListView.matches(a, label: nil, query: ""))
-        XCTAssertTrue(TaskListView.matches(a, label: "merge=auto", query: "RELEASE"))
-        XCTAssertFalse(TaskListView.matches(b, label: "merge=auto", query: "release"), "the search matches, the label does not")
-        XCTAssertTrue(TaskListView.matches(b, label: nil, query: "release"), "notes count as the description")
-        XCTAssertFalse(TaskListView.matches(a, label: "merge=auto", query: "docs"), "the label matches, the search does not")
+        XCTAssertTrue(TaskListView.matches(a, filter: nil, query: ""))
+        XCTAssertTrue(TaskListView.matches(a, filter: merge, query: "RELEASE"))
+        XCTAssertFalse(TaskListView.matches(b, filter: merge, query: "release"), "the search matches, the filter does not")
+        XCTAssertTrue(TaskListView.matches(b, filter: nil, query: "release"), "notes count as the description")
+        XCTAssertFalse(TaskListView.matches(a, filter: merge, query: "docs"), "the filter matches, the search does not")
     }
 
     func testTodayDropsSectionsThatHaveNoMatchingItem() {

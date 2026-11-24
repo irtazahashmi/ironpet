@@ -102,7 +102,9 @@ final class ChatModelTests: XCTestCase {
 
     func testAReplyIsSentWithTheQuotedItemId() async throws {
         let model = await started()
-        model.replyTo = model.items[1]
+        // A failed first load leaves no items. That must fail this test, not trap and end the whole test process.
+        XCTAssertGreaterThan(model.items.count, 1, "the chat did not load")
+        model.replyTo = try XCTUnwrap(model.items.dropFirst().first)
         model.draft = "why?"
         await model.send()
         let send = try XCTUnwrap(server.requests.last { $0.path == "/v1/chat/current/messages" })

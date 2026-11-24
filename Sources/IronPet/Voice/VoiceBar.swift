@@ -1,5 +1,5 @@
 import IronPetCore
-import enum IronPetKit.SharedSymbols
+import IronPetKit
 import SwiftUI
 
 /// Replaces the whole composer while a voice note is recording or being transcribed: cancel, a live waveform across
@@ -12,7 +12,7 @@ struct VoiceBar: View {
     var body: some View {
         HStack(spacing: 10) {
             circleButton(SharedSymbols.deny, help: transcribing ? "Cancel transcription" : "Discard recording") { voice.cancel() }
-            Waveform(voice: voice)
+            VoiceWaveform(levels: voice.levels, paused: transcribing)
                 .frame(height: 34)
                 .frame(maxWidth: .infinity)
                 .opacity(transcribing ? 0.3 : 1)
@@ -71,55 +71,5 @@ private struct ElapsedTime: View {
         }
     }
 
-    static func format(_ seconds: Int) -> String {
-        String(format: "%d:%02d", seconds / 60, seconds % 60)
-    }
-}
-
-/// Mirrored bars scrolling right to left, drawn from the level buffer on the display's own timeline. With Reduce
-/// Motion on it redraws a few times a second and steps instead of scrolling.
-private struct Waveform: View {
-    @ObservedObject var voice: VoiceController
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-
-    private static let barWidth: CGFloat = 3
-    private static let gap: CGFloat = 2.5
-
-    var body: some View {
-        // Reduce Motion stops the `.animation` schedule from ticking, so it gets a plain periodic one.
-        Group {
-            if reduceMotion {
-                TimelineView(.periodic(from: .now, by: 0.25)) { timeline in
-                    bars(frame: timeline.date)
-                }
-            } else {
-                TimelineView(.animation(paused: voice.phase == .transcribing)) { timeline in
-                    bars(frame: timeline.date)
-                }
-            }
-        }
-        .accessibilityHidden(true)
-    }
-
-    /// `voice.levels` is a reference type, so the Canvas only redraws if its closure captures something that
-    /// changes every frame. The timeline date does that.
-    private func bars(frame: Date) -> some View {
-        Canvas { context, size in
-            _ = frame
-            let pitch = Self.barWidth + Self.gap
-            let count = Int(size.width / pitch) + 2
-            let (bars, phase) = voice.levels.recent(count)
-            let shift = reduceMotion ? 0 : CGFloat(phase) * pitch
-            for (index, level) in bars.enumerated() {
-                let x = size.width - CGFloat(bars.count - index) * pitch - shift + pitch
-                guard x > -pitch, x < size.width else { continue }
-                let height = max(Self.barWidth, CGFloat(level) * size.height)
-                let rect = CGRect(x: x, y: (size.height - height) / 2, width: Self.barWidth, height: height)
-                // Older bars fade out toward the left edge.
-                let fade = min(1, max(0.15, x / (size.width * 0.35)))
-                context.fill(Path(roundedRect: rect, cornerRadius: Self.barWidth / 2),
-                             with: .color(.accentColor.opacity(fade)))
-            }
-        }
-    }
+    static func format(_ seconds: Int) -> String { VoiceClock.format(seconds) }
 }

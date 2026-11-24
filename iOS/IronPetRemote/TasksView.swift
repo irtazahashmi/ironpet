@@ -3,7 +3,11 @@ import SwiftUI
 
 struct TasksView: View {
     let model: TasksModel
+    /// Sends a message to the main chat and shows the Chat tab. Add and Edit on a quick filter use it.
+    var onAsk: (String) -> Void = { _ in }
     @State private var showDone = false
+    @State private var filterRequest: QuickFilterRequest?
+    @State private var removingFilter: QuickFilter?
     @AppStorage(TasksViewMode.key) private var modeRaw = TasksViewMode.list.rawValue
     /// A card dropped on Waiting on others, until the person says who holds it.
     @State private var holdingTask: String?
@@ -14,6 +18,19 @@ struct TasksView: View {
     var body: some View {
         NavigationStack {
             content
+            .sheet(item: $filterRequest) { request in
+                QuickFilterRequestSheet(request: request) { onAsk(request.prompt($0)) }
+            }
+            .confirmationDialog("Remove \"\(removingFilter?.name ?? "")\"?", isPresented: Binding(get: { removingFilter != nil }, set: { if !$0 { removingFilter = nil } }),
+                                titleVisibility: .visible) {
+                Button("Remove", role: .destructive) {
+                    if let filter = removingFilter { Task { _ = await model.removeFilter(filter) } }
+                }
+                .accessibilityIdentifier("quick-filter-remove-confirm")
+                Button("Cancel", role: .cancel) {}
+            } message: {
+                Text("The filter goes from the Mac and the phone. Tasks are not changed.")
+            }
             .navigationTitle("Tasks")
             .themedScreen()
             .toolbar { modeToolbar }
@@ -58,8 +75,17 @@ struct TasksView: View {
         if mode == .board { board } else { list }
     }
 
+    /// The chips sit in the page content, below the large title. A top safe area inset would pin them to the bar and the title would scroll under them.
+    @ViewBuilder private var chips: some View {
+        if model.filtersSupported {
+            QuickFilterChips(filters: model.filters, selection: Bindable(model).selectedFilterID,
+                             onAdd: { filterRequest = .add }, onEdit: { filterRequest = .edit($0) }, onRemove: { removingFilter = $0 })
+        }
+    }
+
     private var board: some View {
         VStack(spacing: 0) {
+            chips
             if let message = model.errorMessage {
                 Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).font(.footnote)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).accessibilityIdentifier("tasks-error")
@@ -88,6 +114,12 @@ struct TasksView: View {
 
     private var list: some View {
             List {
+                if model.filtersSupported {
+                    chips
+                        .listRowInsets(EdgeInsets())
+                        .listRowBackground(Color.clear)
+                        .listRowSeparator(.hidden)
+                }
                 Group {
                     if let message = model.errorMessage {
                         Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("tasks-error")
@@ -115,6 +147,8 @@ struct TasksView: View {
                     }
                     if model.loaded, model.tasks.isEmpty, model.suggestions.isEmpty {
                         ContentUnavailableView("No tasks", systemImage: SharedSymbols.tasks, description: Text("Tasks you add on the Mac show up here."))
+                    } else if model.loaded, model.activeFilter != nil, model.visibleTasks.isEmpty {
+                        ContentUnavailableView("No matching tasks", systemImage: SharedSymbols.tasks, description: Text("No task matches this filter."))
                     }
             
                 }.listRowBackground(SharedTheme.card)

@@ -87,12 +87,16 @@ final class ChatParityUITests: XCTestCase {
 
     private var transcript: XCUIElement { any("transcript").firstMatch }
 
-    /// Scrolls the transcript until `element` can be hit, up to `limit` swipes.
+    /// Scrolls the transcript until `element` can be hit, up to `limit` swipes in the given direction, then back the other way.
+    /// The default chat text is one step bigger, so a row can end up behind the composer at the top of the transcript.
     private func scroll(to element: XCUIElement, up: Bool, limit: Int = 12) {
-        var swipes = 0
-        while !element.isHittable, swipes < limit {
-            if up { transcript.swipeDown(velocity: .fast) } else { transcript.swipeUp(velocity: .fast) }
-            swipes += 1
+        for direction in [up, !up] {
+            var swipes = 0
+            while !element.isHittable, swipes < limit {
+                if direction { transcript.swipeDown(velocity: .fast) } else { transcript.swipeUp(velocity: .slow) }
+                swipes += 1
+            }
+            if element.isHittable { return }
         }
     }
 
@@ -213,7 +217,7 @@ final class ChatParityUITests: XCTestCase {
     }
 
     // S5
-    func testAnErrorReplyShowsAsTheRedCardAndALostConnectionAsTheBanner() {
+    func testAnErrorReplyShowsAsTheRedCardAndAFailedSendAsARowWithRetry() {
         server.chat.items = [RemoteChatItem(id: "e-user", kind: "user", date: Date(), text: "run it"),
                              RemoteChatItem(id: "e-error", kind: "error", date: Date(), text: "The agent stopped: it could not reach the model.")]
         server.chat.state = "failed"
@@ -222,13 +226,15 @@ final class ChatParityUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["The agent stopped: it could not reach the model."].waitForExistence(timeout: 20))
         XCTAssertTrue(app.staticTexts["Failed"].exists || app.staticTexts["chat-subtitle"].exists || any("chat-subtitle").label.contains("Failed"))
         attach("error-reply")
-        // The Mac goes away: the next request fails and the banner says so.
+        // The Mac goes away: the message waits on its own row, and no banner repeats it. Offline messages wait instead of failing.
         server.stop()
         let input = app.textViews["chat-input"]
         input.tap()
         input.typeText("hello?")
         app.buttons["send-button"].tap()
-        XCTAssertTrue(any("chat-error").waitForExistence(timeout: 20), "a failed request shows the banner")
+        XCTAssertTrue(any("outgoing-waiting").waitForExistence(timeout: 20), "an unreachable Mac leaves the message waiting on its row")
+        XCTAssertFalse(any("chat-error").exists, "no banner for a failed send")
+        XCTAssertFalse(any("chat-connection-lost").exists)
         attach("connection-lost")
     }
 }

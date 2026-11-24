@@ -65,8 +65,8 @@ struct RemoteGate: RouterMiddleware {
         if headerBytes > RemoteServer.maxHeaders {
             return RemoteServer.error(431, "headers_too_large", "request headers are too large")
         }
-        // Only the upload route takes a body past 1 MiB.
-        let limit = Self.template(context.endpointPath) == RemoteServer.uploadRoute ? RemoteUploads.maxBytes : RemoteServer.maxBody
+        // Only the upload routes take a body past 1 MiB.
+        let limit = RemoteServer.largeBodyRoutes.contains(Self.template(context.endpointPath) ?? "") ? RemoteUploads.maxBytes : RemoteServer.maxBody
         if let length = request.headers[.contentLength].flatMap(Int.init), length > limit {
             return RemoteServer.error(413, "too_large", "request body is larger than \(limit) bytes")
         }
@@ -101,6 +101,9 @@ final class RemoteServer {
     nonisolated static let maxBody = 1 << 20
     nonisolated static let maxHeaders = 64 << 10
     nonisolated static let uploadRoute = "/v1/uploads"
+    nonisolated static let backgroundRoute = "/v1/settings/background"
+    /// The routes that take a body past 1 MiB.
+    nonisolated static let largeBodyRoutes: Set<String> = [uploadRoute, backgroundRoute]
     /// The longest message the event socket reads from a device.
     nonisolated static let maxSocketMessage = 16 << 10
 
@@ -109,6 +112,8 @@ final class RemoteServer {
     /// Answers `session.hello` on the event socket. Nothing else of the method table is reachable through a socket.
     private let rpc: RPCDispatcher
     private let uploads: RemoteUploads
+    /// The messages phones sent over the event socket, so a resend creates nothing.
+    private let sends = RemoteSendLedger()
     /// How often one message's `chat.item` event may reach a socket.
     var itemInterval: Duration = .milliseconds(100)
     private var tasks: [Task<Void, Never>] = []
@@ -335,6 +340,13 @@ final class RemoteServer {
             let id = Self.parameter(context, "id")
             return try await self.call(context) { try $0.delete(id) }
         }
+        router.get("/v1/task-filters") { [self] _, context in
+            try await self.call(context) { $0.filters() }
+        }
+        router.delete("/v1/task-filters/:id") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return try await self.call(context) { try $0.deleteFilter(id) }
+        }
         router.get("/v1/suggestions") { [self] _, context in
             try await self.call(context) { try $0.suggestions() }
         }
@@ -474,6 +486,13 @@ final class RemoteServer {
             let body = try await Self.object(request, context)
             return await self.phoneFour(context) { api, _ in try await RemotePhoneSettings(api: api).selectPet(body) }
         }
+        // One image as the raw body, up to 20 MiB: JPEG, PNG or HEIC. It becomes the custom chat background of the Mac and every phone.
+        router.post("/v1/settings/background") { [self] request, context in
+            guard context.device != nil else { return Self.error(401, "unauthorized", "unauthorized") }
+            let buffer = try await request.body.collect(upTo: RemoteUploads.maxBytes)
+            let data = Data(buffer.readableBytesView)
+            return await self.phoneFour(context) { api, _ in try await RemotePhoneSettings(api: api).uploadBackground(data) }
+        }
         router.get("/v1/usage") { [self] request, context in
             let range = Self.query(request)["range"]?.first
             return await self.phoneFour(context) { api, _ in try RemotePhoneSettings(api: api).usage(range: range) }
@@ -511,7 +530,12 @@ final class RemoteServer {
         router.post("/v1/chat/current/messages") { [self] request, context in
             HopLog.mark("mac.receive")
             let body = try await Self.object(request, context)
-            let response = await self.chat(context) { try await $0.send(body) }
+            let sends = self.sends
+            // A phone that sends a client id gets the same dedupe as on the socket, so a retry over HTTPS after a lost ack creates nothing.
+            let response = await self.chat(context) {
+                guard let clientID = body["client_id"] as? String else { return try await $0.send(body) }
+                return ["outcome": try await $0.send(clientID: clientID, body, ledger: sends).outcome]
+            }
             HopLog.mark("mac.transcript")
             return response
         }
@@ -679,6 +703,7 @@ final class RemoteServer {
         let service = service
         let api = api
         let rpc = rpc
+        let uploads = uploads, sends = sends
         let interval = itemInterval
         router.ws("/v1/events", shouldUpgrade: { request, _ in
             // The same checks as REST, without counting a failure: a refused upgrade falls through to the REST router, which counts it once.
@@ -692,6 +717,8 @@ final class RemoteServer {
             let request = context.request
             guard case .device(let device) = service.authenticate(authorization: request.headers[.authorization], origin: nil, count: false) else { return }
             let since = request.uri.queryParameters["since"].flatMap { Int($0) }
+            // The `epoch` of the Mac launch that numbered `since`. A phone that kept `since` across its own restart sends it.
+            let sinceEpoch = request.uri.queryParameters["epoch"].map(String.init)
             let (frames, send) = AsyncStream<String>.makeStream(bufferingPolicy: .bufferingNewest(2000))
             guard let socket = service.openSocket(device: device.id, close: { send.finish() }) else { return }
             defer { service.socketClosed(socket) }
@@ -703,16 +730,33 @@ final class RemoteServer {
             defer { Task { @MainActor in if let id = connection.sessionID { api.clients.disconnect(id) } } }
             let (subscription, throttle) = await MainActor.run { () -> (APIEventBus.Subscription, RemoteEventThrottle) in
                 let bus = api.events
-                send.yield(Self.text(["kind": "hello", "seq": bus.lastSeq]))
-                let gap = since.map { bus.replay(after: $0).gap } ?? false
-                if gap { send.yield(Self.text(["kind": "resync", "seq": bus.lastSeq])) }
+                send.yield(Self.text(["kind": "hello", "seq": bus.lastSeq, "epoch": bus.epoch, "capabilities": Self.socketCapabilities]))
+                let missed = since.map { bus.replay(after: $0) }
+                // A `seq` from another launch of the Mac is outside this numbering, whatever its value.
+                let gap = (missed?.gap ?? false) || (since != nil && sinceEpoch != nil && sinceEpoch != bus.epoch)
                 // A streamed reply changes one message many times a second. The phone reads it again on each event, so it gets at most
-                // one `chat.item` per message per interval, and the last one after the stream pauses.
-                let throttle = RemoteEventThrottle(interval: interval) {
+                // one `chat.item` per message per interval, and the last one after the stream pauses. Each carries the message text as it is at that moment.
+                let emit: (APIEvent) -> Void = {
                     if $0.kind == .chatItem { HopLog.mark("mac.push") }
-                    send.yield(Self.text(Self.describe($0)))
+                    var frame = Self.describe($0)
+                    // The changed message rides along, so the phone does not read it again. An older phone ignores the key.
+                    if $0.kind == .chatItem, let id = $0.id.flatMap(UUID.init(uuidString:)), let item = api.chat.currentItem(id),
+                       let inline = RemoteChat.inlineJSON(item) { frame["item"] = inline }
+                    send.yield(Self.text(frame))
                 }
-                return (bus.subscribe(after: gap ? nil : since) { throttle.push($0) }, throttle)
+                let throttle = RemoteEventThrottle(interval: interval, deliver: emit)
+                if let since {
+                    if gap {
+                        Self.resumeLog.info("events resume_from=\(since) too_old=true")
+                        send.yield(Self.text(["kind": "resync", "seq": bus.lastSeq]))
+                    } else if let missed {
+                        // The replay skips the throttle, so every missed event is on the wire, in order, before `resumed` and the live stream.
+                        for event in missed.events { emit(event) }
+                        Self.resumeLog.info("events resume_from=\(since) replayed=\(missed.events.count)")
+                        send.yield(Self.text(["kind": "resumed", "seq": bus.lastSeq, "replayed": missed.events.count]))
+                    }
+                }
+                return (bus.subscribe { throttle.push($0) }, throttle)
             }
             defer { Task { @MainActor in subscription.cancel(); throttle.cancel() } }
             // Reading keeps the library answering pings. A close from the device or a revoke ends the stream and with it the socket.
@@ -722,6 +766,11 @@ final class RemoteServer {
                     do {
                         for try await message in inbound.messages(maxSize: Self.maxSocketMessage) {
                             guard case .text(let text) = message else { continue }
+                            if let frame = Self.chatSendFrame(text) {
+                                // The send runs on its own task, so one slow message does not hold up the next frame or a ping.
+                                Task { send.yield(await Self.answer(frame, api: api, device: device.id, uploads: uploads, sends: sends)) }
+                                continue
+                            }
                             let reply = await rpc.handle(line: Data(text.utf8), connection: connection, allowed: ["session.hello"])
                             send.yield(String(decoding: reply, as: UTF8.self))
                         }
@@ -737,6 +786,43 @@ final class RemoteServer {
                 group.cancelAll()
             }
         }
+    }
+
+    /// One line per resume: `events resume_from=K replayed=N`, or `events resume_from=K too_old=true`. It has no device or message text.
+    nonisolated static let resumeLog = Log(subsystem: "com.ironpet", category: "remote-resume")
+
+    /// What the hello frame announces. `chat.send` means the socket takes a `chat.send` frame and answers it with `chat.ack`. `events.resume`
+    /// means a phone that sent `since` hears `resumed` after the replayed events, or `resync` when the Mac cannot replay.
+    nonisolated static let socketCapabilities = ["chat.send", "events.resume"]
+
+    /// The frame when `text` is a `chat.send` frame: `{"kind":"chat.send","client_id","text","reply"?}`.
+    private nonisolated static func chatSendFrame(_ text: String) -> [String: Any]? {
+        guard let object = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any], object["kind"] as? String == "chat.send" else { return nil }
+        return object
+    }
+
+    /// The `chat.ack` frame for a sent message, or a `chat.nack` with the reason. Both carry the phone's `client_id`.
+    private nonisolated static func answer(_ frame: [String: Any], api: IronPetAPI, device: String, uploads: RemoteUploads, sends: RemoteSendLedger) async -> String {
+        let clientID = frame["client_id"] as? String ?? ""
+        HopLog.mark("mac.recv")
+        var body: [String: Any] = ["text": frame["text"] as? String ?? ""]
+        if let reply = frame["reply"] { body["reply"] = reply }
+        do {
+            let ack = try await MainActor.run { RemoteChat(api: api, device: device, uploads: uploads) }.send(clientID: clientID, body, ledger: sends)
+            var object: [String: Any] = ["kind": "chat.ack", "client_id": ack.clientID, "outcome": ack.outcome, "seq": ack.seq]
+            if let item = ack.itemID { object["item_id"] = item }
+            HopLog.mark("mac.ack")
+            return text(object)
+        } catch {
+            let failure = errorResponseParts(error)
+            return text(["kind": "chat.nack", "client_id": clientID, "code": failure.code, "message": failure.message])
+        }
+    }
+
+    private nonisolated static func errorResponseParts(_ error: Error) -> (code: String, message: String) {
+        if let failure = error as? RemoteFailure { return (failure.code, failure.message) }
+        if let failure = error as? APIError { return ("failed", String(describing: failure)) }
+        return ("failed", "internal error")
     }
 
     // MARK: Voice socket
@@ -757,7 +843,11 @@ final class RemoteServer {
             let (frames, send) = AsyncStream<RemoteVoice.Output>.makeStream(bufferingPolicy: .unbounded)
             guard let socket = service.openSocket(device: device.id, kind: RemoteService.voiceSocket, close: { send.finish() }) else { return }
             defer { service.socketClosed(socket) }
-            let voice = await MainActor.run { RemoteVoice(api: api, device: device.id) { send.yield($0) } }
+            let voice = await MainActor.run { () -> RemoteVoice in
+                let voice = RemoteVoice(api: api, device: device.id) { send.yield($0) }
+                voice.hop = { HopLog.mark($0) }
+                return voice
+            }
             defer { Task { @MainActor in voice.close() } }
             await withTaskGroup(of: Void.self) { group in
                 group.addTask {

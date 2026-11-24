@@ -87,6 +87,10 @@ package final class RemoteVoice {
     /// Where gaps and refused frames are noted. The default writes to the system log.
     package var log: (String) -> Void = { NSLog("ironpet: %@", $0) }
 
+    /// Called with a hop name as a voice stream passes each step on the Mac, for timing. The app writes it to the system log with a
+    /// time. It gets names only, never audio or text.
+    package var hop: (String) -> Void = { _ in }
+
     package init(api: IronPetAPI, device: String, send: @escaping (Output) -> Void) {
         self.api = api
         self.device = device
@@ -122,6 +126,7 @@ package final class RemoteVoice {
             stream = Stream(id: id, mode: mode)
         case .end(let id):
             guard let finished = stream, id.isEmpty || id == finished.id else { return }
+            hop("mac.voice.receive")
             stream = nil
             transcribe(finished)
         case .cancel(let id):
@@ -170,12 +175,17 @@ package final class RemoteVoice {
             guard let self else { return }
             defer { transcriptions[key] = nil }
             do {
+                hop("mac.voice.transcribe.start")
                 let text = try await api.voice.transcribe(TranscribeRequest(audio: wav, fileName: "voice-note.wav")).trimmingCharacters(in: .whitespacesAndNewlines)
+                hop("mac.voice.transcribe.done")
                 guard !Task.isCancelled else { return }
                 send(.text(VoiceServerMessage.transcript(id: finished.id, text: text).json))
+                hop("mac.voice.transcript")
                 guard finished.mode == .send, !text.isEmpty else { return }
                 let origin = ChatOrigin.ios(device: device)
-                if try await api.chat.send(SendChatRequest(text: text, origin: origin)).outcome == .needsFolder {
+                let outcome = try await api.chat.send(SendChatRequest(text: text, origin: origin)).outcome
+                hop("mac.voice.item")
+                if outcome == .needsFolder {
                     fail(finished.id, "Choose a folder for this chat on the Mac.")
                 }
             } catch is CancellationError {

@@ -108,6 +108,19 @@ final class RemoteVoiceTests: XCTestCase {
         XCTAssertTrue(session.items.contains { $0.origin == ChatOrigin.iosClient })
     }
 
+    func testASentVoiceMessageMarksEachHopOnTheMacInOrderWithoutContent() async throws {
+        var hops: [String] = []
+        voice.hop = { hops.append($0) }
+        session.turnRunner = { _, _ in }
+        api.voice.transcribeAudio = { _, _, _ in "secret words" }
+        start(mode: .send)
+        voice.receive(binary: VoiceWire.audioFrame(seq: 0, pcm: Data(count: VoiceWire.frameBytes)))
+        end()
+        await wait("the item") { hops.contains("mac.voice.item") }
+        XCTAssertEqual(hops, ["mac.voice.receive", "mac.voice.transcribe.start", "mac.voice.transcribe.done", "mac.voice.transcript", "mac.voice.item"])
+        XCTAssertFalse(hops.contains { $0.contains("secret") })
+    }
+
     func testDraftModeSendsNothingToTheChat() async throws {
         var prompts: [String] = []
         session.turnRunner = { turn, _ in prompts.append(turn.prompt) }

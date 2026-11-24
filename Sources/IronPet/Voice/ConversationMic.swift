@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import IronPetCore
+import IronPetKit
 
 /// The microphone for a voice conversation. One `AVAudioEngine` with voice processing on, so the pet's voice coming
 /// out of the speakers is cancelled from what the microphone hears. Each buffer goes to a serial queue, where an

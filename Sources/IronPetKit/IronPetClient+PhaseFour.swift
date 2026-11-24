@@ -87,6 +87,14 @@ extension IronPetClient {
 
     public func selectPet(id: String) async throws { try await post(APIPath.settingsPet, json: ["id": id]) }
 
+    /// Uploads a JPEG, PNG or HEIC image, up to 20 MiB, as the custom chat background. The answer is the Mac's settings after the change.
+    @discardableResult
+    public func uploadBackground(_ data: Data, contentType: String = "image/jpeg") async throws -> RemoteConfig {
+        var request = request("POST", APIPath.settingsBackground, body: data, headers: ["Content-Type": contentType])
+        request.timeoutInterval = 120
+        return try decode(RemoteConfig.self, from: try await perform(request))
+    }
+
     public func usage(days: Int = 7) async throws -> RemoteUsage {
         try await get(RemoteUsage.self, APIPath.usage, query: [URLQueryItem(name: "range", value: "\(days)d")])
     }

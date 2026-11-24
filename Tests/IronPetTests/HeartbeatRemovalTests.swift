@@ -50,7 +50,7 @@ final class HeartbeatRemovalTests: AutomationTestCase {
     func testANewInstallGetsNoHeartbeatAutomation() {
         let s = store([], builtIns: AutomationDefaults.builtIns)
         XCTAssertNil(s.automations.first { $0.id == "heartbeat" })
-        XCTAssertEqual(Set(s.automations.map(\.id)), [AutomationDefaults.morningBriefID, AutomationDefaults.dayRecapID])
+        XCTAssertEqual(Set(s.automations.map(\.id)), [AutomationDefaults.morningBriefID, AutomationDefaults.dayRecapID, AutomationDefaults.taskReviewID])
         XCTAssertNil(BundledSkills.named("heartbeat"))
     }
 

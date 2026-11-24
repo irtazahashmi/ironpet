@@ -2,6 +2,7 @@ import AppKit
 import Carbon
 import Combine
 import IronPetCore
+import IronPetKit
 
 /// Voice mode in the app: the conversation, its pill by the pet, Esc to end it, Wispr Flow's dictation in Wispr mode,
 /// and job updates said out loud for jobs started by voice.

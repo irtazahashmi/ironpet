@@ -88,9 +88,9 @@ final class ChatImages {
             return .success(data)
         } catch let error as ClientError {
             if case .api(_, _, let message) = error { return .failure(.refused(message)) }
-            return .failure(.unavailable(error.errorDescription ?? "The Mac did not answer."))
+            return .failure(.unavailable(PlainError.message(for: error)))
         } catch {
-            return .failure(.unavailable(error.localizedDescription))
+            return .failure(.unavailable(PlainError.message(for: error)))
         }
     }
 

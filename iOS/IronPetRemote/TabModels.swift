@@ -40,12 +40,16 @@ class SocketModel {
 
     func refresh() async {
         await reload()
-        loaded = true
+        // A cancelled load never read the Mac, so an empty list after it is not "no meetings". The load that follows sets `loaded`.
+        // This checks the calling task, so a second refresh running at the same time cannot change the answer.
+        if !Task.isCancelled { loaded = true }
     }
 
     func handle(_ signal: EventSignal) async {
         switch signal {
         case .connected, .resync: await refresh()
+        // The Mac replayed what this phone missed, so what the screen shows is current.
+        case .resumed: break
         case .unauthorized: onUnauthorized()
         case .event(let event): await handle(event)
         }
@@ -67,11 +71,16 @@ class SocketModel {
         } catch ClientError.unauthorized {
             onUnauthorized()
         } catch is CancellationError {
+            // The app cancelled the request. It is not a failure to show.
+        } catch let error as URLError where error.code == .cancelled {
         } catch {
-            errorMessage = error.localizedDescription
+            errorMessage = message(for: error)
         }
         return nil
     }
+
+    /// The text `run` shows for a failed request. A subclass that must not show URLSession's wording replaces it.
+    func message(for error: Error) -> String { error.localizedDescription }
 }
 
 /// The tabs of the app. Alerts, Automations, Meetings, Screen and Settings sit behind More.
@@ -165,7 +174,8 @@ final class PetModel: SocketModel {
         case RemoteEvent.assetsChanged:
             await reloadPet(applyMood: false)
             await syncAssets()
-        case RemoteEvent.alertsChanged, RemoteEvent.agentsChanged: await reloadPet(applyMood: false)
+        // The Mac's background (and its accent colour) are part of the pet resource, so a change in the Mac's Settings shows at once.
+        case RemoteEvent.alertsChanged, RemoteEvent.agentsChanged, RemoteEvent.settingsChanged: await reloadPet(applyMood: false)
         default: break
         }
     }

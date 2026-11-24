@@ -159,40 +159,8 @@ struct NotificationsSection: View {
     }
 
     private func detail(_ item: NotificationItem) -> some View {
-        ListDetailPage(section: "Notifications", onBack: { model.close() }) {
-            HStack(spacing: 8) {
-                Image(systemName: item.type.symbol).foregroundStyle(.secondary)
-                Text(NotificationsModel.sourceTitle(item.source) + " · " + item.type.title + " · "
-                     + item.created.formatted(date: .abbreviated, time: .shortened))
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Text(item.title).font(.system(size: 24, weight: .bold)).textSelection(.enabled)
-            if !item.summary.isEmpty, item.summary != item.title {
-                Text(item.summary).font(.system(size: 13)).textSelection(.enabled)
-            }
-            if !item.description.isEmpty, item.description != item.summary {
-                Text(NotificationText.markdown(item.description))
-                    .font(.system(size: 13))
-                    .textSelection(.enabled)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-            }
-            if !item.links.isEmpty {
-                VStack(alignment: .leading, spacing: 4) {
-                    ForEach(Array(item.links.enumerated()), id: \.offset) { _, link in
-                        Button { model.opener.open(link) } label: {
-                            Label(link.title, systemImage: NotificationText.symbol(link.kind))
-                                .font(.system(size: 12))
-                                .lineLimit(1)
-                                .truncationMode(.middle)
-                        }
-                        .buttonStyle(.link)
-                        .help(link.ref)
-                    }
-                }
-            }
-        }
-        .onExitCommand { model.close() }
+        NotificationDetail(item: item, opener: model.opener, onBack: { model.close() })
+            .onExitCommand { model.close() }
     }
 
     private var typeMenu: some View {
@@ -225,6 +193,73 @@ struct NotificationsSection: View {
         .fixedSize()
         .font(.caption)
         .accessibilityLabel("Filter by source")
+    }
+}
+
+/// A notification in full, as cards: the source, type and time over the title, then the summary, the description and the links.
+struct NotificationDetail: View {
+    let item: NotificationItem
+    let opener: NotificationLinkOpener
+    let onBack: () -> Void
+
+    /// The cards below the header, in order. A part that is empty, or that only repeats the title or the summary, gets none.
+    static func sections(for item: NotificationItem) -> [String] {
+        var shown: [String] = []
+        if !item.summary.isEmpty, item.summary != item.title { shown.append("Summary") }
+        if !item.description.isEmpty, item.description != item.summary { shown.append("Details") }
+        if !item.links.isEmpty { shown.append("Links") }
+        return shown
+    }
+
+    var body: some View {
+        let sections = Self.sections(for: item)
+        ListDetailPage(section: "Notifications", onBack: onBack) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Chip(text: item.type.title, tint: .purple)
+                    Chip(text: NotificationsModel.sourceTitle(item.source), tint: .gray)
+                }
+                Text(item.title).font(.system(size: 24, weight: .bold)).textSelection(.enabled)
+                Label(item.created.formatted(date: .abbreviated, time: .shortened), systemImage: item.type.symbol)
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cardMaterial()
+            if sections.contains("Summary") {
+                CardSection(title: "Summary") {
+                    Text(item.summary).font(.system(size: 13)).textSelection(.enabled)
+                        .padding(14).frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            if sections.contains("Details") {
+                CardSection(title: "Details") {
+                    Text(NotificationText.markdown(item.description))
+                        .font(.system(size: 13))
+                        .textSelection(.enabled)
+                        .padding(14)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            if sections.contains("Links") {
+                CardSection(title: "Links") {
+                    ForEach(Array(item.links.enumerated()), id: \.offset) { index, link in
+                        if index > 0 { Divider() }
+                        Button { opener.open(link) } label: {
+                            Label(link.title, systemImage: NotificationText.symbol(link.kind))
+                                .font(.system(size: 12.5))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                        .buttonStyle(.link)
+                        .help(link.ref)
+                        .padding(.horizontal, 14)
+                        .frame(minHeight: 36)
+                    }
+                }
+            }
+        }
     }
 }
 

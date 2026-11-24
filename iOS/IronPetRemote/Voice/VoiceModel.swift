@@ -1,6 +1,7 @@
 import Foundation
 import IronPetKit
 import Observation
+import UIKit
 
 /// The phone's side of the voice socket: the mic button, the transcript it gets back, and the spoken replies.
 ///
@@ -35,6 +36,10 @@ final class VoiceModel {
     var sendAtOnce: Bool {
         didSet { defaults.set(sendAtOnce, forKey: Self.sendKey) }
     }
+    /// When the running recording began. The recording bar counts from it.
+    private(set) var startedAt: Date?
+    /// Loudness of the running recording, drawn by the waveform. A reference type, so drawing never re-renders the chat.
+    @ObservationIgnored let levels = LevelBuffer()
     /// True while a reply plays or arrives.
     private(set) var speaking = false
     /// The id of the chat message that plays or arrives, so its speaker button shows Stop.
@@ -42,6 +47,18 @@ final class VoiceModel {
 
     /// The text of a finished dictation. The chat puts it in the composer when the mode was `draft`.
     @ObservationIgnored var onTranscript: (String, VoiceMode) -> Void = { _, _ in }
+
+    /// What happens to a voice message sent at once, by the id of its stream. The chat draws it as a pending message.
+    enum SendEvent: Equatable {
+        /// Stop was tapped. The audio is on its way and the text is not known yet.
+        case started(id: String)
+        case transcribed(id: String, text: String)
+        /// The upload failed, the Mac refused it or did not answer in time. `resend` sends the same audio again.
+        case failed(id: String, reason: String)
+        /// The Mac heard no speech, so nothing is sent.
+        case discarded(id: String)
+    }
+    @ObservationIgnored var onSend: (SendEvent) -> Void = { _ in }
 
     @ObservationIgnored let player: ReplyPlayer
     @ObservationIgnored private let openChannel: () -> any VoiceChannel
@@ -53,7 +70,13 @@ final class VoiceModel {
     @ObservationIgnored private var pump: Task<VoiceFramer, Never>?
     @ObservationIgnored private var streamID: String?
     @ObservationIgnored private var streamMode: VoiceMode = .draft
+    @ObservationIgnored private var ticker: Task<Void, Never>?
     @ObservationIgnored private var announcedReply: String?
+    /// The frames of a recording sent at once, by stream id, kept until the Mac has the text so `resend` can send them again.
+    @ObservationIgnored private var retained: [String: [Data]] = [:]
+    @ObservationIgnored private var recorded: [Data] = []
+    /// Streams whose text is known and whose message the Mac is still putting in the chat. An error for one fails its pending message.
+    @ObservationIgnored private var awaitingChat: Set<String> = []
     @ObservationIgnored private var reconnect: Task<Void, Never>?
     /// The message a speaker button asked for, until its first clip or its end arrives.
     @ObservationIgnored private var pendingRead: String?
@@ -122,9 +145,11 @@ final class VoiceModel {
         mic = nil
         pump?.cancel()
         pump = nil
-        if let id = streamID { await send(.cancel(id: id)) }
+        let id = streamID
         streamID = nil
         state = .idle
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        if let id { await send(.cancel(id: id)) }
     }
 
     private func beginRecording() async {
@@ -149,19 +174,46 @@ final class VoiceModel {
         streamID = id
         streamMode = sendAtOnce ? .send : .draft
         state = .recording
+        startMetering()
         do { try await channel.send(text: VoiceClientMessage.start(id: id, mode: streamMode).json) } catch {
             fail("The Mac is not reachable.")
             return
         }
+        let levels = levels
+        recorded = []
         pump = Task { [weak self] in
             var framer = VoiceFramer()
             for await pcm in audio {
+                levels.record(Self.level(of: pcm))
                 for frame in framer.append(pcm) {
+                    self?.recorded.append(frame)
                     do { try await channel.send(binary: frame) } catch { self?.fail("The Mac is not reachable."); return framer }
                 }
             }
             return framer
         }
+    }
+
+    /// Resets the waveform and ticks it 25 times a second until the recording ends.
+    private func startMetering() {
+        levels.reset()
+        startedAt = Date()
+        ticker?.cancel()
+        ticker = Task { [weak self] in
+            while !Task.isCancelled, self?.state == .recording {
+                self?.levels.tick()
+                try? await Task.sleep(for: .seconds(LevelBuffer.tickInterval))
+            }
+        }
+    }
+
+    /// The loudest sample of a 16-bit little-endian PCM chunk, 0...1. A square root lifts quiet speech so the bars are visible.
+    nonisolated static func level(of pcm: Data) -> Float {
+        var peak: Int32 = 0
+        pcm.withUnsafeBytes { raw in
+            for sample in raw.bindMemory(to: Int16.self) { peak = max(peak, abs(Int32(Int16(littleEndian: sample)))) }
+        }
+        return min(1, (Float(peak) / Float(Int16.max)).squareRoot())
     }
 
     /// The microphone stopped on its own while recording. The Mac is told to drop the stream and the user sees why.
@@ -174,24 +226,62 @@ final class VoiceModel {
 
     private func endRecording() async {
         guard let id = streamID, let channel else { return }
+        PhoneHopLog.mark("phone.voice.stop")
         mic?.stop()
         mic = nil
         state = .transcribing
+        // The chat shows the message before the last frames go out, so Stop answers at once.
+        if streamMode == .send { onSend(.started(id: id)) }
         var framer = await pump?.value ?? VoiceFramer()
         pump = nil
+        PhoneHopLog.mark("phone.voice.upload.start")
         do {
-            if let last = framer.flush() { try await channel.send(binary: last) }
+            let last = framer.flush()
+            if let last { recorded.append(last) }
+            // Kept before the first send that can fail, so Retry has the audio after any upload error.
+            if streamMode == .send { retained[id] = recorded }
+            if let last { try await channel.send(binary: last) }
             try await channel.send(text: VoiceClientMessage.end(id: id).json)
         } catch {
             fail("The Mac is not reachable.")
             return
         }
+        PhoneHopLog.mark("phone.voice.upload.done")
+        watchForText(id)
+    }
+
+    private func watchForText(_ id: String) {
         let timeout = Self.transcribeTimeout
         Task { [weak self] in
             try? await Task.sleep(for: timeout)
             guard let self, state == .transcribing, streamID == id else { return }
             fail("The Mac did not send the text back. Try again.")
         }
+    }
+
+    /// Sends the audio of a failed voice message again, from the first frame. A second call while the first runs does nothing.
+    func resend(_ id: String) async {
+        guard state == .idle, let frames = retained[id] else {
+            // The pending message is already in the sending state. Without this it would stay there.
+            if state == .idle { onSend(.failed(id: id, reason: "The recording is gone. Record it again.")) }
+            return
+        }
+        errorMessage = nil
+        // The state changes before the first await, so a second tap finds the model busy.
+        state = .transcribing
+        streamID = id
+        streamMode = .send
+        guard let channel = ensureChannel() else { return fail("The Mac is not reachable.") }
+        PhoneHopLog.mark("phone.voice.upload.start")
+        do {
+            try await channel.send(text: VoiceClientMessage.start(id: id, mode: .send).json)
+            for frame in frames { try await channel.send(binary: frame) }
+            try await channel.send(text: VoiceClientMessage.end(id: id).json)
+        } catch {
+            return fail("The Mac is not reachable.")
+        }
+        PhoneHopLog.mark("phone.voice.upload.done")
+        watchForText(id)
     }
 
     /// Cuts the reply that plays or arrives. The player stops before `tts.stop` goes out.
@@ -276,6 +366,11 @@ final class VoiceModel {
     private func channelClosed(_ closed: any VoiceChannel) {
         guard channel === closed else { return }
         channel = nil
+        if state == .transcribing, streamMode == .send, let id = streamID {
+            onSend(.failed(id: id, reason: "The connection to the Mac closed."))
+        }
+        for id in awaitingChat { onSend(.failed(id: id, reason: "The connection to the Mac closed.")) }
+        awaitingChat = []
         if state != .idle {
             mic?.stop()
             mic = nil
@@ -300,6 +395,7 @@ final class VoiceModel {
     }
 
     private func fail(_ message: String) {
+        if state == .transcribing, streamMode == .send, let id = streamID { onSend(.failed(id: id, reason: message)) }
         mic?.stop()
         mic = nil
         pump?.cancel()
@@ -316,12 +412,24 @@ final class VoiceModel {
             switch parsed {
             case .transcript(let id, let text):
                 guard id == streamID else { return }
+                PhoneHopLog.mark("phone.voice.ack")
                 streamID = nil
                 state = .idle
+                if streamMode == .send {
+                    retained[id] = nil
+                    if text.isEmpty {
+                        onSend(.discarded(id: id))
+                    } else {
+                        awaitingChat.insert(id)
+                        onSend(.transcribed(id: id, text: text))
+                    }
+                }
                 if !text.isEmpty { onTranscript(text, streamMode) }
             case .error(let id, let message):
                 errorMessage = message
+                if let id, awaitingChat.remove(id) != nil { onSend(.failed(id: id, reason: message)) }
                 if let id, id == streamID {
+                    if state == .transcribing, streamMode == .send { onSend(.failed(id: id, reason: message)) }
                     // The Mac refused or ended the stream. A mic that still runs would keep sending frames nobody reads.
                     mic?.stop()
                     mic = nil

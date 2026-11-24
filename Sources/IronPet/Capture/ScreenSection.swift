@@ -104,17 +104,9 @@ struct ScreenSection: View {
         let title = capture.map { "\($0.appName): \(ScreenSectionText.windowLabel($0))" }
             ?? hit.map { "\($0.appName): \($0.window.isEmpty ? ($0.url ?? "Untitled window") : $0.window)" } ?? "Capture"
         let at = capture?.at ?? hit?.at
-        ListDetailPage(section: "Screen", onBack: { nav.close() }) {
-            Text(title).font(.system(size: 20, weight: .bold)).textSelection(.enabled)
-            if let at { Text(at.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary) }
-            Text(openText[id] ?? capture?.text ?? hit?.snippet ?? "")
-                .font(.system(size: 12))
-                .textSelection(.enabled)
-                .padding(8)
-                .frame(maxWidth: .infinity, alignment: .leading)
-                .background(.quaternary, in: RoundedRectangle(cornerRadius: 6))
-        }
-        .onExitCommand { nav.close() }
+        ScreenCaptureDetail(title: title, app: capture?.appName ?? hit?.appName, at: at, text: openText[id] ?? capture?.text ?? hit?.snippet ?? "",
+                            onBack: { nav.close() })
+            .onExitCommand { nav.close() }
     }
 
     /// Reads the database off the main thread. An answer for a search the user has since changed is dropped.
@@ -132,5 +124,34 @@ struct ScreenSection: View {
     private func loadText(_ id: Int64) {
         guard let screen else { return }
         Task { openText[id] = await screen.captureText(id) }
+    }
+}
+
+/// One capture in full, as cards: the app, window and time, then the stored text.
+struct ScreenCaptureDetail: View {
+    let title: String
+    let app: String?
+    let at: Date?
+    let text: String
+    let onBack: () -> Void
+
+    var body: some View {
+        ListDetailPage(section: "Screen", onBack: onBack) {
+            VStack(alignment: .leading, spacing: 8) {
+                if let app { Chip(text: app, tint: .purple) }
+                Text(title).font(.system(size: 20, weight: .bold)).textSelection(.enabled)
+                if let at { Text(at.formatted(date: .abbreviated, time: .shortened)).font(.system(size: 12)).foregroundStyle(.secondary) }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .cardMaterial()
+            CardSection(title: "Captured text") {
+                Text(text)
+                    .font(.system(size: 12))
+                    .textSelection(.enabled)
+                    .padding(14)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
     }
 }

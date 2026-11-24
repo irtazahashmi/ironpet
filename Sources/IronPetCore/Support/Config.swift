@@ -1,4 +1,5 @@
 import Foundation
+import IronPetKit
 #if canImport(Combine)
 import Combine
 #endif
@@ -75,7 +76,8 @@ package struct Config: Codable, Equatable {
             captureRegion: String = "cmd+opt+ctrl+g",
             voice: String = "cmd+opt+v",
             meeting: String = "",
-            voiceMode: String = "cmd+opt+ctrl+v"
+            voiceMode: String = "cmd+opt+ctrl+v",
+            copyVersion: String = ""
         ) {
             self.chat = chat
             self.captureWindow = captureWindow
@@ -83,6 +85,7 @@ package struct Config: Codable, Equatable {
             self.voice = voice
             self.meeting = meeting
             self.voiceMode = voiceMode
+            self.copyVersion = copyVersion
         }
 
         package var chat = "cmd+opt+g"
@@ -95,6 +98,8 @@ package struct Config: Codable, Equatable {
         package var meeting = ""
         /// Starts and ends a voice conversation with the pet. Only registered while voice mode is on.
         package var voiceMode = "cmd+opt+ctrl+v"
+        /// Copies the app version and commit to the clipboard. No default binding.
+        package var copyVersion = ""
     }
 
     /// Voice notes: record the mic and send the audio to an OpenAI-compatible transcription server. The API key is
@@ -312,10 +317,11 @@ package struct Config: Codable, Equatable {
     }
 
     package struct Tasks: Codable, Equatable {
-        package init(meetingSuggestions: Bool = true, dueReminders: Bool = true, keepDoneDays: Int = 30) {
+        package init(meetingSuggestions: Bool = true, dueReminders: Bool = true, keepDoneDays: Int = 30, quickFilters: [QuickFilter] = []) {
             self.meetingSuggestions = meetingSuggestions
             self.dueReminders = dueReminders
             self.keepDoneDays = keepDoneDays
+            self.quickFilters = quickFilters
         }
 
         /// After a meeting summary, offer the action items that belong to "Me" as tasks. Nothing is added without a click.
@@ -324,6 +330,8 @@ package struct Config: Codable, Equatable {
         package var dueReminders = true
         /// Done tasks older than this many days are deleted, with their history.
         package var keepDoneDays = 30
+        /// Saved queries the Tasks list offers as chips. The chat agent writes them through `task_filters_upsert`.
+        package var quickFilters: [QuickFilter] = []
     }
 
     /// Background jobs: work an agent hands off to its own agent session (`jobs_start`), each with a task in the Tasks section.

@@ -14,6 +14,7 @@ struct ChatView: View {
     @State private var showThreads = false
     @State private var showSettings = false
     @State private var showFiles = false
+    @State private var showPhotos = false
     @State private var photos: [PhotosPickerItem] = []
     @State private var focused = false
     @State private var find = ChatFindState()
@@ -26,9 +27,22 @@ struct ChatView: View {
     @Environment(VoiceModel.self) private var voice: VoiceModel?
 
     var body: some View {
+        content.chatTextSize()
+    }
+
+    private var content: some View {
         NavigationStack {
             VStack(spacing: 0) {
                 if find.isOpen { ChatFindBar(find: find) }
+                if model.connectionLost {
+                    HStack {
+                        Label("Can't reach your Mac. Retrying…", systemImage: SharedSymbols.warning).font(.footnote).foregroundStyle(.orange)
+                        Spacer()
+                        Button("Retry") { Task { await model.retryNow() } }.font(.footnote.weight(.semibold)).accessibilityIdentifier("chat-retry")
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.vertical, 6)
+                    .accessibilityIdentifier("chat-connection-lost")
+                }
                 if let message = model.errorMessage {
                     Label(message, systemImage: SharedSymbols.warning).font(.footnote).foregroundStyle(.orange)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.vertical, 6)
@@ -45,7 +59,7 @@ struct ChatView: View {
                                     .background(.thinMaterial).accessibilityIdentifier("chat-notice")
                             }
                             if let voice { VoiceNotice(voice: voice) }
-                            Composer(model: model, showFiles: $showFiles, photos: $photos, focused: $focused)
+                            Composer(model: model, showFiles: $showFiles, showPhotos: $showPhotos, focused: $focused)
                         }
                     }
             }
@@ -88,17 +102,12 @@ struct ChatView: View {
                     model.attach(data: data, fileName: url.lastPathComponent, contentType: type)
                 }
             }
+            .photosPicker(isPresented: $showPhotos, selection: $photos, maxSelectionCount: ChatModel.maxPendingImages, matching: .images)
             .onChange(of: photos) { _, picked in
                 guard !picked.isEmpty else { return }
-                Task {
-                    for (index, item) in picked.enumerated() {
-                        guard let data = try? await item.loadTransferable(type: Data.self) else { continue }
-                        let type = item.supportedContentTypes.first
-                        let ext = type?.preferredFilenameExtension ?? "jpg"
-                        model.attach(data: data, fileName: "photo-\(index + 1).\(ext)", contentType: type?.preferredMIMEType ?? "image/jpeg")
-                    }
-                    photos = []
-                }
+                let loaders: [@Sendable () async throws -> Data?] = picked.map { item in { try await item.loadTransferable(type: Data.self) } }
+                photos = []
+                Task { await model.attachPhotos(loaders) }
             }
         }
         .task { model.start() }
@@ -161,7 +170,7 @@ private struct Transcript: View {
                         ForEach(RemoteTranscriptGroup.make(model.displayItems)) { group in
                             TranscriptGroupView(group: group, photos: model.sentPhotos, images: model.images, avatar: avatar, expanded: expandedMessages,
                                                 toggleExpand: { id in if !expandedMessages.insert(id).inserted { expandedMessages.remove(id) } },
-                                                outbox: model.outbox, onRetry: { id in Task { await model.retry(id) } },
+                                                outbox: model.outbox, onRetry: { id in Task { await model.retry(id) } }, onDelete: { id in model.deleteQueued(id) },
                                                 onReply: { model.replyTo = $0 },
                                                 readAloud: { item in voice.flatMap { ReadAloud(item: item, voice: $0) } },
                                                 highlights: find.highlights)
@@ -243,6 +252,7 @@ private struct TranscriptGroupView: View {
     var toggleExpand: (String) -> Void = { _ in }
     var outbox: [OutgoingMessage] = []
     var onRetry: (UUID) -> Void = { _ in }
+    var onDelete: (UUID) -> Void = { _ in }
     var onReply: (RemoteChatItem) -> Void = { _ in }
     /// Nil in a saved thread, whose messages the Mac cannot read from the open chat.
     var readAloud: (RemoteChatItem) -> ReadAloud? = { _ in nil }
@@ -257,7 +267,7 @@ private struct TranscriptGroupView: View {
                 MessageRow(item: item, photo: item.fileName.flatMap { photos[$0] }, images: images, avatar: avatar, expanded: expanded.contains(item.id),
                            onToggleExpand: { toggleExpand(item.id) }, onReply: item.canReply && !OutgoingMessage.isPending(item.id) ? { onReply(item) } : nil,
                            readAloud: item.kind == "assistant" ? readAloud(item) : nil, find: highlights[item.id])
-                if let message = outbox.first(where: { $0.itemID == item.id }) { OutgoingStatus(message: message, onRetry: { onRetry(message.id) }) }
+                if let message = outbox.first(where: { $0.itemID == item.id }) { OutgoingStatus(message: message, onRetry: { onRetry(message.id) }, onDelete: { onDelete(message.id) }) }
             }
         }
     }
@@ -267,16 +277,31 @@ private struct TranscriptGroupView: View {
 private struct OutgoingStatus: View {
     let message: OutgoingMessage
     let onRetry: () -> Void
+    var onDelete: () -> Void = {}
 
     var body: some View {
         switch message.state {
+        case .waiting:
+            HStack(spacing: 6) {
+                Image(systemName: "clock").foregroundStyle(.secondary)
+                Text("Waiting to send").font(.caption2).foregroundStyle(.secondary)
+                Button("Delete", role: .destructive, action: onDelete).font(.caption2.weight(.semibold)).accessibilityIdentifier("outgoing-delete")
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("outgoing-waiting")
         case .sending, .sent:
-            Text("Sending…").font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("outgoing-sending")
+            // A voice message shows "Transcribing…" in its bubble until the text arrives.
+            if !message.isTranscribing {
+                Text("Sending…").font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("outgoing-sending")
+            }
         case .failed(let reason):
             HStack(spacing: 6) {
                 Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
                 Text(reason).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
                 Button("Retry", action: onRetry).font(.caption2.weight(.semibold)).accessibilityIdentifier("outgoing-retry")
+                if message.queuedAt != nil {
+                    Button("Delete", role: .destructive, action: onDelete).font(.caption2.weight(.semibold)).accessibilityIdentifier("outgoing-delete")
+                }
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("outgoing-failed")
@@ -613,7 +638,7 @@ private struct Composer: View {
     let model: ChatModel
     @Environment(VoiceModel.self) private var voice: VoiceModel?
     @Binding var showFiles: Bool
-    @Binding var photos: [PhotosPickerItem]
+    @Binding var showPhotos: Bool
     @Binding var focused: Bool
 
     /// Gap between the send capsule and the field's top, bottom and trailing edges.
@@ -624,10 +649,20 @@ private struct Composer: View {
     private static let inlineSendWidth: CGFloat = capsuleWidth + capsuleInset
 
     var body: some View {
+        if let voice, voice.state == .recording {
+            VoiceRecordingBar(voice: voice)
+        } else {
+            composer
+        }
+    }
+
+    private var composer: some View {
         GlassGroup {
             HStack(alignment: .bottom, spacing: 8) {
                 Menu {
-                    PhotosPicker(selection: $photos, maxSelectionCount: ChatModel.maxPendingImages, matching: .images) { Label("Photo", systemImage: SharedSymbols.photo) }
+                    // The picker is presented from ChatView. A PhotosPicker inside the menu is removed when the menu closes.
+                    Button { showPhotos = true } label: { Label("Photo", systemImage: SharedSymbols.photo) }
+                        .accessibilityIdentifier("attach-photo")
                     Button { showFiles = true } label: { Label("File", systemImage: SharedSymbols.file) }
                 } label: { Image(systemName: SharedSymbols.attach).glassCircle() }
                     .accessibilityLabel("Attach").accessibilityIdentifier("attach-button")
@@ -651,6 +686,16 @@ private struct Composer: View {
                 }
                 .padding(.horizontal, 6).padding(.top, 4)
                 .accessibilityIdentifier("reply-bar")
+            }
+            if let failure = model.uploadFailure {
+                HStack(spacing: 6) {
+                    Label(failure, systemImage: SharedSymbols.warning).font(.footnote).foregroundStyle(.orange).lineLimit(3)
+                        .accessibilityIdentifier("upload-error")
+                    Spacer(minLength: 0)
+                    Button("Retry") { Task { await model.send() } }.font(.footnote.weight(.semibold))
+                        .disabled(model.sending).accessibilityIdentifier("upload-retry")
+                }
+                .padding(.horizontal, 6).padding(.top, 4)
             }
             if !model.attachments.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {

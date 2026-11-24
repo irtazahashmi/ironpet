@@ -76,6 +76,22 @@ final class PhaseFiveTests: XCTestCase {
         XCTAssertEqual(model.windows.count, 2)
     }
 
+    func testACancelledFirstLoadShowsNoErrorAndNoEmptyState() async throws {
+        let model = model()
+        await model.gate.unlock()
+        let first = Task { await model.refresh() }
+        first.cancel()
+        await first.value
+        XCTAssertNil(model.errorMessage)
+        XCTAssertFalse(model.showsEmptyState)
+        XCTAssertFalse(model.loaded)
+
+        await model.refresh()
+        XCTAssertNil(model.errorMessage)
+        XCTAssertFalse(model.showsEmptyState)
+        XCTAssertEqual(model.windows.count, 2)
+    }
+
     func testAFailedStatusKeepsItsErrorWhenTheChangeListWorks() async throws {
         server.brokenRoutes = ["/v1/screen/status": 200]
         let model = model()

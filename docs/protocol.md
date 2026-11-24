@@ -81,6 +81,40 @@ JSON-RPC response as a text frame between the events. The hello names the progra
 one. A phone that never sends it still has a session and still gets the frames it got before. The socket takes no other method: any other
 request gets `Method not found`, and a frame longer than 16 KiB closes the socket.
 
+A phone also sends a chat message as a text frame, so a typed message needs no HTTPS request. The Mac announces this in its first frame,
+`{"kind":"hello","seq":n,"capabilities":["chat.send"]}`. A phone does not send the frame to a Mac whose hello lacks the capability, and uses
+`POST /v1/chat/current/messages` instead.
+
+The frames are:
+
+- Phone to Mac: `{"kind":"chat.send","client_id":"<UUID the phone made>","text":"...","reply":{"item_id","selection_text"?}?}`.
+- Mac to phone, taken: `{"kind":"chat.ack","client_id","outcome","item_id"?,"seq"}`, where `outcome` is the same word `POST /v1/chat/current/messages` returns.
+- Mac to phone, refused: `{"kind":"chat.nack","client_id","code","message"}`, for a bad `client_id` or an empty text. The message was not sent.
+
+`item_id` is the new user message, and is absent when the message waits in the queue. `seq` is the event bus position when the Mac took
+the message. The Mac keeps the last 512 acks for each device by `client_id`. A second `chat.send` with the same id, or `POST
+/v1/chat/current/messages` with `client_id` in its body, returns the first outcome and creates no message. A refused send is not kept, so
+its retry runs again. Attachments still go through `POST /v1/uploads` and the HTTPS send.
+
+A phone that reconnects resumes from the last event it applied. It saves the highest event `seq` it applied, and the `epoch` of the Mac
+launch that numbered it, on the phone. `GET /v1/events?since=<seq>&epoch=<epoch>` sends them back. The Mac's hello is
+`{"kind":"hello","seq":n,"epoch":"<id of this launch>","capabilities":["chat.send","events.resume"]}`, and `events.resume` means the Mac answers a
+`since` in one of two ways:
+
+- It replays every event above `since` in order, with no throttling, then sends `{"kind":"resumed","seq":n,"replayed":k}`, and the live stream follows. The phone reads nothing again.
+- It sends `{"kind":"resync","seq":n}` and no events when `since` is below the oldest event it still holds, above its newest event, or `epoch` is not its own. The phone reads each area once and goes on from `seq`.
+
+The Mac holds the last 500 events (`APIEventBus.capacity`), and an event merged into a newer one for the same message does not count as lost.
+It logs `events resume_from=K replayed=N` or `events resume_from=K too_old=true`, with no device or message text. The phone forgets the saved pair when it unpairs or pairs again. A phone sends no `since` on its
+first connection, and a Mac whose hello lacks `events.resume` sends neither `resumed` nor `resync` after a replay, so the phone reads everything again
+on every connect, as it did before. The queued messages of the outbox below go out after `resumed` or `resync`, so the replayed events are
+applied first.
+
+A phone that cannot reach the Mac keeps a typed message in an outbox in its own container and sends it after the next `hello` (after `resumed` or `resync` on a Mac that resumes), oldest
+first, one at a time, each after the Mac answered the one before. A message waits at most 24 hours, and the outbox holds at most 100.
+An older or refused message shows Retry and is not sent on its own. Each resend carries the `client_id` the message was made with, so
+the 512-entry window above covers it. A message waits when the request fails in transport or the relay answers 502, 503 or 504, which means it could not reach the Mac. Any other status comes from the Mac and fails the message with Retry. Messages with attachments do not wait. They fail with Retry when the Mac is out of reach.
+
 ### Over stdio
 
 A host with no session of its own opens one when it gets `session.hello`. The stdio host executable comes after core PR 12, so no stdio client
@@ -282,6 +316,10 @@ Ghost's notes and search over past chats, meetings and the screen.
 
 `memory.call` runs one `memory_*` tool. `params` is `{"name", "arguments", "caller"}` where `name` is `memory_remember`, `memory_forget`, `memory_search` or `memory_get`, and `arguments` is that tool's input object. The result is the tool's JSON output. A failure of the tool is `invalid` with the tool's message. It fails with `unavailable` until the host attaches the memory services.
 
+### `prompts`
+
+The prompts ironpet sends to agents on its own: the chat context and rules, the automation run wrapper, the meeting summary and the built-in task review. Each one's text is `~/.ironpet/prompts/<id>.md`, copied from the default the app ships the first time. `PromptsAPI` lists them with their default and whether a newer default is waiting, and saves, resets or keeps the user's text. Settings → Prompts is its only client today, so no RPC method or REST route exists yet.
+
 ### `settings`
 
 `config.json`.
@@ -367,7 +405,7 @@ does not use it yet.
 
 `PetAPI.state()` returns `PetState` (`mood`, `badge`). Also `tricks()`, `perform(_:)`, `pets()`, `selectPet(_:)`, `backgroundList()`, `selectBackground(_:)`, `manifest()` and `assetData(_:)`.
 
-Not yet on the wire. The requests and results are Codable, but the asset calls return `Data`, which JSON-RPC would carry as base64, and REST serves it as bytes (`GET /v1/assets/:sha256`). The REST routes `GET /v1/pet`, `POST /v1/pet/tricks/:name`, `GET /v1/settings/pets`, `POST /v1/settings/pet` and `GET /v1/assets/manifest` serve it today.
+Not yet on the wire. The requests and results are Codable, but the asset calls return `Data`, which JSON-RPC would carry as base64, and REST serves it as bytes (`GET /v1/assets/:sha256`). The REST routes `GET /v1/pet`, `POST /v1/pet/tricks/:name`, `GET /v1/settings/pets`, `POST /v1/settings/pet`, `POST /v1/settings/background` and `GET /v1/assets/manifest` serve it today. `POST /v1/settings/background` takes one JPEG, PNG or HEIC image of up to 20 MiB as the raw body, makes it the custom chat background and answers with the settings. The Mac checks the kind from the bytes and answers 415 for another kind and 413 for a larger body. The phone downloads the image from `GET /v1/assets/:sha256` (id `chat.background`), at most 2400 px on the long side.
 
 ### `screen`
 
@@ -427,6 +465,8 @@ audio, or an area that is not on the wire yet.
 | `PATCH /v1/tasks/:id` | `tasks.update` |
 | `POST /v1/tasks/:id/close` | `tasks.close` |
 | `DELETE /v1/tasks/:id` | `tasks.delete` |
+| `GET /v1/task-filters` | none |
+| `DELETE /v1/task-filters/:id` | none |
 | `GET /v1/suggestions` | `tasks.suggestions` |
 | `POST /v1/suggestions/:id/accept` | `tasks.accept` |
 | `POST /v1/suggestions/:id/reject` | `tasks.reject` |
@@ -458,6 +498,7 @@ audio, or an area that is not on the wire yet.
 | `PATCH /v1/settings` | `settings.patch` |
 | `GET /v1/settings/pets` | none |
 | `POST /v1/settings/pet` | none |
+| `POST /v1/settings/background` | none |
 | `GET /v1/usage` | none |
 | `GET /v1/chat/current` | `chat.snapshot` |
 | `GET /v1/chat/messages/:id` | none |

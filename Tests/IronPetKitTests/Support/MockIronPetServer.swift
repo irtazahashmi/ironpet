@@ -29,6 +29,8 @@ final class MockIronPetServer: @unchecked Sendable {
     private var sockets: [NWConnection] = []
     private var _tasks: [RemoteTask]
     private var _suggestions: [RemoteSuggestion]
+    private var _taskFilters: [QuickFilter] = []
+    private var _taskFiltersSupported = true
     private var _requests: [Recorded] = []
     private var _outcome: PairingOutcome = .allow
     private var _pendingPolls = 1
@@ -37,6 +39,10 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _seq = 0
     private var buffer: [RemoteEvent] = []
     private var _gapOnNextConnect = false
+    private var _resumeSupported = false
+    private var _epoch = "mock-epoch-1"
+    private var _bufferFloor = 0
+    private var _replayDelay = 0.0
     private var _socketURLs: [String] = []
     private var _pet = RemotePet(name: "Ghost", mood: "idle", badge: 0, tricks: ["Wave", "Jump", "Dance", "Zoomies"])
     private var _bubbles: [RemoteBubble] = MockIronPetServer.sampleBubbles
@@ -58,8 +64,14 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _uploadNames: [String: String] = [:]
     private var _uploadDelay: TimeInterval = 0
     private var _sendFails = false
+    private var _chatReadFailures = 0
     private var _sendDelay: TimeInterval = 0
     private var _sendPushesFirst = false
+    private var _legacyEvents = false
+    private var _messageReadDelay: TimeInterval = 0
+    private var _messageReads = 0
+    private var _readsInFlight = 0
+    private var _maxReadsInFlight = 0
     fileprivate var _p4 = MockPhaseFour()
     private let encoder = WireJSON.makeEncoder()
     private(set) var port: UInt16 = 0
@@ -127,6 +139,10 @@ final class MockIronPetServer: @unchecked Sendable {
 
     var requests: [Recorded] { lock.lock(); defer { lock.unlock() }; return _requests }
     var tasks: [RemoteTask] { get { lock.lock(); defer { lock.unlock() }; return _tasks } set { lock.lock(); _tasks = newValue; lock.unlock() } }
+    /// The saved quick filters `GET /v1/task-filters` serves. `DELETE /v1/task-filters/:id` removes one and publishes `settings.changed`.
+    var taskFilters: [QuickFilter] { get { lock.lock(); defer { lock.unlock() }; return _taskFilters } set { lock.lock(); _taskFilters = newValue; lock.unlock() } }
+    /// False answers the filter routes with 404, as a Mac older than quick filters does.
+    var taskFiltersSupported: Bool { get { lock.lock(); defer { lock.unlock() }; return _taskFiltersSupported } set { lock.lock(); _taskFiltersSupported = newValue; lock.unlock() } }
     var suggestions: [RemoteSuggestion] { get { lock.lock(); defer { lock.unlock() }; return _suggestions } set { lock.lock(); _suggestions = newValue; lock.unlock() } }
     var outcome: PairingOutcome { get { lock.lock(); defer { lock.unlock() }; return _outcome } set { lock.lock(); _outcome = newValue; lock.unlock() } }
     /// How many polls answer `pending` before the outcome.
@@ -135,6 +151,15 @@ final class MockIronPetServer: @unchecked Sendable {
     var tokenValid: Bool { get { lock.lock(); defer { lock.unlock() }; return _tokenValid } set { lock.lock(); _tokenValid = newValue; lock.unlock() } }
     /// The next socket that connects gets `resync` after `hello`, as if the buffer had lost its events.
     var gapOnNextConnect: Bool { get { lock.lock(); defer { lock.unlock() }; return _gapOnNextConnect } set { lock.lock(); _gapOnNextConnect = newValue; lock.unlock() } }
+    /// True makes the mock a Mac that can resume: its hello announces `events.resume` and an epoch, and a socket opened with `since`
+    /// gets the missed events and then `resumed`, or `resync` when the `since` is too old or from another epoch. False is an older Mac.
+    var resumeSupported: Bool { get { lock.lock(); defer { lock.unlock() }; return _resumeSupported } set { lock.lock(); _resumeSupported = newValue; lock.unlock() } }
+    /// Names this launch of the mock Mac. Changing it is a Mac restart: a phone that sends the old one gets `resync`.
+    var epoch: String { get { lock.lock(); defer { lock.unlock() }; return _epoch } set { lock.lock(); _epoch = newValue; lock.unlock() } }
+    /// Seconds between the hello frame and the replay that follows it, so a test can tell which signal the phone acts on.
+    var replayDelay: Double { get { lock.lock(); defer { lock.unlock() }; return _replayDelay } set { lock.lock(); _replayDelay = newValue; lock.unlock() } }
+    /// Events with a seq at or below this are gone from the mock's buffer, so a `since` below it is too old.
+    var bufferFloor: Int { get { lock.lock(); defer { lock.unlock() }; return _bufferFloor } set { lock.lock(); _bufferFloor = newValue; lock.unlock() } }
     /// The request target of every socket upgrade, such as `/v1/events?since=3`.
     var socketURLs: [String] { lock.lock(); defer { lock.unlock() }; return _socketURLs }
     var openSocketCount: Int { lock.lock(); defer { lock.unlock() }; return sockets.count }
@@ -153,6 +178,21 @@ final class MockIronPetServer: @unchecked Sendable {
         _assets.insert(RemoteAsset(id: "pet.sprite", name: "sheet.png", sha256: hash, bytes: data.count, width: atlas == nil ? nil : Atlas.width,
                                    height: atlas.map { $0.rows.count * Int(Atlas.cell.height) }), at: 0)
         lock.unlock()
+    }
+
+    /// The custom chat background the Mac serves as `chat.background`, as if it was picked on the Mac. The hash is the image's SHA-256.
+    @discardableResult
+    func setBackgroundImage(_ data: Data) -> String {
+        let hash = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+        lock.lock()
+        _assetData[hash] = data
+        _assets.removeAll { $0.id == "chat.background" }
+        _assets.append(RemoteAsset(id: "chat.background", kind: "background", name: "custom.jpg", sha256: hash, bytes: data.count, contentType: "image/jpeg"))
+        _p4.config.chat.background = "custom"
+        _pet.background = "custom"
+        _pet.backgroundAsset = "chat.background"
+        lock.unlock()
+        return hash
     }
 
     /// The chat the Mac has open, as `GET /v1/chat/current` answers it. Change it, then `publish` the event a real Mac would.
@@ -189,10 +229,29 @@ final class MockIronPetServer: @unchecked Sendable {
     var chatImageRequests: Int { lock.lock(); defer { lock.unlock() }; return _chatImageHits }
     /// The next sends answer 500 while this is true.
     var sendFails: Bool { get { lock.lock(); defer { lock.unlock() }; return _sendFails } set { lock.lock(); _sendFails = newValue; lock.unlock() } }
+    /// How many of the next chat reads (the whole chat or one message) answer 503, as a Mac that is busy or out of reach does through a proxy. `Int.max` is an outage, and 0 ends it. A dropped
+    /// connection is not used because URLSession sends a dropped GET again by itself.
+    var chatReadFailures: Int { get { lock.lock(); defer { lock.unlock() }; return _chatReadFailures } set { lock.lock(); _chatReadFailures = newValue; lock.unlock() } }
     /// Seconds the Mac takes to answer a send after it has recorded the message.
     var sendDelay: TimeInterval { get { lock.lock(); defer { lock.unlock() }; return _sendDelay } set { lock.lock(); _sendDelay = newValue; lock.unlock() } }
     /// Push the `chat.item` event before the answer to the send, as a fast socket can.
     var sendPushesFirst: Bool { get { lock.lock(); defer { lock.unlock() }; return _sendPushesFirst } set { lock.lock(); _sendPushesFirst = newValue; lock.unlock() } }
+    /// Adds a user message as the Mac's chat would after a voice transcript, and pushes its `chat.item` event.
+    func pushUserItem(text: String, origin: String) {
+        let id = UUID().uuidString.lowercased()
+        lock.lock(); _chat.items.append(RemoteChatItem(id: id, kind: "user", date: Date(), origin: origin, text: text)); lock.unlock()
+        _ = publish(RemoteEvent.chatItem, id: id)
+    }
+    /// True makes `streamChunk` send `chat.item` without the text, as a Mac before this change does.
+    var legacyEvents: Bool { get { lock.lock(); defer { lock.unlock() }; return _legacyEvents } set { lock.lock(); _legacyEvents = newValue; lock.unlock() } }
+    /// Seconds `GET /v1/chat/messages/:id` takes to answer, as a slow route to the Mac does.
+    var messageReadDelay: TimeInterval { get { lock.lock(); defer { lock.unlock() }; return _messageReadDelay } set { lock.lock(); _messageReadDelay = newValue; lock.unlock() } }
+    /// The single-message reads waiting for an answer now.
+    var messageReadsInFlight: Int { lock.lock(); defer { lock.unlock() }; return _readsInFlight }
+    /// The most single-message reads that were waiting for an answer at one time.
+    var maxMessageReadsInFlight: Int { lock.lock(); defer { lock.unlock() }; return _maxReadsInFlight }
+    /// How many times a single message was read with a GET.
+    var messageReads: Int { lock.lock(); defer { lock.unlock() }; return _messageReads }
     /// The bytes of an upload by id.
     func uploaded(_ id: String) -> Data? { lock.lock(); defer { lock.unlock() }; return _uploads[id] }
 
@@ -202,8 +261,9 @@ final class MockIronPetServer: @unchecked Sendable {
         if let index = _chat.items.firstIndex(where: { $0.id == id }) { _chat.items[index].text = (_chat.items[index].text ?? "") + text }
         else { _chat.items.append(RemoteChatItem(id: id, kind: "assistant", date: Date(), text: text)) }
         _chat.running = true
+        let inline = _legacyEvents ? nil : _chat.items.first { $0.id == id }
         lock.unlock()
-        publish(RemoteEvent.chatItem, id: id)
+        publish(RemoteEvent.chatItem, id: id, item: inline)
     }
 
     /// Ends the running turn.
@@ -242,10 +302,10 @@ final class MockIronPetServer: @unchecked Sendable {
 
     /// Sends an event to every open socket and keeps it for replay.
     @discardableResult
-    func publish(_ kind: String, id: String? = nil) -> Int {
+    func publish(_ kind: String, id: String? = nil, item: RemoteChatItem? = nil) -> Int {
         lock.lock()
         _seq += 1
-        let event = RemoteEvent(seq: _seq, kind: kind, at: Date(), id: id)
+        let event = RemoteEvent(seq: _seq, kind: kind, at: Date(), id: id, item: item)
         buffer.append(event)
         let open = sockets
         lock.unlock()
@@ -348,6 +408,17 @@ final class MockIronPetServer: @unchecked Sendable {
             respond(connection, 200, Data(#"{"revoked":true}"#.utf8))
         case ("GET", 2) where parts[1] == "events": upgrade(request, connection)
         case ("GET", 2) where parts[1] == "tasks": respond(connection, 200, TaskListResponse(tasks: tasks))
+        case ("GET", 2) where parts[1] == "task-filters":
+            guard taskFiltersSupported else { return fail(connection, 404, "not_found", "not found") }
+            respond(connection, 200, QuickFilterListResponse(filters: taskFilters))
+        case ("DELETE", 3) where parts[1] == "task-filters":
+            lock.lock()
+            let known = _taskFiltersSupported && _taskFilters.contains { $0.id == parts[2] }
+            _taskFilters.removeAll { $0.id == parts[2] }
+            lock.unlock()
+            guard known else { return fail(connection, 404, "not_found", "no quick filter \(parts[2])") }
+            respond(connection, 200, RemoteDeleted(deleted: parts[2]))
+            publish(RemoteEvent.settingsChanged)
         case ("GET", 2) where parts[1] == "suggestions": respond(connection, 200, SuggestionListResponse(suggestions: suggestions))
         case ("GET", 3) where parts[1] == "tasks": detail(parts[2], connection)
         case ("PATCH", 3) where parts[1] == "tasks": patch(parts[2], request, connection)
@@ -518,25 +589,38 @@ final class MockIronPetServer: @unchecked Sendable {
             let kv = pair.split(separator: "=")
             return kv.count == 2 && kv[0] == "since" ? Int(kv[1]) : nil
         }.first
+        let sinceEpoch = request.query.split(separator: "&").compactMap { pair -> String? in
+            let kv = pair.split(separator: "=")
+            return kv.count == 2 && kv[0] == "epoch" ? String(kv[1]) : nil
+        }.first
         lock.lock()
         _socketURLs.append(request.query.isEmpty ? request.path : "\(request.path)?\(request.query)")
-        let gap = _gapOnNextConnect
+        var gap = _gapOnNextConnect
         _gapOnNextConnect = false
+        let resume = _resumeSupported
+        if resume, let since, since < _bufferFloor || since > _seq || sinceEpoch.map({ $0 != _epoch }) == true { gap = true }
         let hello = RemoteEvent(seq: _seq, kind: RemoteEvent.hello)
+        let helloRaw = #"{"kind":"hello","seq":\#(_seq),"epoch":"\#(_epoch)","capabilities":["events.resume"]}"#
         let replay = since.map { floor in buffer.filter { $0.seq > floor } } ?? []
+        let seqNow = _seq
+        let delay = _replayDelay
         lock.unlock()
         connection.send(content: Data(head.utf8), completion: .contentProcessed { [weak self] _ in
             guard let self else { return }
-            self.sendText(hello, on: connection)
-            if gap { self.sendText(RemoteEvent(seq: self.currentSeq, kind: RemoteEvent.resync), on: connection) } else {
-                for event in replay { self.sendText(event, on: connection) }
+            if resume { self.sendPayload(Data(helloRaw.utf8), on: connection) } else { self.sendText(hello, on: connection) }
+            let rest = {
+                if gap { self.sendText(RemoteEvent(seq: self.currentSeq, kind: RemoteEvent.resync), on: connection) } else {
+                    for event in replay { self.sendText(event, on: connection) }
+                    if resume, since != nil { self.sendPayload(Data(#"{"kind":"resumed","seq":\#(seqNow),"replayed":\#(replay.count)}"#.utf8), on: connection) }
+                }
             }
+            if delay > 0 { self.queue.asyncAfter(deadline: .now() + delay, execute: rest) } else { rest() }
             self.lock.lock(); self.sockets.append(connection); self.lock.unlock()
             self.drain(connection)
         })
     }
 
-    private var currentSeq: Int { lock.lock(); defer { lock.unlock() }; return _seq }
+    var currentSeq: Int { lock.lock(); defer { lock.unlock() }; return _seq }
 
     /// Reads and drops client frames so a close from the phone ends the socket.
     private func drain(_ connection: NWConnection) {
@@ -552,7 +636,10 @@ final class MockIronPetServer: @unchecked Sendable {
     }
 
     private func sendText(_ event: RemoteEvent, on connection: NWConnection) {
-        let payload = (try? encoder.encode(event)) ?? Data()
+        sendPayload((try? encoder.encode(event)) ?? Data(), on: connection)
+    }
+
+    private func sendPayload(_ payload: Data, on connection: NWConnection) {
         var frame = Data([0x81])
         if payload.count < 126 { frame.append(UInt8(payload.count)) } else {
             frame.append(126)
@@ -602,11 +689,23 @@ extension MockIronPetServer {
             return true
         }
         guard parts[1] == "chat" else { return false }
+        if get, (parts.count == 3 && parts[2] == "current") || (parts.count == 4 && parts[2] == "messages") {
+            lock.lock()
+            let drop = _chatReadFailures > 0
+            if drop, _chatReadFailures != Int.max { _chatReadFailures -= 1 }
+            lock.unlock()
+            if drop { fail(connection, 503, "unavailable", "the Mac could not answer"); return true }
+        }
         switch (parts.count, parts.dropFirst(2).first ?? "") {
         case (3, "current") where get: respond(connection, 200, chat)
         case (4, "messages") where get:
             guard let item = chat.items.first(where: { $0.id == parts[3] }) else { fail(connection, 404, "not_found", "no message"); return true }
-            respond(connection, 200, item)
+            lock.lock(); _messageReads += 1; _readsInFlight += 1; _maxReadsInFlight = max(_maxReadsInFlight, _readsInFlight); let delay = _messageReadDelay; lock.unlock()
+            let answer = { [self] in
+                lock.lock(); _readsInFlight -= 1; lock.unlock()
+                respond(connection, 200, item)
+            }
+            if delay > 0 { queue.asyncAfter(deadline: .now() + delay, execute: answer) } else { answer() }
         case (3, "options") where request.method == "PATCH":
             // Only `mode` is acted on: it must be one the chat advertises, as on the Mac, and then it is the mode in force.
             guard let mode = request.json["mode"] as? String else { respond(connection, 200, Data("{\"changed\":true}".utf8)); return true }
@@ -876,6 +975,11 @@ extension MockIronPetServer {
                 var denied: String?
                 if let reminders = json["reminders"] as? [String: Any], let paused = reminders["paused"] as? Bool { _p4.config.reminders.paused = paused }
                 if let speech = json["speech"] as? [String: Any], let on = speech["enabled"] as? Bool { _p4.config.speech.enabled = on }
+                // A background picked on the phone changes the Mac's config, so the pet resource every phone reads follows.
+                if let chat = json["chat"] as? [String: Any], let background = chat["background"] as? String {
+                    _p4.config.chat.background = background
+                    _pet.background = background
+                }
                 if let meetings = json["meetings"] as? [String: Any] { if meetings["enabled"] as? Bool == false { _p4.config.meetings.enabled = false } else { denied = "meetings.enabled" } }
                 if json["voice"] != nil { denied = "voice.baseUrl" }
                 let config = _p4.config
@@ -885,6 +989,25 @@ extension MockIronPetServer {
                 publish(RemoteEvent.settingsChanged)
                 return
             }
+        }
+        if parts.count == 3, parts[2] == "background", method == "POST" {
+            // The Mac keeps the image as the custom background and tells every phone, this one included.
+            let isImage = request.body.starts(with: [0xFF, 0xD8, 0xFF]) || request.body.starts(with: [0x89, 0x50, 0x4E, 0x47])
+            guard isImage else { return fail(connection, 415, "unsupported_type", "the background must be a JPEG, PNG or HEIC image") }
+            let hash = SHA256.hash(data: request.body).map { String(format: "%02x", $0) }.joined()
+            lock.lock()
+            _assetData[hash] = request.body
+            _assets.removeAll { $0.id == "chat.background" }
+            _assets.append(RemoteAsset(id: "chat.background", kind: "background", name: "custom.jpg", sha256: hash, bytes: request.body.count, contentType: "image/jpeg"))
+            _p4.config.chat.background = "custom"
+            _pet.background = "custom"
+            _pet.backgroundAsset = "chat.background"
+            let config = _p4.config
+            lock.unlock()
+            respond(connection, 200, config)
+            publish(RemoteEvent.assetsChanged)
+            publish(RemoteEvent.settingsChanged)
+            return
         }
         if parts.count == 3, parts[2] == "pets", method == "GET" { lock.lock(); let pets = _p4.pets; lock.unlock(); return respond(connection, 200, PetChoiceListResponse(pets: pets)) }
         if parts.count == 3, parts[2] == "pet", method == "POST" {

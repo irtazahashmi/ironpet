@@ -5,9 +5,9 @@ import Foundation
 @MainActor
 package enum AutomationPrompt {
     /// The catalog id of the agent a background run of this automation uses: its own `agent`, else the chat's, else Cursor.
-    package static func agentID(_ automation: Automation) -> String {
-        let id = automation.action.agent ?? UserDefaults.standard.string(forKey: "chatAgent")
-        return AgentCatalog.agent(id: id) != nil ? id! : "cursor"
+    package static func agentID(_ automation: Automation, defaults: UserDefaults = .standard) -> String {
+        if let id = automation.action.agent, AgentCatalog.agent(id: id) != nil { return id }
+        return ChatAgentPreference.resolveID(defaults: defaults)
     }
 
     /// `agentOverride` lets tests run a scripted agent instead of one from the catalog.
@@ -28,7 +28,7 @@ package enum AutomationPrompt {
         runner.restricted = true
         runner.usageFeature = .automations
         runner.onPermission = { call, respond in respond(decision(for: call)) }
-        let text = "This is an automated run of \"\(automation.name)\" from ironpet. Answer in under 600 characters, as plain text for a small notification.\n\n\(prompt)"
+        let text = Prompts.render(id: "automation-prompt", ["name": automation.name, "prompt": prompt])
         let turn = ACPTurn(prompt: text, preamble: nil, workspace: workspace, resume: nil, model: automation.action.model, images: [], files: [])
         let state = Box()
         let task = Task { @MainActor in

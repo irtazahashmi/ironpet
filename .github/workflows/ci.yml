@@ -8,9 +8,10 @@ on:
 permissions:
   contents: read
 
+# A newer push to a PR branch cancels that PR's older run. Every push to main gets its own group and always runs to the end.
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   # Which expensive jobs this change needs. Push to main always runs everything.
@@ -69,7 +70,7 @@ jobs:
 
           is_ios() {
             case "$1" in
-              iOS/*|Sources/IronPetKit/*|Tests/IronPetKitTests/*) return 0 ;;
+              iOS/*|Sources/IronPetKit/*|Tests/IronPetKitTests/*|scripts/ios_ui_shards.py) return 0 ;;
               Package.swift|Package.resolved|.github/*) return 0 ;;
               *) return 1 ;;
             esac
@@ -195,7 +196,7 @@ jobs:
       - name: Check scripts
         run: |
           for script in scripts/*.sh; do bash -n "$script"; done
-          python3 -m py_compile scripts/e2e.py scripts/gen_agent_catalog.py
+          python3 -m py_compile scripts/e2e.py scripts/gen_agent_catalog.py scripts/ios_ui_shards.py
 
   # Script syntax only, when scripts/ changed without a Mac rebuild (e.g. e2e.py).
   scripts:
@@ -208,14 +209,50 @@ jobs:
       - name: Check scripts
         run: |
           for script in scripts/*.sh; do bash -n "$script"; done
-          python3 -m py_compile scripts/e2e.py scripts/gen_agent_catalog.py
+          python3 -m py_compile scripts/e2e.py scripts/gen_agent_catalog.py scripts/ios_ui_shards.py
 
-  # IronPet Remote for iOS, on a simulator. It is not part of the "build" gate below until it has run green on a GitHub runner.
-  ios:
+  # IronPet Remote for iOS, on a simulator. Three jobs run in parallel: the unit tests, and the UI tests in shards.
+  # The shard lists live in scripts/ios_ui_shards.py. Each class runs in exactly one job.
+  ios-unit:
     needs: changes
     if: needs.changes.outputs.ios == 'true'
     runs-on: macos-15
     timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Every UI test class is in a shard
+        run: python3 scripts/ios_ui_shards.py check
+
+      - name: Install XcodeGen
+        run: |
+          mkdir -p "$RUNNER_TEMP/xcodegen"
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/download/2.43.0/xcodegen.zip
+          echo "a4847ed77d3341a4d24049bc4424a3babca4c94ff1dcaaee923eaca2b32c678f  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen"
+          echo "$RUNNER_TEMP/xcodegen/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: Generate the project
+        working-directory: iOS
+        run: xcodegen generate
+
+      - name: Unit tests
+        run: |
+          device=$(xcrun simctl list devices available iPhone | grep -m1 -oE '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}')
+          xcodebuild test -project iOS/IronPetRemote.xcodeproj -scheme IronPetRemote \
+            -destination "platform=iOS Simulator,id=$device" -derivedDataPath "$RUNNER_TEMP/dd" \
+            -only-testing:IronPetRemoteTests \
+            CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= CODE_SIGN_IDENTITY=-
+
+  ios-ui:
+    needs: changes
+    if: needs.changes.outputs.ios == 'true'
+    runs-on: macos-15
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3]
     steps:
       - uses: actions/checkout@v4
 
@@ -231,11 +268,13 @@ jobs:
         working-directory: iOS
         run: xcodegen generate
 
-      - name: Unit and UI tests
+      - name: UI tests, shard ${{ matrix.shard }}
         run: |
           device=$(xcrun simctl list devices available iPhone | grep -m1 -oE '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}')
+          read -ra tests <<< "$(python3 scripts/ios_ui_shards.py args ${{ matrix.shard }})"
           xcodebuild test -project iOS/IronPetRemote.xcodeproj -scheme IronPetRemote \
             -destination "platform=iOS Simulator,id=$device" -derivedDataPath "$RUNNER_TEMP/dd" \
+            "${tests[@]}" \
             CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= CODE_SIGN_IDENTITY=-
 
   # IronPetCore on Linux. It is non-blocking for now (continue-on-error), and the "build" gate below does not wait for it.
@@ -265,9 +304,9 @@ jobs:
       - name: Core tests
         run: swift test --filter IronPetCoreTests
 
-  # Branch protection requires a check named "build". Skipped Mac jobs count as OK for docs-only PRs.
+  # Branch protection requires a check named "build". Skipped Mac and iOS jobs count as OK for docs-only PRs.
   build:
-    needs: [changes, test, bundle, scripts]
+    needs: [changes, test, bundle, scripts, ios-unit, ios-ui]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -278,11 +317,14 @@ jobs:
           changes_r="${{ needs.changes.result }}"
           mac="${{ needs.changes.outputs.mac }}"
           scripts="${{ needs.changes.outputs.scripts }}"
+          ios="${{ needs.changes.outputs.ios }}"
           test_r="${{ needs.test.result }}"
           bundle_r="${{ needs.bundle.result }}"
           scripts_r="${{ needs.scripts.result }}"
-          echo "changes=$changes_r mac=$mac scripts=$scripts"
-          echo "test=$test_r bundle=$bundle_r scripts_job=$scripts_r"
+          ios_unit_r="${{ needs.ios-unit.result }}"
+          ios_ui_r="${{ needs.ios-ui.result }}"
+          echo "changes=$changes_r mac=$mac scripts=$scripts ios=$ios"
+          echo "test=$test_r bundle=$bundle_r scripts_job=$scripts_r ios_unit=$ios_unit_r ios_ui=$ios_ui_r"
 
           [ "$changes_r" = success ]
 
@@ -298,4 +340,10 @@ jobs:
             [ "$scripts_r" = success ]
           else
             ok "$scripts_r"
+          fi
+
+          if [ "$ios" = true ]; then
+            [ "$ios_unit_r" = success ] && [ "$ios_ui_r" = success ]
+          else
+            ok "$ios_unit_r" && ok "$ios_ui_r"
           fi
