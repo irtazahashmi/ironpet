@@ -464,7 +464,7 @@ package final class MemoryReflector {
             outcome.skipped = true
             return outcome
         }
-        let facts = oldest.map { "\($0.id): \($0.text)" }.joined(separator: "\n")
+        let facts = oldest.map { "\($0.ref): \($0.text)" }.joined(separator: "\n")
         let prompt = Prompts.render(id: "memory-merge", [
             "pet": petName(), "claims": facts, "maxLength": String(MemoryNote.maxLength),
         ])
@@ -482,13 +482,14 @@ package final class MemoryReflector {
                 outcome.error = "the agent did not answer with the merges JSON"
                 return outcome
             }
-            let known = Set(oldest.map(\.id))
+            let shown = Dictionary(oldest.map { ($0.ref, $0.id) }, uniquingKeysWith: { first, _ in first })
             for item in merges.prefix(Self.maxMerges) {
-                guard Set(item.ids).count >= 2, item.ids.allSatisfy(known.contains) else {
+                let ids = item.ids.compactMap { shown[$0] }
+                guard Set(item.ids).count >= 2, ids.count == item.ids.count else {
                     outcome.dropped.append("\(item.text) (it names claims that were not shown)")
                     continue
                 }
-                switch store.merge(entity, replacing: item.ids, with: item.text, source: "digest:merge") {
+                switch store.merge(entity, replacing: ids, with: item.text, source: "digest:merge") {
                 case .success(let note): outcome.saved.append(note.text)
                 case .failure(let failure): outcome.dropped.append("\(item.text) (\(failure.message))")
                 }
@@ -579,12 +580,12 @@ package final class MemoryReflector {
         }
     }
 
-    /// The merges an answer proposes: the claim ids and the sentence that replaces them. Nil when the answer is not the merges object.
-    package static func parseMerges(_ answer: String) -> [(ids: [Int64], text: String)]? {
+    /// The merges an answer proposes: the claim refs (`claim_<hex>`) and the sentence that replaces them. Nil when the answer is not the merges object.
+    package static func parseMerges(_ answer: String) -> [(ids: [String], text: String)]? {
         guard let merges = jsonObject(in: answer)?["merges"] as? [Any] else { return nil }
         return merges.compactMap { raw in
             guard let entry = raw as? [String: Any], let text = entry["text"] as? String, let ids = entry["ids"] as? [Any] else { return nil }
-            return (ids.compactMap { ($0 as? NSNumber)?.int64Value }, text)
+            return (ids.compactMap { $0 as? String }, text)
         }
     }
 

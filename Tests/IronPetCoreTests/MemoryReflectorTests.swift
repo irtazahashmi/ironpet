@@ -251,7 +251,7 @@ final class MemoryReflectorTests: XCTestCase {
         _ = store.setPinned(oldest.id, true)
         let next = try XCTUnwrap(store.claims(of: "me").last(where: { !$0.pinned }))
         let other = try XCTUnwrap(store.claims(of: "me").dropLast().last(where: { !$0.pinned && $0.id != next.id }))
-        answers = [notes(#"{"merges":[{"ids":[\#(next.id),\#(other.id)],"text":"Merged fact."}]}"#)]
+        answers = [notes(#"{"merges":[{"ids":["\#(next.ref)","\#(other.ref)"],"text":"Merged fact."}]}"#)]
         await digest()
         XCTAssertEqual(prompts.count, 1)
         XCTAssertTrue(prompts[0].contains("\(next.id): Fact number"), "the oldest unpinned facts are shown")
@@ -266,7 +266,7 @@ final class MemoryReflectorTests: XCTestCase {
         let pinned = try XCTUnwrap(store.claims(of: "me").last)
         _ = store.setPinned(pinned.id, true)
         let other = try XCTUnwrap(store.claims(of: "me").dropLast().last)
-        answers = [notes(#"{"merges":[{"ids":[\#(pinned.id),\#(other.id)],"text":"Should not be saved."}]}"#)]
+        answers = [notes(#"{"merges":[{"ids":["\#(pinned.ref)","\#(other.ref)"],"text":"Should not be saved."}]}"#)]
         await digest()
         XCTAssertFalse(claims("me").contains("Should not be saved."))
         XCTAssertEqual(store.claims(of: "me").count, 12)
@@ -294,7 +294,8 @@ final class MemoryReflectorTests: XCTestCase {
     }
 
     func testParseMergesNeedsTheMergesObject() {
-        XCTAssertEqual(MemoryReflector.parseMerges(#"{"merges":[{"ids":[3,7],"text":"Joined."}]}"#)?.first?.ids, [3, 7])
+        XCTAssertEqual(MemoryReflector.parseMerges(#"{"merges":[{"ids":["claim_3f9a2c","claim_7b1e04"],"text":"Joined."}]}"#)?.first?.ids,
+                       ["claim_3f9a2c", "claim_7b1e04"])
         XCTAssertNil(MemoryReflector.parseMerges(#"{"notes":[]}"#))
     }
 

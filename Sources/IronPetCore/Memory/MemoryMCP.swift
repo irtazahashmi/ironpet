@@ -254,10 +254,10 @@ package enum MemoryMCP {
 
     private static func pageJSON(_ page: EntityPage) -> [String: Any] {
         [
-            "entity": page.entity.name, "id": page.entity.id, "type": page.entity.type.rawValue,
+            "entity": page.entity.name, "id": page.entity.id, "ref": page.entity.ref, "type": page.entity.type.rawValue,
             "aliases": page.entity.aliases,
             "claims": page.claims.map { claim in
-                ["id": "note:\(MemoryIndex.claimRef(claim.id))", "text": claim.text, "date": claim.date,
+                ["id": claim.ref, "text": claim.text, "date": claim.date,
                  "sources": claim.sources, "pinned": claim.pinned] as [String: Any]
             },
             "links": page.links.map(linkJSON),

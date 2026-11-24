@@ -36,6 +36,17 @@ final class EntityMemoryStoreTests: XCTestCase {
         try store.remember(text, scope: .me, source: source).get()
     }
 
+    func testPagesAndClaimsHaveUniquePrefixedRefs() async throws {
+        _ = try me("Leads payments", source: "chat:a")
+        _ = try me("Owns auth", source: "chat:a")
+        let entities = store.entities()
+        let claims = entities.flatMap { store.claims(of: $0.id) }
+        XCTAssertFalse(claims.isEmpty)
+        XCTAssertTrue(entities.allSatisfy { $0.ref.hasPrefix("page_") && $0.ref.count >= 11 })
+        XCTAssertTrue(claims.allSatisfy { $0.ref.hasPrefix("claim_") && $0.ref.count >= 12 })
+        XCTAssertEqual(Set(entities.map(\.ref) + claims.map(\.ref)).count, entities.count + claims.count)
+    }
+
     func testTheUsersPageExistsFromTheStart() async {
         XCTAssertEqual(store.entities().first?.id, "me")
         XCTAssertEqual(store.entities().count, 1)

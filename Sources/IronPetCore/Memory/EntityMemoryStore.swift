@@ -9,6 +9,8 @@ import Foundation
 /// `invalidAt` set, so it leaves the page and stays in its history.
 package struct MemoryClaim: Equatable, Identifiable, Codable {
     package let id: Int64
+    /// The public `claim_<hex>` ref that agents cite. It never changes and is never reused.
+    package let ref: String
     package let entity: String
     package let text: String
     /// `yyyy-MM-dd`, the day it was last said. Empty for a note a person wrote by hand.
@@ -27,6 +29,8 @@ package struct MemoryClaim: Equatable, Identifiable, Codable {
 /// An entity's page: who or what it is, and how it is named.
 package struct MemoryEntity: Equatable, Identifiable, Codable {
     package let id: String
+    /// The public `page_<hex>` ref of the page. It never changes and is never reused.
+    package let ref: String
     package let type: EntityType
     package let name: String
     package let aliases: [String]
@@ -211,8 +215,8 @@ package final class EntityMemoryStore: MemoryStore {
                     return .success(Written(claim: same.id, removed: removed, note: MemoryNote(text: same.text, date: day, source: source),
                                             target: target, bumped: true))
                 }
-                try db.execute("INSERT INTO memory_claims(entity, text, date, sources, invalid_at, pinned) VALUES(?, ?, ?, ?, NULL, 0)",
-                               [target.id, text, day, source])
+                try db.execute("INSERT INTO memory_claims(entity, text, date, sources, invalid_at, pinned, ref) VALUES(?, ?, ?, ?, NULL, 0, ?)",
+                               [target.id, text, day, source, try Self.reference("claim_", db)])
                 let claim = try Self.lastID(db)
                 for stale in removed {
                     try db.execute("UPDATE memory_claims SET invalid_at = ? WHERE id = ?", [at.timeIntervalSince1970, stale.id])
@@ -268,8 +272,8 @@ package final class EntityMemoryStore: MemoryStore {
                     return .failure(MemoryError(message: "some of those claims are pinned or no longer hold"))
                 }
                 let sources = merged.reduce([String]()) { Self.merged($0, $1.sources) }
-                try db.execute("INSERT INTO memory_claims(entity, text, date, sources, invalid_at, pinned) VALUES(?, ?, ?, ?, NULL, 0)",
-                               [entity, text, day, Self.joined(sources)])
+                try db.execute("INSERT INTO memory_claims(entity, text, date, sources, invalid_at, pinned, ref) VALUES(?, ?, ?, ?, NULL, 0, ?)",
+                               [entity, text, day, Self.joined(sources), try Self.reference("claim_", db)])
                 let claim = try Self.lastID(db)
                 for old in merged { try db.execute("UPDATE memory_claims SET invalid_at = ? WHERE id = ?", [at.timeIntervalSince1970, old.id]) }
                 return .success((claim, merged))
@@ -540,8 +544,8 @@ package final class EntityMemoryStore: MemoryStore {
             var known = Set(try Self.claims(db, where: "entity = ? AND invalid_at IS NULL", [id]).map { MemoryNote.normalized($0.text) })
             var result: [(id: Int64, text: String)] = []
             for note in notes where !known.contains(MemoryNote.normalized(note.text)) {
-                try db.execute("INSERT INTO memory_claims(entity, text, date, sources, invalid_at, pinned) VALUES(?, ?, ?, ?, NULL, 0)",
-                               [id, note.text, note.date ?? "", note.source])
+                try db.execute("INSERT INTO memory_claims(entity, text, date, sources, invalid_at, pinned, ref) VALUES(?, ?, ?, ?, NULL, 0, ?)",
+                               [id, note.text, note.date ?? "", note.source, try Self.reference("claim_", db)])
                 result.append((try Self.lastID(db), note.text))
                 known.insert(MemoryNote.normalized(note.text))
             }
@@ -604,7 +608,7 @@ package final class EntityMemoryStore: MemoryStore {
 
     private func ensureMe() {
         try? database.write { db in
-            try db.execute("INSERT OR IGNORE INTO memory_entities(id, type, name, aliases, identifiers, mentions) VALUES('me', 'me', 'About me', 'me\nabout me', '', 0)")
+            try db.execute("INSERT OR IGNORE INTO memory_entities(id, type, name, aliases, identifiers, mentions, ref) VALUES('me', 'me', 'About me', 'me\nabout me', '', 0, ?)", [try Self.reference("page_", db)])
         }
     }
 
@@ -676,9 +680,25 @@ package final class EntityMemoryStore: MemoryStore {
         }
     }
 
+    /// A new `<prefix>_<hex>` ref: six random lowercase hex digits, one more for each collision. It never encodes a title or a time.
+    nonisolated private static func reference(_ prefix: String, _ db: Database.Connection) throws -> String {
+        let digits = Array("0123456789abcdef")
+        var length = 6
+        while true {
+            for _ in 0..<8 {
+                let ref = prefix + String((0..<length).map { _ in digits.randomElement()! })
+                if try db.rows("SELECT 1 FROM memory_entities WHERE ref = ? UNION ALL SELECT 1 FROM memory_claims WHERE ref = ?",
+                               [ref, ref]).isEmpty {
+                    return ref
+                }
+            }
+            length += 1
+        }
+    }
+
     private static func ensureEntity(_ db: Database.Connection, _ target: Target) throws {
-        try db.execute("INSERT OR IGNORE INTO memory_entities(id, type, name, aliases, identifiers, mentions) VALUES(?, ?, ?, '', '', 0)",
-                       [target.id, target.type.rawValue, target.name])
+        try db.execute("INSERT OR IGNORE INTO memory_entities(id, type, name, aliases, identifiers, mentions, ref) VALUES(?, ?, ?, '', '', 0, ?)",
+                       [target.id, target.type.rawValue, target.name, try reference("page_", db)])
         guard !target.identifiers.isEmpty else { return }
         let current = (try db.rows("SELECT identifiers FROM memory_entities WHERE id = ?", [target.id]).first?.first as? String) ?? ""
         let merged = merged(current.isEmpty ? [] : current.components(separatedBy: "\n"), target.identifiers)
@@ -686,27 +706,28 @@ package final class EntityMemoryStore: MemoryStore {
     }
 
     private static func entityRows(_ db: Database.Connection) throws -> [MemoryEntity] {
-        try db.rows("SELECT id, type, name, aliases, identifiers, mentions FROM memory_entities").compactMap { row in
+        try db.rows("SELECT id, type, name, aliases, identifiers, mentions, ref FROM memory_entities").compactMap { row in
             guard let id = row[0] as? String, let type = (row[1] as? String).flatMap(EntityType.init(rawValue:)),
-                  let name = row[2] as? String else { return nil }
-            return MemoryEntity(id: id, type: type, name: name, aliases: lines(row[3] as? String), identifiers: lines(row[4] as? String),
-                                mentions: Int(row[5] as? Int64 ?? 0))
+                  let name = row[2] as? String, let ref = row[6] as? String else { return nil }
+            return MemoryEntity(id: id, ref: ref, type: type, name: name, aliases: lines(row[3] as? String),
+                                identifiers: lines(row[4] as? String), mentions: Int(row[5] as? Int64 ?? 0))
         }
     }
 
     nonisolated private static func claims(_ db: Database.Connection, where condition: String, order: String = "date DESC, id DESC",
                                            _ args: [Database.Value]) throws -> [MemoryClaim] {
-        try db.rows("SELECT id, entity, text, date, sources, invalid_at, pinned FROM memory_claims WHERE \(condition) ORDER BY \(order)",
+        try db.rows("SELECT id, entity, text, date, sources, invalid_at, pinned, ref FROM memory_claims WHERE \(condition) ORDER BY \(order)",
                     args).compactMap(claim)
     }
 
     nonisolated private static func claim(_ db: Database.Connection, id: Int64) throws -> MemoryClaim? {
-        try db.rows("SELECT id, entity, text, date, sources, invalid_at, pinned FROM memory_claims WHERE id = ?", [id]).first.flatMap(claim)
+        try db.rows("SELECT id, entity, text, date, sources, invalid_at, pinned, ref FROM memory_claims WHERE id = ?", [id]).first.flatMap(claim)
     }
 
     nonisolated private static func claim(_ row: [Database.Value]) -> MemoryClaim? {
-        guard let id = row[0] as? Int64, let entity = row[1] as? String, let text = row[2] as? String else { return nil }
-        return MemoryClaim(id: id, entity: entity, text: text, date: row[3] as? String ?? "", sources: lines(row[4] as? String),
+        guard let id = row[0] as? Int64, let entity = row[1] as? String, let text = row[2] as? String,
+              let ref = row[7] as? String else { return nil }
+        return MemoryClaim(id: id, ref: ref, entity: entity, text: text, date: row[3] as? String ?? "", sources: lines(row[4] as? String),
                            invalidAt: (row[5] as? Double).map(Date.init(timeIntervalSince1970:)), pinned: (row[6] as? Int64 ?? 0) != 0)
     }
 

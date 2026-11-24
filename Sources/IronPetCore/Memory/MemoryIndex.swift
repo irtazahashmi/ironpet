@@ -93,6 +93,14 @@ package final class MemoryIndex: @unchecked Sendable { // `database` serializes 
                                       sources TEXT NOT NULL DEFAULT '', PRIMARY KEY(from_entity, to_entity, type));
             ALTER TABLE memory_changes ADD COLUMN claim INTEGER;
             """),
+        .init(545, "memory: prefixed refs for pages (page_) and claims (claim_), backfilled", sql: """
+            ALTER TABLE memory_entities ADD COLUMN ref TEXT;
+            ALTER TABLE memory_claims ADD COLUMN ref TEXT;
+            UPDATE memory_entities SET ref = 'page_' || lower(hex(randomblob(3))) WHERE ref IS NULL;
+            UPDATE memory_claims SET ref = 'claim_' || lower(hex(randomblob(3))) WHERE ref IS NULL;
+            CREATE UNIQUE INDEX memory_entities_by_ref ON memory_entities(ref);
+            CREATE UNIQUE INDEX memory_claims_by_ref ON memory_claims(ref);
+            """),
     ]
 
     package enum Kind: String, CaseIterable, Codable {
