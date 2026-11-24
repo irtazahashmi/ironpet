@@ -114,6 +114,8 @@ public final class EventConnection: @unchecked Sendable {
     /// The `epoch` of the Mac launch that numbered `last`. Nil until a Mac that sends one has said hello.
     private var epoch: String?
     private let store: (any EventResumeStoring)?
+    private let saveQueue = DispatchQueue(label: "ironpet.event-resume-save")
+    private var savePending = false
     /// The open socket, and whether its hello announced `chat.send`.
     private var open: URLSessionWebSocketTask?
     private var chatSendAnnounced = false
@@ -204,9 +206,25 @@ public final class EventConnection: @unchecked Sendable {
     private func record(_ seq: Int) {
         lock.lock()
         last = max(last ?? 0, seq)
-        let saved = (last ?? 0, epoch)
         lock.unlock()
-        store?.save(seq: saved.0, epoch: saved.1)
+        scheduleSave()
+    }
+
+    /// Writes the resume point on a queue of its own, so the loop that reads the socket never waits for `UserDefaults`. Events that
+    /// arrive while a write is waiting share it, and it saves the newest values.
+    private func scheduleSave() {
+        guard let store else { return }
+        lock.lock()
+        if savePending { lock.unlock(); return }
+        savePending = true
+        lock.unlock()
+        saveQueue.async { [self] in
+            lock.lock()
+            savePending = false
+            let saved = (last, epoch)
+            lock.unlock()
+            if let seq = saved.0 { store.save(seq: seq, epoch: saved.1) }
+        }
     }
 
     /// Moves the resume point to `seq` of the Mac launch `epoch`, which may be lower than the old one after a Mac restart.
@@ -214,9 +232,8 @@ public final class EventConnection: @unchecked Sendable {
         lock.lock()
         last = seq
         if let newEpoch { epoch = newEpoch }
-        let saved = (seq, epoch)
         lock.unlock()
-        store?.save(seq: saved.0, epoch: saved.1)
+        scheduleSave()
     }
 
     private var resumeEpoch: String? { lock.lock(); defer { lock.unlock() }; return epoch }

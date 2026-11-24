@@ -74,6 +74,7 @@ final class ResumeTests: XCTestCase {
         XCTAssertTrue(server.socketURLs.last?.contains("since=\(applied)") == true, "\(server.socketURLs)")
         XCTAssertTrue(server.socketURLs.last?.contains("epoch=mock-epoch-1") == true)
         XCTAssertEqual(chatReads, readsBefore, "no full refetch")
+        await poll { store.load()?.seq == applied + 2 }
         XCTAssertEqual(store.load()?.seq, applied + 2)
         model.stop()
     }
@@ -108,6 +109,7 @@ final class ResumeTests: XCTestCase {
         await poll { self.chatReads == readsBefore + 1 }
         try? await Task.sleep(nanoseconds: 300_000_000)
         XCTAssertEqual(chatReads, readsBefore + 1, "exactly one full refetch")
+        await poll { store.load()?.seq == seq }
         XCTAssertEqual(store.load()?.seq, seq, "the phone continues from the Mac's seq")
         XCTAssertNil(model.errorMessage)
         model.stop()
@@ -123,6 +125,7 @@ final class ResumeTests: XCTestCase {
         await poll { self.chatReads == readsBefore + 1 }
         try? await Task.sleep(nanoseconds: 300_000_000)
         XCTAssertEqual(chatReads, readsBefore + 1)
+        await poll { store.load()?.epoch == "mock-epoch-2" }
         XCTAssertEqual(store.load()?.epoch, "mock-epoch-2")
         model.stop()
     }

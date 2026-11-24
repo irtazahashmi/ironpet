@@ -71,6 +71,8 @@ final class RemoteResumeTests: XCTestCase {
         // The first connection applies the 3 events that exist, then the socket drops.
         let before = await collect(first, until: { _ in first.lastSeq == self.h.events.lastSeq && first.lastSeq != nil })
         XCTAssertEqual(before.first, .connected, "a first connection reads everything once")
+        // The connection saves on a queue of its own, so the write may land a moment after the last event.
+        for _ in 0..<100 where store.load()?.seq != h.events.lastSeq { try await Task.sleep(nanoseconds: 20_000_000) }
         let applied = try XCTUnwrap(store.load()).seq
         XCTAssertEqual(applied, h.events.lastSeq)
         XCTAssertEqual(store.load()?.epoch, h.events.epoch)
@@ -85,6 +87,7 @@ final class RemoteResumeTests: XCTestCase {
         XCTAssertEqual(signals.last, .resumed(replayed: 4))
         XCTAssertFalse(signals.contains(.connected), "no full refetch")
         XCTAssertFalse(signals.contains(.resync), "no full refetch")
+        for _ in 0..<100 where store.load()?.seq != h.events.lastSeq { try await Task.sleep(nanoseconds: 20_000_000) }
         XCTAssertEqual(store.load()?.seq, h.events.lastSeq)
         XCTAssertTrue(log.all.contains("events resume_from=\(applied) replayed=4"), "\(log.all)")
     }
@@ -120,6 +123,7 @@ final class RemoteResumeTests: XCTestCase {
         let connection = EventConnection(client: client, store: store)
         let signals = await collect(connection, until: { $0.contains(.resync) })
         XCTAssertEqual(signals, [.resync])
+        for _ in 0..<100 where store.load()?.seq != h.events.lastSeq { try await Task.sleep(nanoseconds: 20_000_000) }
         XCTAssertEqual(store.load()?.seq, h.events.lastSeq, "the phone continues from where the Mac is now")
         XCTAssertTrue(log.all.contains("events resume_from=1 too_old=true"), "\(log.all)")
     }
@@ -130,6 +134,7 @@ final class RemoteResumeTests: XCTestCase {
         let connection = EventConnection(client: client, store: store)
         let signals = await collect(connection, until: { $0.contains(.resync) })
         XCTAssertEqual(signals, [.resync])
+        for _ in 0..<100 where store.load()?.epoch != h.events.epoch { try await Task.sleep(nanoseconds: 20_000_000) }
         XCTAssertEqual(store.load()?.epoch, h.events.epoch)
     }
 
