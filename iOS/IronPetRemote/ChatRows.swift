@@ -61,7 +61,12 @@ struct MarkdownBody: View {
                 ForEach(Array(items.enumerated()), id: \.offset) { index, item in ListRow(item: item, size: size, segment: segment + index, find: find) }
             }
         case .code(let language, let code, _):
-            CodeBlock(language: language, code: code, size: 12 * scale, scale: scale, segment: segment, find: ChatMarkdown.segments(of: block).isEmpty ? nil : find)
+            let plain = CodeBlock(language: language, code: code, size: 12 * scale, scale: scale, segment: segment, find: ChatMarkdown.segments(of: block).isEmpty ? nil : find)
+            if let diagram = ChatMarkdown.mermaidSource(of: block) {
+                MermaidBlock(code: diagram) { plain }
+            } else {
+                plain
+            }
         case .table(let header, let rows):
             TableBlock(header: header, rows: rows, size: size, segment: segment, find: find)
         case .rule:

@@ -154,6 +154,12 @@ public enum ChatMarkdown {
         #endif
     }
 
+    /// The diagram source of a closed ```mermaid block, or nil for any other block. An open fence is still streaming and draws as code.
+    public static func mermaidSource(of block: Block) -> String? {
+        guard case .code(let language, let text, let closed) = block, closed, language?.lowercased() == "mermaid" else { return nil }
+        return text
+    }
+
     /// The text each block draws, in order, for search. Closed mermaid diagrams render as an image and have none.
     public static func segments(of block: Block) -> [String] {
         func shown(_ markdown: String) -> String { String(inline(markdown).characters) }
@@ -162,8 +168,8 @@ public enum ChatMarkdown {
             return [shown(text)]
         case .list(_, let items):
             return items.map { shown($0.task?.text ?? $0.text) }
-        case .code(let language, let text, let closed):
-            return language?.lowercased() == "mermaid" && closed ? [] : [text]
+        case .code(_, let text, _):
+            return mermaidSource(of: block) != nil ? [] : [text]
         case .table(let header, let rows):
             return (header + rows.flatMap { $0 }).map(shown)
         case .rule:

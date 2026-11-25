@@ -20,9 +20,9 @@ SHARDS = [
     # Shard 2 (27 tests)
     ["PasteUITests", "QuickFilterUITests", "PhaseThreeUITests", "TasksBoardUITests", "TasksOfflineUITests", "ChatStreamingUITests", "ChatPagingUITests",
      "ChatCacheUITests"],
-    # Shard 3 (24 tests)
+    # Shard 3 (28 tests)
     ["IronPetRemoteUITests", "ChatParityUITests", "PhaseFourUITests", "PhaseFiveUITests",
-     "VoiceRecordingUITests", "AttachPhotoUITests", "ChatModeUITests", "ChatFindUITests", "ChatOutboxUITests"],
+     "VoiceRecordingUITests", "AttachPhotoUITests", "ChatModeUITests", "ChatFindUITests", "ChatOutboxUITests", "ChatMermaidUITests"],
 ]
 
 TARGET = "IronPetRemoteUITests"

@@ -57,4 +57,11 @@ final class ChatMarkdownBlockTests: XCTestCase {
             .paragraph("plain"),
         ])
     }
+
+    func testOnlyAClosedMermaidFenceIsADiagram() {
+        XCTAssertEqual(ChatMarkdown.parse("```mermaid\ngraph TD\nA-->B\n```").compactMap(ChatMarkdown.mermaidSource(of:)), ["graph TD\nA-->B"])
+        XCTAssertEqual(ChatMarkdown.parse("```Mermaid\ngraph TD\n```").compactMap(ChatMarkdown.mermaidSource(of:)), ["graph TD"])
+        XCTAssertTrue(ChatMarkdown.parse("```mermaid\ngraph TD\nA-->B").compactMap(ChatMarkdown.mermaidSource(of:)).isEmpty, "still streaming")
+        XCTAssertTrue(ChatMarkdown.parse("```swift\nlet a = 1\n```").compactMap(ChatMarkdown.mermaidSource(of:)).isEmpty)
+    }
 }
