@@ -232,6 +232,12 @@ public final class IronPetClient: @unchecked Sendable {
 
     public func alerts() async throws -> [RemoteAlert] { try await get(AlertListResponse.self, APIPath.alerts).alerts }
 
+    /// The record a public id in chat names, with its fields when the Mac can read its kind.
+    public func record(_ id: String) async throws -> RecordDetails {
+        let data = try await perform(request("GET", APIPath.record(id)))
+        do { return try RecordDetails(json: data) } catch { throw ClientError.invalidResponse }
+    }
+
     public func dismissAlert(id: String) async throws { _ = try await perform(request("POST", APIPath.dismissAlert(id), body: Data("{}".utf8))) }
 
     public func dismissAllAlerts() async throws { _ = try await perform(request("POST", APIPath.dismissAllAlerts, body: Data("{}".utf8))) }

@@ -21,6 +21,7 @@ struct ChatView: View {
     @State private var focused = false
     @State private var find = ChatFindState()
     @State private var preview: FilePreviewTarget?
+    @State private var record: RecordLink?
 
     /// Changes when the query or the transcript does, so the matches are found again.
     private var findKey: String {
@@ -45,6 +46,7 @@ struct ChatView: View {
                 Transcript(model: model, find: find, avatar: avatar)
                     .fullPageLoadError(model)
                     .environment(\.openFilePath, { preview = FilePreviewTarget(path: $0) })
+                    .environment(\.openRecord, { record = RecordLink(id: $0) })
                     .glassBottomBar {
                         VStack(spacing: 6) {
                             if let notice = model.snapshot?.notice {
@@ -96,6 +98,7 @@ struct ChatView: View {
             .sheet(isPresented: $showThreads) { ThreadsSheet(model: model, avatar: avatar) }
             .sheet(isPresented: $showSettings) { ChatSettingsSheet(model: model) }
             .sheet(item: $preview) { FilePreviewSheet(client: model.client, target: $0) }
+            .sheet(item: $record) { RecordSheet(client: model.client, id: $0.id) }
             .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
                 guard case .success(let urls) = result else { return }
                 for url in urls {
@@ -362,6 +365,7 @@ struct MessageRow: View {
     /// The send state of a message from this phone, drawn on the row of the source and the time. Only a text bubble has that row.
     var status: AnyView?
     @Environment(\.openFilePath) private var openFilePath
+    @Environment(\.openRecord) private var openRecord
     @State private var selecting = false
 
     var body: some View {
@@ -386,8 +390,12 @@ struct MessageRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: item.kind == "user" || (item.kind == "screenshot" && item.origin != nil) ? .trailing : .leading)
-        // A tap on a file path asks the Mac for a preview. Any other link keeps its usual action.
+        // A tap on a record id opens the record, and a tap on a file path asks the Mac for a preview. Any other link keeps its usual action.
         .environment(\.openURL, OpenURLAction { url in
+            if let id = RecordLinks.id(from: url), let openRecord {
+                openRecord(id)
+                return .handled
+            }
             guard let path = ChatFilePaths.path(from: url), let openFilePath else { return .systemAction }
             openFilePath(path)
             return .handled
