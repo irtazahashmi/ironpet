@@ -305,6 +305,8 @@ struct UserBubble: View {
     var expanded = false
     var onToggleExpand: () -> Void = {}
     var find: RemoteChatFind.RowHighlight?
+    /// The send state of a message from this phone. It sits on the row with the source and the time.
+    var status: AnyView?
     @Environment(\.openFilePath) private var openFilePath
     private var links: Bool { openFilePath != nil }
     @ChatScale(.body) private var scale
@@ -335,6 +337,7 @@ struct UserBubble: View {
                     Text(badge.label).font(.system(size: 10 * scale))
                 }
                 if let date = item.date { Text(ChatMetrics.timeFormatter.string(from: date)).font(.system(size: 10 * scale)) }
+                if let status { status.padding(.leading, 4) }
             }
             .foregroundStyle(.tertiary)
         }
