@@ -49,6 +49,24 @@ final class APIEventTests: XCTestCase {
         XCTAssertEqual(seen, [3, 4, 5])
     }
 
+    // S6: a phone that was away 20 minutes at 46 events a minute replays what it missed and does not read every screen again.
+    func testATwentyMinuteGapAtBusyRatesReplaysInsteadOfForcingAResync() {
+        let bus = APIEventBus()
+        for _ in 0..<(20 * 46) { bus.publish(.agentsChanged) }
+        let replay = bus.replay(after: 1)
+        XCTAssertFalse(replay.gap)
+        XCTAssertEqual(replay.events.count, 20 * 46 - 1)
+    }
+
+    func testChatVersionCountsChatEventsAndSurvivesEviction() {
+        let bus = APIEventBus(capacity: 2)
+        bus.publish(.tasksChanged)
+        XCTAssertEqual(bus.chatVersion, 0)
+        for _ in 0..<5 { bus.publish(.chatItem, id: "same") }
+        bus.publish(.chatState)
+        XCTAssertEqual(bus.chatVersion, 6, "merged events still count, so the version moves whenever the chat does")
+    }
+
     func testSeqFromAnEarlierLaunchReportsAGap() {
         let bus = APIEventBus()
         bus.publish(.agentsChanged)

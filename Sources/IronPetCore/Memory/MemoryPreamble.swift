@@ -22,7 +22,7 @@ package enum MemoryPreamble {
         let name = Config.load().config.pet.name
         let project = MemoryMCP.project(workspace)
         func block(_ scope: MemoryScope, about: String? = nil) -> String {
-            let label = store.location(scope, project: project) ?? scope.rawValue
+            let label = store.location(scope, project: project, entity: nil) ?? scope.rawValue
             let subject = about.map { " about=\"\($0)\"" } ?? ""
             let notes = store.recall(scope, project: project, bytes: budget[scope]!, naming: firstMessage)
             return "<memory page=\"\(label)\"\(subject)>\n\(notes.isEmpty ? "(none yet)" : notes)\n</memory>"

@@ -67,6 +67,7 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _uploadDelay: TimeInterval = 0
     private var _sendFails = false
     private var _chatReadFailures = 0
+    private var _chatCursor: (epoch: String, seq: Int, changed: Set<String>)?
     private var _sendDelay: TimeInterval = 0
     private var _formDelay: TimeInterval = 0
     private var _formFails = false
@@ -235,6 +236,9 @@ final class MockIronPetServer: @unchecked Sendable {
     var sendFails: Bool { get { lock.lock(); defer { lock.unlock() }; return _sendFails } set { lock.lock(); _sendFails = newValue; lock.unlock() } }
     /// How many of the next chat reads (the whole chat or one message) answer 503, as a Mac that is busy or out of reach does through a proxy. `Int.max` is an outage, and 0 ends it. A dropped
     /// connection is not used because URLSession sends a dropped GET again by itself.
+    /// When set, chat answers carry this `epoch` and `seq`, and a read with a matching `after` and `epoch` gets only the items in `changed`
+    /// with `delta: true`, as a Mac that supports incremental sync does. Nil answers as an older Mac does.
+    var chatCursor: (epoch: String, seq: Int, changed: Set<String>)? { get { lock.lock(); defer { lock.unlock() }; return _chatCursor } set { lock.lock(); _chatCursor = newValue; lock.unlock() } }
     var chatReadFailures: Int { get { lock.lock(); defer { lock.unlock() }; return _chatReadFailures } set { lock.lock(); _chatReadFailures = newValue; lock.unlock() } }
     /// Seconds the Mac takes to answer a send after it has recorded the message.
     var sendDelay: TimeInterval { get { lock.lock(); defer { lock.unlock() }; return _sendDelay } set { lock.lock(); _sendDelay = newValue; lock.unlock() } }
@@ -782,7 +786,18 @@ extension MockIronPetServer {
         switch (parts.count, parts.dropFirst(2).first ?? "") {
         case (3, "current") where get:
             // The ETag is a hash of the body, as the Mac sends it. The phone's `If-None-Match` gets 304 with no body.
-            let body = (try? encoder.encode(Self.page(of: chat, query: request.query))) ?? Data("{}".utf8)
+            var answer = Self.page(of: chat, query: request.query)
+            if let cursor = chatCursor {
+                answer.epoch = cursor.epoch
+                answer.seq = cursor.seq
+                let query = request.query
+                if query.contains("epoch=\(cursor.epoch)"), query.contains("after=") {
+                    answer.items = chat.items.filter { cursor.changed.contains($0.id) }
+                    answer.delta = true
+                    answer.hasMore = nil
+                }
+            }
+            let body = (try? encoder.encode(answer)) ?? Data("{}".utf8)
             let etag = "\"" + String(body.reduce(0) { ($0 &* 31) &+ Int($1) }) + "\""
             if request.headers["if-none-match"] == etag {
                 respond(connection, 304, Data(), contentType: "application/json; charset=utf-8", headers: ["ETag": etag])

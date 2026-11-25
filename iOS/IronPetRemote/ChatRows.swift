@@ -396,6 +396,8 @@ struct UserBubble: View {
     /// The send state of a message the Mac has not confirmed. Nil once it has.
     var outgoing: OutgoingLook?
     var onRetry: (() -> Void)?
+    /// The "Delivered" mark of the last confirmed message. It sits on the row with the source and the time.
+    var status: AnyView?
     @Environment(\.openFilePath) private var openFilePath
     private var links: Bool { openFilePath != nil }
     @ChatScale(.body) private var scale
@@ -431,6 +433,7 @@ struct UserBubble: View {
                     Text(badge.label).font(.system(size: 10 * scale))
                 }
                 if let date = item.date { Text(ChatMetrics.timeFormatter.string(from: date)).font(.system(size: 10 * scale)) }
+                if let status { status.padding(.leading, 4) }
             }
             .foregroundStyle(.tertiary)
         }

@@ -91,7 +91,7 @@ final class OfflineVoicePhotoTests: XCTestCase {
         let voice = VoiceModel(player: ReplyPlayer(engine: SilentEngine()), defaults: UserDefaults(suiteName: "offline-voice-\(UUID().uuidString)")!, openChannel: { channel }, makeMic: { ToneMic() })
         voice.sendAtOnce = true
         voice.onSend = { [chat] in chat.voiceEvent($0) }
-        voice.hasAttachments = { [chat] in !chat.attachments.isEmpty }
+        voice.hasComposerContent = { [chat] in chat.hasComposerContent }
         voice.hasEarlierMessages = { [chat] in chat.hasEarlierMessages }
         chat.resendVoice = { [voice] in await voice.resend($0) }
         chat.transcribeSaved = { [voice] in await voice.transcribeSaved($0, $1) }
@@ -291,5 +291,125 @@ final class OfflineVoicePhotoTests: XCTestCase {
         await record(voice)
         XCTAssertEqual(channel.starts.last?.mode, .send, "online voice is unchanged")
         XCTAssertFalse(chat.outbox.first?.local ?? true)
+    }
+
+    // Voice sends carry the whole composer: the reply quote, the typed text and the attachments.
+    private func quoted(_ chat: ChatModel, selection: String? = nil) {
+        chat.reply(to: RemoteChatItem(id: "item-7", kind: "assistant", date: Date(), origin: nil, text: "an answer"), selection: selection)
+    }
+
+    // S1
+    func testAVoiceMessageSentAtOnceCarriesTheReplyQuoteAndClearsIt() async {
+        let channel = StubChannel(), socket = FakeChatSocket(open: true)
+        let chat = chatModel(online: true, socket: socket, store: MemoryOutboxStore())
+        let voice = voiceModel(channel: channel, chat: chat)
+        quoted(chat, selection: "answer")
+        await record(voice)
+        XCTAssertNil(chat.replyTo, "the quote left the composer")
+        XCTAssertNil(chat.replySelection)
+        XCTAssertEqual(channel.starts.last?.mode, .draft, "the phone sends the message itself, so the quote can go with it")
+        await poll { socket.sent.count == 1 }
+        XCTAssertEqual(socket.replies.first??.itemID, "item-7")
+        XCTAssertEqual(socket.replies.first??.selectionText, "answer")
+    }
+
+    // S2
+    func testAVoiceMessageSentAtOnceHasTheTypedTextThenTheTranscript() async {
+        let channel = StubChannel(), socket = FakeChatSocket(open: true)
+        let chat = chatModel(online: true, socket: socket, store: MemoryOutboxStore())
+        let voice = voiceModel(channel: channel, chat: chat)
+        chat.draft = "  context first  "
+        await record(voice)
+        XCTAssertEqual(chat.draft, "", "the draft cleared")
+        await poll { socket.sent.count == 1 }
+        XCTAssertEqual(socket.sent.map(\.text), ["context first\n\nhello there"])
+    }
+
+    // S3, online and offline
+    func testStagedFilesGoWithAVoiceMessageOnlineAndOfflineAndSurviveARelaunch() async throws {
+        let store = MemoryOutboxStore(), channel = StubChannel(), socket = FakeChatSocket(open: true)
+        let chat = chatModel(online: true, socket: socket, store: store)
+        let voice = voiceModel(channel: channel, chat: chat)
+        photo(chat)
+        await record(voice)
+        await poll { self.photoItems.count == 1 && chat.outbox.isEmpty }
+        XCTAssertEqual(photoItems.count, 1, "online: the photo goes with the message")
+
+        // Offline: the typed text, the quote and the photo wait with the recording, and a relaunch keeps them.
+        let offline = chatModel(online: false, socket: FakeChatSocket(open: false), store: store)
+        let offlineChannel = StubChannel()
+        let offlineVoice = voiceModel(channel: offlineChannel, chat: offline)
+        offlineChannel.down = true
+        offline.draft = "typed"
+        quoted(offline)
+        photo(offline, "photo-2.jpg")
+        await record(offlineVoice)
+        XCTAssertEqual(offline.outbox.count, 1)
+        XCTAssertEqual(offline.outbox[0].files.count, 1)
+        XCTAssertEqual(offline.outbox[0].typedText, "typed")
+        XCTAssertEqual(offline.outbox[0].reply?.itemID, "item-7")
+        XCTAssertTrue(offline.attachments.isEmpty)
+        XCTAssertTrue(offline.draft.isEmpty)
+        XCTAssertNil(offline.replyTo)
+
+        offlineChannel.down = false
+        let relaunchedSocket = FakeChatSocket(open: true)
+        let relaunched = chatModel(online: true, socket: relaunchedSocket, store: store)
+        XCTAssertEqual(relaunched.outbox.first?.typedText, "typed")
+        XCTAssertEqual(relaunched.outbox.first?.reply?.itemID, "item-7")
+        relaunched.transcribeSaved = { _, _ in .text("spoken") }
+        await relaunched.flushOutbox()
+        let sends = server.requests.filter { $0.path == "/v1/chat/current/messages" }
+        let last = try XCTUnwrap(sends.last, "the queued message reached the Mac over HTTPS, because it has a photo")
+        XCTAssertEqual(last.json["text"] as? String, "typed\n\nspoken")
+        XCTAssertEqual((last.json["upload_ids"] as? [String])?.count, 1, "the photo went with it")
+        XCTAssertEqual((last.json["reply"] as? [String: Any])?["item_id"] as? String, "item-7")
+        XCTAssertTrue(relaunched.outbox.isEmpty)
+    }
+
+    // An outbox saved by an earlier build has no typedText and still loads.
+    func testAnOutboxSavedBeforeTypedTextExistedStillDecodes() throws {
+        let json = #"{"id":"6F2B0C5E-6B1A-4E3C-9D0A-0A1B2C3D4E5F","text":"hi","date":0,"queuedAt":0}"#
+        let record = try JSONDecoder().decode(OutboxRecord.self, from: Data(json.utf8))
+        XCTAssertNil(record.typedText)
+        XCTAssertEqual(record.text, "hi")
+    }
+
+    // S4
+    func testARecordingWithNoSpeechGivesTheQuoteTheDraftAndThePhotoBack() async {
+        let channel = StubChannel(), socket = FakeChatSocket(open: true)
+        let chat = chatModel(online: true, socket: socket, store: MemoryOutboxStore())
+        let voice = voiceModel(channel: channel, chat: chat)
+        channel.reply = .silence
+        chat.draft = "typed"
+        quoted(chat)
+        photo(chat)
+        await record(voice)
+        await poll { chat.outbox.isEmpty }
+        XCTAssertTrue(socket.sent.isEmpty)
+        XCTAssertEqual(chat.draft, "typed")
+        XCTAssertEqual(chat.attachments.count, 1)
+        XCTAssertEqual(chat.replyTo?.id, "item-7")
+    }
+
+    // S4, a failed send
+    func testAFailedVoiceSendKeepsTheQuoteTheTextAndThePhotoOnTheMessageForRetry() async {
+        let store = MemoryOutboxStore(), channel = StubChannel(), socket = FakeChatSocket(open: true)
+        let chat = chatModel(online: true, socket: socket, store: store)
+        let voice = voiceModel(channel: channel, chat: chat)
+        channel.down = true
+        chat.draft = "typed"
+        quoted(chat)
+        photo(chat)
+        await record(voice)
+        channel.down = false
+        channel.reply = .error("Voice needs 16 kHz mono 16-bit PCM.")
+        await chat.flushOutbox()
+        let failed = chat.outbox.first
+        XCTAssertTrue(failed?.isFailed == true)
+        XCTAssertEqual(failed?.typedText, "typed")
+        XCTAssertEqual(failed?.reply?.itemID, "item-7")
+        XCTAssertEqual(failed?.files.count, 1)
+        XCTAssertTrue(socket.sent.isEmpty)
     }
 }

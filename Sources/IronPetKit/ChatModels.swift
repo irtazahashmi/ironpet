@@ -337,13 +337,21 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
     public var items: [RemoteChatItem]
     /// Whether older messages exist before `items`. Set only for a paged read; nil from a Mac that sends the whole thread.
     public var hasMore: Bool?
+    /// Where this answer stands in the Mac's event stream: the launch (`epoch`) and the last event (`seq`). A later read sends them as
+    /// `epoch` and `after` and gets only what changed. Nil from a Mac that does not send them.
+    public var epoch: String?
+    public var seq: Int?
+    /// True when `items` holds only the messages that changed after the cursor sent, not a page of the thread.
+    public var delta: Bool?
+    /// True when the Mac could not honour the cursor and `items` is the newest page, as for a read with no cursor.
+    public var reset: Bool?
     public var approvals: [RemoteApproval]
     public var forms: [RemoteForm]
     public var queue: [RemoteQueued]
     public var options: RemoteChatOptions
 
     enum CodingKeys: String, CodingKey {
-        case title, state, running, activity, agent, model, notice, items, approvals, forms, queue, options
+        case title, state, running, activity, agent, model, notice, items, approvals, forms, queue, options, epoch, seq, delta, reset
         case runStarted = "run_started"
         case threadID = "thread_id"
         case folderLabel = "folder_label"
@@ -375,6 +383,10 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
         notice = try c.decodeIfPresent(String.self, forKey: .notice)
         items = try c.decodeIfPresent(Lossy<RemoteChatItem>.self, forKey: .items)?.elements ?? []
         hasMore = try c.decodeIfPresent(Bool.self, forKey: .hasMore)
+        epoch = try c.decodeIfPresent(String.self, forKey: .epoch)
+        seq = try c.decodeIfPresent(Int.self, forKey: .seq)
+        delta = try c.decodeIfPresent(Bool.self, forKey: .delta)
+        reset = try c.decodeIfPresent(Bool.self, forKey: .reset)
         approvals = try c.decodeIfPresent(Lossy<RemoteApproval>.self, forKey: .approvals)?.elements ?? []
         forms = try c.decodeIfPresent(Lossy<RemoteForm>.self, forKey: .forms)?.elements ?? []
         queue = try c.decodeIfPresent(Lossy<RemoteQueued>.self, forKey: .queue)?.elements ?? []
@@ -395,6 +407,10 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
         try c.encodeIfPresent(notice, forKey: .notice)
         try c.encode(items, forKey: .items)
         try c.encodeIfPresent(hasMore, forKey: .hasMore)
+        try c.encodeIfPresent(epoch, forKey: .epoch)
+        try c.encodeIfPresent(seq, forKey: .seq)
+        try c.encodeIfPresent(delta, forKey: .delta)
+        try c.encodeIfPresent(reset, forKey: .reset)
         try c.encode(approvals, forKey: .approvals)
         try c.encode(forms, forKey: .forms)
         try c.encode(queue, forKey: .queue)

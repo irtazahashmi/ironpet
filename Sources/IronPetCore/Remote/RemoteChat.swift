@@ -68,43 +68,120 @@ package struct RemoteChat {
     package let uploads: RemoteUploads
 
     private var origin: ChatOrigin { ChatOrigin.ios(device: device) }
-    private static func iso(_ date: Date) -> String { ISO8601DateFormatter().string(from: date) }
+    private nonisolated static func iso(_ date: Date) -> String { date.formatted(Date.ISO8601FormatStyle()) }
 
     // MARK: Reading
 
-    /// The chat as the phone shows it. With `limit`, `items` is the newest `limit` visible messages, or the `limit` before the message
-    /// `before` names, and `has_more` says whether older ones exist. Without `limit` the whole thread comes back, as older phones expect.
-    /// An unknown `before` gives no items, so a phone never merges a page it cannot place.
-    package func current(limit: Int? = nil, before: String? = nil) async -> [String: Any] {
-        let snapshot = api.chat.snapshot()
-        let status = snapshot.status, options = snapshot.options
-        let visible = snapshot.messages.filter(Self.isVisible)
-        var page = visible
-        var hasMore: Bool?
-        if let limit {
-            let end = before.map { id in visible.firstIndex { $0.id.uuidString == id } ?? 0 } ?? visible.count
-            let start = max(0, end - limit)
-            page = Array(visible[start..<end])
-            hasMore = start > 0
+    /// The most messages one read returns when the phone sends no `limit`. Phones from before paging asked for the whole thread, which
+    /// reached several MB on a long chat. They show the newest `defaultLimit` messages, and `has_more` tells a newer phone that older ones exist.
+    package nonisolated static let defaultLimit = 200
+
+    /// Called with each build of the chat body, off the main actor. Tests count builds and slow them down with it.
+    // Safe: tests set it before a request and clear it after, and production code never writes it.
+    package nonisolated(unsafe) static var buildHook: (@Sendable () -> Void)?
+
+    /// A version of what `current` would answer, cheap to read: it changes with every chat event, so a phone that holds the same value
+    /// holds the same chat. `limit` and `before` change the page, so they are part of it.
+    package func version(limit: Int?, before: String?) -> String {
+        let page = (before ?? "-").addingPercentEncoding(withAllowedCharacters: .alphanumerics) ?? "x"
+        return "\(api.events.epoch.prefix(8))-\(api.events.chatVersion)-\(limit.map(String.init) ?? "-")-\(page)"
+    }
+
+    /// The chat's state at this moment. It copies arrays and builds nothing, so it is the only part of a read that needs the main actor.
+    package func snapshot() -> ChatSnapshot { api.chat.snapshot() }
+
+    /// The chat as the phone shows it, as JSON bytes. With `limit`, `items` is the newest `limit` visible messages, or the `limit` before
+    /// the message `before` names, and `has_more` says whether older ones exist. Without `limit` the newest `defaultLimit` come back.
+    /// An unknown `before` gives no items, so a phone never merges a page it cannot place. It runs off the main actor.
+    package nonisolated static func body(_ snapshot: ChatSnapshot, limit: Int?, before: String?, sync: Sync? = nil) -> Data {
+        buildHook?()
+        var object = page(snapshot, limit: limit, before: before, changed: sync?.changed)
+        if let sync {
+            object["epoch"] = sync.epoch
+            object["seq"] = sync.seq
+            if sync.changed != nil { object["delta"] = true }
+            if sync.reset { object["reset"] = true }
         }
+        return (try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data("{}".utf8)
+    }
+
+    package func current(limit: Int? = nil, before: String? = nil) async -> [String: Any] {
+        Self.page(api.chat.snapshot(), limit: limit, before: before)
+    }
+
+    /// Where the chat stands in the event stream, and what changed since the phone's cursor. Read it in the same main actor turn as
+    /// `snapshot()`, so the cursor and the messages agree.
+    package struct Sync {
+        package let epoch: String
+        package let seq: Int
+        /// The ids of the messages that changed after the phone's cursor, or nil when the phone must read a page again.
+        package let changed: Set<String>?
+        /// True when the phone sent a cursor the Mac could not honour: another launch, a gap in the buffer, or a change with no id.
+        package let reset: Bool
+    }
+
+    /// With `after` (the `seq` of an earlier answer) and the `epoch` it came with, the messages that changed since then. A cursor from
+    /// another launch, one older than the event buffer, or a change that names no message (a removal or a reset) gives `reset`, and
+    /// the read answers the newest page as if no cursor was sent.
+    package func sync(after: Int?, epoch: String?) -> Sync {
+        let bus = api.events
+        guard let after else { return Sync(epoch: bus.epoch, seq: bus.lastSeq, changed: nil, reset: false) }
+        let missed = bus.replay(after: after)
+        var ids = Set<String>()
+        var complete = epoch == bus.epoch && !missed.gap
+        for event in missed.events where event.kind == .chatItem {
+            if let id = event.id { ids.insert(id) } else { complete = false }
+        }
+        return Sync(epoch: bus.epoch, seq: bus.lastSeq, changed: complete ? ids : nil, reset: !complete)
+    }
+
+    package nonisolated static func page(_ snapshot: ChatSnapshot, limit: Int?, before: String?, changed: Set<String>? = nil) -> [String: Any] {
+        if let changed {
+            // Only the messages that changed, in thread order. A message that is gone has nothing to send, and the phone drops it
+            // when it reads a page again.
+            let items = snapshot.messages.filter { changed.contains($0.id.uuidString) && isVisible($0) }
+            return build(snapshot, items, hasMore: false, includeHasMore: false)
+        }
+        let size = limit ?? defaultLimit
+        let messages = snapshot.messages
+        // Walk back from the end so a read of the newest page does not touch the older thousands.
+        var end = messages.count
+        if let before {
+            guard let index = messages.firstIndex(where: { $0.id.uuidString == before }) else { return build(snapshot, [], hasMore: false) }
+            end = index
+        }
+        var page: [ChatItem] = []
+        var start = end
+        while start > 0, page.count < size {
+            start -= 1
+            if isVisible(messages[start]) { page.append(messages[start]) }
+        }
+        page.reverse()
+        var hasMore = false
+        while start > 0 { start -= 1; if isVisible(messages[start]) { hasMore = true; break } }
+        return build(snapshot, page, hasMore: hasMore)
+    }
+
+    private nonisolated static func build(_ snapshot: ChatSnapshot, _ page: [ChatItem], hasMore: Bool, includeHasMore: Bool = true) -> [String: Any] {
+        let status = snapshot.status, options = snapshot.options
         var object: [String: Any] = [
             "title": status.title, "state": status.state, "running": status.running, "folder_label": options.folderLabel,
             "agent": ["id": options.agent.id, "name": options.agent.name],
-            "items": page.map(Self.json), "approvals": snapshot.approvals.map(Self.json),
-            "forms": snapshot.forms.map(Self.json), "queue": snapshot.queue.map(Self.json)
+            "items": page.map(json), "approvals": snapshot.approvals.map(json),
+            "forms": snapshot.forms.map(json), "queue": snapshot.queue.map(json)
         ]
-        if let hasMore { object["has_more"] = hasMore }
+        if includeHasMore { object["has_more"] = hasMore }
         if let id = status.threadID { object["thread_id"] = id }
         if let model = options.model { object["model"] = model }
         if let activity = status.activity { object["activity"] = activity }
-        if let started = status.runStartedAt { object["run_started"] = Self.iso(started) }
-        if let notice = Self.notice(options) { object["notice"] = notice }
-        object["options"] = Self.json(options)
+        if let started = status.runStartedAt { object["run_started"] = iso(started) }
+        if let notice = notice(options) { object["notice"] = notice }
+        object["options"] = json(options)
         return object
     }
 
     /// What the chat settings sheet on the phone offers. A folder's `id` is its path, which `setOptions` accepts back.
-    private static func json(_ options: ChatOptions) -> [String: Any] {
+    private nonisolated static func json(_ options: ChatOptions) -> [String: Any] {
         var object: [String: Any] = [
             "agents": options.agents.map { ["id": $0.id, "name": $0.name] },
             "models": options.models.map { ["id": $0.id, "name": $0.name] },
@@ -171,7 +248,7 @@ package struct RemoteChat {
     }
 
     /// What the Mac chat waits for that only the Mac can do.
-    private static func notice(_ options: ChatOptions) -> String? {
+    private nonisolated static func notice(_ options: ChatOptions) -> String? {
         if options.needsFolder { return "Choose a folder for this chat on the Mac." }
         if let offer = options.runtimeOffer { return "\(offer) needs a runtime. Install it on the Mac." }
         if !options.signInMethods.isEmpty { return "\(options.agent.name) needs you to sign in. Do it on the Mac." }
@@ -382,7 +459,7 @@ package struct RemoteChat {
     }
 
     /// A notice with no text only carries metadata and draws nothing on the Mac.
-    package static func isVisible(_ item: ChatItem) -> Bool {
+    package nonisolated static func isVisible(_ item: ChatItem) -> Bool {
         if case .notice(let text) = item.kind { return !text.isEmpty }
         return true
     }
@@ -392,7 +469,7 @@ package struct RemoteChat {
 
     /// The message as the socket sends it inside a `chat.item` event, so the phone needs no read. Nil for a message the phone must
     /// read itself: one with a file or a form, or text over `maxInlineTextBytes`.
-    package static func inlineJSON(_ item: ChatItem) -> [String: Any]? {
+    package nonisolated static func inlineJSON(_ item: ChatItem) -> [String: Any]? {
         switch item.kind {
         case .user(let text), .assistant(let text), .error(let text), .tool(let text, _), .notice(let text):
             guard text.utf8.count <= maxInlineTextBytes else { return nil }
@@ -401,7 +478,7 @@ package struct RemoteChat {
         }
     }
 
-    package static func json(_ item: ChatItem) -> [String: Any] {
+    package nonisolated static func json(_ item: ChatItem) -> [String: Any] {
         var object: [String: Any] = ["id": item.id.uuidString]
         if let date = item.date { object["date"] = iso(date) }
         if let origin = item.origin { object["origin"] = origin }
@@ -432,7 +509,7 @@ package struct RemoteChat {
         return object
     }
 
-    private static func json(_ reply: ChatReply) -> [String: Any] {
+    private nonisolated static func json(_ reply: ChatReply) -> [String: Any] {
         var object: [String: Any] = ["item_id": reply.itemID.uuidString, "sender": reply.sender, "text": reply.text]
         if let date = reply.date { object["date"] = iso(date) }
         if reply.selection == true { object["selection"] = true }
@@ -440,17 +517,17 @@ package struct RemoteChat {
         return object
     }
 
-    private static func json(_ approval: ChatApprovalInfo) -> [String: Any] {
+    private nonisolated static func json(_ approval: ChatApprovalInfo) -> [String: Any] {
         ["id": approval.id.uuidString, "title": approval.title, "detail": approval.detail]
     }
 
-    private static func json(_ queued: ChatQueuedInfo) -> [String: Any] {
+    private nonisolated static func json(_ queued: ChatQueuedInfo) -> [String: Any] {
         var object: [String: Any] = ["id": queued.id.uuidString, "text": queued.text, "file_count": queued.files.count, "from_mac": queued.fromMac]
         if let reply = queued.reply { object["reply"] = json(reply) }
         return object
     }
 
-    private static func json(_ thread: ChatThreadInfo) -> [String: Any] {
+    private nonisolated static func json(_ thread: ChatThreadInfo) -> [String: Any] {
         var object: [String: Any] = ["id": thread.id, "title": thread.title, "folder_label": (thread.workspace as NSString).lastPathComponent,
                                      "updated": iso(thread.updatedAt), "agent": thread.agent]
         if let name = thread.automationName { object["automation_name"] = name }
@@ -458,7 +535,7 @@ package struct RemoteChat {
         return object
     }
 
-    private static func json(_ form: ChatFormInfo) -> [String: Any] {
+    private nonisolated static func json(_ form: ChatFormInfo) -> [String: Any] {
         var answers: [String: Any] = [:]
         for (name, value) in form.answers {
             switch value {
@@ -471,7 +548,7 @@ package struct RemoteChat {
                 "can_submit": form.form.canSubmit(form.answers)]
     }
 
-    private static func json(_ field: ElicitationField) -> [String: Any] {
+    private nonisolated static func json(_ field: ElicitationField) -> [String: Any] {
         var object: [String: Any] = ["id": field.id, "title": field.title, "detail": field.detail, "required": field.required]
         func options(_ list: [ElicitationOption]) -> [[String: Any]] { list.map { ["value": $0.value, "title": $0.title, "detail": $0.detail] } }
         switch field.kind {

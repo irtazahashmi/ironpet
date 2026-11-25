@@ -275,15 +275,17 @@ private struct TranscriptGroupView: View {
             ToolStepsRow(steps: steps)
         case .item(let item):
             let message = outbox.first(where: { $0.itemID == item.id })
+            // "Delivered" sits beside the source and time of a text bubble. A photo or other row has no such line, so it goes below.
+            let delivered: AnyView? = message == nil && item.id == deliveredID
+                ? AnyView(Label("Delivered", systemImage: "checkmark").font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("outgoing-delivered")) : nil
+            let inline: Bool = { if case .user = item.row { return true } else { return false } }()
             VStack(alignment: .trailing, spacing: 2) {
                 MessageRow(item: item, photo: item.fileName.flatMap { photos[$0] }, images: images, avatar: avatar, expanded: expanded.contains(item.id),
                            onToggleExpand: { toggleExpand(item.id) }, onReply: item.canReply && !OutgoingMessage.isPending(item.id) ? { selection in onReply(item, selection) } : nil,
                            readAloud: item.kind == "assistant" ? readAloud(item) : nil, find: highlights[item.id],
-                           outgoing: message.map(OutgoingLook.init), onRetry: message.map { message in { onRetry(message.id) } }, onDelete: message.map { message in { onDelete(message.id) } })
-                if message == nil, item.id == deliveredID {
-                    Label("Delivered", systemImage: "checkmark").font(.caption2).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("outgoing-delivered")
-                }
+                           outgoing: message.map(OutgoingLook.init), onRetry: message.map { message in { onRetry(message.id) } }, onDelete: message.map { message in { onDelete(message.id) } },
+                           status: inline ? delivered : nil)
+                if !inline, let delivered { delivered }
             }
         }
     }
@@ -323,13 +325,15 @@ struct MessageRow: View {
     var outgoing: OutgoingLook?
     var onRetry: (() -> Void)?
     var onDelete: (() -> Void)?
+    /// The "Delivered" mark, drawn on the row of the source and the time. Only a text bubble has that row.
+    var status: AnyView?
     @Environment(\.openFilePath) private var openFilePath
     @State private var selecting = false
 
     var body: some View {
         Group {
             switch item.row {
-            case .user(let text): UserBubble(item: item, text: text, expanded: expanded, onToggleExpand: onToggleExpand, find: find, outgoing: outgoing, onRetry: onRetry)
+            case .user(let text): UserBubble(item: item, text: text, expanded: expanded, onToggleExpand: onToggleExpand, find: find, outgoing: outgoing, onRetry: onRetry, status: status)
             case .assistant(let text): AssistantBubble(item: item, text: text, avatar: avatar, readAloud: readAloud, find: find)
             case .tool: ToolStepsRow(steps: [item])
             case .error(let text): ErrorRow(text: text)

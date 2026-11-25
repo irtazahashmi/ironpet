@@ -50,6 +50,35 @@ final class MemoryMCPTests: XCTestCase {
         XCTAssertEqual(store.claims(of: "project:" + ProjectKey.of(workspace).key).map(\.text), ["Tests run with swift test"])
     }
 
+    func testRememberFilesANoteOnTheNamedOrganizationToolOrTopicAndSearchAndTheBrowserFindThem() async throws {
+        let org = try await call("memory_remember", ["text": "Pays invoices late", "scope": "org", "entity": "Acme"])
+        XCTAssertFalse(org.isError, org.text)
+        XCTAssertEqual(org.value["page"] as? String, "Acme")
+        _ = try await call("memory_remember", ["text": "Crashes on large catalogs", "scope": "tool", "entity": "Xcode"])
+        _ = try await call("memory_remember", ["text": "Moving to monthly billing", "scope": "topic", "entity": "Invoicing"])
+        let product = try await call("memory_remember", ["text": "Ships Fridays", "scope": "project", "entity": "Lighthouse"])
+        XCTAssertFalse(product.isError, product.text)
+        XCTAssertEqual(store.claims(of: "org:acme").map(\.text), ["Pays invoices late"])
+        XCTAssertEqual(store.claims(of: "tool:xcode").map(\.text), ["Crashes on large catalogs"])
+        XCTAssertEqual(store.claims(of: "topic:invoicing").map(\.text), ["Moving to monthly billing"])
+        XCTAssertEqual(store.claims(of: "project:lighthouse").map(\.text), ["Ships Fridays"])
+        XCTAssertTrue(store.claims(of: "project:" + ProjectKey.of(workspace).key).isEmpty)
+        let page = try await call("memory_page", ["name": "Acme"])
+        XCTAssertEqual(page.value["type"] as? String, "org")
+        let search = try await call("memory_search", ["query": "catalogs", "kinds": ["note"]])
+        XCTAssertEqual(search.value["count"] as? Int, 1)
+        let rows = MemoryBrowser.rows(entities: store.entities(), claims: Dictionary(uniqueKeysWithValues: store.entities().map { ($0.id, store.claims(of: $0.id)) }))
+        let types = Set(rows.map(\.type))
+        XCTAssertTrue(types.isSuperset(of: [.org, .tool, .topic, .project]))
+        XCTAssertEqual(MemoryBrowser.list(rows, filter: .tools, query: "xcode").rows.map(\.name), ["Xcode"])
+    }
+
+    func testANamedScopeNeedsAName() async throws {
+        let missing = try await call("memory_remember", ["text": "Pays late", "scope": "org"])
+        XCTAssertTrue(missing.isError)
+        XCTAssertTrue(missing.text.contains("entity"))
+    }
+
     func testRememberRefusesSecretsAndMissingFields() async throws {
         let secret = try await call("memory_remember", ["text": "AWS key AKIAIOSFODNN7EXAMPLE", "scope": "me"])
         XCTAssertTrue(secret.isError)

@@ -7,6 +7,7 @@ final class FakeChatSocket: ChatSocket, @unchecked Sendable {
     enum Answer { case ack, closed, unavailable, refused(String), never }
     private let lock = NSLock()
     private var _sent: [(clientID: String, text: String)] = []
+    private var _replies: [RemoteReplyRef?] = []
     private var _open: Bool
     var answer: Answer
     /// A message with one of these texts is refused, whatever `answer` says.
@@ -18,10 +19,12 @@ final class FakeChatSocket: ChatSocket, @unchecked Sendable {
 
     var canSendChat: Bool { lock.lock(); defer { lock.unlock() }; return _open }
     func setOpen(_ open: Bool) { lock.lock(); _open = open; lock.unlock() }
+    /// The reply quote of each message in `sent`.
+    var replies: [RemoteReplyRef?] { lock.lock(); defer { lock.unlock() }; return _replies }
     var sent: [(clientID: String, text: String)] { lock.lock(); defer { lock.unlock() }; return _sent }
 
     func sendChat(clientID: String, text: String, reply: RemoteReplyRef?) async throws -> ChatAck {
-        lock.lock(); _sent.append((clientID, text)); lock.unlock()
+        lock.lock(); _sent.append((clientID, text)); _replies.append(reply); lock.unlock()
         await onSend?()
         if refuseTexts.contains(text) { throw SocketSendError.refused(code: "invalid", message: "the message is empty") }
         switch answer {
