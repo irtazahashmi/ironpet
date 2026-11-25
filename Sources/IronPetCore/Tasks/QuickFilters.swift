@@ -42,6 +42,7 @@ package enum QuickFilterValidator {
         guard !name.isEmpty else { throw TaskError(message: "name is empty") }
         guard name.count <= maxName else { throw TaskError(message: "name is longer than \(maxName) characters") }
         guard name.caseInsensitiveCompare(allName) != .orderedSame else { throw TaskError(message: "\"\(allName)\" is the chip that shows every task; pick another name") }
+        guard !BuiltInQuickFilters.isReservedName(name) else { throw TaskError(message: "\"\(name)\" is a built-in chip; pick another name") }
         return name
     }
 
@@ -93,7 +94,9 @@ extension TasksAPI {
             saved = filters[index]
         } else {
             guard filters.count < QuickFilterValidator.maxFilters else { throw APIError.invalid("at most \(QuickFilterValidator.maxFilters) quick filters") }
-            let taken = Set(filters.map(\.id))
+            if let id, BuiltInQuickFilters.isBuiltIn(id) { throw APIError.invalid("\"\(id)\" is a built-in quick filter and cannot be saved under that id") }
+            // Built-in ids count as taken, so a generated id never clashes with one.
+            let taken = Set(filters.map(\.id)).union(BuiltInQuickFilters.all.map(\.id))
             if let id, taken.contains(id) { throw APIError.invalid("a quick filter with id \"\(id)\" already exists") }
             saved = QuickFilter(id: id ?? QuickFilterValidator.makeID(from: name, taken: taken), name: name, query: parsed.json,
                                 order: (filters.map(\.order).max() ?? -1) + 1)

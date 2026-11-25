@@ -101,10 +101,12 @@ package struct TaskLinkRow: Equatable {
 }
 
 extension TaskItem {
-    /// The `project` label, trimmed, or nil when it is missing or blank.
-    package var projectLabel: String? {
-        let value = labels["project"]?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value?.isEmpty == false ? value : nil
+    /// The area, trimmed, or nil when missing or blank. Tasks filed before the rename carry `project`, which still counts.
+    package var areaLabel: String? {
+        for key in ["area", "project"] {
+            if let value = labels[key]?.trimmingCharacters(in: .whitespacesAndNewlines), !value.isEmpty { return value }
+        }
+        return nil
     }
 }
 
@@ -123,6 +125,13 @@ package enum TaskEdits {
     @MainActor @discardableResult
     package static func setDue(_ due: Date?, of id: String, in tasks: TasksAPI) throws -> TaskItem {
         try tasks.update(UpdateTaskRequest(id: id, due: due, clearDue: due == nil))
+    }
+
+    /// Sets the context label, or removes it with nil.
+    @MainActor @discardableResult
+    package static func setContext(_ context: TaskContext?, of id: String, in tasks: TasksAPI) throws -> TaskItem {
+        guard let context else { return try tasks.update(UpdateTaskRequest(id: id, removeLabels: [TaskContext.key])) }
+        return try tasks.update(UpdateTaskRequest(id: id, labels: [TaskContext.key: context.rawValue]))
     }
 
     /// A blank name clears it.

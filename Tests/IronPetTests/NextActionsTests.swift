@@ -1,0 +1,91 @@
+import XCTest
+@testable import IronPet
+@testable import IronPetCore
+import enum IronPetKit.BuiltInQuickFilters
+import enum IronPetKit.QuickFilterNode
+
+@MainActor
+final class NextActionsTests: XCTestCase {
+    private var api: TasksAPI!
+
+    override func setUp() {
+        api = TasksAPI(store: TaskStore(database: APITestSupport.memoryDatabase(), keepDoneDays: { 30 }))
+    }
+
+    @discardableResult
+    private func add(_ title: String, _ status: TaskStatus = .backlog, waitingOn: String? = nil, labels: [String: String] = [:]) throws -> TaskItem {
+        try api.create(CreateTaskRequest(title: title, status: status, source: .user, waitingOn: waitingOn, labels: labels))
+    }
+
+    private var nextActionsNode: QuickFilterNode? {
+        BuiltInQuickFilters.all.first { $0.id == BuiltInQuickFilters.nextActionsID }?.node
+    }
+
+    func testTheContextLabelAcceptsTheSixValuesOnlyAndIgnoresCase() throws {
+        XCTAssertEqual(try TaskValidator.labels(["context": " Mac "]), ["context": "mac"])
+        XCTAssertEqual(try TaskValidator.labels(["context": "PHONE"]), ["context": "phone"])
+        XCTAssertThrowsError(try TaskValidator.labels(["context": "office"])) { error in
+            XCTAssertTrue((error as? TaskError)?.message.contains("context must be one of mac, phone") ?? false)
+        }
+        XCTAssertEqual(try TaskValidator.labels(["area": "office"]), ["area": "office"], "other keys take any value")
+    }
+
+    func testAnUnknownContextReadsAsNone() {
+        XCTAssertEqual(TaskContext.of(["context": "errands"]), .errands)
+        XCTAssertNil(TaskContext.of(["context": "office"]))
+        XCTAssertNil(TaskContext.of([:]))
+    }
+
+    func testAreaFallsBackToTheProjectLabelOnOlderTasks() throws {
+        XCTAssertEqual(try add("Old", labels: ["project": "epic"]).areaLabel, "epic")
+        XCTAssertEqual(try add("Both", labels: ["project": "old", "area": "new"]).areaLabel, "new")
+        XCTAssertNil(try add("None").areaLabel)
+    }
+
+    func testTheGroupsFollowTheContextOrderAndNoContextComesLast() throws {
+        let phone = try add("Call the bank", labels: ["context": "phone"])
+        let mac = try add("Fix login", labels: ["context": "mac"])
+        let home = try add("Water plants", labels: ["context": "home"])
+        let none = try add("Buy stamps")
+        let area = try add("Email", labels: ["area": "x"])
+        let macToo = try add("Read PR", labels: ["context": "mac"])
+
+        let groups = NextActions.groups([phone, none, mac, home, area, macToo])
+        XCTAssertEqual(groups.map(\.title), ["Mac", "Phone", "Home", "No context"])
+        XCTAssertEqual(groups.map { $0.tasks.map(\.title) }, [["Fix login", "Read PR"], ["Call the bank"], ["Water plants"], ["Buy stamps", "Email"]],
+                       "each group keeps the order it came in")
+    }
+
+    func testNoGroupsWhenThereAreNoTasks() {
+        XCTAssertTrue(NextActions.groups([]).isEmpty)
+    }
+
+    func testNextActionsShowsOpenTasksNobodyHoldsAndLeavesOutDoneAndWaitingOnes() throws {
+        try add("Open")
+        try add("Needs me", .needsYou)
+        try add("Doing", .inProgress)
+        try add("Held", waitingOn: "Ana")
+        try add("Finished", .done)
+
+        let node = try XCTUnwrap(nextActionsNode)
+        XCTAssertEqual(Set(api.all.filter { node.matches($0) }.map(\.title)), ["Open", "Needs me", "Doing"])
+    }
+
+    func testTheBuiltInChipIsNotStoredAndItsNameAndIdAreReserved() throws {
+        XCTAssertTrue(api.quickFilters.isEmpty, "the built-in chip lives in code, not in config.json")
+        XCTAssertThrowsError(try api.upsertQuickFilter(id: nil, name: "Next actions", query: ["status": "needs_you"]))
+        XCTAssertThrowsError(try api.upsertQuickFilter(id: nil, name: "next ACTIONS", query: ["status": "needs_you"]))
+        XCTAssertThrowsError(try api.upsertQuickFilter(id: "next-actions", name: "Mine", query: ["status": "needs_you"]))
+
+        let saved = try api.upsertQuickFilter(id: nil, name: "Next-actions", query: ["status": "needs_you"])
+        XCTAssertNotEqual(saved.id, BuiltInQuickFilters.nextActionsID, "a generated id skips the built-in one")
+    }
+
+    func testSettingTheContextAddsAndRemovesTheLabel() throws {
+        let task = try add("Pay rent")
+        _ = try TaskEdits.setContext(.errands, of: task.id, in: api)
+        XCTAssertEqual(api.task(task.id)?.labels["context"], "errands")
+        _ = try TaskEdits.setContext(nil, of: task.id, in: api)
+        XCTAssertNil(api.task(task.id)?.labels["context"])
+    }
+}

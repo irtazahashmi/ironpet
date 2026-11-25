@@ -34,6 +34,8 @@ enum QuickFilterRequest: Identifiable {
 /// and the menu at the end adds one. Adding and editing go to the chat agent, which writes the query.
 struct QuickFilterBar: View {
     let filters: [QuickFilter]
+    /// Chips the app adds itself, after "All". They have no menu: they cannot be edited, moved or removed.
+    var builtIn: [QuickFilter] = []
     @Binding var selection: String?
     let onAdd: () -> Void
     let onEdit: (QuickFilter) -> Void
@@ -46,6 +48,7 @@ struct QuickFilterBar: View {
             ScrollView(.horizontal) {
                 HStack(spacing: 6) {
                     chip("All", id: nil)
+                    ForEach(builtIn) { filter in chip(filter.name, id: filter.id) }
                     ForEach(filters) { filter in
                         chip(filter.name, id: filter.id)
                             .contextMenu { actions(for: filter) }

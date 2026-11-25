@@ -173,8 +173,8 @@ final class TaskDetailPageTests: XCTestCase {
 
     func testProjectLabelIgnoresBlankValues() throws {
         let id = try make(labels: ["project": " epic "])
-        XCTAssertEqual(store.task(id)?.projectLabel, "epic")
-        XCTAssertNil(try store.task(make("Other"))?.projectLabel)
+        XCTAssertEqual(store.task(id)?.areaLabel, "epic")
+        XCTAssertNil(try store.task(make("Other"))?.areaLabel)
     }
 
     func testDueAndWaitingOnCanBeSetFromNone() throws {
