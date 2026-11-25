@@ -590,19 +590,57 @@ private struct FormCard: View {
     let form: RemoteForm
     let model: ChatModel
     @State private var typed: [String: String] = [:]
+    @State private var pager: ElicitationPager?
+
+    private var current: ElicitationPager { pager ?? ElicitationPager(pageCount: form.pages.count) }
     private var pending: Bool { model.submittingForms.contains(form.id) }
 
     var body: some View {
+        let pages = form.pages
+        let page = current
         VStack(alignment: .leading, spacing: 10) {
             Label(form.message.isEmpty ? "The agent has a question" : form.message, systemImage: SharedSymbols.question)
                 .font(.system(size: 13, weight: .semibold)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
-            ForEach(form.fields) { field in fieldView(field) }
+            // Every page sits in the same ZStack and only the current one shows, so the card keeps the height of the tallest page
+            // and the composer and the transcript above do not move when the page changes.
+            ZStack(alignment: .topLeading) {
+                ForEach(Array(pages.enumerated()), id: \.offset) { position, fields in
+                    let shown = position == min(page.index, pages.count - 1)
+                    let content = VStack(alignment: .leading, spacing: 10) { ForEach(fields) { field in fieldView(field) } }
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    // `hidden()` keeps the page's size in the layout and takes it out of the accessibility tree and out of touch handling.
+                    if shown { content } else { content.hidden() }
+                }
+            }
             HStack {
-                Button { Task { await model.submit(form) } } label: {
+                if page.isPaged {
+                    Button { move { $0.back() } } label: { Image(systemName: "chevron.left") }.buttonStyle(.bordered).disabled(!page.canGoBack)
+                        .accessibilityLabel("Back").accessibilityIdentifier("back-\(form.id)")
+                    Text(page.label).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("page-\(form.id)")
+                }
+                // Next and Submit share one slot and the unused one stays in the layout, so the row is as tall on every page
+                // and the card does not grow on the last page.
+                let nextButton = Button { move { $0.forward() } } label: { Image(systemName: SharedSymbols.chevron) }.buttonStyle(.bordered)
+                    .accessibilityLabel("Next").accessibilityIdentifier("next-\(form.id)")
+                let submitButton = Button { submit() } label: {
                     if pending { ProgressView().frame(minWidth: 70) } else { Label("Submit", systemImage: SharedSymbols.allow).frame(minWidth: 70) }
-                }.buttonStyle(.borderedProminent).disabled(!form.canSubmit || pending)
+                }.buttonStyle(.borderedProminent)
+                    .disabled((!page.isPaged && !form.canSubmit) || pending)
                     .accessibilityIdentifier("submit-\(form.id)")
-                Button { Task { await model.skip(form) } } label: { Label("Skip", systemImage: SharedSymbols.skip).frame(minWidth: 70) }.buttonStyle(.bordered).disabled(pending)
+                if page.isPaged {
+                    ZStack(alignment: .leading) {
+                        if page.isLast { nextButton.hidden() } else { nextButton }
+                        if page.isLast { submitButton } else { submitButton.hidden() }
+                    }
+                } else {
+                    submitButton
+                }
+                // On a paged form the row also holds Back, the page label and Submit, so Skip shrinks to its icon to stay on one line.
+                Button { Task { await model.skip(form) } } label: {
+                    if page.isPaged { Label("Skip", systemImage: SharedSymbols.skip).labelStyle(.iconOnly) }
+                    else { Label("Skip", systemImage: SharedSymbols.skip).frame(minWidth: 70) }
+                }.buttonStyle(.bordered).disabled(pending).accessibilityLabel("Skip")
                     .accessibilityIdentifier("skip-\(form.id)")
             }
         }
@@ -611,6 +649,34 @@ private struct FormCard: View {
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.orange.opacity(0.5)))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("form-\(form.id)")
+    }
+
+    /// Sends the text typed on the shown page, so it survives the page change and reaches the Mac.
+    private func commitTyped() {
+        for field in form.pages[min(current.index, form.pages.count - 1)] {
+            guard let text = typed[field.id], form.answers[field.id] != .text(text) else { continue }
+            Task { await model.answer(form, field: field.id, .text(text)) }
+        }
+    }
+
+    private func move(_ change: (inout ElicitationPager) -> Void) {
+        commitTyped()
+        var next = current
+        change(&next)
+        pager = next
+    }
+
+    /// Sends the answers, or jumps to the first question that still needs one.
+    private func submit() {
+        if let page = form.firstIncompletePage(typed: typed) {
+            move { $0.show(page) }
+        } else {
+            let pending = form.pages.flatMap { $0 }.compactMap { field in typed[field.id].map { (field.id, $0) } }.filter { form.answers[$0.0] != .text($0.1) }
+            Task {
+                for (id, text) in pending { await model.answer(form, field: id, .text(text)) }
+                await model.submit(form)
+            }
+        }
     }
 
     @ViewBuilder
