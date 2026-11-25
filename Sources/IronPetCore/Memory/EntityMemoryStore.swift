@@ -178,14 +178,14 @@ package final class EntityMemoryStore: MemoryStore {
     // MARK: Writing
 
     package func replace(_ replacing: [String], with raw: String, scope: MemoryScope, person: String? = nil, project: ProjectKey? = nil,
-                         source: String) -> Result<MemoryNote, MemoryError> {
+                         entity: String? = nil, source: String) -> Result<MemoryNote, MemoryError> {
         let text: String
         switch MemoryNote.clean(raw) {
         case .success(let cleaned): text = cleaned
         case .failure(let rejection): return .failure(MemoryError(message: rejection.message))
         }
         let target: Target
-        switch resolve(scope, person: person, project: project) {
+        switch resolve(scope, person: person, project: project, entity: entity) {
         case .success(let found): target = found
         case .failure(let failure): return .failure(failure)
         }
@@ -325,11 +325,11 @@ package final class EntityMemoryStore: MemoryStore {
     }
 
     package func forget(_ query: String, scope: MemoryScope? = nil, person: String? = nil, project: ProjectKey? = nil,
-                        source: String) -> Result<[ForgottenNote], MemoryError> {
+                        entity: String? = nil, source: String) -> Result<[ForgottenNote], MemoryError> {
         let words = query.lowercased().split(whereSeparator: \.isWhitespace).map(String.init)
         guard !words.isEmpty else { return .failure(MemoryError(message: "say which note to forget")) }
         let ids: [String]
-        switch pagesToSearch(scope: scope, person: person, project: project) {
+        switch pagesToSearch(scope: scope, person: person, project: project, entity: entity) {
         case .success(let found): ids = found
         case .failure(let failure): return .failure(failure)
         }
@@ -398,6 +398,12 @@ package final class EntityMemoryStore: MemoryStore {
                         guard try restore(id) else { return .failure(changed) }
                     }
                     return .success([claim] + previous)
+                case .moved:
+                    // The claim must still be valid and still on the page the move put it on.
+                    guard let from = change.previous, let row = try Self.claim(db, id: claim), row.invalidAt == nil,
+                          row.entity == change.file else { return .failure(changed) }
+                    try db.execute("UPDATE memory_claims SET entity = ? WHERE id = ?", [from, claim])
+                    return .success([claim])
                 case .tidied, .edited:
                     return .failure(MemoryError(message: "that change was made by the earlier file editor and cannot be undone here"))
                 }
@@ -412,6 +418,46 @@ package final class EntityMemoryStore: MemoryStore {
         syncIndex(touched)
         index.markUndone(change.id)
         return .success(())
+    }
+
+    /// One claim and the page it is about, as the one-time re-sort decided.
+    package struct Move: Equatable {
+        package init(claim: Int64, scope: MemoryScope, entity: String) {
+            self.claim = claim
+            self.scope = scope
+            self.entity = entity
+        }
+
+        package let claim: Int64
+        /// `project`, `org`, `topic` or `tool`.
+        package let scope: MemoryScope
+        package let entity: String
+    }
+
+    /// Moves claims to the page they are about, keeping each one's text, date, sources, ref and pin. A claim that is pinned, no longer
+    /// holds, or is already on that page stays. Each move writes a `moved` change, so Undo puts the claim back. Nothing is deleted.
+    /// Returns how many claims moved.
+    @discardableResult
+    package func move(_ moves: [Move], source: String) -> Int {
+        var moved = 0
+        for move in moves {
+            guard move.scope.namedType != nil, let name = MemoryNote.personName(move.entity),
+                  case .success(let target) = named(move.scope.namedType ?? .project, name) else { continue }
+            let at = now()
+            let outcome = try? database.write { db -> (claim: MemoryClaim, from: String)? in
+                guard let claim = try Self.claim(db, id: move.claim), claim.invalidAt == nil, !claim.pinned, claim.entity != target.id else { return nil }
+                try Self.ensureEntity(db, target)
+                try db.execute("UPDATE memory_entities SET mentions = mentions + 1 WHERE id = ?", [target.id])
+                try db.execute("UPDATE memory_claims SET entity = ? WHERE id = ?", [target.id, claim.id])
+                return (claim, claim.entity)
+            }
+            guard let outcome else { continue }
+            index.record(at: at, file: target.id, section: nil, action: .moved, note: outcome.claim.note.line, previous: outcome.from, source: source,
+                         claim: outcome.claim.id)
+            syncIndex([outcome.claim.id])
+            moved += 1
+        }
+        return moved
     }
 
     /// Pins or unpins a valid claim. A pinned claim is not replaced, and a replacement is added beside it.
@@ -464,14 +510,19 @@ package final class EntityMemoryStore: MemoryStore {
             return Self.budget(notes(of: Self.projectID(project)), bytes: bytes, grouped: false)
         case .people:
             return Self.budget(peopleNotes(naming: message), bytes: bytes, grouped: true)
+        case .org, .topic, .tool:
+            // These pages are not in the chat's context. The agent reads one with memory_page.
+            return ""
         }
     }
 
-    package func location(_ scope: MemoryScope, project: ProjectKey?) -> String? {
+    package func location(_ scope: MemoryScope, project: ProjectKey?, entity: String? = nil) -> String? {
         switch scope {
         case .me: return "me"
         case .people: return "people"
-        case .project: return project?.name
+        case .project, .org, .topic, .tool:
+            if case .success(let target) = resolve(scope, person: nil, project: project, entity: entity) { return target.name }
+            return nil
         }
     }
 
@@ -612,8 +663,8 @@ package final class EntityMemoryStore: MemoryStore {
         }
     }
 
-    /// The pages a forget looks at: the named person's, or for a scope, its pages.
-    private func pagesToSearch(scope: MemoryScope?, person: String?, project: ProjectKey?) -> Result<[String], MemoryError> {
+    /// The pages a forget looks at: the named person's, the named entity's, or for a scope, its pages. With no scope it looks at every page.
+    private func pagesToSearch(scope: MemoryScope?, person: String?, project: ProjectKey?, entity: String?) -> Result<[String], MemoryError> {
         if let name = MemoryNote.personName(person) {
             switch EntityMatcher.match(name: name, type: .person, in: records()) {
             case .found(let id): return .success([id])
@@ -621,17 +672,32 @@ package final class EntityMemoryStore: MemoryStore {
             case .ambiguous(let ids): return .failure(MemoryError(message: "more than one person matches \(name): \(names(ids).joined(separator: ", "))"))
             }
         }
-        let people = entities().filter { $0.type == .person }.map(\.id)
+        let all = entities()
+        if let scope, let type = scope.namedType, let name = MemoryNote.personName(entity) {
+            switch EntityMatcher.match(name: name, identifiers: [name], type: type, in: records()) {
+            case .found(let id): return .success([id])
+            case .none: return .failure(MemoryError(message: "no \(type.label.lowercased()) page named \(name)"))
+            case .ambiguous(let ids): return .failure(MemoryError(message: "more than one page matches \(name): \(names(ids).joined(separator: ", ")). Say which."))
+            }
+        }
+        let people = all.filter { $0.type == .person }.map(\.id)
         let projectPage = project.map(Self.projectID).map { [$0] } ?? []
+        func pages(_ type: EntityType) -> [String] { all.filter { $0.type == type }.map(\.id) }
         switch scope {
-        case nil: return .success(["me"] + people + projectPage)
+        case nil:
+            // Notes are filed by what they are about, so a forget with no scope looks at every page, the chat's project first.
+            let rest = all.map(\.id).filter { $0 != "me" && !people.contains($0) && !projectPage.contains($0) }
+            return .success(["me"] + people + projectPage + rest)
         case .me?: return .success(["me"])
         case .people?: return .success(people)
-        case .project?: return .success(projectPage)
+        case .project?: return .success(projectPage.isEmpty ? pages(.project) : projectPage)
+        case .org?: return .success(pages(.org))
+        case .topic?: return .success(pages(.topic))
+        case .tool?: return .success(pages(.tool))
         }
     }
 
-    private func resolve(_ scope: MemoryScope, person: String?, project: ProjectKey?) -> Result<Target, MemoryError> {
+    private func resolve(_ scope: MemoryScope, person: String?, project: ProjectKey?, entity: String?) -> Result<Target, MemoryError> {
         switch scope {
         case .me:
             return .success(Target(id: "me", type: .me, name: "About me", identifiers: [], person: nil))
@@ -646,11 +712,33 @@ package final class EntityMemoryStore: MemoryStore {
             case .ambiguous(let ids):
                 return .failure(MemoryError(message: "more than one person matches \(name): \(names(ids).joined(separator: ", ")). Say which."))
             }
-        case .project:
+        case .project, .org, .topic, .tool:
+            let type = scope.namedType ?? .project
+            if let name = MemoryNote.personName(entity) { return named(type, name) }
+            guard scope == .project else {
+                return .failure(MemoryError(message: "a note about \(type.label.lowercased()) needs its name in entity"))
+            }
             guard let project else { return .failure(MemoryError(message: "there is no project folder to keep a project note for")) }
             return .success(Target(id: Self.projectID(project), type: .project, name: project.name, identifiers: [project.key], person: nil))
         }
     }
+
+    /// The page of a project, organization, topic or tool by the name it was given. A known name, alias or identifier finds the page that
+    /// has it; a name that matches nothing makes a new page. Two pages with the name are refused, not guessed.
+    private func named(_ type: EntityType, _ name: String) -> Result<Target, MemoryError> {
+        switch EntityMatcher.match(name: name, identifiers: [name], type: type, in: records()) {
+        case .found(let id):
+            guard let existing = entities().first(where: { $0.id == id }) else { return .failure(MemoryError(message: "no page named \(name)")) }
+            return .success(Target(id: id, type: type, name: existing.name, identifiers: [], person: nil))
+        case .none:
+            return .success(Target(id: Self.namedID(type, name), type: type, name: name, identifiers: [], person: nil))
+        case .ambiguous(let ids):
+            return .failure(MemoryError(message: "more than one \(type.label.lowercased()) matches \(name): \(names(ids).joined(separator: ", ")). Say which."))
+        }
+    }
+
+    /// The id of a page made from a name: `project:ironpet`, `org:acme`. A project found by its repo has `project:<repo key>` instead.
+    private static func namedID(_ type: EntityType, _ name: String) -> String { type.rawValue + ":" + EntityMatcher.normalize(name) }
 
     private static func projectID(_ project: ProjectKey) -> String { "project:" + project.key }
 

@@ -33,6 +33,9 @@ package struct MemoryChange: Identifiable, Equatable, Codable {
         case forgot
         /// A claim replaced older ones (`previous` holds their ids). Undo puts those back and takes the new one off.
         case replaced
+        /// A claim moved to another page by the one-time re-sort. `file` is the page it went to and `previous` the page it came from.
+        /// Undo moves it back.
+        case moved
         /// Written by the earlier file-based notes. Shown, but Undo cannot reach it.
         case tidied, edited
     }
