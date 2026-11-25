@@ -354,7 +354,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         taskStore = tasks
         let service = AutomationService(store: store, engine: engine, database: database)
         let notificationStore = NotificationStore(database: database)
-        api = IronPetAPI(stores: .init(tasks: tasks, automations: service, signals: signals, bubbles: announcer.bubbles, notifications: notificationStore, sessions: self.store, chat: chat, meeting: platform.meetings, meetingLibrary: meetings, config: config, speech: platform.speech, petAssets: platform.pets, files: platform.files, usage: UsageStore.shared, permissions: backgroundPermissions), events: events, clients: clients)
+        api = IronPetAPI(stores: .init(tasks: tasks, automations: service, signals: signals, bubbles: announcer.bubbles, notifications: notificationStore, sessions: self.store, chat: chat, meeting: platform.meetings, meetingLibrary: meetings, config: config, speech: platform.speech, petAssets: platform.pets, files: platform.files, usage: UsageStore.shared, permissions: backgroundPermissions, nodeID: NodeIdentity.nodeID(in: database)), events: events, clients: clients)
         pet.tasks = api.tasks
         pet.notifications = NotificationsModel(api: api.notifications, events: events)
         announcer.notifications = notificationStore

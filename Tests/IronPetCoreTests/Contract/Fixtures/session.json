@@ -29,6 +29,7 @@
             "bubbles",
             "chat",
             "meetings",
+            "node",
             "notifications",
             "screen",
             "session",
@@ -37,6 +38,10 @@
             "today"
           ],
           "gap" : false,
+          "node" : {
+            "agent" : "agent_default",
+            "id" : "node_0123456789abcdef"
+          },
           "protocol" : 1,
           "seq" : 0,
           "server" : {
@@ -72,6 +77,7 @@
             "bubbles",
             "chat",
             "meetings",
+            "node",
             "notifications",
             "screen",
             "session",
@@ -80,6 +86,10 @@
             "today"
           ],
           "gap" : false,
+          "node" : {
+            "agent" : "agent_default",
+            "id" : "node_0123456789abcdef"
+          },
           "protocol" : 1,
           "seq" : 0,
           "server" : {
@@ -116,6 +126,7 @@
             "bubbles",
             "chat",
             "meetings",
+            "node",
             "notifications",
             "screen",
             "session",
@@ -124,6 +135,10 @@
             "today"
           ],
           "gap" : true,
+          "node" : {
+            "agent" : "agent_default",
+            "id" : "node_0123456789abcdef"
+          },
           "protocol" : 1,
           "seq" : 0,
           "server" : {

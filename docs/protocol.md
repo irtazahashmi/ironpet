@@ -61,11 +61,16 @@ The result:
 {"jsonrpc":"2.0","id":1,"result":{
   "protocol":1,
   "server":{"name":"IronPetCore","version":"1.4.0"},
+  "node":{"id":"node_9f3c1e5a07b2c4d8","agent":"agent_default"},
   "session":"b1c0...",
-  "capabilities":["agents","alerts","automations","bubbles","chat","meetings","notifications","session","settings","tasks","today"],
+  "capabilities":["agents","alerts","automations","bubbles","chat","meetings","node","notifications","session","settings","tasks","today"],
   "seq":130,
   "gap":false}}
 ```
+
+`node.id` is the id of the install that answered: `node_` and 16 random hex digits, made once when the database is first opened and kept in
+`ironpet.db`, so it is the same after a restart. `node.agent` is the agent the host attributes its changes to. Until the agent registry exists
+that is always `agent_default`, which the registry migration turns into agent 1. `node` is absent when the host has no database to keep an id in.
 
 `capabilities` lists the facades this host serves, in name order. It is not what the client can do for the host (see "Clients and capabilities").
 `memory` and `screen` appear once the host has attached them. `seq` is the newest event number. `gap` is true when the host no longer held every event
@@ -354,6 +359,23 @@ The handshake, and the clients connected to the host.
 | `session.hello` | `HelloRequest` | `HelloResult` | none |
 
 `HelloRequest` and `HelloResult` are the objects in "Handshake", with `protocol` for the version. It needs a connection, so a transport with none gets `unavailable`.
+
+### `node`
+
+Which install the host is, and the agent its changes are attributed to.
+
+| Method | Params | Result | REST route |
+|---|---|---|---|
+| `node.info` | none | `NodeInfo` | none |
+
+`NodeInfo` is `{"id":"node_9f3c1e5a07b2c4d8","agent":"agent_default"}`, the same object as `node` in the `session.hello` result. It fails with
+`unavailable` on a host with no node id.
+
+Every change to shared data records the node id and the agent id that made it, in `node_id` and `agent_id` columns. They are on tasks and task
+events, memory claims and memory changes, automation runs and notifications. Rows written before the columns existed have both empty.
+
+Record ids made from now on are a prefix and 12 random hex digits, such as `task_9f3c1e5a07b2`, so two nodes that never talk to each other do not
+make the same id. Older ids with six digits, and the old keys (a task's slug, a job's `job-` id), still resolve with `get`.
 
 ### `bubbles`
 
