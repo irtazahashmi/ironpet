@@ -178,6 +178,28 @@ public struct RemoteForm: Codable, Equatable, Hashable, Identifiable, Sendable {
         answers = try c.decodeIfPresent([String: RemoteFormAnswer].self, forKey: .answers) ?? [:]
         canSubmit = try c.decodeIfPresent(Bool.self, forKey: .canSubmit) ?? false
     }
+
+    /// The fields grouped into pages, one page per question, the same way the Mac groups them.
+    public var pages: [[RemoteFormField]] {
+        ElicitationPaging.pages(ids: fields.map(\.id)).map { $0.map { fields[$0] } }
+    }
+
+    /// The first page with a required field that has no answer, or nil when every required field is answered.
+    /// `typed` holds text that was entered but not sent yet and wins over `answers`.
+    public func firstIncompletePage(typed: [String: String] = [:]) -> Int? {
+        pages.firstIndex { page in
+            page.contains { field in
+                guard field.required else { return false }
+                if let text = typed[field.id] { return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+                switch answers[field.id] {
+                case .text(let text)?: return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                case .list(let list)?: return list.isEmpty
+                case .flag?: return false
+                case nil: return true
+                }
+            }
+        }
+    }
 }
 
 /// A message waiting for the agent to finish its turn.

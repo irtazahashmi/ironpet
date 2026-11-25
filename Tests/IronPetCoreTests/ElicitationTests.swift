@@ -1,3 +1,4 @@
+import IronPetKit
 import XCTest
 @testable import IronPetCore
 

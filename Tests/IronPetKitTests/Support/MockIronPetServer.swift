@@ -852,6 +852,15 @@ extension MockIronPetServer {
             let known = _chat.forms.contains { $0.id == parts[3] }
             let closes = parts.count == 5
             if known, closes { _chat.forms.removeAll { $0.id == parts[3] } }
+            // An answer post keeps what was picked, so a reload shows it again.
+            if known, !closes, let sent = request.json["answers"] as? [String: Any], let at = _chat.forms.firstIndex(where: { $0.id == parts[3] }) {
+                for (field, value) in sent {
+                    if let flag = value as? Bool { _chat.forms[at].answers[field] = .flag(flag) }
+                    else if let list = value as? [String] { _chat.forms[at].answers[field] = .list(list) }
+                    else if let text = value as? String { _chat.forms[at].answers[field] = .text(text) }
+                }
+                _chat.forms[at].canSubmit = _chat.forms[at].firstIncompletePage() == nil
+            }
             lock.unlock()
             guard known else { fail(connection, 404, "not_found", "that question is no longer waiting"); return true }
             respond(connection, 200, Data("{}".utf8))
