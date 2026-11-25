@@ -32,27 +32,4 @@ public enum RecordLinks {
         guard pattern.firstMatch(in: host, range: whole)?.range == whole else { return nil }
         return host
     }
-
-    /// Links each id in `text` that is not already a link and not code. The text itself does not change.
-    public static func link(_ text: AttributedString) -> AttributedString {
-        let plain = String(text.characters)
-        guard plain.contains("_") else { return text }
-        var result = text
-        for match in detect(in: plain) {
-            let offset = plain.distance(from: plain.startIndex, to: match.range.lowerBound)
-            let length = plain.distance(from: match.range.lowerBound, to: match.range.upperBound)
-            let lower = result.characters.index(result.characters.startIndex, offsetBy: offset)
-            let upper = result.characters.index(lower, offsetBy: length)
-            let runs = result[lower..<upper].runs
-            guard runs.allSatisfy({ $0.link == nil && !isCode($0) }), let url = url(for: match.id) else { continue }
-            result[lower..<upper].link = url
-        }
-        return result
-    }
-
-    /// Whether a run is a code span from Markdown. The attribute is named explicitly because Linux's Foundation cannot infer it through dynamic member lookup.
-    private static func isCode(_ run: AttributedString.Runs.Run) -> Bool {
-        let intent: InlinePresentationIntent? = run[AttributeScopes.FoundationAttributes.InlinePresentationIntentAttribute.self]
-        return intent?.contains(.code) == true
-    }
 }
