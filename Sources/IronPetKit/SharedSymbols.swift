@@ -8,6 +8,8 @@ public enum SharedSymbols {
     public static let pet = "pawprint.fill"
     public static let chat = "bubble.left.and.bubble.right"
     public static let tasks = "checklist"
+    /// Memory, in the Mac window, Settings and the phone.
+    public static let memory = "brain"
     public static let agents = "person.2"
     public static let more = "ellipsis.circle"
     public static let alerts = "bell"

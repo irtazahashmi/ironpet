@@ -70,19 +70,40 @@ struct ListScreen<Trailing: View, Content: View>: View {
     var search: Binding<String>?
     /// Hides the filters and the search field while a row is open in full.
     var detailOpen = false
+    /// Replaces the title text, such as Memory's trail of open pages. Nil draws `title`.
+    var titleView: AnyView?
+    /// The search field's placeholder.
+    var searchPrompt = "Search"
+    /// Lets a section focus the search field, such as ⌘F.
+    var searchFocus: FocusState<Bool>.Binding?
     @ViewBuilder let trailing: () -> Trailing
     @ViewBuilder let content: () -> Content
 
     var body: some View {
-        content()
-            .pageHeader(title) {
-                if !detailOpen {
+        if let titleView {
+            content().safeAreaInset(edge: .top, spacing: 0) {
+                GlassPanel {
                     HStack(spacing: 10) {
-                        trailing()
-                        if let search { ListSearchField(text: search, label: title) }
+                        titleView
+                        Spacer(minLength: 8)
+                        controls
                     }
+                    .padding(.horizontal, 16)
+                    .frame(height: PageHeaderMetrics.height)
                 }
             }
+        } else {
+            content().pageHeader(title) { controls }
+        }
+    }
+
+    @ViewBuilder private var controls: some View {
+        if !detailOpen {
+            HStack(spacing: 10) {
+                trailing()
+                if let search { ListSearchField(text: search, label: title, prompt: searchPrompt, focus: searchFocus) }
+            }
+        }
     }
 }
 
@@ -92,10 +113,20 @@ extension ListScreen where Trailing == EmptyView {
     }
 }
 
+private struct OptionalFocus: ViewModifier {
+    let binding: FocusState<Bool>.Binding?
+
+    func body(content: Content) -> some View {
+        if let binding { content.focused(binding) } else { content }
+    }
+}
+
 struct ListSearchField: View {
     @Binding var text: String
     /// The section's title, for the accessibility label.
     let label: String
+    var prompt = "Search"
+    var focus: FocusState<Bool>.Binding?
 
     var body: some View {
         HStack(spacing: 5) {
@@ -103,9 +134,10 @@ struct ListSearchField: View {
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
-            TextField("Search", text: $text)
+            TextField(prompt, text: $text)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
+                .modifier(OptionalFocus(binding: focus))
                 .accessibilityLabel("Search \(label)")
             if !text.isEmpty {
                 Button { text = "" } label: {

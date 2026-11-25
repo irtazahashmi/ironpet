@@ -44,6 +44,28 @@ package final class MemoryAPI {
     /// Pins or unpins a claim. Returns false when the claim is no longer valid.
     package func setPinned(_ claim: Int64, _ pinned: Bool) -> Bool { pages().setPinned(claim, pinned) }
 
+    // MARK: Pages, for the Memory section and the phone
+
+    /// Every page that has a fact, newest update first.
+    package func browseRows() -> [MemoryRow] { pages().browseRows() }
+
+    /// The list for a filter and a search, with the same rule on the Mac and the phone.
+    package func list(filter: MemoryFilter, query: String) -> MemoryList { MemoryBrowser.list(browseRows(), filter: filter, query: query) }
+
+    /// One page in full, by id or `page_` ref.
+    package func detail(_ page: String) -> MemoryDetail? { pages().detail(page) }
+
+    /// The valid fact with this `claim_` ref.
+    package func claim(ref: String) -> MemoryClaim? { pages().claim(ref: ref) }
+
+    /// Forgets one fact. Undo in Recently learned can put it back.
+    @discardableResult
+    package func forgetClaim(_ id: Int64) -> Bool { pages().forgetClaim(id, source: MemoryNote.userSource) }
+
+    /// Forgets every fact of a page and its links.
+    @discardableResult
+    package func forgetPage(_ page: String) -> Bool { pages().forgetPage(page, source: MemoryNote.userSource) }
+
     /// Puts a change back. Refuses when the page has changed since.
     package func undo(_ change: MemoryChange) -> Result<Void, MemoryError> { pages().undo(change) }
 

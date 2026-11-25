@@ -35,6 +35,7 @@ final class SettingsModel: ObservableObject {
     var prompts: PromptsAPI?
     /// Opens the main window on its Screen section.
     var showScreenSection: () -> Void = {}
+    var showMemorySection: () -> Void = {}
     /// Opens the execution log window, for one automation or all of them.
     var showLogs: (String?) -> Void = { _ in }
     /// Sends what the user wants to the chat, for the agent to create the automation.
@@ -151,7 +152,7 @@ struct SettingsView: View {
 
     static let pages = [
         Page(tag: "general", title: "General", symbol: SharedSymbols.settings),
-        Page(tag: "memory", title: "Memory", symbol: "brain"),
+        Page(tag: "memory", title: "Memory", symbol: SharedSymbols.memory),
         Page(tag: "prompts", title: "Prompts", symbol: "text.bubble"),
         Page(tag: "integrations", title: "Integrations", symbol: "puzzlepiece.extension"),
         Page(tag: "voice", title: "Voice", symbol: SharedSymbols.microphone),

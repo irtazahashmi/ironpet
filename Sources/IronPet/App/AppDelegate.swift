@@ -382,7 +382,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pet.settings = settingsModel
         pet.onSettings = { [weak self] in self?.showSettings(tab: nil) }
         pet.onScreenSettings = { [weak self] in self?.showSettings(tab: "screen") }
+        pet.onMemorySettings = { [weak self] in self?.showSettings(tab: "memory") }
         settingsModel.showScreenSection = { [weak self] in self?.pet.showWindow(.screen) }
+        settingsModel.showMemorySection = { [weak self] in self?.pet.showWindow(.memory) }
         setUpScreenCapture(database)
         setUpDesktopControl()
         setUpMemory(database)
