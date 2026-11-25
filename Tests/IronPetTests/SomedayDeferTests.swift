@@ -1,6 +1,7 @@
 import XCTest
 @testable import IronPet
 @testable import IronPetCore
+import enum IronPetKit.QuickFilterNode
 
 @MainActor
 final class SomedayDeferTests: XCTestCase {
@@ -69,10 +70,10 @@ final class SomedayDeferTests: XCTestCase {
     }
 
     func testADeferredTaskDoesNotNeedTheUserAndADoneOneIsNeverDeferred() throws {
-        // Later than both the store's clock and the real one, which `needsUser` reads.
-        let far = max(clock, Date()).addingTimeInterval(30 * 86_400)
+        let far = clock.addingTimeInterval(30 * 86_400)
         let deferred = try add("Later", .needsYou, deferUntil: far)
-        XCTAssertFalse(deferred.needsUser)
+        XCTAssertFalse(deferred.needsUser(now: clock))
+        XCTAssertTrue(deferred.needsUser(now: far), "it needs the user again on its day")
         XCTAssertEqual(api.tasks.activeCount, 0)
         let done = try add("Over", .done, deferUntil: far)
         XCTAssertFalse(done.isDeferred())
@@ -112,5 +113,30 @@ final class SomedayDeferTests: XCTestCase {
         XCTAssertEqual(try listed([:]), ["Now"], "an older phone cannot decode someday")
         XCTAssertEqual(Set(try listed(["include_someday": ["1"]])), ["Now", "Maybe"])
         XCTAssertEqual(try listed(["status": ["someday"]]), ["Maybe"])
+    }
+
+    func testQuickFiltersCanAskForSomeday() throws {
+        XCTAssertEqual(try QuickFilterNode.parse(["status": "someday"]), .status(["someday"]))
+    }
+
+    func testSingleTaskAnswersSendSomedayAsBacklogToThePhone() throws {
+        let task = try add("Maybe", .someday)
+        let remote = RemoteTasks(api: api, by: "remote:test")
+        let detail = try remote.get(task.id)
+        XCTAssertEqual(detail["status"] as? String, "backlog", "the detail answer is the task's fields plus its history")
+        XCTAssertEqual(tasks.task(task.id)?.status, .someday, "the Mac keeps the status")
+    }
+
+    func testAnUpdateFromAnOlderClientDecodesWithoutClearDeferUntil() throws {
+        let json = #"{"id":"a","by":"user","clearDue":false,"labels":{},"removeLabels":[],"status":"in_progress"}"#
+        let request = try JSONDecoder().decode(UpdateTaskRequest.self, from: Data(json.utf8))
+        XCTAssertNil(request.clearDeferUntil)
+        XCTAssertEqual(request.status, .inProgress)
+    }
+
+    func testABadDeferUntilNamesTheField() {
+        let args: [String: Any] = ["title": "X", "defer_until": "soon", "origin": ["kind": "chat", "ref": "t1", "reason": "asked"]]
+        guard case .failure(let error) = TaskJSON.call(tasks, "create", args, by: "agent:mcp") else { return XCTFail("refused") }
+        XCTAssertTrue(error.message.hasPrefix("defer_until"), error.message)
     }
 }

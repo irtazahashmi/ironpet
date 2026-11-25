@@ -153,7 +153,7 @@ package enum TaskJSON {
                     title: try TaskValidator.title(args["title"]), notes: try TaskValidator.notes(args["notes"]), status: status,
                     source: origin.kind, due: try TaskValidator.due(args["due"]), links: try TaskValidator.links(args["links"]),
                     waitingOn: try TaskValidator.waitingOn(args["waiting_on"]), sourceRef: origin.ref,
-                    labels: try TaskValidator.labels(args["labels"]), deferUntil: try TaskValidator.due(args["defer_until"]), by: by))
+                    labels: try TaskValidator.labels(args["labels"]), deferUntil: try TaskValidator.due(args["defer_until"], field: "defer_until"), by: by))
                 return .success(json(item))
             case "update":
                 let current = try api.get(try id(args)).task
@@ -170,7 +170,7 @@ package enum TaskJSON {
                     request.clearDue = request.due == nil
                 }
                 if changes.keys.contains("defer_until") {
-                    request.deferUntil = try TaskValidator.due(changes["defer_until"])
+                    request.deferUntil = try TaskValidator.due(changes["defer_until"], field: "defer_until")
                     request.clearDeferUntil = request.deferUntil == nil
                 }
                 request.links = try changes["links"].map { try TaskValidator.links($0) }

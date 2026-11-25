@@ -64,6 +64,14 @@ package struct RemoteTasks {
 
     // MARK: Tasks
 
+    /// A task in a single-task answer (get, create, update, close, accept). No phone asks for `someday` there yet, and one built
+    /// before it cannot decode it, so it goes out as `backlog`; the task on the Mac keeps its status.
+    static func single(_ item: TaskItem) -> RemoteTask {
+        var task = RemoteTask(item)
+        if task.status == .someday { task.status = .backlog }
+        return task
+    }
+
     /// `status` (comma separated or repeated), `include_done`, `include_someday` and `label` (`key:value`, repeated).
     package func list(query: [String: [String]]) throws -> [String: Any] {
         try available()
@@ -89,7 +97,7 @@ package struct RemoteTasks {
     package func get(_ id: String) throws -> [String: Any] {
         try available()
         let detail = try tasks.get(id)
-        return RemoteWire.object(RemoteTaskDetail(task: RemoteTask(detail.task), history: detail.history.map { RemoteTaskEvent($0) }))
+        return RemoteWire.object(RemoteTaskDetail(task: Self.single(detail.task), history: detail.history.map { RemoteTaskEvent($0) }))
     }
 
     /// The phone's id for one change. A change sent twice with the same id applies once and answers the same both times.
@@ -128,7 +136,7 @@ package struct RemoteTasks {
             source: try TaskValidator.source(args["source"], default: .user), due: try TaskValidator.due(args["due"]),
             links: try TaskValidator.links(args["links"]), waitingOn: try TaskValidator.waitingOn(args["waiting_on"]),
             sourceRef: nil, labels: try TaskValidator.labels(args["labels"]), by: by))
-        return RemoteWire.object(RemoteTask(item))
+        return RemoteWire.object(Self.single(item))
     }
 
     package func update(_ id: String, _ args: [String: Any]) throws -> [String: Any] {
@@ -152,7 +160,7 @@ package struct RemoteTasks {
         request.removeLabels = try TaskValidator.labelKeys(args["remove_labels"])
         if args.keys.contains("waiting_on") { request.waitingOn = try TaskValidator.waitingOn(args["waiting_on"]) ?? "" }
         request.note = try args["note"].map { try TaskValidator.notes($0) }
-        return RemoteWire.object(RemoteTask(try tasks.update(request)))
+        return RemoteWire.object(Self.single(try tasks.update(request)))
     }
 
     /// Closing needs a note that says what shows the task is done, as it does for an agent.
@@ -165,7 +173,7 @@ package struct RemoteTasks {
         let target = try tasks.get(id).task
         try checkBase(args, against: target)
         let note = try TaskJSON.requiredNote(args["note"], for: "say what shows the task is done")
-        return RemoteWire.object(RemoteTask(try tasks.close(CloseTaskRequest(id: target.id, note: note, by: by))))
+        return RemoteWire.object(Self.single(try tasks.close(CloseTaskRequest(id: target.id, note: note, by: by))))
     }
 
     package func delete(_ id: String) throws -> [String: Any] {
@@ -203,7 +211,7 @@ package struct RemoteTasks {
         if let raw = args["notes"], !(raw is NSNull) { request.notes = try TaskValidator.notes(raw) }
         if let raw = args["status"], !(raw is NSNull) { request.status = try TaskValidator.status(raw) }
         request.note = try args["note"].map { try TaskValidator.notes($0) }
-        return RemoteWire.object(RemoteTask(try tasks.accept(request)))
+        return RemoteWire.object(Self.single(try tasks.accept(request)))
     }
 
     package func reject(_ id: String, _ args: [String: Any]) throws -> [String: Any] {

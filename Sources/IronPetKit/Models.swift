@@ -99,7 +99,7 @@ public struct RemoteTask: Codable, Equatable, Hashable, Identifiable, Sendable {
     }
 
     /// Only the user can take the next step. A task waiting on someone else never counts, whatever its status.
-    public var needsUser: Bool { status == .needsYou && waitingOn == nil }
+    public var needsUser: Bool { status == .needsYou && waitingOn == nil && !(deferUntil.map { $0 > Date() } ?? false) }
 }
 
 public struct RemoteTaskEvent: Codable, Equatable, Hashable, Sendable {

@@ -122,7 +122,9 @@ package struct TaskItem: Identifiable, Equatable, Codable {
     }
 
     /// Only the user can take the next step. A task waiting on someone else, or deferred to a later day, never counts.
-    package var needsUser: Bool { status == .needsYou && waitingOn == nil && !isDeferred() }
+    package var needsUser: Bool { needsUser(now: Date()) }
+
+    package func needsUser(now: Date) -> Bool { status == .needsYou && waitingOn == nil && !isDeferred(now: now) }
 }
 
 /// One line of a task's history: created, a status change, a note, closed. Nothing is overwritten, so a task the agent
@@ -522,15 +524,16 @@ package enum TaskValidator {
     }
 
     /// ISO 8601 with a time (`2026-11-20T15:30:00+01:00`) or a plain date (`2026-11-20`, local midnight). Null clears it.
-    package static func due(_ value: Any?) throws -> Date? {
+    /// `field` names the argument in the error, `due` or `defer_until`.
+    package static func due(_ value: Any?, field: String = "due") throws -> Date? {
         guard let value, !(value is NSNull) else { return nil }
-        guard let raw = value as? String else { throw TaskError(message: "due must be an ISO 8601 date") }
+        guard let raw = value as? String else { throw TaskError(message: "\(field) must be an ISO 8601 date") }
         if let date = ISO8601DateFormatter().date(from: raw) { return date }
         let day = DateFormatter()
         day.locale = Locale(identifier: "en_US_POSIX")
         day.dateFormat = "yyyy-MM-dd"
         if let date = day.date(from: raw) { return date }
-        throw TaskError(message: "due \"\(raw)\" is not an ISO 8601 date such as 2026-11-20 or 2026-11-20T15:30:00+01:00")
+        throw TaskError(message: "\(field) \"\(raw)\" is not an ISO 8601 date such as 2026-11-20 or 2026-11-20T15:30:00+01:00")
     }
 
     package static func links(_ value: Any?) throws -> [TaskLink] {

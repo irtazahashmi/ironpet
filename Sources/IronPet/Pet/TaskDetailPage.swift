@@ -240,7 +240,7 @@ struct TaskDetailPage: View {
             Divider()
             SummaryRow(label: "Defer until", symbol: "moon.zzz") {
                 if task.deferUntil != nil {
-                    DuePicker(due: task.deferUntil, disabled: task.status == .done) { new in attempt { _ = try TaskEdits.setDeferUntil(new, of: id, in: tasks) } }
+                    DuePicker(due: task.deferUntil, disabled: task.status == .done, label: "defer date") { new in attempt { _ = try TaskEdits.setDeferUntil(new, of: id, in: tasks) } }
                 } else {
                     NoneWithSet(action: "Set date", disabled: task.status == .done) {
                         let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))
@@ -446,6 +446,8 @@ private struct NoneWithSetLabel: View {
 private struct DuePicker: View {
     let due: Date?
     let disabled: Bool
+    /// What VoiceOver calls the date: "due date" or "defer date".
+    var label = "due date"
     let onChange: (Date?) -> Void
 
     private var hasTime: Bool { due.map { !TaskDue.isAllDay($0, calendar: .current) } ?? false }
@@ -457,7 +459,7 @@ private struct DuePicker: View {
                 DatePicker("Due", selection: Binding(get: { due }, set: { onChange($0) }),
                            displayedComponents: hasTime ? [.date, .hourAndMinute] : .date)
                     .labelsHidden()
-                    .accessibilityLabel("Due date")
+                    .accessibilityLabel(label.prefix(1).uppercased() + label.dropFirst())
                 Button(hasTime ? "Date only" : "Add time") {
                     onChange(hasTime ? Calendar.current.startOfDay(for: due)
                                      : Calendar.current.date(bySettingHour: 9, minute: 0, second: 0, of: due))
@@ -465,7 +467,7 @@ private struct DuePicker: View {
                 .buttonStyle(.borderless)
                 Button { onChange(nil) } label: { Image(systemName: SharedSymbols.removeAttachment) }
                     .buttonStyle(.plain).foregroundStyle(.secondary)
-                    .accessibilityLabel("Clear due date")
+                    .accessibilityLabel("Clear \(label)")
             } else {
                 Button("Set due date") {
                     let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))
