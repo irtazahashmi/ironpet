@@ -151,9 +151,20 @@ final class ChatModel: SocketModel {
     @ObservationIgnored private var reloadDebounce: Task<Void, Never>?
     var draft = ""
     var attachments: [PendingAttachment] = []
-    /// The message the next one answers, with the part of it the user selected, if any.
-    var replyTo: RemoteChatItem?
+    /// The message the next one answers.
+    var replyTo: RemoteChatItem? {
+        didSet { if replyTo == nil || replyTo?.id != oldValue?.id { replySelection = nil } }
+    }
+    /// The part of `replyTo` the reader selected and chose Ask about this for. Nil when the whole message is quoted.
+    var replySelection: String?
     private(set) var sending = false
+
+    /// Starts a reply to `item`, quoting only `selection` when the reader selected part of it. Blank text counts as no selection.
+    func reply(to item: RemoteChatItem, selection: String? = nil) {
+        let trimmed = selection?.trimmingCharacters(in: .whitespacesAndNewlines)
+        replyTo = item
+        replySelection = trimmed?.isEmpty == false ? trimmed : nil
+    }
     /// Messages sent from this phone that the transcript has not caught up with. They show at the end of `displayItems`.
     private(set) var outbox: [OutgoingMessage] = []
     /// The event socket, set by the app. Typed messages go over it while it is open. Nil in tests that use HTTPS only.
@@ -472,17 +483,18 @@ final class ChatModel: SocketModel {
         defer { sending = false }
         PhoneHopLog.mark("phone.send")
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let original = draft, pending = attachments, quoted = replyTo
+        let original = draft, pending = attachments, quoted = replyTo, quotedSelection = replySelection
         draft = ""
         attachments = []
         replyTo = nil
+        replySelection = nil
         func restore() {
             // Something typed while the send was running stays, after the text that came back.
             draft = draft.isEmpty ? original : original + "\n" + draft
             attachments = pending + attachments
-            if replyTo == nil { replyTo = quoted }
+            if replyTo == nil { replyTo = quoted; replySelection = quotedSelection }
         }
-        let quote = quoted.map { RemoteReplyRef(itemID: $0.id) }
+        let quote = quoted.map { RemoteReplyRef(itemID: $0.id, selectionText: quotedSelection) }
         // Every message goes through the outbox, with its attachments, so one that cannot be sent now waits with its photos.
         var message = OutgoingMessage(id: UUID(), text: text, date: Date(), state: .sending, known: userItemIDs, reply: quote)
         message.files = pending.map { StagedFile(fileName: $0.fileName, contentType: $0.contentType, data: $0.data, isImage: $0.isImage) }
