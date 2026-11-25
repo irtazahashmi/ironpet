@@ -44,9 +44,15 @@ public enum RecordLinks {
             let lower = result.characters.index(result.characters.startIndex, offsetBy: offset)
             let upper = result.characters.index(lower, offsetBy: length)
             let runs = result[lower..<upper].runs
-            guard runs.allSatisfy({ $0.link == nil && $0.inlinePresentationIntent?.contains(.code) != true }), let url = url(for: match.id) else { continue }
+            guard runs.allSatisfy({ $0.link == nil && !isCode($0) }), let url = url(for: match.id) else { continue }
             result[lower..<upper].link = url
         }
         return result
+    }
+
+    /// Whether a run is a code span from Markdown. The attribute is named explicitly because Linux's Foundation cannot infer it through dynamic member lookup.
+    private static func isCode(_ run: AttributedString.Runs.Run) -> Bool {
+        let intent: InlinePresentationIntent? = run[AttributeScopes.FoundationAttributes.InlinePresentationIntentAttribute.self]
+        return intent?.contains(.code) == true
     }
 }
