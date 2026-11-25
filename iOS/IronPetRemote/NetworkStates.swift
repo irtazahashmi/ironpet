@@ -3,7 +3,7 @@ import SwiftUI
 
 /// The three places a network state can show, and no others:
 /// the status strip under the top bar, the full-page error of a screen that never loaded, and the one-time sheet for a problem only the person can fix.
-/// An item that was sent shows its own state on the item (see `OutgoingStatus` and `PendingSyncMark`).
+/// An item that was sent shows its own state on the item (see `OutgoingLook` and `PendingSyncMark`).
 
 // MARK: Status strip
 

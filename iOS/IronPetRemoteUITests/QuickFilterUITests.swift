@@ -26,10 +26,7 @@ final class QuickFilterUITests: XCTestCase {
 
     private func pairAndOpenTasks() {
         app.launch()
-        let field = app.textFields["pairing-link-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.tap()
-        field.typeText(server.pairingLink)
+        app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         let tab = app.tabBars.buttons["Tasks"]
         XCTAssertTrue(tab.waitForExistence(timeout: 60))

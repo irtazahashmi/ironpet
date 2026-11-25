@@ -549,7 +549,7 @@ final class ChatModel: SocketModel {
         if case .uploadFailed(let reason) = result {
             outbox.removeAll { $0.id == message.id }
             // A sign-out leaves no reason, and then there is nothing to retry.
-            errorMessage = reason.isEmpty ? nil : reason
+            // The composer shows the failure on the attachments, so no chat-level row repeats it.
             uploadFailure = reason.isEmpty ? nil : "The upload failed. \(reason)"
             return restore()
         }

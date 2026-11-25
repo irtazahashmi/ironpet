@@ -5,8 +5,8 @@ import SwiftUI
 import WebKit
 
 extension ChatMarkdown {
-    /// The inline markdown of `text` with file paths made into links.
-    static func inlineWithPathLinks(_ text: String) -> AttributedString { FilePathLinks.link(inline(text)) }
+    /// The inline markdown of `text` with file paths and record ids made into links.
+    static func inlineWithPathLinks(_ text: String) -> AttributedString { RecordLinks.link(FilePathLinks.link(inline(text))) }
 }
 
 /// Renders a reply's markdown as SwiftUI views. Each run of text blocks (headings, paragraphs, lists, quotes)
