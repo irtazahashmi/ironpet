@@ -274,52 +274,17 @@ private struct TranscriptGroupView: View {
         case .tools(let steps):
             ToolStepsRow(steps: steps)
         case .item(let item):
+            let message = outbox.first(where: { $0.itemID == item.id })
             VStack(alignment: .trailing, spacing: 2) {
                 MessageRow(item: item, photo: item.fileName.flatMap { photos[$0] }, images: images, avatar: avatar, expanded: expanded.contains(item.id),
                            onToggleExpand: { toggleExpand(item.id) }, onReply: item.canReply && !OutgoingMessage.isPending(item.id) ? { selection in onReply(item, selection) } : nil,
-                           readAloud: item.kind == "assistant" ? readAloud(item) : nil, find: highlights[item.id])
-                if let message = outbox.first(where: { $0.itemID == item.id }) { OutgoingStatus(message: message, onRetry: { onRetry(message.id) }, onDelete: { onDelete(message.id) }) }
-                else if item.id == deliveredID {
+                           readAloud: item.kind == "assistant" ? readAloud(item) : nil, find: highlights[item.id],
+                           outgoing: message.map(OutgoingLook.init), onRetry: message.map { message in { onRetry(message.id) } }, onDelete: message.map { message in { onDelete(message.id) } })
+                if message == nil, item.id == deliveredID {
                     Label("Delivered", systemImage: "checkmark").font(.caption2).foregroundStyle(.secondary)
                         .accessibilityIdentifier("outgoing-delivered")
                 }
             }
-        }
-    }
-}
-
-/// Under a message the Mac has not confirmed: "Sending…" while it is on its way, or the error and a Retry button when it failed.
-private struct OutgoingStatus: View {
-    let message: OutgoingMessage
-    let onRetry: () -> Void
-    var onDelete: () -> Void = {}
-
-    var body: some View {
-        switch message.state {
-        case .waiting:
-            HStack(spacing: 6) {
-                Image(systemName: "clock").foregroundStyle(.secondary)
-                Text("Waiting to send").font(.caption2).foregroundStyle(.secondary)
-                Button("Delete", role: .destructive, action: onDelete).font(.caption2.weight(.semibold)).accessibilityIdentifier("outgoing-delete")
-            }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("outgoing-waiting")
-        case .sending, .sent:
-            // A voice message shows "Transcribing…" in its bubble until the text arrives.
-            if !message.isTranscribing {
-                Label("Sending…", systemImage: "clock").font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("outgoing-sending")
-            }
-        case .failed(let reason):
-            HStack(spacing: 6) {
-                Image(systemName: "exclamationmark.circle.fill").foregroundStyle(.red)
-                Text(reason).font(.caption2).foregroundStyle(.secondary).lineLimit(2)
-                Button("Retry", action: onRetry).font(.caption2.weight(.semibold)).accessibilityIdentifier("outgoing-retry")
-                if message.queuedAt != nil {
-                    Button("Delete", role: .destructive, action: onDelete).font(.caption2.weight(.semibold)).accessibilityIdentifier("outgoing-delete")
-                }
-            }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("outgoing-failed")
         }
     }
 }
@@ -354,19 +319,24 @@ struct MessageRow: View {
     var readAloud: ReadAloud?
     /// The highlights of Find in chat for this message. Nil outside a search.
     var find: RemoteChatFind.RowHighlight?
+    /// How the message looks while the Mac has not confirmed it. Nil for a message the transcript already holds.
+    var outgoing: OutgoingLook?
+    var onRetry: (() -> Void)?
+    var onDelete: (() -> Void)?
     @Environment(\.openFilePath) private var openFilePath
     @State private var selecting = false
 
     var body: some View {
         Group {
             switch item.row {
-            case .user(let text): UserBubble(item: item, text: text, expanded: expanded, onToggleExpand: onToggleExpand, find: find)
+            case .user(let text): UserBubble(item: item, text: text, expanded: expanded, onToggleExpand: onToggleExpand, find: find, outgoing: outgoing, onRetry: onRetry)
             case .assistant(let text): AssistantBubble(item: item, text: text, avatar: avatar, readAloud: readAloud, find: find)
             case .tool: ToolStepsRow(steps: [item])
             case .error(let text): ErrorRow(text: text)
             case .notice(let text): NoticeRow(notice: ChatNotice(text))
             case .attachment(let name, let isImage):
                 Attachment(name: name, isImage: isImage, photo: photo, mine: item.origin == "ios", messageID: item.id, images: images)
+                    .modifier(OutgoingMarks(look: outgoing, onRetry: onRetry))
             case .form(let message, let skipped, let lines):
                 FormRecord(message: message, skipped: skipped, lines: lines)
             case .unsupported(let text):
@@ -388,14 +358,30 @@ struct MessageRow: View {
         .environment(\.selectingText, $selecting)
         .environment(\.askAboutSelection, onReply.map { reply in { text in reply(text) } })
         .swipeToReply(onReply.map { reply in { reply(nil) } })
-        .contextMenu {
-            if let onReply { Button { onReply(nil) } label: { Label("Reply", systemImage: SharedSymbols.reply) } }
-            if case .assistant = item.row { Button { selecting = true } label: { Label("Select text", systemImage: "selection.pin.in.out") } }
-            if let text = item.text, !text.isEmpty { Button { UIPasteboard.general.string = text } label: { Label("Copy", systemImage: SharedSymbols.copy) } }
-            if let readAloud {
-                Button(action: readAloud.toggle) {
-                    Label(readAloud.active ? "Stop Reading" : "Read Aloud", systemImage: readAloud.active ? SharedSymbols.stopSpeaking : SharedSymbols.speak)
-                }
+        .modifier(MessageMenu(item: item, preview: preview) { menuItems })
+    }
+
+    /// What lifts when the message is long pressed: the bubble's own shape for your message, a rounded card in the system background
+    /// for a reply. Without it the row lifts as a full-width block with no background behind the text.
+    private var preview: MessagePreview {
+        switch item.row {
+        case .user(let text): .user(String(text.prefix(1200)), outgoing)
+        case .assistant(let text): .assistant(String(text.prefix(1200)))
+        default: .none
+        }
+    }
+
+    @ViewBuilder
+    private var menuItems: some View {
+        if let reason = outgoing?.failureReason { Text(reason) }
+        if outgoing?.isFailed == true, let onRetry { Button(action: onRetry) { Label("Retry", systemImage: "arrow.clockwise") }.accessibilityIdentifier("outgoing-retry-menu") }
+        if outgoing?.canDelete == true, let onDelete { Button(role: .destructive, action: onDelete) { Label("Delete", systemImage: "trash") }.accessibilityIdentifier("outgoing-delete") }
+        if let onReply { Button { onReply(nil) } label: { Label("Reply", systemImage: SharedSymbols.reply) } }
+        if case .assistant = item.row { Button { selecting = true } label: { Label("Select text", systemImage: "selection.pin.in.out") } }
+        if let text = item.text, !text.isEmpty { Button { UIPasteboard.general.string = text } label: { Label("Copy", systemImage: SharedSymbols.copy) } }
+        if let readAloud {
+            Button(action: readAloud.toggle) {
+                Label(readAloud.active ? "Stop Reading" : "Read Aloud", systemImage: readAloud.active ? SharedSymbols.stopSpeaking : SharedSymbols.speak)
             }
         }
     }
@@ -404,6 +390,41 @@ struct MessageRow: View {
 
     static func originName(_ origin: String) -> String {
         OriginBadge(origin: origin)?.label ?? origin.capitalized
+    }
+}
+
+enum MessagePreview { case user(String, OutgoingLook?), assistant(String), none }
+
+/// The long-press menu of a message, with an explicit preview so the lifted message has a solid rounded background.
+private struct MessageMenu<Items: View>: ViewModifier {
+    let item: RemoteChatItem
+    let preview: MessagePreview
+    @ViewBuilder let items: Items
+    @Environment(\.macAccent) private var macAccent
+    @ChatScale(.body) private var scale
+
+    func body(content: Content) -> some View {
+        switch preview {
+        case .user(let text, let outgoing):
+            content.contextMenu { items } preview: {
+                Text(text).font(.system(size: ChatMetrics.macBody * scale)).foregroundStyle(.white)
+                    .padding(.horizontal, 12).padding(.vertical, 8)
+                    .frame(maxWidth: 320, alignment: .leading)
+                    .background(outgoing?.isFailed == true ? OutgoingLook.failedFill : macAccent, in: UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: 16, bottomTrailingRadius: 5, topTrailingRadius: 16))
+                    .opacity(outgoing?.opacity ?? 1)
+                    .accessibilityIdentifier("preview-\(item.id)")
+            }
+        case .assistant(let text):
+            content.contextMenu { items } preview: {
+                MarkdownBody(text: text, find: nil)
+                    .padding(12)
+                    .frame(maxWidth: 340, alignment: .leading)
+                    .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                    .accessibilityIdentifier("preview-\(item.id)")
+            }
+        case .none:
+            content.contextMenu { items }
+        }
     }
 }
 
@@ -709,16 +730,6 @@ private struct Composer: View {
                 .padding(.horizontal, 6).padding(.top, 4)
                 .accessibilityIdentifier("reply-bar")
             }
-            if let failure = model.uploadFailure {
-                HStack(spacing: 6) {
-                    Label(failure, systemImage: SharedSymbols.warning).font(.footnote).foregroundStyle(.orange).lineLimit(3)
-                        .accessibilityIdentifier("upload-error")
-                    Spacer(minLength: 0)
-                    Button("Retry") { Task { await model.send() } }.font(.footnote.weight(.semibold))
-                        .disabled(model.sending).accessibilityIdentifier("upload-retry")
-                }
-                .padding(.horizontal, 6).padding(.top, 4)
-            }
             if !model.attachments.isEmpty {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 6) {
@@ -780,7 +791,8 @@ private struct Composer: View {
         Image(uiImage: image).resizable().aspectRatio(contentMode: .fit).frame(height: 48)
             .clipShape(RoundedRectangle(cornerRadius: 8))
             .overlay(RoundedRectangle(cornerRadius: 8).strokeBorder(Color.primary.opacity(0.15)))
-            .accessibilityElement(children: .ignore).accessibilityLabel("Pasted image").accessibilityIdentifier("attachment-thumbnail-\(index)")
+            .accessibilityElement(children: .ignore).accessibilityLabel(model.uploadFailure.map { "Pasted image. \($0)" } ?? "Pasted image").accessibilityIdentifier("attachment-thumbnail-\(index)")
+            .overlay { uploadBadge }
             .overlay(alignment: .topTrailing) {
                 Button { model.removeAttachment(attachment) } label: {
                     Image(systemName: SharedSymbols.removeAttachment).symbolRenderingMode(.palette).foregroundStyle(.white, .black.opacity(0.6))
@@ -798,6 +810,22 @@ private struct Composer: View {
                 .accessibilityLabel("Remove \(attachment.fileName)").accessibilityIdentifier("attachment-remove-\(index)")
         }
         .font(.caption).padding(.horizontal, 8).padding(.vertical, 4).background(.quaternary, in: Capsule())
+        .overlay(alignment: .leading) { uploadBadge.scaleEffect(0.8).offset(x: -6) }
+    }
+
+    /// Shown on every attachment after an upload failed. Tapping it sends again. It is an overlay, so the composer keeps its height.
+    @ViewBuilder
+    private var uploadBadge: some View {
+        if let failure = model.uploadFailure {
+            Button { Task { await model.send() } } label: {
+                Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                    .frame(width: 24, height: 24).background(Circle().fill(OutgoingLook.failedFill))
+                    .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2))
+                    .frame(width: 44, height: 44).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain).disabled(model.sending)
+            .accessibilityLabel("Retry upload. \(failure)").accessibilityIdentifier("upload-retry")
+        }
     }
 }
 

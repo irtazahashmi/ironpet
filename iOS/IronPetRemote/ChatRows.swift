@@ -292,6 +292,94 @@ struct OriginBadge {
     private init(symbol: String, label: String) { self.symbol = symbol; self.label = label }
 }
 
+/// What a message the Mac has not confirmed looks like. The state shows on the bubble, so no row is added and nothing moves.
+struct OutgoingLook: Equatable {
+    let state: OutgoingMessage.State
+    /// A voice message whose text has not arrived. Its bubble says "Transcribing…" in place of a dimmed look.
+    let transcribing: Bool
+    /// The message was saved on the phone while the Mac was out of reach, so it can be deleted.
+    let queued: Bool
+
+    init(_ message: OutgoingMessage) {
+        state = message.state
+        transcribing = message.isTranscribing
+        queued = message.queuedAt != nil
+    }
+
+    static let dimmedOpacity: Double = 0.55
+    /// Solid, so the white text reads the same in light and dark mode.
+    static let failedFill = Color(red: 0.76, green: 0.17, blue: 0.19)
+
+    var opacity: Double {
+        switch state {
+        case .waiting: Self.dimmedOpacity
+        case .sending, .sent: transcribing ? 1 : Self.dimmedOpacity
+        case .failed: 1
+        }
+    }
+
+    var showsClock: Bool { state == .waiting }
+
+    var isFailed: Bool {
+        if case .failed = state { return true }
+        return false
+    }
+
+    var failureReason: String? {
+        if case .failed(let reason) = state { return reason }
+        return nil
+    }
+
+    var canDelete: Bool { state == .waiting || (isFailed && queued) }
+
+    /// Read after the message text by VoiceOver. Empty for a message in flight that has a visible "Transcribing…".
+    var accessibilityValue: String {
+        switch state {
+        case .waiting: "Waiting to send"
+        case .sending, .sent: transcribing ? "" : "Sending"
+        case .failed(let reason): "Not sent. \(reason)"
+        }
+    }
+}
+
+/// The dim, the clock and the retry button of an unconfirmed message. All of it is overlay, so the layout is the same in every state.
+struct OutgoingMarks: ViewModifier {
+    let look: OutgoingLook?
+    var onRetry: (() -> Void)?
+
+    func body(content: Content) -> some View {
+        content
+            .opacity(look?.opacity ?? 1)
+            .overlay(alignment: .bottomLeading) {
+                if look?.showsClock == true {
+                    Image(systemName: "clock.fill").font(.system(size: 10, weight: .semibold)).foregroundStyle(.secondary)
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(Color(.systemBackground)))
+                        .offset(x: -6, y: 6)
+                        // The bubble's accessibility value already says it, so VoiceOver reads the state once.
+                        .accessibilityHidden(true)
+                }
+            }
+            // Beside the bubble, in the space the row keeps free on its leading side, so it never covers the source label or the time below.
+            .overlay(alignment: .leading) {
+                if look?.isFailed == true, let onRetry {
+                    Button(action: onRetry) {
+                        Image(systemName: "arrow.clockwise").font(.system(size: 12, weight: .bold)).foregroundStyle(.white)
+                            .frame(width: 26, height: 26)
+                            .background(Circle().fill(OutgoingLook.failedFill))
+                            .overlay(Circle().stroke(Color(.systemBackground), lineWidth: 2))
+                            // The visible circle is 26 pt. The tap area is 44 pt.
+                            .frame(width: 44, height: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .offset(x: -48)
+                    .accessibilityLabel("Retry sending")
+                    .accessibilityIdentifier("outgoing-retry")
+                }
+            }
+    }
+}
+
 /// Your message: an accent bubble with a small bottom trailing corner, the time and source under it, and "Show more" on a long one.
 struct UserBubble: View {
     @Environment(\.macAccent) private var macAccent
@@ -300,6 +388,9 @@ struct UserBubble: View {
     var expanded = false
     var onToggleExpand: () -> Void = {}
     var find: RemoteChatFind.RowHighlight?
+    /// The send state of a message the Mac has not confirmed. Nil once it has.
+    var outgoing: OutgoingLook?
+    var onRetry: (() -> Void)?
     @Environment(\.openFilePath) private var openFilePath
     private var links: Bool { openFilePath != nil }
     @ChatScale(.body) private var scale
@@ -314,9 +405,14 @@ struct UserBubble: View {
                     .textSelection(.enabled)
             }
             .padding(.horizontal, 12).padding(.vertical, 8)
-            .background(macAccent, in: UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: 16, bottomTrailingRadius: 5, topTrailingRadius: 16))
+            .background(outgoing?.isFailed == true ? OutgoingLook.failedFill : macAccent,
+                        in: UnevenRoundedRectangle(topLeadingRadius: 16, bottomLeadingRadius: 16, bottomTrailingRadius: 5, topTrailingRadius: 16))
             .accessibilityElement(children: .combine)
+            .accessibilityValue(outgoing?.accessibilityValue ?? "")
             .accessibilityIdentifier("bubble-\(item.id)")
+            .modifier(OutgoingMarks(look: outgoing, onRetry: onRetry))
+            // The retry button sits beside the bubble. The rows below it must not take its taps.
+            .zIndex(1)
             if let preview {
                 Button(action: onToggleExpand) {
                     Text(expanded ? "Show less" : "Show more · \(preview.hiddenCharacters.formatted()) characters").font(.system(size: 11 * scale))
@@ -510,28 +606,27 @@ struct ErrorRow: View {
 
 // MARK: Working
 
-/// Shown while the agent works: the pet's face, three pulsing dots and how long the turn has run.
+/// Shown while the agent works: the pet's face, a spinner and how long the turn has run. The row has the same size from the first
+/// frame. The time has its own slot beside the spinner, empty until the turn start arrives.
 struct TypingRow: View {
     let started: Date?
     var avatar: CGImage?
     @ChatScale(.caption1) private var scale
 
     var body: some View {
-        HStack(alignment: .top, spacing: 8) {
+        HStack(spacing: 8) {
             PetAvatar(image: avatar, size: 24)
-            VStack(alignment: .leading, spacing: 3) {
-                PulsingDots()
-                    .padding(.horizontal, 12).padding(.vertical, 9)
-                    .background(Color.primary.opacity(0.08), in: Capsule())
-                if let started {
-                    TimelineView(.periodic(from: started, by: 1)) { context in
-                        Text(Self.format(context.date.timeIntervalSince(started))).font(.system(size: 10 * scale)).monospacedDigit().foregroundStyle(.tertiary)
-                    }
-                    .accessibilityIdentifier("elapsed")
-                }
+            ProgressView().controlSize(.small).frame(width: 20, height: 20)
+            TimelineView(.periodic(from: started ?? Date(), by: 1)) { context in
+                Text(started.map { Self.format(context.date.timeIntervalSince($0)) } ?? "")
+                    .font(.system(size: 10 * scale)).monospacedDigit().foregroundStyle(.tertiary)
+                    .lineLimit(1).minimumScaleFactor(0.7)
             }
+            .frame(width: 64 * scale, height: 16 * scale, alignment: .leading)
+            .accessibilityIdentifier("elapsed")
             Spacer(minLength: 0)
         }
+        .frame(minHeight: 28)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Working")
         .accessibilityIdentifier("running-row")
@@ -540,25 +635,6 @@ struct TypingRow: View {
     static func format(_ seconds: TimeInterval) -> String {
         let s = max(0, Int(seconds))
         return s < 60 ? "\(s)s" : "\(s / 60)m \(s % 60)s"
-    }
-}
-
-/// Three dots that pulse in turn. Reduce Motion holds them still.
-struct PulsingDots: View {
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @State private var on = false
-
-    var body: some View {
-        HStack(spacing: 4) {
-            ForEach(0..<3, id: \.self) { index in
-                Circle().fill(Color.secondary).frame(width: 6, height: 6)
-                    .opacity(reduceMotion ? 0.6 : (on ? 1 : 0.35))
-                    .animation(reduceMotion ? nil : .easeInOut(duration: 0.65).repeatForever(autoreverses: true).delay(Double(index) * 0.2), value: on)
-            }
-        }
-        .frame(width: 30, height: 6)
-        .onAppear { on = true }
-        .accessibilityHidden(true)
     }
 }
 
