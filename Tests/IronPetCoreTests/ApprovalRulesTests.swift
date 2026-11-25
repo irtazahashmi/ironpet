@@ -81,6 +81,14 @@ final class ApprovalRulesTests: XCTestCase {
         }
     }
 
+    func testMergingPagesAsksBecauseItDeletesThemForGood() {
+        for title in ["mcp__ironpet__memory_merge", "memory_merge", "mcp__other__memory_merge"] {
+            if case .allow = policy(ACPToolCall(id: "1", title: title, kind: "other", rawInput: ["keep": "a", "merge": ["b"]])) {
+                XCTFail("\(title) must ask")
+            }
+        }
+    }
+
     func testAssistantReadsAndMemoryRunWithoutACardButJobControlAsks() {
         for tool in ["status_overview", "status_sessions", "jobs_list", "jobs_get", "jobs_open", "projects_resolve",
                      "memory_remember", "memory_forget", "memory_search", "memory_get"] {

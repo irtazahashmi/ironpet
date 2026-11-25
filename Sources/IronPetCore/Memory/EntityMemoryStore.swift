@@ -295,6 +295,115 @@ package final class EntityMemoryStore: MemoryStore {
         }
     }
 
+    /// What `mergePages` did.
+    package struct PageMerge: Equatable {
+        package struct Merged: Equatable {
+            package let name: String
+            /// The valid facts that moved.
+            package let facts: Int
+            package let links: Int
+        }
+
+        package let kept: MemoryEntity
+        package let merged: [Merged]
+        /// How many valid facts the kept page has now.
+        package let facts: Int
+    }
+
+    /// Merges pages of one type into `keep`, in one transaction, so a failure leaves every page as it was. Every claim moves with its
+    /// text, date, sources, ref, pin and provenance (earlier facts too, so the history follows). Links are repointed at `keep`, and a
+    /// link that would join `keep` to itself is dropped. Each merged page's name and aliases become aliases of `keep`, so a later note
+    /// about that name lands there. The merged pages are deleted. This cannot be undone. Each of `others` and `keep` is a page id, a
+    /// `page_` ref, or a name or alias that is not ambiguous.
+    package func mergePages(_ others: [String], into keep: String) -> Result<PageMerge, MemoryError> {
+        let all = entities()
+        func find(_ key: String) -> Result<MemoryEntity, MemoryError> {
+            if let page = all.first(where: { $0.id == key || $0.ref == key }) { return .success(page) }
+            switch EntityMatcher.match(name: key, identifiers: [key], in: all.map(\.record)) {
+            case .found(let id): return all.first { $0.id == id }.map { .success($0) } ?? .failure(MemoryError(message: "no page named \(key)"))
+            case .none: return .failure(MemoryError(message: "no page named \(key)"))
+            case .ambiguous(let ids): return .failure(MemoryError(message: "more than one page matches \(key): \(names(ids).joined(separator: ", ")). Say which."))
+            }
+        }
+        let kept: MemoryEntity
+        switch find(keep) {
+        case .success(let page): kept = page
+        case .failure(let failure): return .failure(failure)
+        }
+        var pages: [MemoryEntity] = []
+        for key in others {
+            switch find(key) {
+            case .failure(let failure): return .failure(failure)
+            case .success(let page):
+                if page.id != kept.id, !pages.contains(where: { $0.id == page.id }) { pages.append(page) }
+            }
+        }
+        guard !pages.isEmpty else { return .failure(MemoryError(message: "name at least one other page to merge into \(kept.name)")) }
+        guard kept.type != .me, !pages.contains(where: { $0.type == .me }) else {
+            return .failure(MemoryError(message: "the page about the user cannot be merged"))
+        }
+        if let other = pages.first(where: { $0.type != kept.type }) {
+            return .failure(MemoryError(message: "\(other.name) is a \(other.type.label.lowercased()) page and \(kept.name) is a \(kept.type.label.lowercased()) page; only pages of one type merge"))
+        }
+        do {
+            let outcome = try database.write { db -> (merged: [PageMerge.Merged], moved: [Int64]) in
+                var aliases = kept.aliases
+                var identifiers = kept.identifiers
+                var mentions = kept.mentions
+                var merged: [PageMerge.Merged] = []
+                var moved: [Int64] = []
+                for page in pages {
+                    let valid = try db.rows("SELECT id FROM memory_claims WHERE entity = ? AND invalid_at IS NULL", [page.id]).compactMap { $0[0] as? Int64 }
+                    moved += valid
+                    try db.execute("UPDATE memory_claims SET entity = ? WHERE entity = ?", [kept.id, page.id])
+                    try db.execute("UPDATE memory_changes SET file = ? WHERE file = ?", [kept.id, page.id])
+                    try db.execute("UPDATE memory_changes SET previous = ? WHERE action = 'moved' AND previous = ?", [kept.id, page.id])
+                    let links = try db.rows("""
+                        SELECT type, from_entity, to_entity, count, first_seen, last_seen, sources FROM memory_links
+                        WHERE from_entity = ? OR to_entity = ?
+                        """, [page.id, page.id]).compactMap(Self.link)
+                    try db.execute("DELETE FROM memory_links WHERE from_entity = ? OR to_entity = ?", [page.id, page.id])
+                    var linked = 0
+                    for link in links {
+                        let from = link.from == page.id ? kept.id : link.from
+                        let to = link.to == page.id ? kept.id : link.to
+                        guard from != to else { continue }
+                        linked += 1
+                        if let row = try db.rows("SELECT count, first_seen, last_seen, sources FROM memory_links WHERE from_entity = ? AND to_entity = ? AND type = ?",
+                                                 [from, to, link.type]).first {
+                            let sources = Self.merged(Self.lines(row[3] as? String), link.sources)
+                            try db.execute("UPDATE memory_links SET count = ?, first_seen = ?, last_seen = ?, sources = ? WHERE from_entity = ? AND to_entity = ? AND type = ?",
+                                           [(row[0] as? Int64 ?? 0) + Int64(link.count),
+                                            min(row[1] as? Double ?? 0, link.firstSeen.timeIntervalSince1970),
+                                            max(row[2] as? Double ?? 0, link.lastSeen.timeIntervalSince1970),
+                                            Self.joined(sources), from, to, link.type])
+                        } else {
+                            try db.execute("INSERT INTO memory_links(from_entity, to_entity, type, first_seen, last_seen, count, sources) VALUES(?, ?, ?, ?, ?, ?, ?)",
+                                           [from, to, link.type, link.firstSeen.timeIntervalSince1970, link.lastSeen.timeIntervalSince1970,
+                                            Int64(link.count), Self.joined(link.sources)])
+                        }
+                    }
+                    aliases = Self.merged(aliases, [page.name] + page.aliases)
+                    identifiers = Self.merged(identifiers, page.identifiers)
+                    mentions += page.mentions
+                    try db.execute("DELETE FROM memory_entities WHERE id = ?", [page.id])
+                    merged.append(PageMerge.Merged(name: page.name, facts: valid.count, links: linked))
+                }
+                let own = EntityMatcher.normalize(kept.name)
+                aliases.removeAll { EntityMatcher.normalize($0) == own }
+                try db.execute("UPDATE memory_entities SET aliases = ?, identifiers = ?, mentions = ? WHERE id = ?",
+                               [Self.joined(aliases), Self.joined(identifiers), Int64(mentions), kept.id])
+                return (merged, moved)
+            }
+            // The search index titles each fact with its page, so the moved facts take the kept page's title.
+            syncIndex(outcome.moved)
+            guard let entity = entities().first(where: { $0.id == kept.id }) else { return .failure(MemoryError(message: "the kept page is gone")) }
+            return .success(PageMerge(kept: entity, merged: outcome.merged, facts: claims(of: kept.id).count))
+        } catch {
+            return .failure(MemoryError(message: "could not merge the pages: \(error.localizedDescription)"))
+        }
+    }
+
     /// Records that two entities are linked, such as a person who works on a project. Each pair and type is kept once: when it comes up
     /// again its count and last-seen time move.
     @discardableResult
