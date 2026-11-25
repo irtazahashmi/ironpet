@@ -22,10 +22,12 @@ extension ScreenMCP {
             guard let query = text("query") else { return .failure(Failure(message: "query is required")) }
             let limit = (args["limit"] as? Int) ?? 20
             let hits = store.search(query, app: text("app"), since: since, until: until, limit: limit)
+            let refs = store.records.refs(.screen, hits.map { String($0.id) })
             return .success(["count": hits.count, "hits": hits.map { hit -> [String: Any] in
                 var row: [String: Any] = ["id": hit.id, "time": format(hit.at, calendar), "app": hit.appName, "bundle_id": hit.app,
                                           "window": hit.window, "snippet": hit.snippet]
                 if let url = hit.url { row["url"] = url }
+                if let ref = refs[String(hit.id)] { row["ref"] = ref }
                 return row
             }])
         case "screen_window":
@@ -46,9 +48,10 @@ extension ScreenMCP {
     /// A capture's window: its outline, a subtree of it, or the elements with a role. A capture of text only returns its text.
     private static func inside(_ id: Int64, args: [String: Any], text: (String) -> String?, store: CaptureStore, calendar: Calendar) -> Result<Any, Failure> {
         guard let capture = store.capture(id: id) else { return .failure(Failure(message: "no capture \(id). It may have been deleted by the retention setting.")) }
-        guard capture.root != nil else { return .success(["capture": row(capture, calendar)]) }
+        let ref = store.records.ref(.screen, String(id))
+        guard capture.root != nil else { return .success(["capture": row(capture, calendar, ref: ref)]) }
         guard let stored = store.tree(ofCapture: id) else { return .failure(Failure(message: "the tree of capture \(id) is no longer stored.")) }
-        var out = row(capture, calendar)
+        var out = row(capture, calendar, ref: ref)
         out.removeValue(forKey: "text")
         let tree = CaptureView.cleaned(stored)
         func lines(_ result: (lines: [String], omitted: Int)) -> String {

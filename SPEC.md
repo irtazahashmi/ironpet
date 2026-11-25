@@ -216,8 +216,9 @@ Every record has a public id: its kind's prefix, an underscore and six or more r
 
 - **Where they live.** `record_refs(ref, kind, key)` in `ironpet.db` (`Support/RecordRefs.swift`, migration 551). A ref is created the first time its record is listed or read, and tasks and jobs get theirs in the migration. Automations and filters live in JSON and config, so they are looked up by key the same way.
 - **Old ids keep working.** A task's slug, a job's `job-…` id, an automation's id and a filter's id are still the keys, so they resolve to the same record. When two kinds share an old id (a task and a filter with the same slug), `get` says so and asks for the ref.
-- **`get`.** The MCP tool `get` (`id`) returns any record that has a reader: a task, a job, an automation or a filter. It answers with the tool for that kind, so `get` and `tasks_get` return the same text. Other kinds say they are not readable yet. `get` is read-only and needs no approval.
-- **Where refs appear.** `ref` is a field of each task, job, automation and filter in the tool and API answers. The records are otherwise unchanged.
+- **`get`.** The MCP tool `get` (`id`) returns any record: a task, a job, an automation or a filter answers with the tool for that kind, so `get` and `tasks_get` return the same text. A capture (`screen_`, through `screen_window`), a notification (`notif_`), a meeting (`meeting_`), a chat (`chat_`) and a message (`msg_`) answer with a JSON object that has `kind` and `ref`. The readers (`Records/RecordReaders.swift`) go through the owning API, never a store. `get` is read-only and needs no approval.
+- **Where refs appear.** `ref` is a field of each task, job, automation and filter; of each capture in `screen_search` and `screen_window`; of each notification in `notifications_list` and `notifications_get`; of each meeting in the meetings list (`MeetingInfo`); and of each chat thread (`ChatThreadInfo`). A message's ref is made when the chat asks for it (`ChatAPI.messageRef`); the chat UI shows it in the next PR.
+- **Meetings.** A meeting keeps its folder name as its key. Its id is in `meeting.id` inside the folder, so a database that is rebuilt gets the same id back. The audio and the transcript are not moved or changed.
 
 ## Tasks
 

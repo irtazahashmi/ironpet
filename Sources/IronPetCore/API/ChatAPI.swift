@@ -207,8 +207,10 @@ package struct ChatThreadInfo: Codable, Equatable, Identifiable {
         agent: String,
         automation: String? = nil,
         automationName: String? = nil,
-        voice: Bool? = nil
+        voice: Bool? = nil,
+        ref: String? = nil
     ) {
+        self.ref = ref
         self.id = id
         self.title = title
         self.workspace = workspace
@@ -229,6 +231,8 @@ package struct ChatThreadInfo: Codable, Equatable, Identifiable {
     package var automationName: String?
     /// A voice-mode conversation on the Mac.
     package var voice: Bool?
+    /// The thread's public id (`chat_…`).
+    package var ref: String?
 
     package var isAutomationRun: Bool { automation != nil }
 }
@@ -541,13 +545,23 @@ package final class ChatAPI {
     }
 
     private var currentThreads: [ChatThreadInfo] {
-        session.history.map(Self.info)
+        let history = session.history
+        let refs = records?.refs(.chat, history.map(\.id)) ?? [:]
+        return history.map { Self.info($0, ref: refs[$0.id]) }
     }
 
-    private static func info(_ thread: ChatThread) -> ChatThreadInfo {
+    private static func info(_ thread: ChatThread, ref: String? = nil) -> ChatThreadInfo {
         ChatThreadInfo(id: thread.id, title: thread.title, workspace: thread.workspace, updatedAt: thread.updatedAt, agent: thread.agent,
-                       automation: thread.automation, automationName: thread.automationName, voice: thread.voice)
+                       automation: thread.automation, automationName: thread.automationName, voice: thread.voice, ref: ref)
     }
+
+    /// The public id of a message in a thread (`msg_…`), created on first use. Nil when the chat database is not attached.
+    package func messageRef(thread: String, item: UUID) -> String? {
+        records?.ref(.msg, "\(thread)/\(item.uuidString)")
+    }
+
+    /// The public ids of the chat threads and messages, set by the API owner once the database is open.
+    package var records: RecordRefs?
 
     private var currentOptions: ChatOptions {
         ChatOptions(agent: Self.info(session.agent), agents: session.agents.map(Self.info), model: session.model,
@@ -643,7 +657,7 @@ package final class ChatAPI {
     /// A saved thread to read, without opening it.
     package func thread(_ id: String) async throws -> (info: ChatThreadInfo, items: [ChatItem]) {
         guard let thread = ThreadStore.load(id) else { throw APIError.notFound("no thread with id \"\(id)\"") }
-        return (Self.info(thread), thread.items)
+        return (Self.info(thread, ref: records?.ref(.chat, id)), thread.items)
     }
 
     // MARK: Agent, model and folder

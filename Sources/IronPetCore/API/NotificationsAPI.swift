@@ -56,6 +56,9 @@ package final class NotificationsAPI {
         ]
     }
 
+    /// The public ids of notifications, created on first use.
+    package func refs(_ ids: [String]) -> [String: String] { store.records.refs(.notif, ids) }
+
     /// A history that holds nothing, for a view that is not shown yet.
     package static func empty() -> NotificationsAPI {
         NotificationsAPI(store: NotificationStore(database: Database.open(path: nil, migrations: NotificationStore.migrations).database))
