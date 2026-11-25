@@ -186,7 +186,7 @@ package enum AssistantMCP {
             "tasks": [
                 "needs_you": tasks.filter { $0.needsUser }.map { ["id": $0.id, "title": $0.title] },
                 "in_progress": tasks.filter { $0.status == .inProgress && !$0.isDeferred() }.map { ["id": $0.id, "title": $0.title] },
-                "backlog": tasks.filter { $0.status == .backlog }.count,
+                "backlog": tasks.filter { $0.status == .backlog && !$0.isDeferred() }.count,
             ],
             "alerts": context.alerts().map(alertJSON),
             "meetings": context.meetings().prefix(3).map(meetingJSON),

@@ -331,7 +331,11 @@ struct TaskListView: View {
         nav.close()
         if task.status == .done { showDone = true }
         if task.status == .someday { showSomeday = true }
-        if task.isDeferred() { showDeferred = true }
+        if task.isDeferred() {
+            showDeferred = true
+            // The board has no Deferred column, so the task's page is the only place to show it.
+            if mode == .board { nav.open(id) }
+        }
         highlighted = id
         DispatchQueue.main.async {
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { proxy?.scrollTo(id, anchor: .center) }

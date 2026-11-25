@@ -139,4 +139,13 @@ final class SomedayDeferTests: XCTestCase {
         guard case .failure(let error) = TaskJSON.call(tasks, "create", args, by: "agent:mcp") else { return XCTFail("refused") }
         XCTAssertTrue(error.message.hasPrefix("defer_until"), error.message)
     }
+
+    func testNextActionsForAgentsLeavesOutDeferredTasks() throws {
+        try add("Now", .needsYou)
+        try add("In March", .needsYou, deferUntil: Date().addingTimeInterval(60 * 86_400))
+        let listed = try TaskJSON.call(tasks, "list", ["filter": "next-actions"], by: "agent:mcp").get() as? [String: Any]
+        XCTAssertEqual((listed?["tasks"] as? [[String: Any]])?.compactMap { $0["title"] as? String }, ["Now"])
+        let all = try TaskJSON.call(tasks, "list", [:], by: "agent:mcp").get() as? [String: Any]
+        XCTAssertEqual((all?["tasks"] as? [[String: Any]])?.count, 2, "a plain list still shows everything")
+    }
 }
