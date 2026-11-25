@@ -61,7 +61,8 @@ final class ChatSendStatesUITests: XCTestCase {
         for dark in [false, true] {
             if dark { app.terminate(); app = XCUIApplication() }
             launch(dark: dark)
-            server.sendDelay = 3
+            // Typing and tapping take several seconds on a slow runner, and the bubble must still read "Sending" when the test looks.
+            server.sendDelay = 15
             send("sending state \(dark)")
             let sending = bubble("sending state \(dark)")
             XCTAssertTrue(sending.waitForExistence(timeout: 10))
