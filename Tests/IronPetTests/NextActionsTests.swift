@@ -110,6 +110,20 @@ final class NextActionsTests: XCTestCase {
         XCTAssertThrowsError(try api.upsertQuickFilter(id: nil, name: "Next actions", query: ["status": "backlog"]), "a new filter still cannot take it")
     }
 
+    func testTheBuiltInChipCannotBeRemovedOrMoved() {
+        XCTAssertThrowsError(try api.deleteQuickFilter(BuiltInQuickFilters.nextActionsID))
+        XCTAssertThrowsError(try api.reorderQuickFilters([BuiltInQuickFilters.nextActionsID]))
+        XCTAssertThrowsError(try api.moveQuickFilter(BuiltInQuickFilters.nextActionsID, by: 1))
+        XCTAssertEqual(api.builtInQuickFilters.map(\.id), [BuiltInQuickFilters.nextActionsID])
+    }
+
+    func testAgentsCannotFileATaskWithAnUnknownContext() {
+        let args: [String: Any] = ["title": "Fix the printer", "labels": ["context": "office"],
+                                   "origin": ["kind": "chat", "ref": "t1", "reason": "asked"]]
+        guard case .failure(let error) = TaskJSON.call(api, "create", args, by: "agent:mcp") else { return XCTFail("an unknown context is refused") }
+        XCTAssertTrue(error.message.contains("context must be one of"))
+    }
+
     func testAContextStoredBeforeTheCheckIsReadWhateverItsCase() {
         XCTAssertEqual(TaskContext.of(["context": " Mac "]), .mac)
     }
