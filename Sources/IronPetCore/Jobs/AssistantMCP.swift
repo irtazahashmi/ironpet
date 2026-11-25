@@ -104,8 +104,9 @@ package enum AssistantMCP {
             if candidate.sources.contains(.noProject) {
                 try FileManager.default.createDirectory(at: candidate.url, withIntermediateDirectories: true)
             }
-            let job = try jobs().start(title: try required("title"), prompt: try required("prompt"), folder: candidate.url, fromVoice: fromVoice)
-            var object = job.json
+            let service = try jobs()
+            let job = try service.start(title: try required("title"), prompt: try required("prompt"), folder: candidate.url, fromVoice: fromVoice)
+            var object = jobJSON(job, service)
             object["project"] = candidate.name
             if fromVoice {
                 object["note"] = Self.voiceHoldNote
@@ -113,25 +114,27 @@ package enum AssistantMCP {
             return object
         case "jobs_list":
             let cutoff = context.now().addingTimeInterval(-86_400)
-            let all = try jobs().jobs
+            let service = try jobs()
+            let all = service.jobs
             let listed = args["include_older"] as? Bool == true ? all : all.filter { $0.state.isActive || ($0.ended ?? $0.created) > cutoff }
-            return ["jobs": listed.map(\.json), "running": all.filter { $0.state == .running || $0.state == .needsApproval }.count,
+            return ["jobs": listed.map { jobJSON($0, service) }, "running": all.filter { $0.state == .running || $0.state == .needsApproval }.count,
                     "queued": all.filter { $0.state == .queued }.count]
         case "jobs_get":
             let service = try jobs()
             let id = try required("id")
             guard let job = service.job(id) else { throw JobError(message: "no job with id \"\(id)\"") }
-            var object = job.json
+            var object = jobJSON(job, service)
             object["recent_steps"] = service.recentSteps(id)
             return object
         case "jobs_followup":
             let service = try jobs()
             let job = try service.followUp(try required("id"), message: try required("message"), fromVoice: fromVoice)
-            var object = job.json
+            var object = jobJSON(job, service)
             if fromVoice, service.isHeld(job.id) { object["note"] = Self.voiceHoldNote }
             return object
         case "jobs_stop":
-            return try jobs().stop(try required("id")).json
+            let service = try jobs()
+            return jobJSON(try service.stop(try required("id")), service)
         case "jobs_open":
             let id = try required("id")
             guard try jobs().job(id) != nil else { throw JobError(message: "no job with id \"\(id)\"") }
@@ -217,6 +220,13 @@ package enum AssistantMCP {
                 return entry
             }
         }
+        return object
+    }
+
+    /// A job as the tools show it: its fields and its public `job_<hex>` id (see `RecordID`).
+    private static func jobJSON(_ job: Job, _ service: JobService) -> [String: Any] {
+        var object = job.json
+        if let ref = service.records.ref(.job, job.id) { object["ref"] = ref }
         return object
     }
 }

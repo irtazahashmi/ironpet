@@ -25,7 +25,7 @@ SHARDS = [
     ["IronPetRemoteUITests", "ChatParityUITests", "PhaseFourUITests", "PhaseFiveUITests",
      "VoiceRecordingUITests", "AttachPhotoUITests", "ChatModeUITests", "ChatFindUITests", "ChatOutboxUITests"],
     # Shard 4 (14 tests). Kept apart: shard 3 plus these ran past the 30 minute job limit.
-    ["NetworkStatesUITests", "MemoryUITests", "ChatFormPagesUITests"],
+    ["NetworkStatesUITests", "MemoryUITests", "ChatMermaidUITests", "ChatFormPagesUITests"],
 ]
 
 TARGET = "IronPetRemoteUITests"
