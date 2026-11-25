@@ -425,7 +425,7 @@ package final class ChatSession {
     /// True during a call or a meeting recording, when a reply is not read aloud on its own. Set by `AppDelegate`.
     package var isQuiet: () -> Bool = { false }
 
-    package static let scratchWorkspace = Paths.root.appendingPathComponent("scratch")
+    package nonisolated static let scratchWorkspace = Paths.root.appendingPathComponent("scratch")
 
     /// `restore` reopens the chat that was open when the app last quit: its thread, folder and backend,
     /// plus the unsent draft and attachments. The picked permission mode is kept per agent, not per chat.

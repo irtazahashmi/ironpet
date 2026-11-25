@@ -4,6 +4,13 @@ import XCTest
 @testable import IronPet
 @testable import IronPetCore
 
+private final class BuildCount: @unchecked Sendable {
+    private let lock = NSLock()
+    private var count = 0
+    func add() { lock.lock(); count += 1; lock.unlock() }
+    var value: Int { lock.lock(); defer { lock.unlock() }; return count }
+}
+
 /// The chat routes of the remote API over a real listener, with a scripted agent in place of the turn runner.
 @MainActor
 final class RemoteChatTests: XCTestCase {
@@ -92,7 +99,80 @@ final class RemoteChatTests: XCTestCase {
 
         let whole = try await get("/v1/chat/current")
         XCTAssertEqual(items(whole).count, 120, "without limit the whole thread comes back, as an older phone expects")
-        XCTAssertNil(whole.json["has_more"])
+        XCTAssertEqual(whole.json["has_more"] as? Bool, false)
+    }
+
+    // S1: a long thread costs one page. The body and the time do not grow with the thread.
+    func testAThreadOf2000MessagesAnswersOnePageQuickly() async throws {
+        chat.items = (1...2000).map { ChatItem(kind: .user("message number \($0)")) }
+        let started = ContinuousClock.now
+        let page = try await get("/v1/chat/current?limit=50")
+        let elapsed = ContinuousClock.now - started
+        XCTAssertEqual(page.status, 200)
+        XCTAssertEqual(items(page).count, 50)
+        XCTAssertEqual(page.json["has_more"] as? Bool, true)
+        XCTAssertLessThan(page.data.count, 200_000)
+        XCTAssertLessThan(elapsed, .milliseconds(300))
+        let whole = try await get("/v1/chat/current")
+        XCTAssertEqual(items(whole).count, RemoteChat.defaultLimit, "a phone that sends no limit gets the newest page, not the thread")
+        XCTAssertEqual(whole.json["has_more"] as? Bool, true)
+    }
+
+    // S2: a matching ETag answers 304 and builds nothing.
+    func testAMatchingETagBuildsNothing() async throws {
+        chat.items = [ChatItem(kind: .user("one"))]
+        let first = try await get("/v1/chat/current?limit=50")
+        let etag = try XCTUnwrap(first.headers.first { $0.key.lowercased() == "etag" }?.value)
+        let builds = BuildCount()
+        RemoteChat.buildHook = { builds.add() }
+        defer { RemoteChat.buildHook = nil }
+        let same = try await h.request("GET", "/v1/chat/current?limit=50", token: token, headers: ["If-None-Match": etag])
+        XCTAssertEqual(same.status, 304)
+        XCTAssertEqual(builds.value, 0, "a 304 does not build the body")
+        let otherPage = try await h.request("GET", "/v1/chat/current?limit=10", token: token, headers: ["If-None-Match": etag])
+        XCTAssertEqual(otherPage.status, 200, "another page is another ETag")
+        XCTAssertEqual(builds.value, 1)
+    }
+
+    // S8: a phone that holds the chat up to a cursor asks for what changed after it, and gets only that.
+    func testAfterACursorTheMacSendsOnlyTheMessagesThatChanged() async throws {
+        chat.items = (1...500).map { ChatItem(kind: .user("m\($0)")) }
+        let first = try await get("/v1/chat/current?limit=50")
+        let epoch = try XCTUnwrap(first.json["epoch"] as? String)
+        let seq = try XCTUnwrap(first.json["seq"] as? Int)
+        XCTAssertEqual(items(first).count, 50)
+
+        chat.items.append(ChatItem(kind: .assistant("new one")))
+        let edited = chat.items[10].id
+        chat.items[10] = ChatItem(id: edited, kind: .user("edited"))
+        let delta = try await get("/v1/chat/current?limit=50&after=\(seq)&epoch=\(epoch)")
+        XCTAssertEqual(delta.status, 200)
+        XCTAssertEqual(delta.json["delta"] as? Bool, true)
+        XCTAssertEqual(items(delta).count, 2, "the new message and the edited one, not a page")
+        XCTAssertEqual(items(delta).last?["text"] as? String, "new one")
+        XCTAssertGreaterThan(try XCTUnwrap(delta.json["seq"] as? Int), seq)
+
+        // A cursor from another launch cannot be trusted: the Mac answers the newest page and says so.
+        let other = try await get("/v1/chat/current?limit=50&after=\(seq)&epoch=another-launch")
+        XCTAssertEqual(other.json["reset"] as? Bool, true)
+        XCTAssertNil(other.json["delta"])
+        XCTAssertEqual(items(other).count, 50)
+    }
+
+    // S3: a slow chat build does not hold up the other routes.
+    func testASlowChatBuildDoesNotBlockThePetRoute() async throws {
+        chat.items = [ChatItem(kind: .user("one"))]
+        RemoteChat.buildHook = { Thread.sleep(forTimeInterval: 1.5) }
+        defer { RemoteChat.buildHook = nil }
+        let slow = Task { try await self.get("/v1/chat/current?limit=50") }
+        try await Task.sleep(for: .milliseconds(200))
+        let started = ContinuousClock.now
+        let pet = try await get("/v1/pet")
+        let elapsed = ContinuousClock.now - started
+        XCTAssertEqual(pet.status, 200)
+        XCTAssertLessThan(elapsed, .milliseconds(500))
+        let done = try await slow.value
+        XCTAssertEqual(done.status, 200)
     }
 
     private func socket(since: Int? = nil) -> URLSessionWebSocketTask {

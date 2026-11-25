@@ -542,7 +542,10 @@ final class RemoteServer {
             let query = Self.query(request)
             let limit = query["limit"]?.first.flatMap { Int($0) }.map { min(max($0, 1), 200) }
             let before = query["before"]?.first
-            return await self.chatCurrent(request, context, limit: limit, before: before)
+            // `after` is the `seq` of an earlier answer and `epoch` the launch it came from: only what changed since comes back.
+            let after = query["after"]?.first.flatMap { Int($0) }
+            let epoch = query["epoch"]?.first
+            return await self.chatCurrent(request, context, limit: limit, before: before, after: after, epoch: epoch)
         }
         router.get("/v1/chat/messages/:id") { [self] _, context in
             let id = Self.parameter(context, "id")
@@ -621,16 +624,19 @@ final class RemoteServer {
         }
     }
 
-    /// The chat as JSON, with an ETag over the exact bytes sent. A phone that sends the ETag it saved gets 304 and no body when the chat
-    /// has not changed, so a launch with a saved chat costs a few hundred bytes. `no-cache` makes every client check again.
-    private func chatCurrent(_ request: Request, _ context: RemoteContext, limit: Int?, before: String?) async -> Response {
+    /// The chat as JSON. The ETag names the chat event count and the page asked for, so a phone that sends the ETag it saved gets 304 and
+    /// no body when the chat has not changed, and the Mac builds nothing for it. A changed chat is copied on the main actor, which is cheap,
+    /// then paged, serialised and sent from a background task, so a long chat does not hold up the other routes. `no-cache` makes every
+    /// client check again.
+    private func chatCurrent(_ request: Request, _ context: RemoteContext, limit: Int?, before: String?, after: Int?, epoch: String?) async -> Response {
         guard let device = context.device else { return Self.error(401, "unauthorized", "unauthorized") }
-        let object = await RemoteChat(api: api, device: device.id, uploads: uploads).current(limit: limit, before: before)
-        let bytes = Self.data(object)
-        let digest = SHA256.hash(data: bytes).prefix(16).map { String(format: "%02x", $0) }.joined()
-        let etag = "\"\(digest)\""
+        let chat = RemoteChat(api: api, device: device.id, uploads: uploads)
+        let etag = "\"\(chat.version(limit: limit, before: before))\""
         var headers: HTTPFields = [.cacheControl: "no-cache", .eTag: etag]
         if request.headers[.ifNoneMatch] == etag { return Response(status: .notModified, headers: headers) }
+        let snapshot = chat.snapshot()
+        let sync = chat.sync(after: after, epoch: epoch)
+        let bytes = await Task.detached(priority: .userInitiated) { RemoteChat.body(snapshot, limit: limit, before: before, sync: sync) }.value
         headers[.contentType] = "application/json; charset=utf-8"
         return Response(status: .ok, headers: headers, body: .init(byteBuffer: ByteBuffer(bytes: bytes)))
     }

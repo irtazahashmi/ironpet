@@ -84,7 +84,7 @@ enum PlainError {
     static func message(for error: Error) -> String {
         if let client = error as? ClientError {
             switch client {
-            case .transport: return unreachable
+            case .transport, .timedOut: return unreachable
             default: return client.errorDescription ?? unreachable
             }
         }
@@ -147,6 +147,10 @@ final class ChatModel: SocketModel {
     @ObservationIgnored private var lastRead: ContinuousClock.Instant?
     /// The ETag of the page the Mac last answered and the phone holds as it is. Nil once a message changed on the phone, so the next read asks in full.
     @ObservationIgnored private var etag: String?
+    /// The event the shown messages are current to, as the Mac numbered it. The next read sends it and gets only what changed since.
+    @ObservationIgnored private var cursor: (epoch: String, seq: Int)?
+    /// How many reads took only changed messages. Tests read it.
+    @ObservationIgnored private(set) var deltaReads = 0
     @ObservationIgnored private var cache: (any ChatCaching)?
     var draft = ""
     var attachments: [PendingAttachment] = []
@@ -275,7 +279,7 @@ final class ChatModel: SocketModel {
         guard hasOlderHistory, !loadingOlder, let oldest = items.first?.id else { return }
         loadingOlder = true
         defer { loadingOlder = false }
-        guard let page = await read({ try await self.client.chat(limit: Self.pageSize, before: oldest) }) else { return }
+        guard let page = await read(retriesTimeouts: false, { try await self.client.chat(limit: Self.pageSize, before: oldest) }) else { return }
         let shown = Set(items.map(\.id))
         items = page.items.filter { !shown.contains($0.id) } + items
         hasOlderHistory = page.hasMore ?? false
@@ -291,7 +295,7 @@ final class ChatModel: SocketModel {
     /// client retries and reports, so a failure here only leaves the transcript as it was.
     @discardableResult
     private func fetch() async -> Bool {
-        guard let result = await read({ try await self.client.chatIfChanged(etag: self.etag, limit: Self.pageSize) }) else { return false }
+        guard let result = await read(retriesTimeouts: false, { try await self.client.chatIfChanged(etag: self.etag, limit: Self.pageSize, after: self.cursor?.seq, epoch: self.cursor?.epoch) }) else { return false }
         // A 304 means the Mac's chat is still the page saved with this ETag: what is shown already is current.
         switch result {
         case .notModified: break
@@ -308,7 +312,9 @@ final class ChatModel: SocketModel {
     /// Takes the newest page the Mac answered. It replaces the newest messages, keeps the older pages already loaded, and is saved with
     /// its ETag for the next launch.
     private func adopt(_ fresh: RemoteChatSnapshot, etag newETag: String?) {
+        if fresh.delta == true { return adoptDelta(fresh, etag: newETag) }
         snapshot = fresh
+        if let epoch = fresh.epoch, let seq = fresh.seq { cursor = (epoch, seq) } else { cursor = nil }
         // The messages before the page's first one stay, since they were loaded on scroll. Only a read with none loaded takes `hasMore`.
         let older = fresh.items.first.flatMap { first in items.firstIndex { $0.id == first.id } } ?? 0
         items = Array(items.prefix(older)) + fresh.items
@@ -316,6 +322,23 @@ final class ChatModel: SocketModel {
         fullReads += 1
         etag = newETag
         cache?.save(SavedChat(etag: newETag, snapshot: Self.savable(fresh), hasOlderHistory: fresh.hasMore ?? false))
+    }
+
+    /// Takes the messages that changed after the cursor: a known id is replaced where it is, a new one goes at the end. The rest of the
+    /// thread stays as it is, so a reconnect costs the few messages that changed and not a page.
+    private func adoptDelta(_ fresh: RemoteChatSnapshot, etag newETag: String?) {
+        var merged = items
+        for item in fresh.items {
+            if let index = merged.firstIndex(where: { $0.id == item.id }) { merged[index] = item } else { merged.append(item) }
+        }
+        items = merged
+        var page = fresh
+        page.items = Array(merged.suffix(Self.pageSize))
+        snapshot = page
+        if let epoch = fresh.epoch, let seq = fresh.seq { cursor = (epoch, seq) }
+        deltaReads += 1
+        etag = newETag
+        cache?.save(SavedChat(etag: newETag, snapshot: Self.savable(page), hasOlderHistory: hasOlderHistory))
     }
 
     /// The part of a page worth keeping on disk: the messages and the chat's name and agent. Approvals, forms, the queue and a running
@@ -339,14 +362,17 @@ final class ChatModel: SocketModel {
         items = saved.snapshot.items
         hasOlderHistory = saved.hasOlderHistory
         etag = saved.etag
+        if let epoch = saved.snapshot.epoch, let seq = saved.snapshot.seq { cursor = (epoch, seq) }
     }
 
     override func handle(_ event: RemoteEvent) async {
         switch event.kind {
         case RemoteEvent.chatItem:
             guard let id = event.id else { return await reload() }
-            // With older pages loaded, a message the phone does not hold may sit above the end. The newest page places it.
-            if hasOlderHistory, !items.contains(where: { $0.id == id }) { return scheduleReload() }
+            // With older pages loaded, a message the phone does not hold may sit above the end, and the newest page places it. A message
+            // the event carries that is not older than the last one shown is new and goes at the end, so a streaming reply grows on each
+            // event instead of appearing whole after the debounce.
+            if hasOlderHistory, !items.contains(where: { $0.id == id }), !Self.isNewest(event.item, after: items.last) { return scheduleReload() }
             if let item = event.item, item.id == id {
                 // The Mac sent the message with the event: no read needed.
                 PhoneHopLog.mark("phone.event")
@@ -370,6 +396,13 @@ final class ChatModel: SocketModel {
     /// The messages with a read in flight, and those that changed again while it ran.
     @ObservationIgnored private var refreshing: Set<String> = []
     @ObservationIgnored private var stale: Set<String> = []
+
+    /// True when the item came with its date and is not older than the last message the phone shows, so it belongs at the end.
+    private static func isNewest(_ item: RemoteChatItem?, after last: RemoteChatItem?) -> Bool {
+        guard let item, let date = item.date else { return false }
+        guard let lastDate = last?.date else { return last == nil }
+        return date >= lastDate
+    }
 
     private func apply(_ item: RemoteChatItem, from source: Source) {
         // The shown messages no longer match the saved page, so the saved ETag cannot vouch for them. The saved file stays as it was.

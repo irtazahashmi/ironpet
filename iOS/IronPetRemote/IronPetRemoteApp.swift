@@ -82,6 +82,7 @@ struct MainTabs: View {
         self.events = events
         let unauthorized: () -> Void = { [weak model] in model?.handleUnauthorized() }
         let network = Self.makeNetwork()
+        network.onPathReturned = { [events] in events.reconnectNow() }
         _network = State(initialValue: network)
         // The last task list and the changes made offline live in a file in the app's own container, one per pairing.
         let tasksModel = TasksModel(client: client, events: events, store: FileTaskSyncStore.forToken(client.token), network: network, onUnauthorized: unauthorized)
