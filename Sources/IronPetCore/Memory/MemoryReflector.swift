@@ -32,6 +32,10 @@ package final class MemoryReflector {
         case screen(agent: String)
         /// The oldest facts of one page that holds more than `memory.maxClaimsPerEntity`, merged into fewer.
         case merge(entity: String, agent: String)
+        /// The one-time move of notes filed under a project page to the page they are about (`MemoryResort`).
+        case resort(agent: String)
+
+        fileprivate var isResort: Bool { if case .resort = self { return true } else { return false } }
     }
 
     package struct Outcome: Equatable {
@@ -132,6 +136,11 @@ package final class MemoryReflector {
         for entity in store.entities() where store.claims(of: entity.id).count > config.maxClaimsPerEntity {
             enqueue(.merge(entity: entity.id, agent: agent))
         }
+        // Once per install. With no note on a project page there is nothing to move, so the run is recorded without asking an agent.
+        if !MemoryResort.isDone(store) {
+            if MemoryResort.candidates(in: store).isEmpty { store.index.setCursor(MemoryResort.doneKey, item: "1", at: now()) }
+            else { enqueue(.resort(agent: agent)) }
+        }
     }
 
     /// A meeting summary was written. It is read by the next digest, by the agent that wrote it.
@@ -196,7 +205,8 @@ package final class MemoryReflector {
         Task { [weak self] in
             guard let self else { return }
             let outcome = await self.perform(job, generation: generation)
-            self.lastOutcome = outcome
+            // A re-sort with nothing to do must not hide the outcome of the last read.
+            if !(outcome.skipped && job.isResort) { self.lastOutcome = outcome }
             self.running = nil
             // A meeting summary's cursor did not move, so the next digest must queue it again; it is not in `pendingMeetings` any more.
             if outcome.error != nil, case .meeting(let folder, let agent) = job, !self.pendingMeetings.contains(where: { $0.folder == folder }) {
@@ -293,13 +303,14 @@ package final class MemoryReflector {
             // The newest captures that fit, oldest first. The cursor moves past all of them, so older ones are not read later.
             return Input(text: ReflectionReading.screenText(fresh, maxInput: Self.maxInput), kind: "the text on the user's screen, as captured while they worked",
                          source: "screen", agent: agent, project: nil, outside: true, cursors: [(key: Self.screenKey, item: String(newest.id))])
-        case .merge:
+        case .merge, .resort:
             return nil
         }
     }
 
     private func perform(_ job: Job, generation started: Int) async -> Outcome {
         if case .merge(let entity, let agent) = job { return await merge(entity, agent: agent, generation: started) }
+        if case .resort(let agent) = job { return await resort(agent: agent, generation: started) }
         var outcome = Outcome(job: job)
         let config = config()
         guard config.reflect, let input = input(for: job), let found = config.reader(for: input.agent) else {
@@ -312,7 +323,7 @@ package final class MemoryReflector {
         // write me.md or replace notes, and the store drops a note it already has.
         let notes = input.outside ? [] : currentNotes(input.project, about: input.text)
         let prompt = Self.prompt(input: input.text, kind: input.kind, notes: notes, outside: input.outside,
-                                 hasProject: input.project != nil, petName: petName())
+                                 hasProject: input.project != nil, projectName: input.project?.name, petName: petName())
         let answer = await runner(prompt, reader)
         // Forget Everything, or the switch turned off, while the agent ran.
         guard generation == started, self.config().reflect else {
@@ -348,7 +359,7 @@ package final class MemoryReflector {
                 }
                 replaced += proposal.replaces.count
                 switch store.replace(proposal.replaces, with: proposal.text, scope: proposal.scope, person: proposal.person,
-                                     project: input.project, source: input.source) {
+                                     project: input.project, entity: proposal.entity, source: input.source) {
                 case .success(let note):
                     outcome.saved.append(note.text)
                 case .failure(let failure):
@@ -445,28 +456,85 @@ package final class MemoryReflector {
         var notes = [("me.md", recall(.me))]
         if let project { notes.append(("project \(project.name)", recall(.project))) }
         notes.append(("people.md", recall(.people)))
+        if let pages = Self.pageList(store.entities()) { notes.append(("pages", pages)) }
         return notes
+    }
+
+    /// The projects, organizations, topics and tools that already have a page, with their aliases, so the agent names one instead of
+    /// making a second page. Nil when there are none.
+    package static func pageList(_ entities: [MemoryEntity], limit: Int = 100) -> String? {
+        let lines = entities.filter { $0.type != .me && $0.type != .person }.prefix(limit).map { entity in
+            "\(entity.type.rawValue): \(entity.name)" + (entity.aliases.isEmpty ? "" : " (also \(entity.aliases.joined(separator: ", ")))")
+        }
+        return lines.isEmpty ? nil : lines.joined(separator: "\n")
+    }
+
+    /// The one-time re-sort: asks the agent, a batch of notes at a time, which page each note on a project page is about.
+    private func resort(agent: String, generation started: Int) async -> Outcome {
+        let job = Job.resort(agent: agent)
+        var outcome = Outcome(job: job)
+        guard config().reflect, !MemoryResort.isDone(store), let found = config().reader(for: agent) else {
+            outcome.skipped = true
+            return outcome
+        }
+        let reader = Reader(agent: found.agent, model: found.model)
+        var failure: String?
+        let moved = await MemoryResort.run(into: store) { [self] batch in
+            let notes = batch.map { "\($0.ref) (on \($0.page)): \($0.text)" }.joined(separator: "\n")
+            let pages = Self.pageList(store.entities()).map { "<pages>\n\($0)\n</pages>" } ?? ""
+            let prompt = Prompts.render(id: "memory-resort", ["pet": petName(), "pages": pages, "notes": notes])
+            let answer = await runner(prompt, reader)
+            guard generation == started, config().reflect else { return nil }
+            switch answer {
+            case .failure(let error):
+                failure = error.message
+                return nil
+            case .success(let text):
+                guard let moves = MemoryResort.parse(text) else {
+                    failure = "the agent did not answer with the moves JSON"
+                    return nil
+                }
+                return moves
+            }
+        }
+        if let failure {
+            outcome.error = failure
+            NSLog("ironpet: memory re-sort failed: \(failure)")
+        } else if moved == nil {
+            outcome.skipped = true
+        } else if let moved, moved > 0 {
+            outcome.saved = ["moved \(moved) note\(moved == 1 ? "" : "s") to the page they are about"]
+        }
+        return outcome
     }
 
     // MARK: Prompt and answer
 
     package struct Proposal: Equatable {
-        package init(scope: MemoryScope, text: String, person: String? = nil, replaces: [String]) {
+        package init(scope: MemoryScope, text: String, person: String? = nil, entity: String? = nil, replaces: [String]) {
             self.scope = scope
             self.text = text
             self.person = person
+            self.entity = entity
             self.replaces = replaces
         }
 
         package var scope: MemoryScope
         package var text: String
         package var person: String?
+        /// The project, organization, topic or tool the note is about.
+        package var entity: String?
         package var replaces: [String]
     }
 
-    package static func prompt(input: String, kind: String, notes: [(String, String)], outside: Bool, hasProject: Bool, petName: String) -> String {
+    package static func prompt(input: String, kind: String, notes: [(String, String)], outside: Bool, hasProject: Bool, projectName: String? = nil,
+                               petName: String) -> String {
         var scopes = outside ? [] : ["\"me\" for the user's own preferences, habits and facts about them"]
-        if hasProject { scopes.append("\"project\" for conventions and facts about the project this chat is in") }
+        let here = hasProject ? "; leave entity out only for a fact about this chat's own folder" + (projectName.map { " (\($0))" } ?? "") : ""
+        scopes.append("\"project\" for a product, codebase or client project, with its name in \"entity\"" + here)
+        scopes.append("\"org\" for a company or team, with its name in \"entity\"")
+        scopes.append("\"tool\" for software or a service the user uses, with its name in \"entity\"")
+        scopes.append("\"topic\" for a recurring subject that is none of those, with its name in \"entity\"")
         scopes.append("\"people\" for facts about a person the user works with, with their name in \"person\"")
         let rule = outside
             ? "\nThis text was written from what other people said or wrote, so it says nothing about the user's own preferences: never use scope \"me\".\n"
@@ -490,7 +558,7 @@ package final class MemoryReflector {
         return notes.compactMap { raw in
             guard let entry = raw as? [String: Any], let scope = (entry["scope"] as? String).flatMap({ MemoryScope(rawValue: $0.lowercased()) }),
                   let text = entry["text"] as? String else { return nil }
-            return Proposal(scope: scope, text: text, person: entry["person"] as? String,
+            return Proposal(scope: scope, text: text, person: entry["person"] as? String, entity: entry["entity"] as? String,
                             replaces: (entry["replaces"] as? [Any] ?? []).compactMap { $0 as? String })
         }
     }
@@ -500,7 +568,10 @@ package final class MemoryReflector {
         if outside, proposal.scope == .me { return "outside text may not write me.md" }
         if outside, !proposal.replaces.isEmpty { return "outside text may not replace notes" }
         if proposal.replaces.count > MemoryNote.maxForget { return "replaces more than \(MemoryNote.maxForget) notes" }
-        if proposal.scope == .project, !hasProject { return "no project" }
+        if proposal.scope == .project, !hasProject, MemoryNote.personName(proposal.entity) == nil { return "no project" }
+        if let type = proposal.scope.namedType, proposal.scope != .project, MemoryNote.personName(proposal.entity) == nil {
+            return "no \(type.label.lowercased()) name"
+        }
         if proposal.scope == .people, MemoryNote.personName(proposal.person) == nil { return "no person" }
         return nil
     }

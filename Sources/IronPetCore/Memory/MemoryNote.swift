@@ -5,9 +5,21 @@ import Crypto
 #endif
 import Foundation
 
-/// Which file a note belongs in: `me.md`, `people.md` (one `## Name` section per person) or the current project's file.
+/// Which page a note belongs on: the user's own, a person's, or a named project, organization, topic or tool. The chat's repo is only
+/// the default for `project`; a note that names what it is about goes on that page.
 package enum MemoryScope: String, CaseIterable, Codable {
-    case me, project, people
+    case me, project, people, org, topic, tool
+
+    /// The entity type of a scope that is filed under a name, or nil for `me` and `people`.
+    package var namedType: EntityType? {
+        switch self {
+        case .project: return .project
+        case .org: return .org
+        case .topic: return .topic
+        case .tool: return .tool
+        case .me, .people: return nil
+        }
+    }
 }
 
 /// One line of a memory file: `- Prefers pnpm over npm. <!-- 2026-11-18 chat:3f2a9c1d -->`. The trailer holds the day the note was
