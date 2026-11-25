@@ -333,11 +333,14 @@ struct TaskListView: View {
         focus.wrappedValue = nil
         nav.close()
         if task.status == .done { showDone = true }
-        if task.status == .someday { showSomeday = true }
+        if task.status == .someday {
+            showSomeday = true
+            if isNextActions { nav.open(id) }
+        }
         if task.isDeferred() {
             showDeferred = true
-            // The board has no Deferred column, so the task's page is the only place to show it.
-            if mode == .board { nav.open(id) }
+            // The board and Next actions draw no Deferred group, so the task's page is the only place to show it.
+            if mode == .board || isNextActions { nav.open(id) }
         }
         highlighted = id
         DispatchQueue.main.async {

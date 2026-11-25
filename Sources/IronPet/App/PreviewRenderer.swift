@@ -178,7 +178,7 @@ enum PreviewRenderer {
         QuickFilterSelection.save(nil)
         for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
             render(TaskBoardView(columns: TaskBoard.columns(tasks.all, filter: nil, query: ""), onOpen: { _ in }, onDrop: { _, _ in })
-                .frame(width: 1240, height: 520).panel(), to: dir, "tasks-board" + suffix, scheme: scheme)
+                .frame(width: 1480, height: 520).panel(), to: dir, "tasks-board" + suffix, scheme: scheme)
         }
         if let sample = tasks.all.first {
             render(TaskDetailPage(tasks: tasks, id: sample.id, onBack: {}, onOpen: { _ in }).frame(width: 760, height: 1000).panel(), to: dir, "task-detail")

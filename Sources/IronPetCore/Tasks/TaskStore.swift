@@ -240,7 +240,9 @@ package final class TaskStore {
                             deferUntil: deferUntil, project: project)
         try database.write { db in
             try Self.save(item, db)
-            try Self.log(db, id, time, by, .created, "\(status.rawValue): \(title)" + (project.map { " (project \($0))" } ?? "") + (waitingOn.map { " (waiting on \($0))" } ?? "")
+            try Self.log(db, id, time, by, .created, "\(status.rawValue): \(title)" + (project.map { " (project \($0))" } ?? "")
+                         + (waitingOn.map { " (waiting on \($0))" } ?? "")
+                         + (deferUntil.map { " (deferred until \(ISO8601DateFormatter().string(from: $0)))" } ?? "")
                          + (sourceRef.map { " [source: \(source.rawValue) \($0)]" } ?? "")
                          + (labels.isEmpty ? "" : " [labels: \(Self.describe(labels))]"))
         }
