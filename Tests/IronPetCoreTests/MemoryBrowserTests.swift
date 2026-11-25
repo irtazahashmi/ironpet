@@ -56,7 +56,7 @@ final class MemoryBrowserTests: XCTestCase {
 
     // MARK: S1 list
 
-    func testTheListHoldsEveryPageWithAFactNewestUpdateFirst() throws {
+    func testTheListHoldsEveryPageWithAFactNewestUpdateFirst() async throws {
         try seed()
         _ = store.entities() // a stub with no fact
         let rows = store.browseRows()
@@ -68,7 +68,7 @@ final class MemoryBrowserTests: XCTestCase {
         XCTAssertTrue(rows.allSatisfy { $0.ref.hasPrefix("page_") })
     }
 
-    func testThePinnedFactIsTheSummaryElseTheNewest() throws {
+    func testThePinnedFactIsTheSummaryElseTheNewest() async throws {
         try seed()
         var lighthouse = try XCTUnwrap(store.browseRows().first { $0.name == "Lighthouse" })
         XCTAssertEqual(lighthouse.summary, "CI size limit is 64 MB.", "the newest fact when nothing is pinned")
@@ -78,7 +78,7 @@ final class MemoryBrowserTests: XCTestCase {
         XCTAssertEqual(lighthouse.summary, "Database migrations are one-way.")
     }
 
-    func testAPageWithNoFactIsHidden() throws {
+    func testAPageWithNoFactIsHidden() async throws {
         try seed()
         let lighthouse = try page("Lighthouse")
         XCTAssertTrue(store.forgetPage(lighthouse.id, source: "user"))
@@ -87,7 +87,7 @@ final class MemoryBrowserTests: XCTestCase {
 
     // MARK: S2 search
 
-    func testTheChipNarrowsAndTheSearchIgnoresCaseAndAccents() throws {
+    func testTheChipNarrowsAndTheSearchIgnoresCaseAndAccents() async throws {
         try seed()
         let rows = store.browseRows()
         let people = MemoryBrowser.list(rows, filter: .people, query: "")
@@ -98,7 +98,7 @@ final class MemoryBrowserTests: XCTestCase {
         XCTAssertEqual(zoe.countLabel, "1 of 3 people")
     }
 
-    func testNameMatchesComeFirstThenFactMatchesAndTheSummaryShowsTheMatch() throws {
+    func testNameMatchesComeFirstThenFactMatchesAndTheSummaryShowsTheMatch() async throws {
         try seed()
         let rows = store.browseRows()
         let result = MemoryBrowser.list(rows, filter: .people, query: "maya")
@@ -112,7 +112,7 @@ final class MemoryBrowserTests: XCTestCase {
         XCTAssertEqual(maya.summary, "Owns the Lighthouse repository.")
     }
 
-    func testNoMatchGivesNoRowsAndCountsOtherChips() throws {
+    func testNoMatchGivesNoRowsAndCountsOtherChips() async throws {
         try seed()
         let rows = store.browseRows()
         XCTAssertTrue(MemoryBrowser.list(rows, filter: .projects, query: "maya").rows.isEmpty)
@@ -122,7 +122,7 @@ final class MemoryBrowserTests: XCTestCase {
 
     // MARK: S3 detail
 
-    func testThePageDetailHasPinnedFirstEarlierAndGroupedLinks() throws {
+    func testThePageDetailHasPinnedFirstEarlierAndGroupedLinks() async throws {
         try seed()
         let lighthouse = try page("Lighthouse"), maya = try page("Maya Chen")
         let facts = store.claims(of: lighthouse.id)
@@ -145,7 +145,7 @@ final class MemoryBrowserTests: XCTestCase {
 
     // MARK: S4 navigation
 
-    func testTheStackGrowsPopsAndGoesBack() {
+    func testTheStackGrowsPopsAndGoesBack() async {
         var nav = MemoryNavigation()
         nav.push("a"); nav.push("b"); nav.push("c")
         XCTAssertEqual(nav.stack, ["a", "b", "c"])
@@ -169,7 +169,7 @@ final class MemoryBrowserTests: XCTestCase {
 
     // MARK: S5 writes
 
-    func testForgetOneFactKeepsItInTheLogAndPinSticks() throws {
+    func testForgetOneFactKeepsItInTheLogAndPinSticks() async throws {
         try seed()
         let lighthouse = try page("Lighthouse")
         let fact = try XCTUnwrap(store.claims(of: lighthouse.id).first)
@@ -183,7 +183,7 @@ final class MemoryBrowserTests: XCTestCase {
         XCTAssertFalse(store.setPinned(fact.id, true))
     }
 
-    func testForgetAPageClearsItsFactsAndLinksAndOthersStay() throws {
+    func testForgetAPageClearsItsFactsAndLinksAndOthersStay() async throws {
         try seed()
         let lighthouse = try page("Lighthouse"), maya = try page("Maya Chen")
         store.link(from: maya.id, to: lighthouse.id, type: "works_on", source: "chat:a")
@@ -196,7 +196,7 @@ final class MemoryBrowserTests: XCTestCase {
 
     // MARK: Helpers
 
-    func testSourcesAndDays() {
+    func testSourcesAndDays() async {
         XCTAssertEqual(MemorySource("chat:3f2a9c1d").label, "Chat")
         XCTAssertEqual(MemorySource("meeting:2026-11-20-1000").target, "2026-11-20-1000")
         XCTAssertEqual(MemorySource("screen").label, "Screen review")
