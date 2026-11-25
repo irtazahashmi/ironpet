@@ -74,6 +74,8 @@ final class ChatParityUITests: XCTestCase {
         XCTAssertTrue(app.textViews["chat-input"].waitForExistence(timeout: 20))
     }
 
+    /// The bubble of a message that waits for the connection. Its accessibility value says so, and the clock glyph is hidden from VoiceOver.
+    private func waitingBubble() -> XCUIElement { app.descendants(matching: .any).matching(NSPredicate(format: "value == 'Waiting to send'")).firstMatch }
     private func any(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id] }
 
     private func attach(_ name: String) {
@@ -240,7 +242,7 @@ final class ChatParityUITests: XCTestCase {
         input.tap()
         input.typeText("hello?")
         app.buttons["send-button"].tap()
-        XCTAssertTrue(any("outgoing-waiting").waitForExistence(timeout: 20), "an unreachable Mac leaves the message waiting on its row")
+        XCTAssertTrue(waitingBubble().waitForExistence(timeout: 20), "an unreachable Mac leaves the message waiting on its row")
         XCTAssertFalse(any("chat-error").exists, "no banner for a failed send")
         XCTAssertFalse(any("chat-connection-lost").exists)
         attach("connection-lost")

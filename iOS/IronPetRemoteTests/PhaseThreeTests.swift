@@ -86,7 +86,8 @@ final class ChatModelTests: XCTestCase {
         model.draft = "see"
         await model.send()
         XCTAssertEqual(server.count("POST /v1/chat/current/messages"), 0)
-        XCTAssertNotNil(model.errorMessage)
+        XCTAssertNotNil(model.uploadFailure, "the composer shows it on the attachment")
+        XCTAssertNil(model.errorMessage, "no chat-level row repeats it")
         XCTAssertEqual(model.draft, "see")
         XCTAssertEqual(model.attachments.count, 1)
         model.stop()

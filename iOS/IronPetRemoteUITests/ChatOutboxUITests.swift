@@ -29,6 +29,8 @@ final class ChatOutboxUITests: XCTestCase {
         XCTAssertTrue(app.textViews["chat-input"].waitForExistence(timeout: 20))
     }
 
+    /// The bubble of a message that waits for the connection. Its accessibility value says so, and the clock glyph is hidden from VoiceOver.
+    private func waitingBubble() -> XCUIElement { app.descendants(matching: .any).matching(NSPredicate(format: "value == 'Waiting to send'")).firstMatch }
     private func any(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
 
     // S4
@@ -39,11 +41,12 @@ final class ChatOutboxUITests: XCTestCase {
         input.tap()
         input.typeText("typed offline")
         app.buttons["send-button"].tap()
-        XCTAssertTrue(any("outgoing-waiting").waitForExistence(timeout: 20), "the message shows as waiting to send")
-        XCTAssertTrue(app.staticTexts["Waiting to send"].exists)
+        XCTAssertTrue(waitingBubble().waitForExistence(timeout: 20), "the message shows as waiting to send")
+        XCTAssertFalse(app.buttons["outgoing-delete"].exists, "no Delete button row under the message")
+        app.staticTexts["typed offline"].press(forDuration: 1)
         app.buttons["outgoing-delete"].tap()
         let gone = NSPredicate(format: "exists == false")
-        expectation(for: gone, evaluatedWith: any("outgoing-waiting"))
+        expectation(for: gone, evaluatedWith: waitingBubble())
         waitForExpectations(timeout: 10)
         XCTAssertFalse(app.staticTexts["typed offline"].exists, "the message is gone from the transcript")
     }
