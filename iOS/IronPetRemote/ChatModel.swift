@@ -41,6 +41,11 @@ struct OutgoingMessage: Identifiable, Equatable {
     var known: Set<String>
     var uploadIDs: [String] = []
     var reply: RemoteReplyRef?
+    /// Text that was in the composer when a voice message was sent. The transcript follows it after a blank line.
+    var typedText = ""
+    /// The message the reply quotes, kept so a recording with no speech can put the quote back. Not saved: after a relaunch the
+    /// transcript looks the message up by id.
+    var quotedItem: RemoteChatItem?
     /// A message dictated and sent at once. Its text is empty until the Mac sends the transcript back.
     var isVoice = false
     /// Photos and files that upload when the message is sent. They stay on the message until it is delivered, so a waiting message can
@@ -61,6 +66,9 @@ struct OutgoingMessage: Identifiable, Equatable {
 
     /// A voice message whose text the Mac has not sent yet.
     var isTranscribing: Bool { isVoice && text.isEmpty }
+
+    /// The text of the message once the transcript is known: the typed text, a blank line, then the transcript.
+    func withTranscript(_ transcript: String) -> String { typedText.isEmpty ? transcript : typedText + "\n\n" + transcript }
 
     /// A message of photos or files with no text. The Mac's copy has no text to match, so a full read settles it.
     var isAttachmentOnly: Bool { !isVoice && text.isEmpty && !files.isEmpty }
@@ -268,6 +276,9 @@ final class ChatModel: SocketModel {
         outbox.removeAll { !keep.contains($0.id) }
         PhoneHopLog.mark("phone.confirmed")
     }
+
+    /// True when the composer holds text, attachments or a reply quote. A voice message sent at once carries them.
+    var hasComposerContent: Bool { !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty || replyTo != nil }
 
     var canSend: Bool { !sending && (!draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty) }
 
@@ -703,6 +714,7 @@ final class ChatModel: SocketModel {
         for record in restored.prefix(Self.outboxCapacity) {
             var message = OutgoingMessage(id: record.id, text: record.text, date: record.date, state: record.failure.map { .failed($0) } ?? .waiting, known: [], reply: record.reply)
             message.isVoice = record.isVoice ?? false
+            message.typedText = record.typedText ?? ""
             message.local = message.isVoice
             message.audio = record.audioName.flatMap { store.readFile(name: $0) }
             message.files = (record.files ?? []).compactMap { ref in
@@ -730,6 +742,7 @@ final class ChatModel: SocketModel {
             }
             var record = OutboxRecord(id: message.id, text: message.text, date: message.date, queuedAt: queuedAt, replyItemID: message.reply?.itemID, replySelection: message.reply?.selectionText, failure: failure)
             if message.isVoice { record.isVoice = true }
+            if !message.typedText.isEmpty { record.typedText = message.typedText }
             // The recording is only needed until the Mac has turned it into text.
             if message.isVoice, message.text.isEmpty, let audio = message.audio {
                 let name = message.id.uuidString.lowercased() + ".pcm"
@@ -836,7 +849,7 @@ final class ChatModel: SocketModel {
         guard let index = outbox.firstIndex(where: { $0.id == id }) else { return .failed }
         switch result {
         case .text(let text):
-            outbox[index].text = text
+            outbox[index].text = outbox[index].withTranscript(text)
             outbox[index].audio = nil
             outbox[index].known = userItemIDs
             persistOutbox()
@@ -857,10 +870,27 @@ final class ChatModel: SocketModel {
     /// The Mac heard no speech. Nothing is sent, and the photos go back to the composer.
     private func discardSilent(_ id: UUID) {
         guard let index = outbox.firstIndex(where: { $0.id == id }) else { return }
-        let files = outbox[index].files
+        let files = outbox[index].files, typed = outbox[index].typedText, quote = outbox[index].reply, quotedItem = outbox[index].quotedItem
         outbox.remove(at: index)
+        // The reply, the typed text and the files go back to the composer, as when a typed send fails.
+        if !typed.isEmpty { draft = draft.isEmpty ? typed : typed + "\n" + draft }
+        if replyTo == nil, let quote, let item = quotedItem ?? items.first(where: { $0.id == quote.itemID }) { replyTo = item; replySelection = quote.selectionText }
         attachments = files.map { PendingAttachment(fileName: $0.fileName, contentType: $0.contentType, data: $0.data, isImage: $0.isImage) } + attachments
         persistOutbox()
+    }
+
+    /// Moves the draft, the staged attachments and the reply quote from the composer onto a voice message, and clears the composer.
+    private func takeComposer(into message: inout OutgoingMessage) {
+        message.local = true
+        message.typedText = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        message.files += attachments.map { StagedFile(fileName: $0.fileName, contentType: $0.contentType, data: $0.data, isImage: $0.isImage) }
+        message.reply = replyTo.map { RemoteReplyRef(itemID: $0.id, selectionText: replySelection) }
+        message.quotedItem = replyTo
+        draft = ""
+        attachments = []
+        replyTo = nil
+        replySelection = nil
+        uploadFailure = nil
     }
 
     /// Applies what happened to a voice message sent at once. The stream id is the message id, so the pending item is the one Stop made.
@@ -871,25 +901,22 @@ final class ChatModel: SocketModel {
             guard let uuid = UUID(uuidString: id), index(id) == nil else { return }
             var message = OutgoingMessage(id: uuid, text: "", date: Date(), state: .sending, known: userItemIDs)
             message.isVoice = true
-            if carry {
-                // The attachments in the composer go with the voice message as one message.
-                message.local = true
-                message.files = attachments.map { StagedFile(fileName: $0.fileName, contentType: $0.contentType, data: $0.data, isImage: $0.isImage) }
-                attachments = []
-                uploadFailure = nil
-            }
+            // Everything in the composer goes with the voice message as one message, the same as a typed send.
+            if carry { takeComposer(into: &message) }
             outbox.append(message)
         case .text(let id, let text):
             // The text of a recording the phone sends itself. A recording with no speech sends nothing.
             guard let at = index(id), let uuid = UUID(uuidString: id) else { return }
             if text.isEmpty { return discardSilent(uuid) }
-            outbox[at].text = text
+            outbox[at].text = outbox[at].withTranscript(text)
             outbox[at].known = userItemIDs
             Task { [weak self] in await self?.deliver(uuid) }
         case .offline(let id, let audio):
             // The phone could not reach the Mac while it recorded. The recording waits like a typed message.
             guard let at = index(id), let uuid = UUID(uuidString: id) else { return }
             outbox[at].audio = audio
+            // Content added to the composer while it recorded goes with the message too.
+            if !outbox[at].local { takeComposer(into: &outbox[at]) }
             outbox[at].local = true
             enqueue(uuid)
             kickFlush()

@@ -175,7 +175,7 @@ struct MainTabs: View {
         .tint(pet.accent)
         .environment(\.macAccent, pet.accent ?? .accentColor)
         // The alert count and the waiting approvals are on their tabs before the user opens it.
-        .task { network.startPathMonitor(); alerts.start(); chat.start(); pet.start(); automations.start(); voice.onTranscript = { [chat] text, mode in if mode == .draft { chat.insertDictation(text) } }; voice.onSend = { [chat] in chat.voiceEvent($0) }; chat.resendVoice = { [voice] in await voice.resend($0) }; chat.transcribeSaved = { [voice] in await voice.transcribeSaved($0, $1) }; voice.hasAttachments = { [chat] in !chat.attachments.isEmpty }; voice.hasEarlierMessages = { [chat] in chat.hasEarlierMessages }; voice.start() }
+        .task { network.startPathMonitor(); alerts.start(); chat.start(); pet.start(); automations.start(); voice.onTranscript = { [chat] text, mode in if mode == .draft { chat.insertDictation(text) } }; voice.onSend = { [chat] in chat.voiceEvent($0) }; chat.resendVoice = { [voice] in await voice.resend($0) }; chat.transcribeSaved = { [voice] in await voice.transcribeSaved($0, $1) }; voice.hasComposerContent = { [chat] in chat.hasComposerContent }; voice.hasEarlierMessages = { [chat] in chat.hasEarlierMessages }; voice.start() }
         // The five minutes count from the app going to the background, whichever screen is open. Watching only inside the Meetings
         // screen would leave the text unlocked after the person left it and then left the app.
         .onChange(of: scenePhase) { _, phase in
