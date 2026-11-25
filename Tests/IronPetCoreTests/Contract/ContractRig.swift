@@ -41,7 +41,8 @@ final class ContractRig {
             notifications: NotificationStore(database: Self.memoryDatabase(), now: now), sessions: sessions, chat: chat,
             meeting: UnsupportedMeetingRecorder(), meetingLibrary: MeetingLibrary(root: directory.appendingPathComponent("meetings")),
             config: ConfigStore(memory: Config()), speech: chat.speech,
-            files: FolderFileIntake(directory: directory.appendingPathComponent("attachments")), nodeID: ContractRig.nodeID))
+            files: FolderFileIntake(directory: directory.appendingPathComponent("attachments")), nodeID: ContractRig.nodeID,
+            agents: AgentRegistry(database: Self.memoryDatabase(), now: now)))
         api.today.now = now
         api.today.calendar = Self.calendar
         dispatcher = RPCDispatcher(api: api)

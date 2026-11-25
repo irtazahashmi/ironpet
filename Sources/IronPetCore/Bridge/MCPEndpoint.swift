@@ -5,7 +5,7 @@ import Foundation
 /// `TaskJSON.call`, `ScreenAPI`, `MemoryAPI` and the other namespaces, which validate.
 @MainActor
 package enum MCPEndpoint {
-    package static var tools: [[String: Any]] { AutomationMCP.tools + TaskMCP.tools + NotificationMCP.tools + ScreenMCP.tools + DesktopMCP.tools + MemoryMCP.tools + AssistantMCP.tools + RecordMCP.tools }
+    package static var tools: [[String: Any]] { AutomationMCP.tools + TaskMCP.tools + NotificationMCP.tools + ScreenMCP.tools + DesktopMCP.tools + MemoryMCP.tools + AssistantMCP.tools + RecordMCP.tools + AgentMCP.tools }
 
     /// Who started the `IronPet mcp` bridge when it is not the user's chat, as `automation:<id>` or `job:<id>`. The bridge reads the
     /// variable and sends the header.
@@ -58,7 +58,8 @@ package enum MCPEndpoint {
     package static func handle(_ body: Data, automations: AutomationsAPI?, tasks: TasksAPI?, screen: ScreenAPI? = nil,
                        desktop: DesktopAPI? = nil, memory: MemoryAPI? = nil, assistant: AssistantAPI? = nil,
                        caller: String? = nil, jobScope: Bool = false, voiceScope: Bool = false,
-                       notifications: NotificationsAPI? = nil, records: RecordResolver? = nil) async -> (status: String, body: Data) {
+                       notifications: NotificationsAPI? = nil, records: RecordResolver? = nil,
+                       agentRecords: AgentRecordsAPI? = nil) async -> (status: String, body: Data) {
         guard let message = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any], let method = message["method"] as? String else {
             return ("400 Bad Request", encode(["jsonrpc": "2.0", "id": NSNull(), "error": ["code": -32700, "message": "parse error"]]))
         }
@@ -154,6 +155,13 @@ package enum MCPEndpoint {
                 case .failure(let error): return toolResult(error.message, isError: true)
                 }
             }
+            if AgentMCP.names.contains(name) {
+                guard let agentRecords else { return toolResult("ironpet's agents are not available right now", isError: true) }
+                switch AgentMCP.call(name, arguments, api: agentRecords) {
+                case .success(let value): return toolResult(text(value), isError: false)
+                case .failure(let error): return toolResult(error.message, isError: true)
+                }
+            }
             if ScreenMCP.names.contains(name) {
                 guard let screen else { return toolResult("ironpet's screen captures are not available right now", isError: true) }
                 switch screen.callTool(name, arguments) {
@@ -190,6 +198,7 @@ package enum MCPEndpoint {
                                   assistant: @escaping @MainActor () -> AssistantAPI? = { nil },
                                   notifications: @escaping @MainActor () -> NotificationsAPI? = { nil },
                                   records: @escaping @MainActor () -> RecordResolver? = { nil },
+                                  agentRecords: @escaping @MainActor () -> AgentRecordsAPI? = { nil },
                                   respond: @escaping (String, Data) -> Void) {
         let path = request.path, body = request.body, caller = request.header(callerHeader)
         Task { @MainActor in
@@ -198,7 +207,7 @@ package enum MCPEndpoint {
             case "/mcp", jobPath, voicePath:
                 result = await handle(body, automations: automations(), tasks: tasks(), screen: screen(), desktop: desktop(),
                                       memory: memory(), assistant: assistant(), caller: caller, jobScope: path == jobPath,
-                                      voiceScope: path == voicePath, notifications: notifications(), records: records())
+                                      voiceScope: path == voicePath, notifications: notifications(), records: records(), agentRecords: agentRecords())
             case "/notifications":
                 guard let api = notifications() else { return respond("503 Service Unavailable", Data()) }
                 result = NotificationMCP.handleCLI(body, api: api)

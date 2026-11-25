@@ -78,6 +78,17 @@ package struct RemoteResources {
 
     package func agent(_ id: String) throws -> [String: Any] { RemoteWire.object(dto(try api.agents.get(id), detail: true)) }
 
+    /// The agents as records. The sessions above are what the agents are doing; these are the agents themselves.
+    package func agentRecords() throws -> [String: Any] {
+        guard let records = api.agentRecords else { throw APIError.unavailable("this host has no agent records") }
+        return RemoteWire.object(AgentRecordListResponse(agents: records.list()))
+    }
+
+    package func agentRecord(_ id: String) throws -> [String: Any] {
+        guard let records = api.agentRecords else { throw APIError.unavailable("this host has no agent records") }
+        return RemoteWire.object(try records.get(id))
+    }
+
     package func acknowledge(_ id: String) throws -> [String: Any] {
         try api.agents.acknowledge(id)
         return RemoteWire.object(RemoteAcknowledged(acknowledged: id))

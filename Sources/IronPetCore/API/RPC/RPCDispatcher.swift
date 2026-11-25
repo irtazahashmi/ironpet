@@ -46,6 +46,7 @@ package final class RPCDispatcher {
         registerTasks()
         registerAlerts()
         registerAgents()
+        registerAgentRecords()
         registerAutomations()
         registerChat()
         registerMemory()
@@ -271,6 +272,19 @@ package final class RPCDispatcher {
         addVoid("agents.acknowledge", "POST /v1/agents/:id/acknowledge", params: "ID") { (p: ID) in try agents.acknowledge(p.id) }
         addVoid("agents.acknowledgeAll", "none") { agents.acknowledgeAll() }
         addVoid("agents.ask", "POST /v1/agents/:id/ask", params: "ID") { (p: ID) in try agents.ask(p.id) }
+    }
+
+    /// The agents as records. `agents.*` above is the coding-agent sessions, so these are `agent.*`.
+    private func registerAgentRecords() {
+        let records = api.agentRecords
+        add("agent.list", "GET /v1/agent-records", result: "[AgentRecord]") { () -> [AgentRecord] in
+            guard let records else { throw APIError.unavailable("this host has no agent records") }
+            return records.list()
+        }
+        add("agent.get", "GET /v1/agent-records/:id", params: "ID", result: "AgentRecord") { (p: ID) -> AgentRecord in
+            guard let records else { throw APIError.unavailable("this host has no agent records") }
+            return try records.get(p.id)
+        }
     }
 
     private func registerAutomations() {
