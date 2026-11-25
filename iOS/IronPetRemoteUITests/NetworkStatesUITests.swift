@@ -42,7 +42,9 @@ final class NetworkStatesUITests: XCTestCase {
         add(shot)
     }
 
-    private func waitUntilGone(_ element: XCUIElement, timeout: TimeInterval = 20, _ message: String) {
+    /// The strip hides on the next event socket reconnect. The socket's back-off grows to 30 s while the Mac is down, and a slow CI runner
+    /// keeps the Mac down longer, so the default wait is longer than the 20 s used to see a state appear.
+    private func waitUntilGone(_ element: XCUIElement, timeout: TimeInterval = 45, _ message: String) {
         let gone = NSPredicate(format: "exists == false")
         let result = XCTWaiter().wait(for: [expectation(for: gone, evaluatedWith: element)], timeout: timeout)
         XCTAssertEqual(result, .completed, message)
