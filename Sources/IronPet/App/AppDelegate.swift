@@ -363,7 +363,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         api.attach(assistant: assistant)
         api.session.serverVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
         api.attach(memory: { [weak self] in self?.memoryServices })
-        api.attach(records: RecordResolver(refs: RecordRefs(database: database)))
+        api.attach(records: RecordRefs(database: database))
         pet.agents = api.agents
         chatModel = ChatViewModel(api: api.chat, voiceAPI: api.voice, events: events)
         chatModel.voice.voiceKey = voiceKey

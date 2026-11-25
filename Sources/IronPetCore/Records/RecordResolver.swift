@@ -15,10 +15,28 @@ package struct RecordResolver {
         package let ref: String
     }
 
-    private let refs: RecordRefs
+    /// Reads one record of a kind, as the JSON `get` returns. The reader names the owner's answer; `get` adds `kind` and `ref`.
+    package typealias Reader = @MainActor (String) async -> Result<[String: Any], RecordError>
 
-    package init(refs: RecordRefs) {
+    private let refs: RecordRefs
+    private let readers: [RecordKind: Reader]
+
+    package init(refs: RecordRefs, readers: [RecordKind: Reader] = [:]) {
         self.refs = refs
+        self.readers = readers
+    }
+
+    /// The record's JSON through the reader of its kind. Nil when that kind has no reader yet.
+    @MainActor package func read(_ found: Found) async -> Result<[String: Any], RecordError>? {
+        guard let reader = readers[found.kind] else { return nil }
+        switch await reader(found.key) {
+        case .success(var object):
+            object["kind"] = found.kind.rawValue
+            object["ref"] = found.ref
+            return .success(object)
+        case .failure(let error):
+            return .failure(error)
+        }
     }
 
     /// The record an id names. An old id must be the key of exactly one record: when two kinds share it, the caller must use a ref.

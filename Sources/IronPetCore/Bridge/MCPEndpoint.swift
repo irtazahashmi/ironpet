@@ -103,11 +103,17 @@ package enum MCPEndpoint {
                         return toolResult(error.message, isError: true)
                     }
                 case .success(let found):
-                    guard let target = RecordMCP.target(found.kind, key: found.key) else {
+                    if let target = RecordMCP.target(found.kind, key: found.key) {
+                        name = target.tool
+                        arguments = target.arguments
+                    } else if let reading = await records.read(found) {
+                        switch reading {
+                        case .success(let object): return toolResult(text(object), isError: false)
+                        case .failure(let error): return toolResult(error.message, isError: true)
+                        }
+                    } else {
                         return toolResult("get does not read \(found.kind.rawValue) records yet; ask for them with their own tool", isError: true)
                     }
-                    name = target.tool
-                    arguments = target.arguments
                 }
             }
             if jobScope, jobOnlyHidden.contains(name) {
