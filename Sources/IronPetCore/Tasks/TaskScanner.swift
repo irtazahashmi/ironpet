@@ -265,6 +265,7 @@ package final class TaskScanner {
                 }
                 draft.waitingOn = item.waitingOn
                 draft.sourceRef = sourceRef(item.source, batch: batch)
+                draft.clarify = item.clarify
                 drafts.append(draft)
             }
             var updates: [(update: TaskSuggestion.Update, sourceRef: String?)] = []
@@ -331,6 +332,8 @@ package final class TaskScanner {
         package var notes: String?
         package var waitingOn: String?
         package var source: String?
+        /// How the agent proposes to file it. A context outside the six or an unusable area is dropped, not the entry.
+        package var clarify: TaskSuggestion.Clarify? = nil
     }
 
     package struct UpdateProposal: Equatable {
@@ -344,6 +347,16 @@ package final class TaskScanner {
     package struct Proposals: Equatable {
         package var new: [NewProposal] = []
         package var updates: [UpdateProposal] = []
+    }
+
+    /// The clarify fields of a new entry, checked by the same rules as labels. Nil when it proposes nothing usable.
+    static func clarify(_ entry: [String: Any]) -> TaskSuggestion.Clarify? {
+        let context = (entry["context"] as? String).flatMap { try? TaskContext.checked($0.trimmingCharacters(in: .whitespaces)) }
+            .flatMap(TaskContext.init(rawValue:))
+        let area = (entry["area"] as? String).flatMap { try? TaskValidator.labels(["area": $0])["area"] }
+        let clarify = TaskSuggestion.Clarify(context: context, area: area, twoMinute: entry["two_minute"] as? Bool ?? false,
+                                             someday: entry["someday"] as? Bool ?? false)
+        return clarify.isEmpty ? nil : clarify
     }
 
     /// What the agent proposed. A failure when the answer is not the JSON object, when an entry has no title or task, or when an
@@ -362,7 +375,7 @@ package final class TaskScanner {
                 return .failure(ReflectionError("the agent filed a new task without a title"))
             }
             proposals.new.append(NewProposal(title: title, due: text(entry["due"]), notes: text(entry["notes"]),
-                                             waitingOn: text(entry["waiting_on"]), source: text(entry["source"])))
+                                             waitingOn: text(entry["waiting_on"]), source: text(entry["source"]), clarify: clarify(entry)))
         }
         for raw in object["updates"] as? [Any] ?? [] {
             guard let entry = raw as? [String: Any], let task = text(entry["task"]) else {

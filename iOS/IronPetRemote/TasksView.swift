@@ -97,7 +97,7 @@ struct TasksView: View {
             if !model.suggestions.isEmpty {
                 List {
                     Group {
-                        Section { ForEach(model.suggestions) { SuggestionRow(suggestion: $0, model: model) } } header: { header("Suggestions", id: "suggestions") }
+                        Section { ForEach(model.suggestions) { SuggestionRow(suggestion: $0, model: model) } } header: { header("Inbox", id: "suggestions") }
                 
                     }.listRowBackground(SharedTheme.card)
                 }
@@ -126,7 +126,7 @@ struct TasksView: View {
                 }
                 Group {
                     if !model.suggestions.isEmpty {
-                        Section { ForEach(model.suggestions) { SuggestionRow(suggestion: $0, model: model) } } header: { header("Suggestions", id: "suggestions") }
+                        Section { ForEach(model.suggestions) { SuggestionRow(suggestion: $0, model: model) } } header: { header("Inbox", id: "suggestions") }
                     }
                     taskSection("Needs you", id: "needs-you", model.needsYou)
                     taskSection("In progress", id: "in-progress", model.inProgress)

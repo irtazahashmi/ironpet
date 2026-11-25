@@ -54,6 +54,7 @@ Check each task yourself. If a query can answer the question, run the query. Do 
 
 Meetings and watchers propose tasks. They wait as suggestions and change nothing until you resolve them. `tasks_suggestions_list` shows them.
 
+- The app shows suggestions as the Inbox. A suggestion from the task scan may carry `clarify` (`context`, `area`, `two_minute`, `someday`): accepting applies it, so the task gets those labels and the someday status. Pass `status` to override it.
 - Accept with `tasks_suggestion_accept` when the evidence holds. Check it with a query where one can (a PR, a ticket, CI). Pass `title`, `due`, `notes` or `status` to correct what is applied. The `note` is required and names the evidence.
 - Reject with `tasks_suggestion_reject` and a required `note` with the reason when it is wrong or a duplicate of an existing task.
 - When only the user can decide, leave it and ask in one line.

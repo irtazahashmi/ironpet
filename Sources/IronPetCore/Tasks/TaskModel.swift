@@ -156,8 +156,10 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
         created: Date,
         waitingOn: String? = nil,
         sourceRef: String? = nil,
-        update: Update? = nil
+        update: Update? = nil,
+        clarify: Clarify? = nil
     ) {
+        self.clarify = clarify
         self.id = id
         self.title = title
         self.due = due
@@ -210,6 +212,41 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
         package var summary: String { remote.summary }
     }
 
+    /// How the agent proposes to file a new task (GTD's clarify step). Adding the suggestion applies it in one tap.
+    package struct Clarify: Equatable, Codable {
+        package init(context: TaskContext? = nil, area: String? = nil, twoMinute: Bool = false, someday: Bool = false) {
+            self.context = context
+            self.area = area
+            self.twoMinute = twoMinute
+            self.someday = someday
+        }
+
+        /// Where it can be done; becomes the `context` label.
+        package var context: TaskContext?
+        /// What it belongs to; becomes the `area` label.
+        package var area: String?
+        /// Takes under two minutes, so it is better done now than tracked.
+        package var twoMinute = false
+        /// Not a commitment yet: the task is filed as someday.
+        package var someday = false
+
+        package var isEmpty: Bool { context == nil && area == nil && !twoMinute && !someday }
+
+        /// The labels the task gets.
+        package var labels: [String: String] {
+            var labels: [String: String] = [:]
+            if let context { labels[TaskContext.key] = context.rawValue }
+            if let area { labels["area"] = area }
+            return labels
+        }
+
+        /// `Phone · Health · 2 min · Someday`
+        package var summary: String {
+            ([context?.title, area, twoMinute ? "2 min" : nil, someday ? TaskStatus.someday.title : nil] as [String?])
+                .compactMap { $0 }.joined(separator: " · ")
+        }
+    }
+
     /// One suggestion before it is stored: a meeting action item, or what a watcher returned in a `suggest_task` action
     /// (cleaned by `init?(action:)`).
     package struct Draft: Equatable, Codable {
@@ -234,6 +271,8 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
         package var waitingOn: String?
         /// Where the draft came from, when the producer knows (the task scan). Used when `store` is not given a reference.
         package var sourceRef: String?
+        /// The scan's proposal for filing it. Meetings and watchers leave it nil.
+        package var clarify: Clarify?
     }
 
     package let id: String
@@ -250,6 +289,8 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
     package var sourceRef: String? = nil
     /// Set when the suggestion changes an existing task. The title then names that task.
     package var update: Update? = nil
+    /// How to file it, when the task scan proposed one. Nil for meetings, watchers and updates.
+    package var clarify: Clarify? = nil
 
     /// What the inbox shows as the headline: the title, or `Update: <task title>` for an update.
     package var headline: String { update?.remote.headline ?? title }
@@ -349,7 +390,7 @@ package struct TaskError: Error, LocalizedError, Equatable {
 }
 
 /// Where a task can be done (GTD contexts). Kept as the `context` label, and only these values are accepted.
-package enum TaskContext: String, CaseIterable {
+package enum TaskContext: String, CaseIterable, Codable {
     case mac, phone, calls, errands, agent, home
 
     package static let key = "context"
