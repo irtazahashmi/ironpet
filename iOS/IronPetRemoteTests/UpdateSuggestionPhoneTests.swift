@@ -38,6 +38,8 @@ final class UpdateSuggestionPhoneTests: XCTestCase {
         XCTAssertEqual(server.count("POST /v1/suggestions/u-1/accept"), 1)
         XCTAssertEqual(model.suggestions, [])
         XCTAssertEqual(server.tasks.first { $0.id == "t-waiting" }?.status, .done)
+        // The task is done now, and done tasks load only with the Done section open.
+        await model.setShowsDone(true)
         XCTAssertEqual(model.tasks.filter { $0.title == "Reply from legal" }.count, 1, "no second task was made")
     }
 

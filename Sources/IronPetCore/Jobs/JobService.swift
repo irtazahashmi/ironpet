@@ -115,6 +115,9 @@ package final class JobService: ObservableObject {
         }
     }
 
+    /// The public ids of jobs, kept in the same database.
+    package var records: RecordRefs { RecordRefs(database: database) }
+
     package init(database: Database, tasks: TaskStore?, now: @escaping () -> Date = Date.init) {
         self.database = database
         self.tasks = tasks

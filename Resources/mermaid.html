@@ -2,6 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' file: 'unsafe-inline'; style-src 'unsafe-inline'; img-src data:; font-src data:">
 <style>
   html, body { margin: 0; padding: 0; background: transparent; }
@@ -15,24 +16,42 @@
 <div id="diagram"></div>
 <div id="error"></div>
 <script>
-  // Called by MermaidWebView with the diagram source and the current appearance.
-  async function renderDiagram(code, dark) {
+  // Called by MermaidWebView with the diagram source and the current appearance. `natural` (the iPhone app) keeps the
+  // diagram at its own width, so a wide one scrolls sideways instead of shrinking to the screen.
+  async function renderDiagram(code, dark, natural) {
     const diagram = document.getElementById("diagram");
     const error = document.getElementById("error");
+    let ok = true;
     try {
       mermaid.initialize({ startOnLoad: false, securityLevel: "strict", theme: dark ? "dark" : "default",
                            fontFamily: "-apple-system, BlinkMacSystemFont, sans-serif" });
       const { svg } = await mermaid.render("m" + Date.now(), code);
       diagram.innerHTML = svg;
       error.textContent = "";
+      const el = diagram.querySelector("svg");
+      if (natural && el) {
+        const box = el.viewBox && el.viewBox.baseVal;
+        el.style.maxWidth = "none";
+        if (box && box.width > 0) { el.style.width = box.width + "px"; }
+        diagram.style.justifyContent = "flex-start";
+      }
     } catch (e) {
+      ok = false;
       diagram.innerHTML = "";
       error.textContent = "Mermaid could not render this diagram: " + (e && e.message ? e.message : e);
     }
     // setTimeout, not requestAnimationFrame: rAF never fires while the view is off screen.
-    setTimeout(() => {
-      window.webkit.messageHandlers.size.postMessage({ h: Math.ceil(document.body.scrollHeight) });
-    }, 0);
+    const report = () => window.webkit.messageHandlers.size.postMessage({
+      h: Math.ceil(diagram.getBoundingClientRect().height + error.getBoundingClientRect().height), ok: ok });
+    setTimeout(report, 0);
+    // A view that renders before it is on screen measures too small; measure again whenever the diagram's size changes.
+    if (window.ResizeObserver && ok) {
+      if (window.sizeWatcher) { window.sizeWatcher.disconnect(); }
+      window.sizeWatcher = new ResizeObserver(report);
+      window.sizeWatcher.observe(diagram);
+      const svg = diagram.querySelector("svg");
+      if (svg) { window.sizeWatcher.observe(svg); }
+    }
   }
 </script>
 </body>

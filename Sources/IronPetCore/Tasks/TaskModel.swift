@@ -104,6 +104,8 @@ package struct TaskItem: Identifiable, Equatable, Codable {
     package var sourceRef: String? = nil
     /// Key/value labels such as `merge=auto`. Data for filtering, never instructions.
     package var labels: [String: String] = [:]
+    /// The public `task_<hex>` id (see `RecordID`). `TaskStore` fills it in when it reads the task; nil for a value that did not come from the store.
+    package var ref: String? = nil
 
     /// Only the user can take the next step. A task waiting on someone else never counts, whatever its status.
     package var needsUser: Bool { status == .needsYou && waitingOn == nil }

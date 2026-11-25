@@ -50,10 +50,11 @@ package enum ScreenMCP {
 
     package struct Failure: Error { let message: String }
 
-    package static func row(_ capture: StoredCapture, _ calendar: Calendar) -> [String: Any] {
+    package static func row(_ capture: StoredCapture, _ calendar: Calendar, ref: String? = nil) -> [String: Any] {
         var row: [String: Any] = ["id": capture.id, "time": format(capture.at, calendar), "app": capture.appName, "bundle_id": capture.app,
                                   "window": capture.window, "trigger": capture.trigger, "text": capture.text]
         if let url = capture.url { row["url"] = url }
+        if let ref { row["ref"] = ref }
         return row
     }
 

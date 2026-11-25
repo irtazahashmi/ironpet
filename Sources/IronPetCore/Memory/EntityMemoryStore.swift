@@ -216,7 +216,7 @@ package final class EntityMemoryStore: MemoryStore {
                                             target: target, bumped: true))
                 }
                 try db.execute("INSERT INTO memory_claims(entity, text, date, sources, invalid_at, pinned, ref) VALUES(?, ?, ?, ?, NULL, 0, ?)",
-                               [target.id, text, day, source, try Self.reference("claim_", db)])
+                               [target.id, text, day, source, try Self.reference(.claim, db)])
                 let claim = try Self.lastID(db)
                 for stale in removed {
                     try db.execute("UPDATE memory_claims SET invalid_at = ? WHERE id = ?", [at.timeIntervalSince1970, stale.id])
@@ -273,7 +273,7 @@ package final class EntityMemoryStore: MemoryStore {
                 }
                 let sources = merged.reduce([String]()) { Self.merged($0, $1.sources) }
                 try db.execute("INSERT INTO memory_claims(entity, text, date, sources, invalid_at, pinned, ref) VALUES(?, ?, ?, ?, NULL, 0, ?)",
-                               [entity, text, day, Self.joined(sources), try Self.reference("claim_", db)])
+                               [entity, text, day, Self.joined(sources), try Self.reference(.claim, db)])
                 let claim = try Self.lastID(db)
                 for old in merged { try db.execute("UPDATE memory_claims SET invalid_at = ? WHERE id = ?", [at.timeIntervalSince1970, old.id]) }
                 return .success((claim, merged))
@@ -545,7 +545,7 @@ package final class EntityMemoryStore: MemoryStore {
             var result: [(id: Int64, text: String)] = []
             for note in notes where !known.contains(MemoryNote.normalized(note.text)) {
                 try db.execute("INSERT INTO memory_claims(entity, text, date, sources, invalid_at, pinned, ref) VALUES(?, ?, ?, ?, NULL, 0, ?)",
-                               [id, note.text, note.date ?? "", note.source, try Self.reference("claim_", db)])
+                               [id, note.text, note.date ?? "", note.source, try Self.reference(.claim, db)])
                 result.append((try Self.lastID(db), note.text))
                 known.insert(MemoryNote.normalized(note.text))
             }
@@ -608,7 +608,7 @@ package final class EntityMemoryStore: MemoryStore {
 
     private func ensureMe() {
         try? database.write { db in
-            try db.execute("INSERT OR IGNORE INTO memory_entities(id, type, name, aliases, identifiers, mentions, ref) VALUES('me', 'me', 'About me', 'me\nabout me', '', 0, ?)", [try Self.reference("page_", db)])
+            try db.execute("INSERT OR IGNORE INTO memory_entities(id, type, name, aliases, identifiers, mentions, ref) VALUES('me', 'me', 'About me', 'me\nabout me', '', 0, ?)", [try Self.reference(.page, db)])
         }
     }
 
@@ -680,25 +680,17 @@ package final class EntityMemoryStore: MemoryStore {
         }
     }
 
-    /// A new `<prefix>_<hex>` ref: six random lowercase hex digits, one more for each collision. It never encodes a title or a time.
-    nonisolated private static func reference(_ prefix: String, _ db: Database.Connection) throws -> String {
-        let digits = Array("0123456789abcdef")
-        var length = 6
-        while true {
-            for _ in 0..<8 {
-                let ref = prefix + String((0..<length).map { _ in digits.randomElement()! })
-                if try db.rows("SELECT 1 FROM memory_entities WHERE ref = ? UNION ALL SELECT 1 FROM memory_claims WHERE ref = ?",
-                               [ref, ref]).isEmpty {
-                    return ref
-                }
-            }
-            length += 1
-        }
+    /// A new `page_<hex>` or `claim_<hex>` ref (see `RecordID`), unused by any page or claim.
+    nonisolated private static func reference(_ kind: RecordKind, _ db: Database.Connection) throws -> String {
+        try RecordID.make(kind, taken: { ref in
+            try !db.rows("SELECT 1 FROM memory_entities WHERE ref = ? UNION ALL SELECT 1 FROM memory_claims WHERE ref = ?",
+                         [ref, ref]).isEmpty
+        })
     }
 
     private static func ensureEntity(_ db: Database.Connection, _ target: Target) throws {
         try db.execute("INSERT OR IGNORE INTO memory_entities(id, type, name, aliases, identifiers, mentions, ref) VALUES(?, ?, ?, '', '', 0, ?)",
-                       [target.id, target.type.rawValue, target.name, try reference("page_", db)])
+                       [target.id, target.type.rawValue, target.name, try reference(.page, db)])
         guard !target.identifiers.isEmpty else { return }
         let current = (try db.rows("SELECT identifiers FROM memory_entities WHERE id = ?", [target.id]).first?.first as? String) ?? ""
         let merged = merged(current.isEmpty ? [] : current.components(separatedBy: "\n"), target.identifiers)

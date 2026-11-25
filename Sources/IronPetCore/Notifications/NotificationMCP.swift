@@ -53,10 +53,20 @@ package enum NotificationMCP {
             filter.unreadOnly = arguments["unread_only"] as? Bool ?? false
             if let limit = (arguments["limit"] as? NSNumber)?.intValue { filter.limit = min(max(limit, 1), 200) }
             let list = api.list(filter)
-            return .success(["notifications": list.notifications.map { $0.json(full: false) }, "unread": list.unread])
+            let refs = api.refs(list.notifications.map(\.id))
+            return .success(["notifications": list.notifications.map { item -> [String: Any] in
+                var row = item.json(full: false)
+                row["ref"] = refs[item.id]
+                return row
+            }, "unread": list.unread])
         case "notifications_get":
             guard let id = arguments["id"] as? String, !id.isEmpty else { return .failure(.init(message: "id is required")) }
-            do { return .success(try api.get(id).json(full: true)) } catch {
+            do {
+                let item = try api.get(id)
+                var object = item.json(full: true)
+                object["ref"] = api.refs([item.id])[item.id]
+                return .success(object)
+            } catch {
                 return .failure(.init(message: (error as? APIError)?.message ?? error.localizedDescription))
             }
         default:

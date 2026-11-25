@@ -191,9 +191,14 @@ final class CallMonitorTests: XCTestCase {
         var beats = 0
         let heart = Timer.scheduledTimer(withTimeInterval: 0.02, repeats: true) { _ in beats += 1 }
         for _ in 0..<20 { m.poll() }
-        RunLoop.main.run(until: Date().addingTimeInterval(0.5))
+        // Wait for a few beats and for the background read to start, instead of a fixed window,
+        // so a loaded runner only makes the test slower.
+        let deadline = Date().addingTimeInterval(3)
+        while beats < 3 || calls.value < 1, Date() < deadline {
+            RunLoop.main.run(until: Date().addingTimeInterval(0.02))
+        }
         heart.invalidate()
-        XCTAssertGreaterThan(beats, 4, "main thread kept running while the source blocked")
+        XCTAssertGreaterThanOrEqual(beats, 3, "main thread kept running while the source blocked")
         XCTAssertEqual(calls.value, 1, "polls while a read is in flight are skipped")
         release.signal()
         wait(for: [done], timeout: 5)
