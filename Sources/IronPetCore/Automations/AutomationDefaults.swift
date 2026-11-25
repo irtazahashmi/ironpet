@@ -39,16 +39,24 @@ package enum AutomationDefaults {
                    note: "Looks at open tasks and suggestions every 20 minutes and posts only what changed. Its prompt is in Settings → Prompts.")
     }
 
-    package static let screenReviewID = "screen-review"
+    package static let taskScanID = "task-scan"
 
-    /// The built-in screen review: every hour, in its own agent session that reports to the chat. It reads what changed on the
-    /// screen and proposes tasks. Its prompt is `prompts/screen-review.md`. Off until the user turns it on.
-    package static func screenReview(enabled: Bool = false) -> Automation {
-        Automation(id: screenReviewID, name: "Screen review", enabled: enabled,
-                   trigger: .init(type: "interval", minutes: 60, clock: "wall"),
-                   action: .init(type: "prompt", prompt: "{{prompt.\(screenReviewID)}}", session: "own", report: "chat"),
-                   presentation: .init(symbol: "display"), createdBy: "user",
-                   note: "Reads what changed on your screen each hour and suggests tasks for it. Needs screen capture. Its prompt is in Settings → Prompts.")
+    /// The task scan: a system automation that reads what is new in chats, meetings and the screen and files task suggestions. App
+    /// code defines it on every launch, so a new version can change it. It is never written to `automations.json`, and the Automations
+    /// list and the automation tools do not show it. Settings → Tasks turns it off and sets the interval.
+    package static func taskScan(minutes: Int) -> Automation {
+        Automation(id: taskScanID, name: "Task scan", enabled: true,
+                   trigger: .init(type: "interval", minutes: Double(max(1, minutes)), clock: "wall"),
+                   action: .init(type: taskScanAction), presentation: .init(symbol: "text.magnifyingglass"), createdBy: "user",
+                   note: "Reads new chats, meeting summaries and screen captures and suggests tasks. Its prompt is in Settings → Prompts.")
+    }
+
+    /// The `action.type` of the task scan. It is not one of `AutomationValidator.actionTypes`, so a file cannot ask for it.
+    package static let taskScanAction = "task-scan"
+
+    /// The system automations that run for these settings. None when the task scan is switched off.
+    package static func system(for tasks: Config.Tasks) -> [Automation] {
+        tasks.scan ? [taskScan(minutes: tasks.scanMinutes)] : []
     }
 
     package static let mailCalendarID = "mail-calendar"
@@ -65,7 +73,7 @@ package enum AutomationDefaults {
     }
 
     /// Every built-in, added to the file when its id is missing.
-    package static var builtIns: [Automation] { [morningBrief(), dayRecap(), taskReview(), screenReview(), mailCalendar()] }
+    package static var builtIns: [Automation] { [morningBrief(), dayRecap(), taskReview(), mailCalendar()] }
 
     /// The `gh` binary, which the GitHub script runs.
     package static var ghExecutable: URL? {

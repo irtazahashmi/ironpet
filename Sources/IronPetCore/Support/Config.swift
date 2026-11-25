@@ -30,7 +30,8 @@ package struct Config: Codable, Equatable {
         screenCapture: ScreenCapture = ScreenCapture(),
         desktopControl: DesktopControl = DesktopControl(),
         memory: Memory = Memory(),
-        remote: Remote = Remote()
+        remote: Remote = Remote(),
+        updates: Updates = Updates()
     ) {
         self.pet = pet
         self.chat = chat
@@ -54,6 +55,7 @@ package struct Config: Codable, Equatable {
         self.desktopControl = desktopControl
         self.memory = memory
         self.remote = remote
+        self.updates = updates
     }
 
     package struct Pet: Codable, Equatable {
@@ -77,7 +79,8 @@ package struct Config: Codable, Equatable {
             voice: String = "cmd+opt+v",
             meeting: String = "",
             voiceMode: String = "cmd+opt+ctrl+v",
-            copyVersion: String = ""
+            copyVersion: String = "",
+            dictation: String = "ctrl+opt+space"
         ) {
             self.chat = chat
             self.captureWindow = captureWindow
@@ -86,6 +89,7 @@ package struct Config: Codable, Equatable {
             self.meeting = meeting
             self.voiceMode = voiceMode
             self.copyVersion = copyVersion
+            self.dictation = dictation
         }
 
         package var chat = "cmd+opt+g"
@@ -100,6 +104,9 @@ package struct Config: Codable, Equatable {
         package var voiceMode = "cmd+opt+ctrl+v"
         /// Copies the app version and commit to the clipboard. No default binding.
         package var copyVersion = ""
+        /// Starts and stops dictation into whatever text field has focus in any app. Empty turns it off. Only
+        /// registered while voice notes are on, because it transcribes with the same server.
+        package var dictation = "ctrl+opt+space"
     }
 
     /// Voice notes: record the mic and send the audio to an OpenAI-compatible transcription server. The API key is
@@ -349,12 +356,27 @@ package struct Config: Codable, Equatable {
     }
 
     package struct Tasks: Codable, Equatable {
-        package init(meetingSuggestions: Bool = true, dueReminders: Bool = true, keepDoneDays: Int = 30, quickFilters: [QuickFilter] = []) {
+        package init(meetingSuggestions: Bool = true, dueReminders: Bool = true, keepDoneDays: Int = 30, quickFilters: [QuickFilter] = [],
+                     scan: Bool = true, scanMinutes: Int = Tasks.defaultScanMinutes, scanScreen: Bool = false) {
             self.meetingSuggestions = meetingSuggestions
             self.dueReminders = dueReminders
             self.keepDoneDays = keepDoneDays
             self.quickFilters = quickFilters
+            self.scan = scan
+            self.scanMinutes = scanMinutes
+            self.scanScreen = scanScreen
         }
+
+        /// The task scan reads new chats, meeting summaries and transcripts, and screen captures, and files task suggestions. It runs as
+        /// a system automation, so it is not in the Automations list. Every change it proposes waits for Accept.
+        package var scan = true
+        /// Minutes between two scans.
+        package var scanMinutes = Tasks.defaultScanMinutes
+        /// The scan also reads screen captures. Needs `screenCapture.enabled`. Starts on for a user who had the Screen review automation on.
+        package var scanScreen = false
+
+        package static let defaultScanMinutes = 60
+        package static let scanMinutesRange = 15...1_440
 
         /// After a meeting summary, offer the action items that belong to "Me" as tasks. Nothing is added without a click.
         package var meetingSuggestions = true
@@ -472,6 +494,21 @@ package struct Config: Codable, Equatable {
         package var enabled = false
         /// Only messages from these Telegram user ids reach the chat.
         package var allowedUsers: [User] = []
+    }
+
+    /// Updates of the Mac app itself, through Sparkle (SPEC.md > Updates). A build made by `scripts/install.sh` ignores both switches.
+    package struct Updates: Codable, Equatable {
+        package init(checkAutomatically: Bool = true, installAutomatically: Bool = true) {
+            self.checkAutomatically = checkAutomatically
+            self.installAutomatically = installAutomatically
+        }
+
+        /// Ask the release feed once a day whether a newer published release exists. The request carries only the app and Sparkle
+        /// versions in its User-Agent.
+        package var checkAutomatically = true
+        /// Download a newer release as soon as it is found. It installs when no agent turn, voice note or meeting is running,
+        /// or when the user clicks the pet's update badge. Off: the user is asked before the download.
+        package var installAutomatically = true
     }
 
     /// The remote API a paired phone reaches over the Wi-Fi or the tailnet. Off by default: turning it on opens an HTTPS listener on the chosen
@@ -690,6 +727,7 @@ package struct Config: Codable, Equatable {
     package var desktopControl = DesktopControl()
     package var memory = Memory()
     package var remote = Remote()
+    package var updates = Updates()
 
     package static let file = Paths.root.appendingPathComponent("config.json")
 
@@ -749,6 +787,7 @@ package struct Config: Codable, Equatable {
         c.reminders.snoozeMinutes = max(1, c.reminders.snoozeMinutes)
         c.automations.logRetentionDays = min(365, max(1, c.automations.logRetentionDays))
         c.tasks.keepDoneDays = min(365, max(1, c.tasks.keepDoneDays))
+        c.tasks.scanMinutes = min(Tasks.scanMinutesRange.upperBound, max(Tasks.scanMinutesRange.lowerBound, c.tasks.scanMinutes))
         c.jobs.maxRunning = min(Jobs.maxRunningRange.upperBound, max(Jobs.maxRunningRange.lowerBound, c.jobs.maxRunning))
         c.jobs.permissionTimeoutMinutes = min(Jobs.permissionTimeoutRange.upperBound, max(Jobs.permissionTimeoutRange.lowerBound, c.jobs.permissionTimeoutMinutes))
         c.jobs.turnTimeoutMinutes = min(Jobs.turnTimeoutRange.upperBound, max(Jobs.turnTimeoutRange.lowerBound, c.jobs.turnTimeoutMinutes))

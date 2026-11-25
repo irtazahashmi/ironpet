@@ -36,15 +36,6 @@ struct ChatView: View {
         NavigationStack {
             VStack(spacing: 0) {
                 if find.isOpen { ChatFindBar(find: find) }
-                if model.connectionLost {
-                    HStack {
-                        Label("Can't reach your Mac. Retrying…", systemImage: SharedSymbols.warning).font(.footnote).foregroundStyle(.orange)
-                        Spacer()
-                        Button("Retry") { Task { await model.retryNow() } }.font(.footnote.weight(.semibold)).accessibilityIdentifier("chat-retry")
-                    }
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.vertical, 6)
-                    .accessibilityIdentifier("chat-connection-lost")
-                }
                 if let message = model.errorMessage {
                     Label(message, systemImage: SharedSymbols.warning).font(.footnote).foregroundStyle(.orange)
                         .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).padding(.vertical, 6)
@@ -52,6 +43,7 @@ struct ChatView: View {
                 }
                 // The composer floats over the transcript, so the background shows through the glass.
                 Transcript(model: model, find: find, avatar: avatar)
+                    .fullPageLoadError(model)
                     .environment(\.openFilePath, { preview = FilePreviewTarget(path: $0) })
                     .glassBottomBar {
                         VStack(spacing: 6) {
@@ -188,9 +180,9 @@ private struct Transcript: View {
                             TranscriptGroupView(group: group, photos: model.sentPhotos, images: model.images, avatar: avatar, expanded: expandedMessages,
                                                 toggleExpand: { id in if !expandedMessages.insert(id).inserted { expandedMessages.remove(id) } },
                                                 outbox: model.outbox, onRetry: { id in Task { await model.retry(id) } }, onDelete: { id in model.deleteQueued(id) },
-                                                onReply: { model.replyTo = $0 },
+                                                onReply: { model.reply(to: $0, selection: $1) },
                                                 readAloud: { item in voice.flatMap { ReadAloud(item: item, voice: $0) } },
-                                                highlights: find.highlights)
+                                                highlights: find.highlights, deliveredID: model.deliveredID)
                         }
                         if showsTyping { TypingRow(started: model.snapshot?.runStarted, avatar: avatar) }
                         ForEach(model.approvals) { ApprovalCard(approval: $0, model: model) }
@@ -270,10 +262,12 @@ private struct TranscriptGroupView: View {
     var outbox: [OutgoingMessage] = []
     var onRetry: (UUID) -> Void = { _ in }
     var onDelete: (UUID) -> Void = { _ in }
-    var onReply: (RemoteChatItem) -> Void = { _ in }
+    var onReply: (RemoteChatItem, String?) -> Void = { _, _ in }
     /// Nil in a saved thread, whose messages the Mac cannot read from the open chat.
     var readAloud: (RemoteChatItem) -> ReadAloud? = { _ in nil }
     var highlights: [String: RemoteChatFind.RowHighlight] = [:]
+    /// The last message from this phone that the Mac has confirmed. It shows the check.
+    var deliveredID: String?
 
     var body: some View {
         switch group {
@@ -282,9 +276,13 @@ private struct TranscriptGroupView: View {
         case .item(let item):
             VStack(alignment: .trailing, spacing: 2) {
                 MessageRow(item: item, photo: item.fileName.flatMap { photos[$0] }, images: images, avatar: avatar, expanded: expanded.contains(item.id),
-                           onToggleExpand: { toggleExpand(item.id) }, onReply: item.canReply && !OutgoingMessage.isPending(item.id) ? { onReply(item) } : nil,
+                           onToggleExpand: { toggleExpand(item.id) }, onReply: item.canReply && !OutgoingMessage.isPending(item.id) ? { selection in onReply(item, selection) } : nil,
                            readAloud: item.kind == "assistant" ? readAloud(item) : nil, find: highlights[item.id])
                 if let message = outbox.first(where: { $0.itemID == item.id }) { OutgoingStatus(message: message, onRetry: { onRetry(message.id) }, onDelete: { onDelete(message.id) }) }
+                else if item.id == deliveredID {
+                    Label("Delivered", systemImage: "checkmark").font(.caption2).foregroundStyle(.secondary)
+                        .accessibilityIdentifier("outgoing-delivered")
+                }
             }
         }
     }
@@ -309,7 +307,7 @@ private struct OutgoingStatus: View {
         case .sending, .sent:
             // A voice message shows "Transcribing…" in its bubble until the text arrives.
             if !message.isTranscribing {
-                Text("Sending…").font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("outgoing-sending")
+                Label("Sending…", systemImage: "clock").font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("outgoing-sending")
             }
         case .failed(let reason):
             HStack(spacing: 6) {
@@ -351,11 +349,13 @@ struct MessageRow: View {
     var avatar: CGImage?
     var expanded = false
     var onToggleExpand: () -> Void = {}
-    var onReply: (() -> Void)?
+    /// Starts a reply. The text is the part of the message the reader selected, or nil for the whole message.
+    var onReply: ((String?) -> Void)?
     var readAloud: ReadAloud?
     /// The highlights of Find in chat for this message. Nil outside a search.
     var find: RemoteChatFind.RowHighlight?
     @Environment(\.openFilePath) private var openFilePath
+    @State private var selecting = false
 
     var body: some View {
         Group {
@@ -385,9 +385,12 @@ struct MessageRow: View {
             openFilePath(path)
             return .handled
         })
-        .swipeToReply(onReply)
+        .environment(\.selectingText, $selecting)
+        .environment(\.askAboutSelection, onReply.map { reply in { text in reply(text) } })
+        .swipeToReply(onReply.map { reply in { reply(nil) } })
         .contextMenu {
-            if let onReply { Button { onReply() } label: { Label("Reply", systemImage: SharedSymbols.reply) } }
+            if let onReply { Button { onReply(nil) } label: { Label("Reply", systemImage: SharedSymbols.reply) } }
+            if case .assistant = item.row { Button { selecting = true } label: { Label("Select text", systemImage: "selection.pin.in.out") } }
             if let text = item.text, !text.isEmpty { Button { UIPasteboard.general.string = text } label: { Label("Copy", systemImage: SharedSymbols.copy) } }
             if let readAloud {
                 Button(action: readAloud.toggle) {
@@ -697,7 +700,8 @@ private struct Composer: View {
         VStack(alignment: .leading, spacing: 6) {
             if let reply = model.replyTo {
                 HStack(spacing: 4) {
-                    ReplyQuote(reply: RemoteChatReply(itemID: reply.id, sender: reply.kind == "user" ? "You" : "Reply", text: reply.text ?? ""))
+                    ReplyQuote(reply: RemoteChatReply(itemID: reply.id, sender: reply.kind == "user" ? "You" : "Reply", text: model.replySelection ?? reply.text ?? "",
+                                                      selection: model.replySelection == nil ? nil : true))
                     Spacer(minLength: 0)
                     Button { model.replyTo = nil } label: { Image(systemName: SharedSymbols.removeAttachment) }.foregroundStyle(.secondary)
                         .accessibilityLabel("Cancel reply").accessibilityIdentifier("cancel-reply")

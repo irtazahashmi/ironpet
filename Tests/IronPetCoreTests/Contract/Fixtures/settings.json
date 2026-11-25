@@ -37,6 +37,7 @@
             "captureWindow" : "cmd+opt+shift+g",
             "chat" : "cmd+opt+g",
             "copyVersion" : "",
+            "dictation" : "ctrl+opt+space",
             "meeting" : "",
             "voice" : "cmd+opt+v",
             "voiceMode" : "cmd+opt+ctrl+v"
@@ -132,13 +133,20 @@
             "meetingSuggestions" : true,
             "quickFilters" : [
 
-            ]
+            ],
+            "scan" : true,
+            "scanMinutes" : 60,
+            "scanScreen" : false
           },
           "telegram" : {
             "allowedUsers" : [
 
             ],
             "enabled" : false
+          },
+          "updates" : {
+            "checkAutomatically" : true,
+            "installAutomatically" : true
           },
           "voice" : {
             "baseUrl" : "http://localhost:8000/v1",
@@ -211,6 +219,7 @@
             "captureWindow" : "cmd+opt+shift+g",
             "chat" : "cmd+opt+g",
             "copyVersion" : "",
+            "dictation" : "ctrl+opt+space",
             "meeting" : "",
             "voice" : "cmd+opt+v",
             "voiceMode" : "cmd+opt+ctrl+v"
@@ -306,13 +315,20 @@
             "meetingSuggestions" : true,
             "quickFilters" : [
 
-            ]
+            ],
+            "scan" : true,
+            "scanMinutes" : 60,
+            "scanScreen" : false
           },
           "telegram" : {
             "allowedUsers" : [
 
             ],
             "enabled" : false
+          },
+          "updates" : {
+            "checkAutomatically" : true,
+            "installAutomatically" : true
           },
           "voice" : {
             "baseUrl" : "http://localhost:8000/v1",
@@ -382,6 +398,7 @@
             "captureWindow" : "cmd+opt+shift+g",
             "chat" : "cmd+opt+g",
             "copyVersion" : "",
+            "dictation" : "ctrl+opt+space",
             "meeting" : "",
             "voice" : "cmd+opt+v",
             "voiceMode" : "cmd+opt+ctrl+v"
@@ -477,13 +494,20 @@
             "meetingSuggestions" : true,
             "quickFilters" : [
 
-            ]
+            ],
+            "scan" : true,
+            "scanMinutes" : 60,
+            "scanScreen" : false
           },
           "telegram" : {
             "allowedUsers" : [
 
             ],
             "enabled" : false
+          },
+          "updates" : {
+            "checkAutomatically" : true,
+            "installAutomatically" : true
           },
           "voice" : {
             "baseUrl" : "http://localhost:8000/v1",

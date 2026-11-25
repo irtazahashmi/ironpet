@@ -166,13 +166,13 @@ final class PhaseFourTests: XCTestCase {
     }
 
     /// The list fails and the state call after it works: the error must survive, and "No meetings" must not show.
-    func testAFailedListShowsTheErrorNotTheEmptyState() async throws {
+    func testAFailedListShowsNoRowAndNotTheEmptyState() async throws {
         server.brokenRoutes = ["/v1/meetings": 500]
         let model = meetings()
         await model.unlock()
         XCTAssertTrue(model.loaded)
         XCTAssertEqual(server.count("GET /v1/meetings/state"), 1, "the state call after the failed list worked")
-        XCTAssertNotNil(model.errorMessage)
+        XCTAssertNil(model.errorMessage, "a failed read shows no row")
         XCTAssertFalse(model.showsEmptyState)
 
         server.brokenRoutes = [:]
@@ -198,11 +198,11 @@ final class PhaseFourTests: XCTestCase {
         XCTAssertEqual(model.meetings.count, 2)
     }
 
-    func testAListTheClientCannotDecodeShowsTheErrorNotTheEmptyState() async throws {
+    func testAListTheClientCannotDecodeShowsNoRowAndNotTheEmptyState() async throws {
         server.brokenRoutes = ["/v1/meetings": 200]
         let model = meetings()
         await model.unlock()
-        XCTAssertNotNil(model.errorMessage)
+        XCTAssertNil(model.errorMessage)
         XCTAssertFalse(model.showsEmptyState)
     }
 

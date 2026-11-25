@@ -25,12 +25,15 @@ let macDependencies: [Package.Dependency] = [
         .package(url: "https://github.com/apple/swift-async-algorithms.git", exact: "1.0.4"),
         .package(url: "https://github.com/swift-server/async-http-client.git", exact: "1.30.3"),
         .package(url: "https://github.com/swift-server/swift-service-lifecycle.git", exact: "2.10.0"),
+        // Updates itself from the release feed. A prebuilt binary framework, so it adds nothing to the Swift build time.
+        // Mac app target only: IronPetCore, the iOS app and the Linux build never see it. scripts/bundle.sh copies it into the app.
+        .package(url: "https://github.com/sparkle-project/Sparkle.git", exact: "2.9.6"),
         .package(url: "https://github.com/apple/swift-service-context.git", exact: "1.3.0"),
 ]
 let macTargets: [Target] = [
         .testTarget(name: "IronPetKitTests", dependencies: ["IronPetKit"], path: "Tests/IronPetKitTests"),
         .target(name: "IronPetObjC", path: "Sources/IronPetObjC"),
-        .executableTarget(name: "IronPet", dependencies: ["IronPetCore", "IronPetKit", "IronPetObjC", .product(name: "JMESPath", package: "jmespath.swift"), .product(name: "QuickJS", package: "QuickJS-Swift"), .product(name: "FluidAudio", package: "FluidAudio"), .product(name: "Hummingbird", package: "hummingbird"), .product(name: "HummingbirdWebSocket", package: "hummingbird-websocket"), .product(name: "NIOTransportServices", package: "swift-nio-transport-services")], path: "Sources/IronPet"),
+        .executableTarget(name: "IronPet", dependencies: ["IronPetCore", "IronPetKit", "IronPetObjC", .product(name: "JMESPath", package: "jmespath.swift"), .product(name: "QuickJS", package: "QuickJS-Swift"), .product(name: "FluidAudio", package: "FluidAudio"), .product(name: "Hummingbird", package: "hummingbird"), .product(name: "HummingbirdWebSocket", package: "hummingbird-websocket"), .product(name: "NIOTransportServices", package: "swift-nio-transport-services"), .product(name: "Sparkle", package: "Sparkle")], path: "Sources/IronPet"),
         .testTarget(name: "IronPetTests", dependencies: ["IronPet", "IronPetCore"], path: "Tests/IronPetTests"),
 ]
 #endif

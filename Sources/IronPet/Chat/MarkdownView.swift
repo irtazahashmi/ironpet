@@ -64,9 +64,9 @@ struct MarkdownView: View {
     @ViewBuilder
     private func view(for block: ChatMarkdown.Block, segment: Int) -> some View {
         switch block {
-        case .code(let language, let text, let closed):
-            if language?.lowercased() == "mermaid", closed {
-                MermaidBlock(code: text)
+        case .code(let language, let text, _):
+            if let diagram = ChatMarkdown.mermaidSource(of: block) {
+                MermaidBlock(code: diagram)
             } else {
                 CodeBlock(language: language, code: text, segment: segment, find: find)
             }

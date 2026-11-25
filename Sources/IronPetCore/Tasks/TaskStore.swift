@@ -101,6 +101,23 @@ package final class TaskStore {
             CREATE TABLE IF NOT EXISTS task_labels(task TEXT NOT NULL, key TEXT NOT NULL, value TEXT NOT NULL,
                                                    PRIMARY KEY(task, key)) WITHOUT ROWID;
             """),
+        // The task scan files suggestions that belong to no meeting and no automation, and some of them change an existing task. The
+        // table's CHECK cannot change in place, so it is rebuilt: exactly one of meeting, automation and scan names the origin. The
+        // scan's cursors live here and not in memory, so Forget Everything does not make it read old text again.
+        .init(550, "tasks: task scan suggestions, update suggestions and scan cursors") { db in
+            try db.script("""
+                CREATE TABLE task_suggestions_550(id TEXT PRIMARY KEY, title TEXT NOT NULL, due TEXT, notes TEXT NOT NULL DEFAULT '', url TEXT,
+                                                  meeting TEXT, automation TEXT, automation_name TEXT, created REAL NOT NULL, waiting_on TEXT,
+                                                  source_ref TEXT, scan INTEGER NOT NULL DEFAULT 0, update_task TEXT, update_title TEXT,
+                                                  update_note TEXT, update_done INTEGER NOT NULL DEFAULT 0, update_waiting TEXT,
+                                                  CHECK ((meeting IS NOT NULL) + (automation IS NOT NULL) + scan = 1)) WITHOUT ROWID;
+                INSERT INTO task_suggestions_550(id, title, due, notes, url, meeting, automation, automation_name, created, waiting_on, source_ref)
+                    SELECT id, title, due, notes, url, meeting, automation, automation_name, created, waiting_on, source_ref FROM task_suggestions;
+                DROP TABLE task_suggestions;
+                ALTER TABLE task_suggestions_550 RENAME TO task_suggestions;
+                CREATE TABLE IF NOT EXISTS task_scan_cursors(key TEXT PRIMARY KEY, item TEXT NOT NULL, at REAL NOT NULL) WITHOUT ROWID;
+                """)
+        },
     ]
 
     /// A source reference as stored: a JSON object, keys sorted.
@@ -113,6 +130,10 @@ package final class TaskStore {
 
     /// Suggestions one automation can have waiting. More wait in the watcher until the user adds or skips some.
     package static let maxPendingPerAutomation = 50
+    /// Suggestions the task scan can have waiting. The scan files no more until the user adds or skips some.
+    package static let maxPendingScan = 50
+    /// Longest note an update suggestion may append.
+    package static let maxUpdateNote = 500
     /// How long an automation's suggested keys are remembered, so a skipped one does not come back.
     package static let keepSuggestedKeysDays = 365
 
@@ -319,6 +340,55 @@ package final class TaskStore {
                      sourceRef: sourceRef)
     }
 
+    /// Stores the new tasks the task scan found. The title check also covers meeting action items that wait, so the same thing is
+    /// not offered twice. Each draft's own `sourceRef` says which chat message, meeting or capture it came from.
+    @discardableResult
+    package func suggest(scan drafts: [TaskSuggestion.Draft]) -> [TaskSuggestion] {
+        let waiting = suggestions.filter { $0.origin == .taskScan }.count
+        return store(drafts, origin: .taskScan, limit: max(0, Self.maxPendingScan - waiting))
+    }
+
+    /// Stores the changes to existing tasks the task scan found. A change to a task that does not exist or is done, one that
+    /// changes nothing, and one that repeats a waiting suggestion for the same task are left out.
+    @discardableResult
+    package func suggest(scanUpdates updates: [(update: TaskSuggestion.Update, sourceRef: String?)]) -> [TaskSuggestion] {
+        let time = now()
+        var added: [TaskSuggestion] = []
+        var taken = Set(suggestions.map(\.id))
+        var waiting = suggestions.filter { $0.origin == .taskScan }.count
+        for (proposal, sourceRef) in updates where waiting < Self.maxPendingScan {
+            guard let target = task(proposal.target), target.status != .done else { continue }
+            var change = proposal
+            change.targetTitle = target.title
+            change.note = change.note.map { TaskSuggestion.Draft.clean($0, limit: Self.maxUpdateNote, newlines: false) }.flatMap { $0.isEmpty ? nil : $0 }
+            change.waitingOn = change.waitingOn.flatMap { try? TaskValidator.waitingOn(String($0.prefix(TaskValidator.maxWaitingOn))) }
+            if change.waitingOn == target.waitingOn { change.waitingOn = nil }
+            guard !change.isEmpty else { continue }
+            let same = { (other: TaskSuggestion) in
+                other.update.map { $0.target == change.target && $0.note == change.note && $0.markDone == change.markDone && $0.waitingOn == change.waitingOn } ?? false
+            }
+            guard !suggestions.contains(where: same), !added.contains(where: same) else { continue }
+            let id = AutomationValidator.slug("update \(target.title)", taken: taken)
+            taken.insert(id)
+            let ref: [String: Any] = ["ref": "task-scan", "reason": "Found by the task scan", "at": ISO8601DateFormatter().string(from: time)]
+            added.append(TaskSuggestion(id: id, title: target.title, origin: .taskScan, created: time,
+                                        sourceRef: sourceRef ?? Self.refText(ref), update: change))
+            waiting += 1
+        }
+        guard !added.isEmpty else { return [] }
+        do {
+            try database.write { db in
+                for s in added { try Self.insert(s, db) }
+            }
+        } catch {
+            NSLog("ironpet: could not store task suggestions: \(error.localizedDescription)")
+            return []
+        }
+        reload()
+        didChange(nil)
+        return added
+    }
+
     private func store(_ drafts: [TaskSuggestion.Draft], origin: TaskSuggestion.Origin, limit: Int = .max,
                        sourceRef: String? = nil) -> [TaskSuggestion] {
         // Compared by `ActionItems.normalized`, so a regenerated summary that words an item with another case, spacing or
@@ -340,27 +410,22 @@ package final class TaskStore {
             case .automation(let automation, let name):
                 ref = ["ref": automation, "reason": "Suggested by the \(name) watcher", "automation": automation,
                        "at": ISO8601DateFormatter().string(from: time)]
+            case .taskScan:
+                ref = ["ref": "task-scan", "reason": "Found by the task scan", "at": ISO8601DateFormatter().string(from: time)]
             }
             added.append((draft.key, TaskSuggestion(id: id, title: title, due: draft.due, notes: draft.notes, url: draft.url,
-                                                    origin: origin, created: time, waitingOn: waitingOn, sourceRef: sourceRef ?? Self.refText(ref))))
+                                                    origin: origin, created: time, waitingOn: waitingOn,
+                                                    sourceRef: sourceRef ?? draft.sourceRef ?? Self.refText(ref))))
         }
         guard !added.isEmpty else { return [] }
         do {
             try database.write { db in
                 for (key, s) in added {
-                    var meeting: String?, automation: String?, name: String?
-                    switch s.origin {
-                    case .meeting(let folder): meeting = folder.path
-                    case .automation(let id, let n):
-                        (automation, name) = (id, n)
+                    if case .automation(let id, _) = s.origin {
                         try db.execute("INSERT OR REPLACE INTO task_suggestion_keys(automation, key, at) VALUES(?, ?, ?)",
                                        [id, key, time.timeIntervalSince1970])
                     }
-                    try db.execute("""
-                        INSERT INTO task_suggestions(id, title, due, notes, url, meeting, automation, automation_name, created, waiting_on, source_ref)
-                        VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                        """, [s.id, s.title, s.due, s.notes, s.url?.absoluteString, meeting, automation, name,
-                              s.created.timeIntervalSince1970, s.waitingOn, s.sourceRef])
+                    try Self.insert(s, db)
                 }
             }
         } catch {
@@ -370,6 +435,22 @@ package final class TaskStore {
         reload()
         didChange(nil)
         return added.map(\.suggestion)
+    }
+
+    private static func insert(_ s: TaskSuggestion, _ db: Database.Connection) throws {
+        var meeting: String?, automation: String?, name: String?
+        switch s.origin {
+        case .meeting(let folder): meeting = folder.path
+        case .automation(let id, let n): (automation, name) = (id, n)
+        case .taskScan: break
+        }
+        try db.execute("""
+            INSERT INTO task_suggestions(id, title, due, notes, url, meeting, automation, automation_name, created, waiting_on, source_ref,
+                                         scan, update_task, update_title, update_note, update_done, update_waiting)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, [s.id, s.title, s.due, s.notes, s.url?.absoluteString, meeting, automation, name, s.created.timeIntervalSince1970,
+                  s.waitingOn, s.sourceRef, s.origin == .taskScan ? 1 : 0, s.update?.target, s.update?.targetTitle, s.update?.note,
+                  (s.update?.markDone ?? false) ? 1 : 0, s.update?.waitingOn])
     }
 
     private func suggestedKeys(_ automation: String) -> Set<String> {
@@ -399,6 +480,7 @@ package final class TaskStore {
     package func accept(_ suggestionID: String, overrides: Overrides = Overrides(), note: String? = nil, by: String = "user") throws -> TaskItem {
         guard let s = suggestions.first(where: { $0.id == suggestionID }) else { throw TaskError(message: "no suggestion \"\(suggestionID)\"") }
         let note = try note.map { try TaskValidator.notes($0) }
+        if let change = s.update { return try apply(change, suggestion: s, note: note, by: by) }
         let due = try? TaskValidator.due(overrides.due ?? s.due)
         var notes = overrides.notes ?? s.notes
         var links: [TaskLink] = []
@@ -415,9 +497,28 @@ package final class TaskStore {
         return item
     }
 
-    /// Adds every suggestion as a new task.
+    /// Applies an update suggestion to its target task: appends the note, marks it done, sets who it waits on. A task that is gone
+    /// removes the suggestion and says so.
+    private func apply(_ change: TaskSuggestion.Update, suggestion s: TaskSuggestion, note: String?, by: String) throws -> TaskItem {
+        guard let target = task(change.target) else {
+            removeSuggestion(s.id)
+            throw TaskError(message: "the task \"\(change.targetTitle)\" no longer exists")
+        }
+        var notes: String?
+        if let text = change.note, !text.isEmpty {
+            let joined = target.notes.isEmpty ? text : target.notes + "\n\n" + text
+            // A task whose notes are full keeps them as they are. The text still goes to its history.
+            if joined.utf8.count <= TaskValidator.maxNotes { notes = joined }
+        }
+        let item = try update(change.target, notes: notes, status: change.markDone ? .done : nil,
+                              waitingOn: change.waitingOn.map { Optional($0) }, note: note ?? change.note, by: by)
+        removeSuggestion(s.id)
+        return item
+    }
+
+    /// Adds every suggested new task. A change to an existing task is accepted on its own, never in bulk.
     package func acceptAll() {
-        for s in suggestions { _ = try? accept(s.id) }
+        for s in suggestions where s.update == nil { _ = try? accept(s.id) }
     }
 
     /// Removes a suggestion.
@@ -459,6 +560,25 @@ package final class TaskStore {
             }
         } catch {
             NSLog("ironpet: could not store task reminders: \(error.localizedDescription)")
+        }
+    }
+
+    // MARK: Task scan cursors
+
+    /// What the task scan last read in one source (a chat id, a meeting folder, `screen`). Nil when it never read it.
+    package func scanCursor(_ key: String) -> (item: String, at: Date)? {
+        guard let row = (try? database.read { try $0.rows("SELECT item, at FROM task_scan_cursors WHERE key = ?", [key]) })?.first,
+              let item = row[0] as? String else { return nil }
+        return (item, Date(timeIntervalSince1970: row[1] as? Double ?? 0))
+    }
+
+    package func setScanCursors(_ cursors: [(key: String, item: String)]) {
+        guard !cursors.isEmpty else { return }
+        let time = now().timeIntervalSince1970
+        try? database.write { db in
+            for cursor in cursors {
+                try db.execute("INSERT OR REPLACE INTO task_scan_cursors(key, item, at) VALUES(?, ?, ?)", [cursor.key, cursor.item, time])
+            }
         }
     }
 
@@ -525,7 +645,8 @@ package final class TaskStore {
                                     sourceRef: row[10] as? String, labels: labels[id] ?? [:])
                 }
                 let suggested = try db.rows("""
-                    SELECT id, title, due, notes, url, meeting, automation, automation_name, created, waiting_on, source_ref
+                    SELECT id, title, due, notes, url, meeting, automation, automation_name, created, waiting_on, source_ref,
+                           scan, update_task, update_title, update_note, update_done, update_waiting
                     FROM task_suggestions ORDER BY created, id
                     """).compactMap { row -> TaskSuggestion? in
                     guard let id = row[0] as? String, let title = row[1] as? String, let created = row[8] as? Double else { return nil }
@@ -534,13 +655,20 @@ package final class TaskStore {
                         origin = .meeting(URL(fileURLWithPath: meeting))
                     } else if let automation = row[6] as? String {
                         origin = .automation(id: automation, name: row[7] as? String ?? automation)
+                    } else if (row[11] as? Int64 ?? 0) == 1 {
+                        origin = .taskScan
                     } else {
                         return nil
+                    }
+                    var change: TaskSuggestion.Update?
+                    if let target = row[12] as? String {
+                        change = TaskSuggestion.Update(target: target, targetTitle: row[13] as? String ?? title, note: row[14] as? String,
+                                                       markDone: (row[15] as? Int64 ?? 0) == 1, waitingOn: row[16] as? String)
                     }
                     return TaskSuggestion(id: id, title: title, due: row[2] as? String, notes: row[3] as? String ?? "",
                                           url: (row[4] as? String).flatMap(URL.init(string:)), origin: origin,
                                           created: Date(timeIntervalSince1970: created), waitingOn: row[9] as? String,
-                                          sourceRef: row[10] as? String)
+                                          sourceRef: row[10] as? String, update: change)
                 }
                 return (items, suggested)
             }

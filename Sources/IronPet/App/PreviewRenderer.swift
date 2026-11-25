@@ -38,6 +38,15 @@ enum PreviewRenderer {
             model.voice.loadPreview()
             render(ChatView(session: model).frame(width: 520, height: 640).panel(), to: dir, "chat-voice-recording" + suffix, scheme: scheme)
         }
+        // The dictation bar over another app, in two accent colours and both appearances.
+        for (accent, color) in [("pink", Color.pink), ("blue", Color.blue), ("green", Color.green)] {
+            for (suffix, scheme) in [("dark", ColorScheme.dark), ("light", .light)] {
+                let voice = VoiceController()
+                voice.loadPreview()
+                let backdrop = scheme == .dark ? Color(white: 0.07) : Color(white: 0.93)
+                render(DictationPill(voice: voice, accent: color).padding(24).background(backdrop), to: dir, "dictation-bar-\(accent)-\(suffix)", scheme: scheme)
+            }
+        }
         // The reply markdown sample at the narrow chat width and a wider one, in both appearances, and with find open.
         for width in [420.0, 520.0] {
             for (suffix, scheme) in [("dark", ColorScheme.dark), ("light", .light)] {
@@ -221,6 +230,8 @@ enum PreviewRenderer {
                 }
             }
         }
+        renderMemorySection(chat: chat, sessions: sessions, signals: signals, tasks: tasks, meetings: meetings, settings: settingsModel,
+                            brief: brief, to: dir)
         // A reply with every text block, in a real window, to check the markdown in both appearances.
         let markdownChat = ChatSession(restore: false)
         markdownChat.loadPreview(.markdown)
@@ -267,7 +278,7 @@ enum PreviewRenderer {
         for (name, sample) in [("settings-memory", true), ("settings-memory-empty", false)] {
             let model = sampleMemory(in: memoryFolder.appendingPathComponent(name), filled: sample)
             for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
-                render(MemorySettingsBody(memory: model, listsAgents: false).frame(width: 560, height: sample ? 1500 : 1000).panel(),
+                render(MemorySettingsBody(memory: model, listsAgents: false).frame(width: 560, height: sample ? 500 : 500).panel(),
                        to: dir, name + suffix, scheme: scheme)
             }
         }
@@ -481,6 +492,60 @@ enum PreviewRenderer {
                     render(UsageSettings(range: days, sample: summary, showCost: cost, hoveredDay: hovered).frame(width: 560, height: 700).panel(),
                            to: dir, "\(name)-\(suffix)")
                 }
+            }
+        }
+    }
+
+    /// The Memory section over invented pages (the names of the design mockups): the list, a search, a page, a page reached from it, a
+    /// search with no match. The empty state is the `real-memory` render above, which runs with no memory attached.
+    private static func renderMemorySection(chat: ChatSession, sessions: SessionStore, signals: SignalStore, tasks: TasksAPI,
+                                            meetings: MeetingsAPI, settings: SettingsModel, brief: BriefModel?, to dir: URL) {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-preview-memory-section-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        EntityMemoryStore.exportDirectory = folder
+        let store = EntityMemoryStore(database: Database.open(path: nil, migrations: MemoryIndex.migrations).database)
+        let project = ProjectKey(key: "git.northwind.example/lighthouse", name: "Lighthouse", isRepo: true, workspace: URL(fileURLWithPath: "/Users/you/Projects/lighthouse"))
+        var clock = Date().addingTimeInterval(-5 * 86_400)
+        store.now = { clock }
+        func learn(_ days: Double, _ text: String, _ scope: MemoryScope, _ person: String? = nil, _ source: String = "chat:3f2a9c1d") {
+            clock = Date().addingTimeInterval(-days * 86_400)
+            _ = store.remember(text, scope: scope, person: person, project: project, source: source)
+        }
+        learn(4, "Works from Lisbon, one hour behind Berlin.", .me)
+        learn(4, "Database migrations are one-way: after a build with new migrations is installed, older builds refuse the database.", .project)
+        learn(3, "The CI size limit for the app bundle is 64 MB. Size is measured on CI, since local builds come out larger.", .project, nil, "screen")
+        learn(2, "Auto-update for the desktop app is tracked in LH-283.", .project, nil, "tasks")
+        learn(2, "Owns the Lighthouse repository and reviews every release build.", .people, "Maya Chen", "tasks")
+        learn(1, "Asked that whoever picks up a Lighthouse issue assigns it to themselves.", .people, "Maya Chen", "screen")
+        learn(1, "Maya is working with the team to track Lighthouse work as issues instead of a board.", .people, "Maya")
+        learn(0, "Said overlapping intents caused most of the misclassification.", .people, "Maya Cheng")
+        learn(0, "Wrote the retry queue for failed uploads (LH-412).", .people, "Sam Rivera", "meeting:2026-11-23-1005")
+        if let lighthouse = store.entities().first(where: { $0.name == "Lighthouse" }), let maya = store.entities().first(where: { $0.name == "Maya Chen" }) {
+            store.link(from: maya.id, to: lighthouse.id, type: "works_on", source: "chat:3f2a9c1d")
+        }
+        if let pinned = store.entities().first(where: { $0.name == "Lighthouse" }).flatMap({ store.claims(of: $0.id).last }) { store.setPinned(pinned.id, true) }
+        let saved = MemoryAPI.live
+        MemoryAPI.live = MemoryAPI(services: { nil }, pages: { store })
+        defer { MemoryAPI.live = saved; MemorySectionModel.shared.showList(); MemorySectionModel.shared.reload() }
+        let lighthouse = store.entities().first { $0.name == "Lighthouse" }?.id
+        let maya = store.entities().first { $0.name == "Maya Chen" }?.id
+        let steps: [(String, (MemorySectionModel) -> Void)] = [
+            ("list", { _ in }),
+            ("people-search", { $0.select(.people); $0.query = "maya"; $0.applyQuery() }),
+            ("project", { m in if let lighthouse { m.open(lighthouse) } }),
+            ("person", { m in if let lighthouse, let maya { m.open(lighthouse); m.open(maya) } }),
+            ("no-results", { $0.select(.projects); $0.query = "maya"; $0.applyQuery() }),
+        ]
+        for (name, setup) in steps {
+            for (suffix, scheme) in [("dark", ColorScheme.dark), ("light", .light)] {
+                let m = MemorySectionModel.shared
+                m.filter = .all; m.clearSearch(); m.showList(); m.reload()
+                setup(m)
+                let model = IronPetWindowModel(defaults: UserDefaults(suiteName: "ironpet-previews") ?? .standard)
+                model.section = .memory
+                let view = IronPetWindowView(model: model, agents: AgentsAPI(store: sessions), alerts: AlertsAPI(store: signals), tasks: tasks,
+                                             chat: Self.chatModel(chat), meetings: meetings, settings: settings, brief: brief, actions: .none)
+                renderWindow(model: model, session: chat, content: view, to: dir, "memory-\(name)-\(suffix)", scheme: scheme)
             }
         }
     }
@@ -749,6 +814,13 @@ enum PreviewRenderer {
         store.suggest([TaskSuggestion.Draft(key: "msg-1", title: "Reply to Sam about the Q4 budget", due: nil,
                                             url: URL(string: "https://mail.google.com/mail/u/0/#inbox/1"))],
                       automation: "gmail-watch", name: "Gmail watcher")
+        // What the task scan files: a new task, and a change to a task that exists.
+        clock = Date().addingTimeInterval(-120)
+        store.suggest(scan: [TaskSuggestion.Draft(key: "scan", title: "Send Tom the deck", due: "2026-11-26")])
+        if let target = store.tasks.first(where: { $0.title == "Send the updated pricing deck" }) {
+            store.suggest(scanUpdates: [(TaskSuggestion.Update(target: target.id, targetTitle: target.title, note: "Sent on Tuesday, Ana confirmed.",
+                                                               markDone: true), nil)])
+        }
         clock = Date()
         let api = TasksAPI(store: store)
         _ = try? api.upsertQuickFilter(id: nil, name: "Open", query: ["not": ["status": "done"]])

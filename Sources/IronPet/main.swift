@@ -22,6 +22,12 @@ if ["mcp", "mcp-stdio"].contains(CommandLine.arguments.dropFirst().first ?? "") 
     exit(AutomationCLI.stdioBridge(path: MCPEndpoint.path(forScope: ProcessInfo.processInfo.environment[MCPEndpoint.scopeVariable])))
 }
 
+if CommandLine.arguments.contains("--schema-version") {
+    // Used by scripts/bundle.sh, which records it in Info.plist for the update check.
+    print(AppMigrations.latestVersion)
+    exit(0)
+}
+
 if CommandLine.arguments.contains("--uninstall") {
     // Used by scripts/uninstall.sh: removes only ironpet's hooks and its login item, then exits.
     do {

@@ -9,7 +9,7 @@ final class RecordResolverTests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
-        database = try Database.open(path: nil, migrations: AppMigrations.all).database
+        database = Database.open(path: nil, migrations: AppMigrations.all).database
         tasks = TaskStore(database: database, keepDoneDays: { 30 })
         refs = RecordRefs(database: database)
     }
@@ -30,6 +30,18 @@ final class RecordResolverTests: XCTestCase {
         let result = try XCTUnwrap(reply["result"] as? [String: Any], "\(reply)")
         let text = ((result["content"] as? [[String: Any]])?.first?["text"] as? String) ?? ""
         return (text, result["isError"] as? Bool ?? false)
+    }
+
+    /// A database that already ran the newest migration on main (550) must still get the ref table when this build opens it.
+    func testADatabaseAlreadyAtFiveFiftyGetsTheRefTable() async throws {
+        let path = FileManager.default.temporaryDirectory.appendingPathComponent("refs-\(UUID().uuidString).db")
+        defer { try? FileManager.default.removeItem(at: path) }
+        let old = Database.open(path: path, migrations: AppMigrations.all.filter { $0.version <= 550 })
+        XCTAssertNil(old.error)
+        let upgraded = Database.open(path: path, migrations: AppMigrations.all)
+        XCTAssertNil(upgraded.error)
+        let tables = try upgraded.database.read { try $0.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'record_refs'") }
+        XCTAssertEqual(tables.count, 1, "the record_refs table is missing after upgrading from 550")
     }
 
     func testIdsHaveThePrefixAndAtLeastSixHexDigits() async throws {

@@ -18,9 +18,6 @@ struct PetView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 20) {
-                    if let message = model.errorMessage {
-                        Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("pet-error")
-                    }
                     hero
                     ForEach(model.bubbles) { BubbleCard(bubble: $0, model: model) }
                     tricks
@@ -31,6 +28,7 @@ struct PetView: View {
             .navigationTitle(model.pet?.name ?? "Pet")
             .navigationBarTitleDisplayMode(.inline)
             .themedScreen()
+            .fullPageLoadError(model)
             .refreshable { await model.refresh(); await today.refresh() }
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {

@@ -35,6 +35,10 @@ final class SettingsModel: ObservableObject {
     var prompts: PromptsAPI?
     /// Opens the main window on its Screen section.
     var showScreenSection: () -> Void = {}
+    /// Opens the main window on its Memory section.
+    var showMemorySection: () -> Void = {}
+    /// The self-updater. Nil in preview renders.
+    var updates: UpdateController?
     /// Opens the execution log window, for one automation or all of them.
     var showLogs: (String?) -> Void = { _ in }
     /// Sends what the user wants to the chat, for the agent to create the automation.
@@ -151,7 +155,7 @@ struct SettingsView: View {
 
     static let pages = [
         Page(tag: "general", title: "General", symbol: SharedSymbols.settings),
-        Page(tag: "memory", title: "Memory", symbol: "brain"),
+        Page(tag: "memory", title: "Memory", symbol: SharedSymbols.memory),
         Page(tag: "prompts", title: "Prompts", symbol: "text.bubble"),
         Page(tag: "integrations", title: "Integrations", symbol: "puzzlepiece.extension"),
         Page(tag: "voice", title: "Voice", symbol: SharedSymbols.microphone),
@@ -297,6 +301,7 @@ private struct GeneralSettings: View {
                 Toggle("Hide the window when another app is in front", isOn: Binding(
                     get: { store.config.window.autoHide }, set: { on in store.update { $0.window.autoHide = on } }))
             }
+            if let updates = model.updates { UpdatesSection(updates: updates) }
             Section {
                 Toggle("Welcome back summary", isOn: Binding(
                     get: { store.config.welcomeBack.enabled }, set: { on in store.update { $0.welcomeBack.enabled = on } }))
@@ -311,6 +316,21 @@ private struct GeneralSettings: View {
                 Text("Tasks")
             } footer: {
                 Text("\(store.config.pet.name) says once when an open task is due today or overdue, with Done, Snooze and Open. Pause reminders holds these too.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
+                Toggle("Look for tasks in chats, meetings and the screen", isOn: Binding(
+                    get: { store.config.tasks.scan }, set: { on in store.update { $0.tasks.scan = on } }))
+                Stepper(value: Binding(get: { store.config.tasks.scanMinutes }, set: { value in store.update { $0.tasks.scanMinutes = value } }),
+                        in: Config.Tasks.scanMinutesRange, step: 15) {
+                    Text("Every \(store.config.tasks.scanMinutes) minutes")
+                }
+                .disabled(!store.config.tasks.scan)
+                Toggle("Also read the text captured from the screen", isOn: Binding(
+                    get: { store.config.tasks.scanScreen }, set: { on in store.update { $0.tasks.scanScreen = on } }))
+                    .disabled(!store.config.tasks.scan || !store.config.screenCapture.enabled)
+            } footer: {
+                Text("Each scan sends only what is new to the agent that already had it: a chat to its own agent, a meeting to the agent that summarized it. The agent can only answer. It suggests new tasks and changes to open tasks (done, who you wait on, a note), and nothing changes until you press Add or Accept in the Tasks section. The screen needs screen capture turned on. Add your own schedule under Automations if you want a different one.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
@@ -416,7 +436,7 @@ private struct ShortcutRow: View {
                 message = "Use ⌘, ⌥ or ⌃ (Shift alone isn't enough), or a function key."
                 return nil
             }
-            let others = [\Config.Hotkeys.chat, \.captureWindow, \.captureRegion, \.voice, \.meeting, \.voiceMode, \.copyVersion].filter { $0 != path }
+            let others = [\Config.Hotkeys.chat, \.captureWindow, \.captureRegion, \.voice, \.dictation, \.meeting, \.voiceMode, \.copyVersion].filter { $0 != path }
             if others.contains(where: { Shortcut(store.config.hotkeys[keyPath: $0]) == shortcut }) {
                 message = "\(shortcut.display) is already used for another action."
                 return nil
@@ -459,6 +479,7 @@ struct VoiceSettings: View {
                                                     set: { on in store.update { $0.voice.enabled = on } }))
                 Group {
                     ShortcutRow(title: "Voice shortcut", path: \.voice, model: model)
+                    ShortcutRow(title: "Dictation shortcut", path: \.dictation, model: model)
                     Toggle("Hold to talk", isOn: Binding(get: { store.config.voice.holdToTalk },
                                                          set: { on in store.update { $0.voice.holdToTalk = on } }))
                 }
@@ -466,7 +487,7 @@ struct VoiceSettings: View {
             } header: {
                 Text("Talk to \(name)")
             } footer: {
-                Text("Hold the shortcut or the chat's microphone button, speak, and let go. The text lands in the chat box, or is sent at once when \"Send voice notes automatically\" is on in the chat's menu. With Hold to talk off, press once to start and again to stop. Esc cancels.")
+                Text("Hold the shortcut or the chat's microphone button, speak, and let go. The text lands in the chat box, or is sent at once when \"Send voice notes automatically\" is on in the chat's menu. With Hold to talk off, press once to start and again to stop. Esc cancels.\n\nThe dictation shortcut works in any app: press it, speak, and press it again (or Enter) to type the transcript where the cursor is. Esc cancels and types nothing. Text goes in through Accessibility, or is pasted with your clipboard put back afterwards. Password fields never get text, and when no text field has focus the transcript stays on the clipboard. It needs Accessibility and Microphone access.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             SpokenReplySettings(voiceAPI: model.voice)
@@ -1171,5 +1192,45 @@ struct MicIgnoreSection: View {
         panel.message = "Choose an app that ironpet should never treat as a call."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         error = model.add(appAt: url)?.message
+    }
+}
+
+
+// MARK: - Updates
+
+/// Settings → General → Updates. Dev builds show why the controls are off instead of hiding them.
+private struct UpdatesSection: View {
+    @ObservedObject var updates: UpdateController
+    @ObservedObject private var store = SettingsAPI.live
+
+    private var status: String {
+        switch updates.state {
+        case .off(let reason): return reason
+        case .idle: return updates.lastChecked.map { "Up to date. Last checked \($0.formatted(date: .abbreviated, time: .shortened))." } ?? "Not checked yet."
+        case .checking: return "Checking…"
+        case .ready(let version): return "ironpet \(version) is downloaded and installs when nothing is running, or when you click Restart."
+        case .failed(let message): return "The last check failed: \(message)"
+        }
+    }
+
+    var body: some View {
+        let off = updates.disabledReason != nil
+        Section {
+            LabeledContent("Version", value: updates.appVersion.version + (updates.appVersion.isDev ? " dev" : ""))
+            Toggle("Check for updates automatically", isOn: Binding(
+                get: { store.config.updates.checkAutomatically }, set: { on in store.update { $0.updates.checkAutomatically = on } }))
+                .disabled(off)
+            Toggle("Download and install updates automatically", isOn: Binding(
+                get: { store.config.updates.installAutomatically }, set: { on in store.update { $0.updates.installAutomatically = on } }))
+                .disabled(off || !store.config.updates.checkAutomatically)
+            HStack {
+                Button("Check now") { updates.checkNow() }.disabled(off || !updates.canCheck)
+                if updates.isReady { Button("Restart and update") { updates.installNow() } }
+            }
+        } header: {
+            Text("Updates")
+        } footer: {
+            Text(status).font(.caption).foregroundStyle(.secondary)
+        }
     }
 }

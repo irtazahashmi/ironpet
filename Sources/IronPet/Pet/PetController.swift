@@ -60,6 +60,8 @@ final class PetController: NSObject {
     var onSettings: (() -> Void)?
     /// Opens Settings on the Screen tab.
     var onScreenSettings: (() -> Void)?
+    /// Opens Settings on the Memory tab.
+    var onMemorySettings: (() -> Void)?
     /// The Chat section's session and the Transcripts section's meetings. Set before the window first opens.
     var chat: ChatSession?
     /// The chat API the window draws. Set with `chat`.
@@ -367,6 +369,11 @@ final class PetController: NSObject {
                 guard let self else { return }
                 if !isChatVisible { builtWindow?.close() }
                 onScreenSettings?()
+            },
+            onMemorySettings: { [weak self] in
+                guard let self else { return }
+                if !isChatVisible { builtWindow?.close() }
+                onMemorySettings?()
             },
             onBriefOpen: { [weak self] target in self?.openBrief(target) })
         let window = IronPetPanel(model: windowModel, session: chatModel, content: IronPetWindowView(

@@ -62,6 +62,10 @@ public enum APIPath {
     public static func runAutomation(_ id: String) -> String { "/v1/automations/\(id)/run-now" }
     public static let requestAutomation = "/v1/automations/request"
 
+    public static let memory = "/v1/memory"
+    public static func memoryPage(_ ref: String) -> String { "/v1/memory/pages/\(ref)" }
+    public static func memoryFact(_ ref: String) -> String { "/v1/memory/facts/\(ref)" }
+    public static func memoryFactPin(_ ref: String) -> String { "/v1/memory/facts/\(ref)/pin" }
     public static let meetings = "/v1/meetings"
     public static let meetingState = "/v1/meetings/state"
     public static let stopMeeting = "/v1/meetings/stop"

@@ -43,6 +43,10 @@ struct TaskDetail: Equatable {
     }
 
     init(suggestion: TaskSuggestion) {
+        if let update = suggestion.update {
+            fields.append(Field(label: "Task", value: update.targetTitle))
+            fields.append(Field(label: "Change", value: update.summary))
+        }
         if let waiting = suggestion.waitingLabel { fields.append(Field(label: "Waiting", value: waiting)) }
         if let due = suggestion.due, !due.isEmpty { fields.append(Field(label: "Due", value: due)) }
         fields.append(Field(label: "Origin", value: suggestion.source.rawValue))

@@ -4,7 +4,7 @@ import Foundation
 /// (Band agents, Claude Code or Codex sessions reported through hooks, automation shell commands) has no feature here, so it
 /// cannot be recorded.
 package enum UsageFeature: String, CaseIterable, Codable {
-    case chat, automations, jobs, voiceMode, meetingSummary, voiceTranscription, meetingTranscription, memory
+    case chat, automations, jobs, voiceMode, meetingSummary, voiceTranscription, meetingTranscription, memory, taskScan
 
     package var title: String {
         switch self {
@@ -16,6 +16,7 @@ package enum UsageFeature: String, CaseIterable, Codable {
         case .voiceTranscription: return "Voice transcription"
         case .meetingTranscription: return "Meeting transcription"
         case .memory: return "Memory"
+        case .taskScan: return "Task scan"
         }
     }
 
@@ -278,6 +279,10 @@ package final class UsageStore: @unchecked Sendable {
 package enum AppMigrations {
     package static let all = AutomationState.migrations + UsageStore.migrations + TaskStore.migrations + CaptureStore.migrations + ActivityLog.migrations
         + JobService.migrations + MemoryIndex.migrations + NotificationStore.migrations + RemoteStore.migrations + RecordRefs.migrations
+
+    /// The schema version a database reaches once every migration ran. A release records it in Info.plist (`IronPetSchemaVersion`),
+    /// so the update check can tell an older build from a newer one by its data, not only by its version number.
+    package static var latestVersion: Int { all.map(\.version).max() ?? 0 }
 }
 
 // MARK: Agent usage

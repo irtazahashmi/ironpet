@@ -4,10 +4,10 @@ import Foundation
 /// task's id, a job's id, an automation's id or a filter's id. A ref never changes and is never reused. The key stays the same, so
 /// an old id (the key itself) keeps resolving to the same record, and stored references to it need no rewrite.
 package struct RecordRefs {
-    /// Version 546 is above every version in the app (the memory migrations are 544 and 545). Existing tasks and jobs get refs now;
+    /// Version 551 is above every version in the app (the newest on main before this is 550). A database already at 550 must still get this table. Existing tasks and jobs get refs now;
     /// automations and filters get theirs the first time they are listed, since they are not in the database.
     package static let migrations: [Database.Migration] = [
-        .init(546, "records: public refs for tasks and jobs", sql: """
+        .init(551, "records: public refs for tasks and jobs", sql: """
             CREATE TABLE record_refs(ref TEXT PRIMARY KEY, kind TEXT NOT NULL, key TEXT NOT NULL, UNIQUE(kind, key)) WITHOUT ROWID;
             INSERT OR IGNORE INTO record_refs(ref, kind, key) SELECT 'task_' || lower(hex(randomblob(3))), 'task', id FROM task_items;
             INSERT OR IGNORE INTO record_refs(ref, kind, key) SELECT 'job_' || lower(hex(randomblob(3))), 'job', id FROM jobs;

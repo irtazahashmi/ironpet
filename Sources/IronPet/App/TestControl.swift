@@ -473,7 +473,7 @@ final class TestControl {
     }
 
     /// `GET /test/memory` is the pages, the recent changes and the last reflection. `reflect` runs the reflection pass now on the open
-    /// thread (or `thread`) and answers at once; poll `GET` until `running` is false. `undo` presses Undo on a change in Settings → Memory.
+    /// thread (or `thread`) and answers at once; poll `GET` until `running` is false. `undo` undoes a change.
     /// `reset` forgets everything, or with `reindex` only rebuilds the search documents from the database.
     private func memoryEndpoint(_ path: String, _ body: [String: Any]) -> Data {
         guard let memory else { return Self.encode(["ok": false, "error": "memory is not built"]) }
@@ -487,7 +487,7 @@ final class TestControl {
             guard let change = store.recentChanges(limit: 50).first(where: { $0.id == id }) else {
                 return Self.encode(["ok": false, "error": "no change \(id)"])
             }
-            if let memorySettings { memorySettings.undo(change) } else { _ = store.undo(change) }
+            _ = store.undo(change)
         case "/test/memory/reset":
             if body["reindex"] as? Bool == true { store.reindex() } else { memory.cancelAll(); store.forgetEverything() }
             memorySettings?.reload()
@@ -669,6 +669,8 @@ final class TestControl {
                                      "meeting": suggestion.meeting?.path ?? NSNull(), "url": suggestion.url?.absoluteString ?? NSNull(),
                                      "waiting_on": suggestion.waitingOn ?? NSNull()]
         if case .automation(let id, let name) = suggestion.origin { object["automation"] = ["id": id, "name": name] }
+        if suggestion.origin == .taskScan { object["origin"] = "task-scan" }
+        if let update = suggestion.update { object["update"] = ["task": update.target, "summary": update.summary] }
         return object
     }
 

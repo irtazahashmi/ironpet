@@ -62,6 +62,14 @@ package enum TaskJSON {
         switch s.origin {
         case .meeting(let folder): object["origin"] = "meeting"; object["origin_detail"] = folder.path
         case .automation(let id, let name): object["origin"] = "automation"; object["origin_detail"] = "\(name) (\(id))"
+        case .taskScan: object["origin"] = "task-scan"
+        }
+        if let update = s.update {
+            var change: [String: Any] = ["task_id": update.target, "task_title": update.targetTitle, "summary": update.summary]
+            if let note = update.note { change["note"] = note }
+            if update.markDone { change["status"] = "done" }
+            if let waitingOn = update.waitingOn { change["waiting_on"] = waitingOn }
+            object["update"] = change
         }
         if let due = s.due { object["due"] = due }
         if !s.notes.isEmpty { object["notes"] = s.notes }
