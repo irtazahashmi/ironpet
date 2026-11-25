@@ -98,7 +98,7 @@ public struct RemoteTask: Codable, Equatable, Hashable, Identifiable, Sendable {
         try c.encodeIfPresent(deferUntil, forKey: .deferUntil)
     }
 
-    /// Only the user can take the next step. A task waiting on someone else never counts, whatever its status.
+    /// Only the user can take the next step. A task waiting on someone else, or deferred to a later day, never counts.
     public var needsUser: Bool { status == .needsYou && waitingOn == nil && !(deferUntil.map { $0 > Date() } ?? false) }
 }
 
