@@ -279,6 +279,10 @@ package final class UsageStore: @unchecked Sendable {
 package enum AppMigrations {
     package static let all = AutomationState.migrations + UsageStore.migrations + TaskStore.migrations + CaptureStore.migrations + ActivityLog.migrations
         + JobService.migrations + MemoryIndex.migrations + NotificationStore.migrations + RemoteStore.migrations
+
+    /// The schema version a database reaches once every migration ran. A release records it in Info.plist (`IronPetSchemaVersion`),
+    /// so the update check can tell an older build from a newer one by its data, not only by its version number.
+    package static var latestVersion: Int { all.map(\.version).max() ?? 0 }
 }
 
 // MARK: Agent usage

@@ -143,6 +143,10 @@
             ],
             "enabled" : false
           },
+          "updates" : {
+            "checkAutomatically" : true,
+            "installAutomatically" : true
+          },
           "voice" : {
             "baseUrl" : "http://localhost:8000/v1",
             "enabled" : false,
@@ -320,6 +324,10 @@
             ],
             "enabled" : false
           },
+          "updates" : {
+            "checkAutomatically" : true,
+            "installAutomatically" : true
+          },
           "voice" : {
             "baseUrl" : "http://localhost:8000/v1",
             "enabled" : false,
@@ -493,6 +501,10 @@
 
             ],
             "enabled" : false
+          },
+          "updates" : {
+            "checkAutomatically" : true,
+            "installAutomatically" : true
           },
           "voice" : {
             "baseUrl" : "http://localhost:8000/v1",

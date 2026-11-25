@@ -8,6 +8,25 @@ final class PetView: NSView {
     var onDragEnded: (() -> Void)?
     var contextMenu: (() -> NSMenu)?
     var onRecordingClick: (() -> Void)?
+    /// A click on the update badge, which installs a downloaded update and restarts the app.
+    var onUpdateClick: (() -> Void)?
+
+    /// Set while a downloaded update waits for a quiet moment. Drawn in the top left corner, away from the number badge.
+    var updateReady = false {
+        didSet { if updateReady != oldValue { needsDisplay = true } }
+    }
+    static let updateBadgeDiameter: CGFloat = 20
+
+    static func updateBadgeRect(in bounds: CGRect) -> CGRect {
+        CGRect(x: bounds.minX + 2, y: bounds.maxY - updateBadgeDiameter - 2, width: updateBadgeDiameter, height: updateBadgeDiameter)
+    }
+
+    /// Whether `point` hits the update badge, with the same slop as the number badge. False while no update is waiting.
+    static func updateBadgeHit(_ point: CGPoint, in bounds: CGRect, shown: Bool) -> Bool {
+        guard shown else { return false }
+        let rect = updateBadgeRect(in: bounds)
+        return hypot(point.x - rect.midX, point.y - rect.midY) <= rect.width / 2 + badgeSlop
+    }
 
     enum Recording { case none, shown, hidden }
     /// `.hidden` means a meeting is recording and its bubble is closed, so the pet shows a Recording button.
@@ -142,6 +161,7 @@ final class PetView: NSView {
         }
         ctx.restoreGState()
         if badgeShown { drawBadge() }
+        if updateReady { drawUpdateBadge() }
         if recording == .hidden { drawRecordingButton() }
     }
 
@@ -192,6 +212,21 @@ final class PetView: NSView {
         text.draw(at: NSPoint(x: rect.midX - s.width / 2, y: rect.midY - s.height / 2))
     }
 
+    private func drawUpdateBadge() {
+        let rect = Self.updateBadgeRect(in: bounds)
+        NSColor.systemBlue.setFill()
+        NSBezierPath(ovalIn: rect).fill()
+        guard let arrow = NSImage(systemSymbolName: "arrow.down", accessibilityDescription: "Update ready")?
+            .withSymbolConfiguration(.init(pointSize: 11, weight: .bold)) else { return }
+        let tinted = arrow.copy() as! NSImage
+        tinted.lockFocus()
+        NSColor.white.set()
+        NSRect(origin: .zero, size: tinted.size).fill(using: .sourceAtop)
+        tinted.unlockFocus()
+        tinted.draw(in: NSRect(x: rect.midX - tinted.size.width / 2, y: rect.midY - tinted.size.height / 2,
+                               width: tinted.size.width, height: tinted.size.height))
+    }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
@@ -216,6 +251,8 @@ final class PetView: NSView {
             onDragEnded?()
         } else if recording == .hidden, recordingRect.contains(convert(event.locationInWindow, from: nil)) {
             onRecordingClick?()
+        } else if Self.updateBadgeHit(convert(event.locationInWindow, from: nil), in: bounds, shown: updateReady) {
+            onUpdateClick?()
         } else if Self.badgeHit(convert(event.locationInWindow, from: nil), in: bounds, badgeShown: badgeShown) {
             onBadgeClick?()
         } else {

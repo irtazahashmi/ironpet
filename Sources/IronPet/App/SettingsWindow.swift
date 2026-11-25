@@ -35,6 +35,8 @@ final class SettingsModel: ObservableObject {
     var prompts: PromptsAPI?
     /// Opens the main window on its Screen section.
     var showScreenSection: () -> Void = {}
+    /// The self-updater. Nil in preview renders.
+    var updates: UpdateController?
     /// Opens the execution log window, for one automation or all of them.
     var showLogs: (String?) -> Void = { _ in }
     /// Sends what the user wants to the chat, for the agent to create the automation.
@@ -297,6 +299,7 @@ private struct GeneralSettings: View {
                 Toggle("Hide the window when another app is in front", isOn: Binding(
                     get: { store.config.window.autoHide }, set: { on in store.update { $0.window.autoHide = on } }))
             }
+            if let updates = model.updates { UpdatesSection(updates: updates) }
             Section {
                 Toggle("Welcome back summary", isOn: Binding(
                     get: { store.config.welcomeBack.enabled }, set: { on in store.update { $0.welcomeBack.enabled = on } }))
@@ -1186,5 +1189,45 @@ struct MicIgnoreSection: View {
         panel.message = "Choose an app that ironpet should never treat as a call."
         guard panel.runModal() == .OK, let url = panel.url else { return }
         error = model.add(appAt: url)?.message
+    }
+}
+
+
+// MARK: - Updates
+
+/// Settings → General → Updates. Dev builds show why the controls are off instead of hiding them.
+private struct UpdatesSection: View {
+    @ObservedObject var updates: UpdateController
+    @ObservedObject private var store = SettingsAPI.live
+
+    private var status: String {
+        switch updates.state {
+        case .off(let reason): return reason
+        case .idle: return updates.lastChecked.map { "Up to date. Last checked \($0.formatted(date: .abbreviated, time: .shortened))." } ?? "Not checked yet."
+        case .checking: return "Checking…"
+        case .ready(let version): return "ironpet \(version) is downloaded and installs when nothing is running, or when you click Restart."
+        case .failed(let message): return "The last check failed: \(message)"
+        }
+    }
+
+    var body: some View {
+        let off = updates.disabledReason != nil
+        Section {
+            LabeledContent("Version", value: updates.appVersion.version + (updates.appVersion.isDev ? " dev" : ""))
+            Toggle("Check for updates automatically", isOn: Binding(
+                get: { store.config.updates.checkAutomatically }, set: { on in store.update { $0.updates.checkAutomatically = on } }))
+                .disabled(off)
+            Toggle("Download and install updates automatically", isOn: Binding(
+                get: { store.config.updates.installAutomatically }, set: { on in store.update { $0.updates.installAutomatically = on } }))
+                .disabled(off || !store.config.updates.checkAutomatically)
+            HStack {
+                Button("Check now") { updates.checkNow() }.disabled(off || !updates.canCheck)
+                if updates.isReady { Button("Restart and update") { updates.installNow() } }
+            }
+        } header: {
+            Text("Updates")
+        } footer: {
+            Text(status).font(.caption).foregroundStyle(.secondary)
+        }
     }
 }
