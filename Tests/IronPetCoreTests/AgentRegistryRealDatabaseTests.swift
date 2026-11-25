@@ -20,7 +20,7 @@ final class AgentRegistryRealDatabaseTests: XCTestCase {
         }
     }
 
-    func testARealDatabaseUpgradesKeepingEveryRowAndAgentOneAppears() throws {
+    func testARealDatabaseUpgradesKeepingEveryRowAndAgentOneAppears() async throws {
         try XCTSkipUnless(FileManager.default.fileExists(atPath: Self.source.path), "no real database copy on this machine")
         let scratch = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-real-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: scratch, withIntermediateDirectories: true)

@@ -26,7 +26,7 @@ final class AgentRegistryTests: XCTestCase {
 
     // MARK: S4, a fresh database
 
-    func testAFreshDatabaseHasAgentOneWithTheDefaults() throws {
+    func testAFreshDatabaseHasAgentOneWithTheDefaults() async throws {
         let registry = AgentRegistry(database: try Database(path: nil, migrations: AppMigrations.all))
         let all = registry.list()
         XCTAssertEqual(all.count, 1)
@@ -41,7 +41,7 @@ final class AgentRegistryTests: XCTestCase {
         XCTAssertEqual(agent.permissions, [:])
     }
 
-    func testWritesAfterTheUpgradeAreAttributedToAgentOne() throws {
+    func testWritesAfterTheUpgradeAreAttributedToAgentOne() async throws {
         let database = try Database(path: nil, migrations: AppMigrations.all)
         let registry = AgentRegistry(database: database)
         let store = TaskStore(database: database, keepDoneDays: { 30 })
@@ -51,7 +51,7 @@ final class AgentRegistryTests: XCTestCase {
         XCTAssertEqual(registry.get(try XCTUnwrap(agents.first ?? nil))?.number, 1)
     }
 
-    func testAnEmptyOrDefaultAgentIdResolvesToAgentOne() throws {
+    func testAnEmptyOrDefaultAgentIdResolvesToAgentOne() async throws {
         let registry = AgentRegistry(database: try Database(path: nil, migrations: AppMigrations.all))
         XCTAssertEqual(registry.get("")?.number, 1, "a row with no agent id still resolves")
         XCTAssertEqual(registry.get("agent_default")?.number, 1)
@@ -60,7 +60,7 @@ final class AgentRegistryTests: XCTestCase {
 
     // MARK: S2, settings from before the upgrade
 
-    func testAgentOneHoldsTheSettingsSavedBeforeTheUpgrade() throws {
+    func testAgentOneHoldsTheSettingsSavedBeforeTheUpgrade() async throws {
         defaults.set("claude", forKey: ChatAgentPreference.key)
         defaults.set("opus", forKey: "chatModel.claude")
         defaults.set("gpt-x", forKey: "chatModel.cursor")
@@ -74,7 +74,7 @@ final class AgentRegistryTests: XCTestCase {
         XCTAssertEqual(agent.pet, "/pets/boo.png")
     }
 
-    func testTheLegacyCopyRunsOnceAndNeverOverwritesWhatSettingsWroteSince() throws {
+    func testTheLegacyCopyRunsOnceAndNeverOverwritesWhatSettingsWroteSince() async throws {
         defaults.set("claude", forKey: ChatAgentPreference.key)
         let database = try Database(path: file, migrations: AppMigrations.all)
         let registry = AgentRegistry(database: database)
@@ -88,7 +88,7 @@ final class AgentRegistryTests: XCTestCase {
         XCTAssertEqual(agent.name, "Ghost")
     }
 
-    func testTheChatReadsAndWritesAgentOneAndItSurvivesARestart() throws {
+    func testTheChatReadsAndWritesAgentOneAndItSurvivesARestart() async throws {
         defaults.set("claude", forKey: ChatAgentPreference.key)
         defaults.set("opus", forKey: "chatModel.claude")
         let registry = AgentRegistry(database: try Database(path: file, migrations: AppMigrations.all))
@@ -116,7 +116,7 @@ final class AgentRegistryTests: XCTestCase {
         XCTAssertEqual(restarted.model, "sonnet")
     }
 
-    func testChangingThePetMirrorsOntoAgentOne() throws {
+    func testChangingThePetMirrorsOntoAgentOne() async throws {
         let database = try Database(path: nil, migrations: AppMigrations.all)
         let api = AgentRecordsAPI(registry: AgentRegistry(database: database))
         api.mirror(pet: Config.Pet(name: "Boo", sprite: "/p.png"))
@@ -126,7 +126,7 @@ final class AgentRegistryTests: XCTestCase {
         XCTAssertNil(api.chatAgent?.pet, "clearing the sprite clears it on the agent")
     }
 
-    func testAnUnknownAgentIsNotFound() throws {
+    func testAnUnknownAgentIsNotFound() async throws {
         let api = AgentRecordsAPI(registry: AgentRegistry(database: try Database(path: nil, migrations: AppMigrations.all)))
         XCTAssertThrowsError(try api.get("agent_nope")) { XCTAssertEqual(($0 as? APIError)?.code, .notFound) }
         XCTAssertThrowsError(try api.update("agent_nope", AgentRecordPatch(name: "x"))) { XCTAssertEqual(($0 as? APIError)?.code, .notFound) }
@@ -134,7 +134,7 @@ final class AgentRegistryTests: XCTestCase {
 
     // MARK: MCP
 
-    func testTheMCPToolsListAndGetAgentOne() throws {
+    func testTheMCPToolsListAndGetAgentOne() async throws {
         let api = AgentRecordsAPI(registry: AgentRegistry(database: try Database(path: nil, migrations: AppMigrations.all)))
         XCTAssertEqual(AgentMCP.tools.compactMap { $0["name"] as? String }, ["agents_list", "agents_get"])
         XCTAssertTrue(MCPEndpoint.tools.contains { $0["name"] as? String == "agents_get" })
@@ -152,7 +152,7 @@ final class AgentRegistryTests: XCTestCase {
 
     // MARK: Idempotent migration
 
-    func testRerunningTheMigrationsChangesNothing() throws {
+    func testRerunningTheMigrationsChangesNothing() async throws {
         let first = try Database(path: file, migrations: AppMigrations.all)
         let registry = AgentRegistry(database: first)
         try registry.update(AgentID.default.rawValue, AgentRecordPatch(instructions: "Keep me"))
