@@ -282,7 +282,7 @@ private struct BoardColumnView: View {
             }
         }
         .padding(10)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 12).fill(SharedTheme.card))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(macAccent, lineWidth: targeted ? 2 : 0))
         .dropDestination(for: String.self) { ids, _ in
