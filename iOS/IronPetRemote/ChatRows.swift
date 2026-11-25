@@ -278,6 +278,31 @@ struct ReplyQuote: View {
     }
 }
 
+/// Text selected in another app that went with a message: the source, then the first lines. Tap to expand a long one.
+struct SelectionQuote: View {
+    let selection: RemoteChatSelection
+    @State private var expanded = false
+    @ChatScale(.caption1) private var scale
+
+    var body: some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 1.5).fill(Color.white.opacity(0.8)).frame(width: 3)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(selection.sourceLabel).font(.system(size: 11 * scale, weight: .semibold))
+                Text(selection.text.prefix(expanded ? 2_000 : 300)).font(.system(size: 11.5 * scale)).lineLimit(expanded ? nil : 3).truncationMode(.tail)
+            }
+            .foregroundStyle(Color.white)
+            Spacer(minLength: 0)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(6)
+        .background(Color.white.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
+        .contentShape(Rectangle())
+        .onTapGesture { expanded.toggle() }
+        .accessibilityIdentifier("selection-quote")
+    }
+}
+
 /// Where a message came from when it was not typed on the Mac, as the Mac's badge names it.
 struct OriginBadge {
     let symbol: String
@@ -314,6 +339,7 @@ struct UserBubble: View {
         let shown = expanded ? text : (preview?.text ?? text)
         VStack(alignment: .trailing, spacing: 3) {
             VStack(alignment: .leading, spacing: 6) {
+                if let selection = item.selection { SelectionQuote(selection: selection) }
                 if let reply = item.reply { ReplyQuote(reply: reply, onUser: true) }
                 Text(Self.linked(shown).linkingFilePaths(links).findHighlighted(segment: 0, find: find)).font(.system(size: ChatMetrics.macBody * scale)).foregroundStyle(.white).tint(.white)
                     .textSelection(.enabled)

@@ -81,4 +81,33 @@ final class ChatSessionCoreTests: XCTestCase {
         XCTAssertEqual(seen.first, .some(nil), "willSet: the handler still sees the old value")
         withExtendedLifetime(token) {}
     }
+
+    func testSentSelectionIsStoredOnTheUserItemAndSurvivesEncoding() throws {
+        let session = ChatSession(restore: false)
+        session.workspace = FileManager.default.temporaryDirectory
+        session.turnRunner = { _, _ in }
+        let selection = FrontSelection(text: "is anything left?", appName: "Chrome", windowTitle: "Issue 190")
+        XCTAssertEqual(session.submitLocal("is anything left here?", files: [], reply: nil, selection: selection), .sent)
+        let item = try XCTUnwrap(session.items.last)
+        XCTAssertEqual(item.selection, selection)
+        let decoded = try JSONDecoder().decode(ChatSession.Item.self, from: JSONEncoder().encode(item))
+        XCTAssertEqual(decoded.selection, selection)
+    }
+
+    func testAnItemSavedBeforeSelectionsExistedDecodesWithoutOne() throws {
+        let json = #"{"id":"6E2A6C0B-5B0F-4C2B-9C86-3F5B6E1D0A11","kind":{"user":{"_0":"hi"}}}"#
+        let item = try JSONDecoder().decode(ChatSession.Item.self, from: Data(json.utf8))
+        XCTAssertNil(item.selection)
+        XCTAssertNil(RemoteChat.json(item)["selection"])
+    }
+
+    func testRemoteJSONCarriesTheSelectionSourceAndCapsItsText() {
+        let long = String(repeating: "x", count: RemoteChat.selectionTextLimit + 10)
+        let selection = FrontSelection(text: long, appName: "Chrome", windowTitle: "Issue 190")
+        let object = RemoteChat.json(ChatItem(kind: .user("hi"), selection: selection))["selection"] as? [String: Any]
+        XCTAssertEqual(object?["app_name"] as? String, "Chrome")
+        XCTAssertEqual(object?["window_title"] as? String, "Issue 190")
+        XCTAssertEqual((object?["text"] as? String)?.count, RemoteChat.selectionTextLimit)
+        XCTAssertEqual(object?["trimmed"] as? Bool, true)
+    }
 }

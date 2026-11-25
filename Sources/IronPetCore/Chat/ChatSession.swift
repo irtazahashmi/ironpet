@@ -15,6 +15,7 @@ package final class ChatSession {
             date: Date? = Date(),
             origin: String? = nil,
             reply: Reply? = nil,
+            selection: FrontSelection? = nil,
             meta: [ItemMeta]? = nil,
             metaSent: Bool? = nil
         ) {
@@ -23,6 +24,7 @@ package final class ChatSession {
             self.date = date
             self.origin = origin
             self.reply = reply
+            self.selection = selection
             self.meta = meta
             self.metaSent = metaSent
         }
@@ -46,6 +48,8 @@ package final class ChatSession {
         package var origin: String?
         /// The earlier message this one answers, when the user used Reply.
         package var reply: Reply?
+        /// Text selected in another app that went with this user message. Older saved threads lack it.
+        package var selection: FrontSelection?
         /// Context for the agent that the chat never draws. Set only by IronPet code.
         package var meta: [ItemMeta]?
         /// True once `meta` has gone to the agent in a turn.
@@ -860,7 +864,7 @@ package final class ChatSession {
         let origin = client?.client ?? (automation != nil ? Self.automationOrigin : nil)
         if !silent {
             items += shots.map { Item(kind: .screenshot($0.path), origin: origin) }
-            items.append(Item(kind: .user(prompt), origin: origin, reply: reply))
+            items.append(Item(kind: .user(prompt), origin: origin, reply: reply, selection: selection))
         }
         // The first turn of every new agent session carries the memory notes, including the one after a rollover. Building them reads the
         // memory store and the config from disk. A client's message waits for its ack on this actor, so for a client the build moves
@@ -1028,7 +1032,7 @@ package final class ChatSession {
             let origin = message.origin?.client
             items += message.attachments.map { Item(kind: .screenshot($0.path), origin: origin) }
             let prompt = Self.displayText(message)
-            items.append(Item(kind: .user(prompt), origin: origin, reply: message.reply))
+            items.append(Item(kind: .user(prompt), origin: origin, reply: message.reply, selection: message.selection))
             if let sender = message.origin, stops != generation {
                 // Stop came while the message was on its way. Nothing is left to report the turn's end to this sender.
                 onTurn?(sender, .failed("Stopped on the Mac."))

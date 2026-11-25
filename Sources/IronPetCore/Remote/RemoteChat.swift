@@ -406,6 +406,7 @@ package struct RemoteChat {
         if let date = item.date { object["date"] = iso(date) }
         if let origin = item.origin { object["origin"] = origin }
         if let reply = item.reply { object["reply"] = json(reply) }
+        if let selection = item.selection { object["selection"] = json(selection) }
         switch item.kind {
         case .user(let text): object["kind"] = "user"; object["text"] = text
         case .assistant(let text): object["kind"] = "assistant"; object["text"] = text
@@ -437,6 +438,16 @@ package struct RemoteChat {
         if let date = reply.date { object["date"] = iso(date) }
         if reply.selection == true { object["selection"] = true }
         if let fromUser = reply.fromUser { object["from_user"] = fromUser }
+        return object
+    }
+
+    /// The phone shows a short preview, so the text is cut to `selectionTextLimit` characters.
+    package static let selectionTextLimit = 2_000
+
+    private static func json(_ selection: FrontSelection) -> [String: Any] {
+        var object: [String: Any] = ["app_name": selection.appName, "text": String(selection.text.prefix(selectionTextLimit))]
+        if let title = selection.windowTitle { object["window_title"] = title }
+        if selection.trimmed || selection.text.count > selectionTextLimit { object["trimmed"] = true }
         return object
     }
 

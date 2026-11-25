@@ -858,7 +858,7 @@ struct ChatView: View {
         case .item(let item):
             switch item.kind {
             case .user(let text):
-                UserBubble(text: text, date: item.date, reply: item.reply, highlighted: highlightedID == item.id,
+                UserBubble(text: text, date: item.date, reply: item.reply, selection: item.selection, highlighted: highlightedID == item.id,
                            onReply: { session.reply(to: item) }, onQuoteTap: { if let reply = item.reply { jumpTick = JumpRequest(target: reply.itemID) } },
                            onAsk: { askAbout(item) }, onCopy: { copyText(item, text) }, onHoverChange: { hoverChanged(item.id, $0) },
                            source: item.origin, find: highlights[item.id],
@@ -1410,10 +1410,41 @@ private struct ReplyQuote: View {
     }
 }
 
+/// Text selected in another app that went with a sent message: the source, then the first lines. Tap to expand a long one.
+private struct SentSelectionQuote: View {
+    let selection: FrontSelection
+    @State private var expanded = false
+
+    var body: some View {
+        HStack(spacing: 6) {
+            RoundedRectangle(cornerRadius: 1.5).fill(Color.white.opacity(0.8)).frame(width: 3)
+            VStack(alignment: .leading, spacing: 1) {
+                Text(selection.sourceLabel).font(.system(size: 11, weight: .semibold))
+                Text(selection.text.prefix(expanded ? FrontSelection.limit : 300)).font(.system(size: 11.5))
+                    .lineLimit(expanded ? nil : 3).truncationMode(.tail)
+                if selection.trimmed {
+                    Text("Trimmed").font(.system(size: 10)).opacity(0.8)
+                }
+            }
+            .foregroundStyle(Color.white)
+            Spacer(minLength: 0)
+        }
+        .fixedSize(horizontal: false, vertical: true)
+        .padding(6)
+        .background(Color.white.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
+        .contentShape(Rectangle())
+        .onTapGesture { expanded.toggle() }
+        .accessibilityIdentifier("sent-selection-quote")
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("Selection from \(selection.sourceLabel)")
+    }
+}
+
 private struct UserBubble: View {
     let text: String
     let date: Date?
     var reply: ChatReply?
+    var selection: FrontSelection?
     var highlighted = false
     var onReply: () -> Void = {}
     var onQuoteTap: () -> Void = {}
@@ -1437,6 +1468,7 @@ private struct UserBubble: View {
         let showsAll = expanded || find != nil
         VStack(alignment: .trailing, spacing: 3) {
             VStack(alignment: .leading, spacing: 6) {
+                if let selection { SentSelectionQuote(selection: selection) }
                 if let reply { ReplyQuote(reply: reply, onUser: true, tap: onQuoteTap) }
                 let linked = FilePathLinks.link(AttributedString(showsAll ? text : (preview?.text ?? text)), underline: true)
                 ChatFind.text(linked, segment: 0, find: find)
