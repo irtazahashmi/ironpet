@@ -22,6 +22,31 @@ public struct RemoteChatReply: Codable, Equatable, Hashable, Sendable {
     }
 }
 
+/// Text selected in another app that went with a user message, as the Mac sends it.
+public struct RemoteChatSelection: Codable, Equatable, Hashable, Sendable {
+    public var appName: String
+    public var windowTitle: String?
+    public var text: String
+    public var trimmed: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case text, trimmed
+        case appName = "app_name"
+        case windowTitle = "window_title"
+    }
+
+    public init(appName: String, windowTitle: String? = nil, text: String, trimmed: Bool? = nil) {
+        self.appName = appName; self.windowTitle = windowTitle; self.text = text; self.trimmed = trimmed
+    }
+
+    /// The source as the Mac shows it, for example `Notes — Shopping`.
+    public var sourceLabel: String {
+        let title = windowTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let title, !title.isEmpty { return "\(appName) — \(title)" }
+        return appName
+    }
+}
+
 public struct RemoteFormLine: Codable, Equatable, Hashable, Sendable {
     public var question: String
     public var answer: String
@@ -50,6 +75,8 @@ public struct RemoteChatItem: Codable, Equatable, Hashable, Identifiable, Sendab
     /// The client a user message came from: `ios`, `telegram`, `voice`... Nil for the Mac.
     public var origin: String?
     public var reply: RemoteChatReply?
+    /// The selection from another app that went with this message. Nil on older Macs.
+    public var selection: RemoteChatSelection?
     public var text: String?
     public var ok: Bool?
     public var fileName: String?
@@ -58,14 +85,14 @@ public struct RemoteChatItem: Codable, Equatable, Hashable, Identifiable, Sendab
     public var lines: [RemoteFormLine]?
 
     enum CodingKeys: String, CodingKey {
-        case id, kind, date, origin, reply, text, ok, skipped, lines
+        case id, kind, date, origin, reply, selection, text, ok, skipped, lines
         case fileName = "file_name"
         case isImage = "is_image"
     }
 
-    public init(id: String, kind: String, date: Date? = nil, origin: String? = nil, reply: RemoteChatReply? = nil, text: String? = nil,
+    public init(id: String, kind: String, date: Date? = nil, origin: String? = nil, reply: RemoteChatReply? = nil, selection: RemoteChatSelection? = nil, text: String? = nil,
                 ok: Bool? = nil, fileName: String? = nil, isImage: Bool? = nil, skipped: Bool? = nil, lines: [RemoteFormLine]? = nil) {
-        self.id = id; self.kind = kind; self.date = date; self.origin = origin; self.reply = reply; self.text = text; self.ok = ok
+        self.id = id; self.kind = kind; self.date = date; self.origin = origin; self.reply = reply; self.selection = selection; self.text = text; self.ok = ok
         self.fileName = fileName; self.isImage = isImage; self.skipped = skipped; self.lines = lines
     }
 
@@ -77,6 +104,7 @@ public struct RemoteChatItem: Codable, Equatable, Hashable, Identifiable, Sendab
         date = try? c.decodeIfPresent(Date.self, forKey: .date)
         origin = try c.decodeIfPresent(String.self, forKey: .origin)
         reply = try? c.decodeIfPresent(RemoteChatReply.self, forKey: .reply)
+        selection = try? c.decodeIfPresent(RemoteChatSelection.self, forKey: .selection)
         text = try c.decodeIfPresent(String.self, forKey: .text)
         ok = try c.decodeIfPresent(Bool.self, forKey: .ok)
         fileName = try c.decodeIfPresent(String.self, forKey: .fileName)
