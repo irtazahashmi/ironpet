@@ -184,8 +184,8 @@ package enum AssistantMCP {
             ],
             "jobs": jobs.filter { $0.state.isActive || ($0.ended ?? $0.created) > cutoff }.map(\.json),
             "tasks": [
-                "needs_you": tasks.filter { $0.status == .needsYou && $0.waitingOn == nil }.map { ["id": $0.id, "title": $0.title] },
-                "in_progress": tasks.filter { $0.status == .inProgress }.map { ["id": $0.id, "title": $0.title] },
+                "needs_you": tasks.filter { $0.needsUser }.map { ["id": $0.id, "title": $0.title] },
+                "in_progress": tasks.filter { $0.status == .inProgress && !$0.isDeferred() }.map { ["id": $0.id, "title": $0.title] },
                 "backlog": tasks.filter { $0.status == .backlog }.count,
             ],
             "alerts": context.alerts().map(alertJSON),
