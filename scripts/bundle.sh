@@ -95,6 +95,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>SUFeedURL</key><string>https://github.com/irtazahashmi/ironpet/releases/latest/download/appcast.xml</string>
   <key>SUVerifyUpdateBeforeExtraction</key><true/>
   <key>SUAllowsAutomaticUpdates</key><true/>
+  <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>dev.ironpet.app.record</string><key>CFBundleURLSchemes</key><array><string>ironpet</string></array></dict></array>
   @SPARKLE@
   @DEV@
   <key>LSMinimumSystemVersion</key><string>14.0</string>
