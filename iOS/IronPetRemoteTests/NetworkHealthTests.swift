@@ -10,6 +10,8 @@ final class NetworkHealthTests: XCTestCase {
     final class ManualClock: @unchecked Sendable {
         private let lock = NSLock()
         private var waiting: [CheckedContinuation<Void, Error>] = []
+        /// How many callers are asleep. A sleeper registers on another thread, so a test waits for this before `fire()`.
+        var sleepers: Int { lock.lock(); defer { lock.unlock() }; return waiting.count }
         var now = Date(timeIntervalSince1970: 1_000_000)
 
         func sleep(_ duration: Duration) async throws {
@@ -30,6 +32,13 @@ final class NetworkHealthTests: XCTestCase {
 
     private func settle() async { for _ in 0..<5 { await Task.yield() } }
 
+    /// Waits until `condition` holds. Work that hops to another thread, such as a timer registering its sleep or a stream handing over
+    /// a value, takes longer than a fixed number of yields when the machine is busy, so a test waits for the effect and not for a count.
+    private func until(_ condition: @autoclosure () -> Bool, timeout: TimeInterval = 10) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition(), Date() < deadline { try? await Task.sleep(for: .milliseconds(2)) }
+    }
+
     // S2
     func testAnOutageUnderTenSecondsShowsNothing() async {
         let clock = ManualClock()
@@ -38,6 +47,7 @@ final class NetworkHealthTests: XCTestCase {
         XCTAssertNotNil(network.failingSince)
         XCTAssertFalse(network.stripVisible)
         network.reportAnswered()
+        await until(clock.sleepers == 1)
         clock.fire()
         await settle()
         XCTAssertFalse(network.stripVisible, "the timer of a short outage does not show the strip when it fires late")
@@ -49,9 +59,9 @@ final class NetworkHealthTests: XCTestCase {
         let clock = ManualClock()
         let network = make(clock)
         network.reportUnreachable()
-        await settle()
+        await until(clock.sleepers == 1)
         clock.fire()
-        await settle()
+        await until(network.stripVisible)
         XCTAssertTrue(network.stripVisible)
         network.reportAnswered()
         XCTAssertFalse(network.stripVisible)
@@ -108,6 +118,7 @@ final class NetworkHealthTests: XCTestCase {
         XCTAssertEqual(firstGot + secondGot, 0, "an answer while nothing was down is no reconnect")
         network.reportUnreachable()
         network.reportAnswered()
+        await until(firstGot == 1 && secondGot == 1)
         await settle()
         XCTAssertEqual(firstGot, 1)
         XCTAssertEqual(secondGot, 1)
@@ -121,6 +132,7 @@ final class NetworkHealthTests: XCTestCase {
         let task = Task { for await _ in stream { got += 1 } }
         network.setPath(satisfied: false)
         network.setPath(satisfied: true)
+        await until(got == 1)
         await settle()
         XCTAssertEqual(got, 1)
         task.cancel()
