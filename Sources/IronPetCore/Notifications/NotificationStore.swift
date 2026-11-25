@@ -21,6 +21,11 @@ package final class NotificationStore {
             CREATE TABLE notification_links(notification TEXT NOT NULL, position INTEGER NOT NULL, kind TEXT NOT NULL, ref TEXT NOT NULL,
                                             label TEXT, PRIMARY KEY(notification, position)) WITHOUT ROWID;
             """),
+        // Which install and which agent raised a notification. Old rows keep both columns empty.
+        .init(555, "notifications: node and agent on every item", sql: """
+            ALTER TABLE notification_items ADD COLUMN node_id TEXT;
+            ALTER TABLE notification_items ADD COLUMN agent_id TEXT;
+            """),
     ]
 
     /// How many are unread. Drives the sidebar badge.
@@ -80,8 +85,9 @@ package final class NotificationStore {
                                     links: Array(draft.links.prefix(NotificationLink.maxLinks)))
         do {
             try database.write { db in
-                try db.execute("INSERT INTO notification_items(id, created, source, type, title, summary, description, read) VALUES(?, ?, ?, ?, ?, ?, ?, NULL)",
-                               [item.id, item.created.timeIntervalSince1970, item.source, item.type.rawValue, item.title, item.summary, item.description])
+                try db.execute("INSERT INTO notification_items(id, created, source, type, title, summary, description, read, node_id, agent_id) VALUES(?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)",
+                               [item.id, item.created.timeIntervalSince1970, item.source, item.type.rawValue, item.title, item.summary, item.description]
+                               + Provenance.current(db).columns)
                 for (position, link) in item.links.enumerated() {
                     try db.execute("INSERT INTO notification_links(notification, position, kind, ref, label) VALUES(?, ?, ?, ?, ?)",
                                    [item.id, position, link.kind.rawValue, link.ref, link.label])

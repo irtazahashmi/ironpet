@@ -56,10 +56,10 @@ final class RecordResolverTests: XCTestCase {
 
     func testMakeGrowsOnlyWhenEveryTryCollides() async throws {
         let fixed = RecordID.make(.screen, taken: { _ in false }, digit: { "a" })
-        XCTAssertEqual(fixed, "screen_aaaaaa")
+        XCTAssertEqual(fixed, "screen_aaaaaaaaaaaa")
         var tried = 0
         let grown = RecordID.make(.screen, taken: { _ in tried += 1; return tried <= 8 }, digit: { "b" })
-        XCTAssertEqual(grown, "screen_bbbbbbb", "eight collisions at six digits make it seven")
+        XCTAssertEqual(grown, "screen_bbbbbbbbbbbbb", "eight collisions at twelve digits make it thirteen")
     }
 
     func testRefsAreStableAndOnlyCreatedOnce() async throws {

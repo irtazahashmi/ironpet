@@ -55,6 +55,7 @@ package final class RPCDispatcher {
         registerNotifications()
         registerMeetings()
         registerSession()
+        registerNode()
         registerScreen()
     }
 
@@ -351,6 +352,14 @@ package final class RPCDispatcher {
         add("meetings.get", "none", params: "ID", result: "MeetingInfo") { (p: ID) in try meetings.get(p.id) }
         addVoid("meetings.delete", "DELETE /v1/meetings/:id", params: "ID") { (p: ID) in try meetings.delete(p.id) }
         addVoid("meetings.stop", "POST /v1/meetings/stop") { try meetings.stopRecording() }
+    }
+
+    private func registerNode() {
+        let node = api.node
+        add("node.info", "none", result: "NodeInfo") { () -> NodeInfo in
+            guard let info = node.info() else { throw APIError.unavailable("this host has no node id") }
+            return info
+        }
     }
 
     private func registerSession() {

@@ -215,8 +215,8 @@ package final class EntityMemoryStore: MemoryStore {
                     return .success(Written(claim: same.id, removed: removed, note: MemoryNote(text: same.text, date: day, source: source),
                                             target: target, bumped: true))
                 }
-                try db.execute("INSERT INTO memory_claims(entity, text, date, sources, invalid_at, pinned, ref) VALUES(?, ?, ?, ?, NULL, 0, ?)",
-                               [target.id, text, day, source, try Self.reference(.claim, db)])
+                try db.execute("INSERT INTO memory_claims(entity, text, date, sources, invalid_at, pinned, ref, node_id, agent_id) VALUES(?, ?, ?, ?, NULL, 0, ?, ?, ?)",
+                               [target.id, text, day, source, try Self.reference(.claim, db)] + Provenance.current(db).columns)
                 let claim = try Self.lastID(db)
                 for stale in removed {
                     try db.execute("UPDATE memory_claims SET invalid_at = ? WHERE id = ?", [at.timeIntervalSince1970, stale.id])
@@ -272,8 +272,8 @@ package final class EntityMemoryStore: MemoryStore {
                     return .failure(MemoryError(message: "some of those claims are pinned or no longer hold"))
                 }
                 let sources = merged.reduce([String]()) { Self.merged($0, $1.sources) }
-                try db.execute("INSERT INTO memory_claims(entity, text, date, sources, invalid_at, pinned, ref) VALUES(?, ?, ?, ?, NULL, 0, ?)",
-                               [entity, text, day, Self.joined(sources), try Self.reference(.claim, db)])
+                try db.execute("INSERT INTO memory_claims(entity, text, date, sources, invalid_at, pinned, ref, node_id, agent_id) VALUES(?, ?, ?, ?, NULL, 0, ?, ?, ?)",
+                               [entity, text, day, Self.joined(sources), try Self.reference(.claim, db)] + Provenance.current(db).columns)
                 let claim = try Self.lastID(db)
                 for old in merged { try db.execute("UPDATE memory_claims SET invalid_at = ? WHERE id = ?", [at.timeIntervalSince1970, old.id]) }
                 return .success((claim, merged))
@@ -544,8 +544,8 @@ package final class EntityMemoryStore: MemoryStore {
             var known = Set(try Self.claims(db, where: "entity = ? AND invalid_at IS NULL", [id]).map { MemoryNote.normalized($0.text) })
             var result: [(id: Int64, text: String)] = []
             for note in notes where !known.contains(MemoryNote.normalized(note.text)) {
-                try db.execute("INSERT INTO memory_claims(entity, text, date, sources, invalid_at, pinned, ref) VALUES(?, ?, ?, ?, NULL, 0, ?)",
-                               [id, note.text, note.date ?? "", note.source, try Self.reference(.claim, db)])
+                try db.execute("INSERT INTO memory_claims(entity, text, date, sources, invalid_at, pinned, ref, node_id, agent_id) VALUES(?, ?, ?, ?, NULL, 0, ?, ?, ?)",
+                               [id, note.text, note.date ?? "", note.source, try Self.reference(.claim, db)] + Provenance.current(db).columns)
                 result.append((try Self.lastID(db), note.text))
                 known.insert(MemoryNote.normalized(note.text))
             }
