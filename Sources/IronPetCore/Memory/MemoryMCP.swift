@@ -27,7 +27,7 @@ package enum MemoryMCP {
                              "required": ["text", "scope"]]],
             ["name": "memory_forget",
              "description": "Remove the notes that contain every word of query, when the user asks you to forget something. Removed notes are kept in "
-                + "the page's history, so the user can undo it in Settings. "
+                + "the page's history."
                 + "Refuses when nothing matches or more than \(MemoryNote.maxForget) notes do. Tell the user what you removed.\n\n" + guide,
              "inputSchema": ["type": "object",
                              "properties": ["query": ["type": "string", "minLength": 1, "description": "Words in the note, such as \"pnpm\""],

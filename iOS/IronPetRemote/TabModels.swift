@@ -161,7 +161,9 @@ enum AppTab: Hashable {
 
 /// The screens behind the More tab.
 enum MoreDestination: Hashable {
-    case alerts, automations, meetings, screen, settings
+    case alerts, automations, meetings, memory, screen, settings
+    /// A memory page, by its `page_` ref. A link inside a page pushes the next one.
+    case memoryPage(String)
 
     static func destination(for target: TodayTarget) -> MoreDestination? {
         switch target.type {

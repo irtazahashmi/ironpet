@@ -158,7 +158,7 @@ final class ListScreenTests: XCTestCase {
         .agents: "Pet/WindowSections.swift", .alerts: "Pet/WindowSections.swift",
         .notifications: "Notifications/NotificationsSection.swift", .tasks: "Pet/TaskListView.swift",
         .transcripts: "Meeting/TranscriptsView.swift", .screen: "Capture/ScreenSection.swift", .actions: "Pet/WindowSections.swift",
-        .automations: "App/AutomationsSettings.swift", .today: "Pet/TodayView.swift",
+        .automations: "App/AutomationsSettings.swift", .memory: "Pet/MemorySection.swift", .today: "Pet/TodayView.swift",
     ]
 
     func testEveryListSectionIsBuiltWithTheSharedScreen() throws {
