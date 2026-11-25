@@ -135,7 +135,7 @@ package struct ACPTurn {
 
     package let prompt: String
     /// Context for the first turn of a new session (memory notes). Not sent when a session is resumed.
-    package let preamble: String?
+    package var preamble: String?
     package let workspace: URL
     /// Session to resume with `session/load` when this backend has none yet.
     package let resume: String?

@@ -590,6 +590,7 @@ private struct FormCard: View {
     let form: RemoteForm
     let model: ChatModel
     @State private var typed: [String: String] = [:]
+    private var pending: Bool { model.submittingForms.contains(form.id) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -597,9 +598,11 @@ private struct FormCard: View {
                 .font(.system(size: 13, weight: .semibold)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             ForEach(form.fields) { field in fieldView(field) }
             HStack {
-                Button { Task { await model.submit(form) } } label: { Label("Submit", systemImage: SharedSymbols.allow).frame(minWidth: 70) }.buttonStyle(.borderedProminent).disabled(!form.canSubmit)
+                Button { Task { await model.submit(form) } } label: {
+                    if pending { ProgressView().frame(minWidth: 70) } else { Label("Submit", systemImage: SharedSymbols.allow).frame(minWidth: 70) }
+                }.buttonStyle(.borderedProminent).disabled(!form.canSubmit || pending)
                     .accessibilityIdentifier("submit-\(form.id)")
-                Button { Task { await model.skip(form) } } label: { Label("Skip", systemImage: SharedSymbols.skip).frame(minWidth: 70) }.buttonStyle(.bordered)
+                Button { Task { await model.skip(form) } } label: { Label("Skip", systemImage: SharedSymbols.skip).frame(minWidth: 70) }.buttonStyle(.bordered).disabled(pending)
                     .accessibilityIdentifier("skip-\(form.id)")
             }
         }
