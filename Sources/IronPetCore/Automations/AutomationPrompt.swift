@@ -7,6 +7,7 @@ package enum AutomationPrompt {
     /// The catalog id of the agent a background run of this automation uses: its own `agent`, else the chat's, else Cursor.
     package static func agentID(_ automation: Automation, defaults: UserDefaults = .standard) -> String {
         if let id = automation.action.agent, AgentCatalog.agent(id: id) != nil { return id }
+        if let id = AgentRegistry.live?.chatAgent?.agentCli, AgentCatalog.agent(id: id) != nil { return id }
         return ChatAgentPreference.resolveID(defaults: defaults)
     }
 

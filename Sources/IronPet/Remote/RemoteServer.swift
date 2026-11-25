@@ -667,6 +667,11 @@ final class RemoteServer {
             let id = Self.parameter(context, "id")
             return await self.resources(context) { try await $0.askAboutAgent(id) }
         }
+        router.get("/v1/agent-records") { [self] _, context in await self.resources(context) { try $0.agentRecords() } }
+        router.get("/v1/agent-records/:id") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.resources(context) { try $0.agentRecord(id) }
+        }
         router.get("/v1/alerts") { [self] _, context in await self.resources(context) { $0.alerts() } }
         router.post("/v1/alerts/dismiss-all") { [self] _, context in await self.resources(context) { $0.dismissAllAlerts() } }
         router.post("/v1/alerts/:id/dismiss") { [self] _, context in

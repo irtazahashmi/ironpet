@@ -318,9 +318,27 @@ package final class ChatSession {
     package var model: String? {
         willSet { changes.send() }
         didSet {
-            UserDefaults.standard.set(model, forKey: "chatModel.\(agent.id)")
+            if let registry { _ = try? registry.update(AgentRegistry.chatAgentID, AgentRecordPatch(model: .some(model))) }
+            else { UserDefaults.standard.set(model, forKey: "chatModel.\(agent.id)") }
             events?.publish(.chatState, id: "options")
         }
+    }
+    /// Agent 1's record. Once set, the chat's CLI and model are read from it and written to it, not kept in `UserDefaults`.
+    private var registry: AgentRegistry?
+
+    /// Starts reading and writing the chat's agent CLI and model on agent 1. The registry needs the database, which opens after the
+    /// chat is built, so the app calls this once it is open (after `AgentRegistry.adoptLegacySettings`).
+    package func attach(registry: AgentRegistry) {
+        guard let record = registry.chatAgent else { return }
+        self.registry = registry
+        guard let stored = AgentCatalog.agent(id: record.agentCli) else { return }
+        if stored != agent {
+            agent = stored
+            models = Self.cachedModels(for: stored)
+            commands = SlashCommand.cached(for: stored.id)
+            if !agents.contains(stored) { agents.append(stored) }
+        }
+        if model != record.model { model = record.model }
     }
     /// Set when an adapter has no runtime: the chat offers a one-time Bun download.
     package private(set) var runtimeOffer: String? {
@@ -529,8 +547,14 @@ package final class ChatSession {
 
     private func select(_ next: ACPAgent) {
         agent = next
-        UserDefaults.standard.set(next.id, forKey: ChatAgentPreference.key)
-        model = UserDefaults.standard.string(forKey: "chatModel.\(next.id)")
+        if let registry {
+            // The record brings back the model last picked for this CLI.
+            let record = try? registry.update(AgentRegistry.chatAgentID, AgentRecordPatch(agentCli: next.id))
+            model = record?.model
+        } else {
+            UserDefaults.standard.set(next.id, forKey: ChatAgentPreference.key)
+            model = UserDefaults.standard.string(forKey: "chatModel.\(next.id)")
+        }
         models = Self.cachedModels(for: next)
         commands = SlashCommand.cached(for: next.id)
         if !agents.contains(next) { agents.append(next) }
