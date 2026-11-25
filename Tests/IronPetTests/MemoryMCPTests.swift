@@ -104,6 +104,58 @@ final class MemoryMCPTests: XCTestCase {
         XCTAssertTrue(again.isError)
     }
 
+    func testMergeMovesTheFactsAndSaysWhatMoved() async throws {
+        for index in 1...3 { _ = try await call("memory_remember", ["text": "Irtaza fact \(index)", "scope": "people", "person": "Irtaza"]) }
+        _ = try await call("memory_remember", ["text": "Lives in Berlin", "scope": "people", "person": "Irtaza Hashimi"])
+        let merged = try await call("memory_merge", ["keep": "Irtaza Hashimi", "merge": ["Irtaza"]])
+        XCTAssertFalse(merged.isError, merged.text)
+        XCTAssertEqual(merged.value["kept"] as? String, "Irtaza Hashimi")
+        XCTAssertEqual(merged.value["facts"] as? Int, 4)
+        XCTAssertEqual(merged.value["aliases"] as? [String], ["Irtaza"])
+        XCTAssertEqual((merged.value["merged"] as? [[String: Any]])?.first?["facts"] as? Int, 3)
+        XCTAssertEqual(store.entities().filter { $0.type == .person }.map(\.name), ["Irtaza Hashimi"])
+        let later = try await call("memory_remember", ["text": "Likes tea", "scope": "people", "person": "Irtaza"])
+        XCTAssertFalse(later.isError, later.text)
+        let page = try await call("memory_page", ["name": "Irtaza"])
+        XCTAssertEqual(page.value["entity"] as? String, "Irtaza Hashimi")
+        XCTAssertEqual((page.value["claims"] as? [[String: Any]])?.count, 5)
+    }
+
+    func testMergeNeedsKeepAndMergeAndRefusesWhatCannotMerge() async throws {
+        _ = try await call("memory_remember", ["text": "Owns the repo", "scope": "project", "entity": "Maya"])
+        _ = try await call("memory_remember", ["text": "Lives in Berlin", "scope": "people", "person": "Maya"])
+        let noKeep = try await call("memory_merge", ["merge": ["Maya"]])
+        let noMerge = try await call("memory_merge", ["keep": "Maya"])
+        XCTAssertTrue(noKeep.isError)
+        XCTAssertTrue(noMerge.isError)
+        let mixed = try await call("memory_merge", ["keep": "person:maya", "merge": ["project:maya"]])
+        XCTAssertTrue(mixed.isError)
+        XCTAssertTrue(mixed.text.contains("only pages of one type merge"), mixed.text)
+        let outside = try await call("memory_merge", ["keep": "person:maya", "merge": ["project:maya"]], caller: "anything")
+        XCTAssertEqual(outside.text, "only the user's chat may merge pages")
+        XCTAssertEqual(store.entities().filter { $0.name == "Maya" }.count, 2, "nothing merged")
+    }
+
+    func testTheCLIMergesThroughTheSameTool() throws {
+        _ = store.remember("Lives in Berlin", scope: .people, person: "Irtaza Hashimi", source: "chat:a")
+        _ = store.remember("Writes Swift", scope: .people, person: "Irtaza", source: "chat:a")
+        let request = try MemoryCLI.request(["merge", "Irtaza Hashimi", "Irtaza"])
+        XCTAssertEqual(request.op, "merge")
+        XCTAssertEqual(request.args["keep"] as? String, "Irtaza Hashimi")
+        XCTAssertEqual(request.args["merge"] as? [String], ["Irtaza"])
+        XCTAssertThrowsError(try MemoryCLI.request(["merge", "Irtaza"]))
+        XCTAssertThrowsError(try MemoryCLI.request(["forget", "x"]))
+
+        let body = try JSONSerialization.data(withJSONObject: ["op": request.op, "args": request.args])
+        let reply = MemoryMCP.handleCLI(body, api: MemoryAPI(services: { [services] in services }))
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: reply.body) as? [String: Any])
+        XCTAssertEqual(object["ok"] as? Bool, true, "\(object)")
+        XCTAssertEqual((object["result"] as? [String: Any])?["facts"] as? Int, 2)
+        XCTAssertEqual(store.entities().filter { $0.type == .person }.map(\.name), ["Irtaza Hashimi"])
+        let failed = MemoryMCP.handleCLI(Data(#"{"op":"merge","args":{"keep":"Nobody","merge":["Irtaza"]}}"#.utf8), api: MemoryAPI(services: { [services] in services }))
+        XCTAssertEqual((try JSONSerialization.jsonObject(with: failed.body) as? [String: Any])?["ok"] as? Bool, false)
+    }
+
     func testSearchFindsChatsNotesAndTheScreenButNotForgottenClaims() async throws {
         let item = ChatSession.Item(kind: .user("I always use pnpm, never npm"))
         let thread = ChatThread(id: "t1", title: "Packages", workspace: workspace.path, updatedAt: Date(),

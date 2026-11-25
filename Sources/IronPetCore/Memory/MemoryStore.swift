@@ -45,6 +45,9 @@ package protocol MemoryStore: AnyObject {
     func page(_ name: String) -> Result<EntityPage, MemoryError>
     /// An entity's links, in either direction, optionally of one type.
     func links(_ name: String, type: String?) -> Result<[MemoryLink], MemoryError>
+    /// Moves the facts and links of `others` onto `keep`, keeps their names as aliases of `keep` and deletes them, in one transaction.
+    /// Only pages of one type merge. It cannot be undone.
+    func mergePages(_ others: [String], into keep: String) -> Result<EntityMemoryStore.PageMerge, MemoryError>
 }
 
 extension MemoryStore {

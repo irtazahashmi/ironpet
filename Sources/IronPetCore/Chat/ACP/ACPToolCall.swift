@@ -125,14 +125,15 @@ package enum ApprovalRules {
 
     /// ironpet's own task tools only read and write rows in `ironpet.db` and run nothing. Delete still asks. The `screen_*` tools only
     /// read the stored, redacted captures. The `memory_*` tools write claims in `ironpet.db`, and `memory_forget` only moves them to a
-    /// page's history, so none of them can lose anything. Of the assistant tools, those that start, steer or stop a job still ask.
+    /// page's history, so none of them can lose anything, except `memory_merge`, which deletes the merged pages for good and so still asks. Of the assistant
+    /// tools, those that start, steer or stop a job still ask.
     package static let ownTaskTools: Set<String> = Set(["tasks_list", "tasks_get", "tasks_create", "tasks_update", "tasks_close", "tasks_suggest",
                                          "tasks_suggestions_list", "tasks_suggestion_accept", "tasks_suggestion_reject",
                                          "task_filters_list", "task_filters_upsert", "task_filters_reorder",
                                          "screen_search", "screen_window", RecordMCP.name]).union(plainNamedTools)
 
     /// Tools whose names are plain enough (`memory_forget`, `status_overview`) to belong to another server.
-    package static let plainNamedTools: Set<String> = AssistantMCP.ownTools.union(MemoryMCP.names).union([RecordMCP.name])
+    package static let plainNamedTools: Set<String> = AssistantMCP.ownTools.union(MemoryMCP.names.subtracting(["memory_merge"])).union([RecordMCP.name])
 
     /// Agents that name MCP tools `mcp__<server>__<tool>` must name the ironpet server; others report the bare tool name.
     package static func isOwnTaskTool(server: String?, tool: String) -> Bool {

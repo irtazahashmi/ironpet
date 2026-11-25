@@ -321,7 +321,7 @@ Ghost's notes and search over past chats, meetings and the screen.
 |---|---|---|---|
 | `memory.call` | `MemoryCall` | `JSON` | none |
 
-`memory.call` runs one `memory_*` tool. `params` is `{"name", "arguments", "caller"}` where `name` is `memory_remember`, `memory_forget`, `memory_page`, `memory_links`, `memory_search` or `memory_get`, and `arguments` is that tool's input object. The result is the tool's JSON output. A failure of the tool is `invalid` with the tool's message. It fails with `unavailable` until the host attaches the memory services.
+`memory.call` runs one `memory_*` tool. `params` is `{"name", "arguments", "caller"}` where `name` is `memory_remember`, `memory_forget`, `memory_merge`, `memory_page`, `memory_links`, `memory_search` or `memory_get`, and `arguments` is that tool's input object. The result is the tool's JSON output. A failure of the tool is `invalid` with the tool's message. It fails with `unavailable` until the host attaches the memory services.
 
 The phone's Memory screen uses five REST routes that have no dispatcher method. `GET /v1/memory?filter=<all|people|projects|organizations|topics|tools>&q=<text>` answers `{pages, total, count_label, other_matches}`, with the same chip and search rule as the Mac. `GET /v1/memory/pages/:ref` answers one page with its facts (pinned first), earlier facts and link groups, by the `page_` ref. `POST /v1/memory/facts/:ref/pin` takes `{"pinned": true|false}`. `DELETE /v1/memory/facts/:ref` and `DELETE /v1/memory/pages/:ref` forget a fact or every fact of a page. No route edits a fact, merges pages or starts the learning pass.
 
