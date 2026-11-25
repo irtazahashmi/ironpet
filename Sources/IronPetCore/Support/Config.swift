@@ -356,12 +356,27 @@ package struct Config: Codable, Equatable {
     }
 
     package struct Tasks: Codable, Equatable {
-        package init(meetingSuggestions: Bool = true, dueReminders: Bool = true, keepDoneDays: Int = 30, quickFilters: [QuickFilter] = []) {
+        package init(meetingSuggestions: Bool = true, dueReminders: Bool = true, keepDoneDays: Int = 30, quickFilters: [QuickFilter] = [],
+                     scan: Bool = true, scanMinutes: Int = Tasks.defaultScanMinutes, scanScreen: Bool = false) {
             self.meetingSuggestions = meetingSuggestions
             self.dueReminders = dueReminders
             self.keepDoneDays = keepDoneDays
             self.quickFilters = quickFilters
+            self.scan = scan
+            self.scanMinutes = scanMinutes
+            self.scanScreen = scanScreen
         }
+
+        /// The task scan reads new chats, meeting summaries and transcripts, and screen captures, and files task suggestions. It runs as
+        /// a system automation, so it is not in the Automations list. Every change it proposes waits for Accept.
+        package var scan = true
+        /// Minutes between two scans.
+        package var scanMinutes = Tasks.defaultScanMinutes
+        /// The scan also reads screen captures. Needs `screenCapture.enabled`. Starts on for a user who had the Screen review automation on.
+        package var scanScreen = false
+
+        package static let defaultScanMinutes = 60
+        package static let scanMinutesRange = 15...1_440
 
         /// After a meeting summary, offer the action items that belong to "Me" as tasks. Nothing is added without a click.
         package var meetingSuggestions = true
@@ -772,6 +787,7 @@ package struct Config: Codable, Equatable {
         c.reminders.snoozeMinutes = max(1, c.reminders.snoozeMinutes)
         c.automations.logRetentionDays = min(365, max(1, c.automations.logRetentionDays))
         c.tasks.keepDoneDays = min(365, max(1, c.tasks.keepDoneDays))
+        c.tasks.scanMinutes = min(Tasks.scanMinutesRange.upperBound, max(Tasks.scanMinutesRange.lowerBound, c.tasks.scanMinutes))
         c.jobs.maxRunning = min(Jobs.maxRunningRange.upperBound, max(Jobs.maxRunningRange.lowerBound, c.jobs.maxRunning))
         c.jobs.permissionTimeoutMinutes = min(Jobs.permissionTimeoutRange.upperBound, max(Jobs.permissionTimeoutRange.lowerBound, c.jobs.permissionTimeoutMinutes))
         c.jobs.turnTimeoutMinutes = min(Jobs.turnTimeoutRange.upperBound, max(Jobs.turnTimeoutRange.lowerBound, c.jobs.turnTimeoutMinutes))

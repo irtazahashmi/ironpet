@@ -127,9 +127,9 @@ struct TaskListView: View {
     @ViewBuilder private func suggestionPage(_ id: String) -> some View {
         if let suggestion = tasks.suggestions.first(where: { $0.id == id }) {
             ListDetailPage(section: "Tasks", onBack: { suggestionNav.close() }) {
-                Text(suggestion.title).font(.system(size: 24, weight: .bold)).textSelection(.enabled)
+                Text(suggestion.headline).font(.system(size: 24, weight: .bold)).textSelection(.enabled)
                 HStack(spacing: 6) {
-                    Button("Add") { _ = try? tasks.accept(AcceptSuggestionRequest(id: suggestion.id)); suggestionNav.close() }
+                    Button(suggestion.update == nil ? "Add" : "Accept") { _ = try? tasks.accept(AcceptSuggestionRequest(id: suggestion.id)); suggestionNav.close() }
                     Button("Skip") { tasks.skip(suggestion.id); suggestionNav.close() }
                 }
                 .buttonStyle(.bordered)
@@ -223,7 +223,7 @@ struct TaskListView: View {
     }
 
     private var suggestionRows: [TaskSuggestion] {
-        tasks.suggestions.filter { ListSearch.matches(search, in: [$0.title]) }
+        tasks.suggestions.filter { ListSearch.matches(search, in: [$0.title, $0.headline, $0.update?.summary ?? ""]) }
     }
 
     private var viewModePicker: some View {
@@ -432,8 +432,8 @@ private struct SuggestionRow: View {
     }
 
     var body: some View {
-        ListRow(title: suggestion.title, description: nil, onOpen: onShow,
-                leading: { ListRowIcon(symbol: "lightbulb") },
+        ListRow(title: suggestion.headline, description: suggestion.update?.summary, onOpen: onShow,
+                leading: { ListRowIcon(symbol: suggestion.update == nil ? "lightbulb" : "arrow.triangle.2.circlepath") },
                 extra: {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 5) {
@@ -452,10 +452,11 @@ private struct SuggestionRow: View {
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
                         HStack(spacing: 6) {
-                            Button("Add", action: onAdd)
-                                .help(suggestion.waitingOn == nil ? "Add to the backlog" : "Add to Waiting on others")
+                            Button(suggestion.update == nil ? "Add" : "Accept", action: onAdd)
+                                .help(suggestion.update != nil ? "Apply this change to the task"
+                                      : suggestion.waitingOn == nil ? "Add to the backlog" : "Add to Waiting on others")
                             Button("Skip", action: onSkip)
-                                .help("Dismiss this suggestion")
+                                .help(suggestion.update == nil ? "Dismiss this suggestion" : "Leave the task as it is")
                         }
                         .controlSize(.small)
                         .buttonStyle(.bordered)

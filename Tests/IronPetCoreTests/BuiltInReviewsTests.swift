@@ -1,7 +1,7 @@
 import XCTest
 @testable import IronPetCore
 
-/// The screen review and the mail and calendar checks: built-ins that ship off, read their prompts from the editable store.
+/// The mail and calendar checks: a built-in that ships off and reads its prompt from the editable store.
 final class BuiltInReviewsTests: XCTestCase {
     private var directory: URL!
     private var savedDirectory: URL!
@@ -21,16 +21,16 @@ final class BuiltInReviewsTests: XCTestCase {
         super.tearDown()
     }
 
-    func testBothAreBuiltInsThatStartOff() {
-        for automation in [AutomationDefaults.screenReview(), AutomationDefaults.mailCalendar()] {
+    func testItIsABuiltInThatStartsOff() {
+        for automation in [AutomationDefaults.mailCalendar()] {
             XCTAssertFalse(automation.enabled, automation.id)
             XCTAssertTrue(AutomationDefaults.builtIns.contains { $0.id == automation.id }, automation.id)
             XCTAssertEqual(AutomationValidator.validate(automation), [], automation.id)
         }
     }
 
-    func testBothRunEveryHourInTheirOwnSessionAndReportToTheChat() {
-        for automation in [AutomationDefaults.screenReview(), AutomationDefaults.mailCalendar()] {
+    func testItRunsEveryHourInItsOwnSessionAndReportsToTheChat() {
+        for automation in [AutomationDefaults.mailCalendar()] {
             XCTAssertEqual(automation.trigger.type, "interval", automation.id)
             XCTAssertEqual(automation.trigger.minutes, 60, automation.id)
             XCTAssertEqual(automation.action.effectiveSession, "own", automation.id)
@@ -39,9 +39,8 @@ final class BuiltInReviewsTests: XCTestCase {
     }
 
     @MainActor
-    func testEachPromptIsTheEditableFileAndAnEditAppliesToTheNextRun() {
+    func testThePromptIsTheEditableFileAndAnEditAppliesToTheNextRun() {
         let cases: [(Automation, String)] = [
-            (AutomationDefaults.screenReview(), "screen-review"),
             (AutomationDefaults.mailCalendar(), "mail-calendar"),
         ]
         for (automation, id) in cases {
@@ -55,9 +54,18 @@ final class BuiltInReviewsTests: XCTestCase {
         }
     }
 
-    func testEachPromptHasANoticeForAnEmptyOrNothingReply() {
-        for automation in [AutomationDefaults.screenReview(), AutomationDefaults.mailCalendar()] {
+    func testThePromptHasANoticeForAnEmptyOrNothingReply() {
+        for automation in [AutomationDefaults.mailCalendar()] {
             XCTAssertEqual(automation.action.quietReplies, ["NOTHING", "NOTHING_NEW"], automation.id)
         }
+    }
+}
+
+extension BuiltInReviewsTests {
+    func testScreenReviewIsNoLongerABuiltInOrAPrompt() {
+        XCTAssertFalse(AutomationDefaults.builtIns.contains { $0.id == "screen-review" })
+        XCTAssertNil(Prompts.info("screen-review"))
+        XCTAssertNil(Prompts.defaultText("screen-review"))
+        XCTAssertNotNil(Prompts.info("task-scan"))
     }
 }

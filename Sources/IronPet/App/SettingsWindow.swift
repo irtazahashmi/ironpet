@@ -317,6 +317,21 @@ private struct GeneralSettings: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
+                Toggle("Look for tasks in chats, meetings and the screen", isOn: Binding(
+                    get: { store.config.tasks.scan }, set: { on in store.update { $0.tasks.scan = on } }))
+                Stepper(value: Binding(get: { store.config.tasks.scanMinutes }, set: { value in store.update { $0.tasks.scanMinutes = value } }),
+                        in: Config.Tasks.scanMinutesRange, step: 15) {
+                    Text("Every \(store.config.tasks.scanMinutes) minutes")
+                }
+                .disabled(!store.config.tasks.scan)
+                Toggle("Also read the text captured from the screen", isOn: Binding(
+                    get: { store.config.tasks.scanScreen }, set: { on in store.update { $0.tasks.scanScreen = on } }))
+                    .disabled(!store.config.tasks.scan || !store.config.screenCapture.enabled)
+            } footer: {
+                Text("Each scan sends only what is new to the agent that already had it: a chat to its own agent, a meeting to the agent that summarized it. The agent can only answer. It suggests new tasks and changes to open tasks (done, who you wait on, a note), and nothing changes until you press Add or Accept in the Tasks section. The screen needs screen capture turned on. Add your own schedule under Automations if you want a different one.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
                 Picker("Open sessions in", selection: Binding(get: { store.config.openIn },
                                                               set: { value in store.update { $0.openIn = value } })) {
                     Text("Auto (the app that started the agent)").tag(Editors.auto)
