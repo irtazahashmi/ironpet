@@ -58,7 +58,7 @@ package final class MemoryAPI {
     /// The valid fact with this `claim_` ref.
     package func claim(ref: String) -> MemoryClaim? { pages().claim(ref: ref) }
 
-    /// Forgets one fact. Undo in Recently learned can put it back.
+    /// Forgets one fact. The change log keeps it, but no screen offers Undo.
     @discardableResult
     package func forgetClaim(_ id: Int64) -> Bool { pages().forgetClaim(id, source: MemoryNote.userSource) }
 

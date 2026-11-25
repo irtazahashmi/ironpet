@@ -433,7 +433,7 @@ All in `~/.ironpet/`:
 | `backgrounds/` | Custom chat background images |
 | `config.json` | Your settings |
 | `automations.json` | Reminder, watcher and scheduled job definitions |
-| `ironpet.db` | Tasks, automation state and logs, notifications, usage, background jobs, memory's search index over chats, meetings and notes with the change log behind Recently learned (`memory_*` tables), screen captures when that feature is on, remote devices, and the activity log behind the welcome back summary (`activity_events`, 30 days, kept whether or not the summary is on): what ironpet announced, with an agent's one-line summary or waiting request but never your prompt. See [SECURITY.md](SECURITY.md) for the exact fields |
+| `ironpet.db` | Tasks, automation state and logs, notifications, usage, background jobs, memory's search index over chats, meetings and notes with the memory change log (`memory_*` tables), screen captures when that feature is on, remote devices, and the activity log behind the welcome back summary (`activity_events`, 30 days, kept whether or not the summary is on): what ironpet announced, with an agent's one-line summary or waiting request but never your prompt. See [SECURITY.md](SECURITY.md) for the exact fields |
 | `pets/` | Your pet library: every valid sprite sheet here shows in Settings → Pet |
 | `pet/spritesheet.png` | Optional custom pet art (overrides the bundled Ghost) |
 | `bin/ironpet-hook`, `port`, `token` | Hook bridge |

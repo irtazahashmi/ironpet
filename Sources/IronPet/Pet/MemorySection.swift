@@ -180,7 +180,7 @@ struct MemorySection: View {
                                                                                                 set: { if !$0 { pendingForget = nil } })) {
             Button("Forget page", role: .destructive) { if let row = pendingForget { model.forgetPage(row.id) }; pendingForget = nil }
         } message: {
-            Text("Forgets every fact on the page and its links. Recently learned in Settings can undo it.")
+            Text("Forgets every fact on the page and its links. This cannot be undone.")
         }
     }
 
@@ -502,7 +502,7 @@ private struct MemoryDetailView: View {
         .confirmationDialog("Forget \(detail.title)?", isPresented: $confirmForget) {
             Button("Forget page", role: .destructive) { model.forgetPage(detail.entity.id) }
         } message: {
-            Text("Forgets every fact on the page and its links. Recently learned in Settings can undo it.")
+            Text("Forgets every fact on the page and its links. This cannot be undone.")
         }
     }
 

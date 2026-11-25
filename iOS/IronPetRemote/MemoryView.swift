@@ -47,7 +47,7 @@ struct MemoryView: View {
                 pendingForget = nil
             }
         } message: {
-            Text("Forgets every fact on the page and its links. Recently learned in Settings on the Mac can undo it.")
+            Text("Forgets every fact on the page and its links. This cannot be undone.")
         }
     }
 
@@ -165,7 +165,7 @@ struct MemoryPageView: View {
         .confirmationDialog("Forget \(model.pages[id]?.title ?? "this page")?", isPresented: $confirmForget, titleVisibility: .visible) {
             Button("Forget page", role: .destructive) { Task { await model.forgetPage(id) } }
         } message: {
-            Text("Forgets every fact on the page and its links. Recently learned in Settings on the Mac can undo it.")
+            Text("Forgets every fact on the page and its links. This cannot be undone.")
         }
     }
 
