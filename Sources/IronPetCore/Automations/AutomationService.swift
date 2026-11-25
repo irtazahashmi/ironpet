@@ -171,6 +171,8 @@ package final class AutomationService {
         self.engine = engine
         engine.state = AutomationState(database: database ?? Database.open(path: store.paths.database, migrations: AppMigrations.all).database)
         engine.set(store.automations)
+        // Automations are in a file, not the database, so their refs are made here: old ids then resolve through `get` from the start.
+        _ = engine.state.records.refs(.auto, store.automations.map(\.id))
         engine.onFire = { [weak self] fire in self?.handle(fire) }
         engine.onRecord = { [weak self] id, outcome, text in self?.recordHistory(id, outcome, text) }
         engine.onLog = { [weak self] id, outcome, summary, detail, duration in self?.log(id, outcome, summary, detail: detail, duration: duration) }
@@ -180,6 +182,7 @@ package final class AutomationService {
         store.onChange = { [weak self] list in
             guard let self else { return }
             engine.set(list + system)
+            _ = engine.state.records.refs(.auto, list.map(\.id))
             reviewApprovals()
         }
         store.onInvalid = { [weak self] message in
@@ -1016,6 +1019,7 @@ package final class AutomationService {
     package func summary(_ a: Automation) -> [String: Any] {
         var out: [String: Any] = ["id": a.id, "name": a.name, "enabled": a.enabled, "trigger": describe(a.trigger),
                                   "action": a.action.type, "createdBy": a.createdBy]
+        if let ref = engine.state.records.ref(.auto, a.id) { out["ref"] = ref }
         if let next = engine.nextRun(a) { out["nextRun"] = AutomationClock.format(next) }
         if let last = engine.state.history(a.id, limit: 1).last { out["lastRun"] = ["time": AutomationClock.format(last.date), "outcome": last.outcome, "output": last.output] }
         if needsApproval(a) { out["approval"] = isRejected(a) ? "rejected" : "pending" }

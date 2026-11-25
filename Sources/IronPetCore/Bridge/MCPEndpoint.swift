@@ -5,7 +5,7 @@ import Foundation
 /// `TaskJSON.call`, `ScreenAPI`, `MemoryAPI` and the other namespaces, which validate.
 @MainActor
 package enum MCPEndpoint {
-    package static var tools: [[String: Any]] { AutomationMCP.tools + TaskMCP.tools + NotificationMCP.tools + ScreenMCP.tools + DesktopMCP.tools + MemoryMCP.tools + AssistantMCP.tools }
+    package static var tools: [[String: Any]] { AutomationMCP.tools + TaskMCP.tools + NotificationMCP.tools + ScreenMCP.tools + DesktopMCP.tools + MemoryMCP.tools + AssistantMCP.tools + RecordMCP.tools }
 
     /// Who started the `IronPet mcp` bridge when it is not the user's chat, as `automation:<id>` or `job:<id>`. The bridge reads the
     /// variable and sends the header.
@@ -58,7 +58,7 @@ package enum MCPEndpoint {
     package static func handle(_ body: Data, automations: AutomationsAPI?, tasks: TasksAPI?, screen: ScreenAPI? = nil,
                        desktop: DesktopAPI? = nil, memory: MemoryAPI? = nil, assistant: AssistantAPI? = nil,
                        caller: String? = nil, jobScope: Bool = false, voiceScope: Bool = false,
-                       notifications: NotificationsAPI? = nil) async -> (status: String, body: Data) {
+                       notifications: NotificationsAPI? = nil, records: RecordResolver? = nil) async -> (status: String, body: Data) {
         guard let message = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any], let method = message["method"] as? String else {
             return ("400 Bad Request", encode(["jsonrpc": "2.0", "id": NSNull(), "error": ["code": -32700, "message": "parse error"]]))
         }
@@ -81,8 +81,35 @@ package enum MCPEndpoint {
             return reply(["tools": jobScope ? tools.filter { !jobOnlyHidden.contains($0["name"] as? String ?? "") } : tools])
         case "tools/call":
             let params = message["params"] as? [String: Any] ?? [:]
-            let name = params["name"] as? String ?? ""
-            let arguments = params["arguments"] as? [String: Any] ?? [:]
+            var name = params["name"] as? String ?? ""
+            var arguments = params["arguments"] as? [String: Any] ?? [:]
+            // `get` answers with the tool that reads the record's kind, so the checks below apply to that tool. A filter has no such tool,
+            // so it is read from the list here.
+            if name == RecordMCP.name {
+                guard let records else { return toolResult("ironpet's record ids are not available right now", isError: true) }
+                switch records.resolve(arguments["id"] as? String ?? "") {
+                case .failure(let error):
+                    return toolResult(error.message, isError: true)
+                case .success(let found) where found.kind == .filter:
+                    guard let tasks else { return toolResult("ironpet's task list is not available right now", isError: true) }
+                    switch TaskJSON.call(tasks, "filters_list", [:], by: "agent:mcp") {
+                    case .success(let value):
+                        let listed = (value as? [String: Any])?["filters"] as? [[String: Any]] ?? []
+                        guard let filter = listed.first(where: { $0["id"] as? String == found.key }) else {
+                            return toolResult("no quick filter with id \(found.key)", isError: true)
+                        }
+                        return toolResult(text(filter), isError: false)
+                    case .failure(let error):
+                        return toolResult(error.message, isError: true)
+                    }
+                case .success(let found):
+                    guard let target = RecordMCP.target(found.kind, key: found.key) else {
+                        return toolResult("get does not read \(found.kind.rawValue) records yet; ask for them with their own tool", isError: true)
+                    }
+                    name = target.tool
+                    arguments = target.arguments
+                }
+            }
             if jobScope, jobOnlyHidden.contains(name) {
                 return toolResult("\(name) is not available inside a background job", isError: true)
             }
@@ -156,6 +183,7 @@ package enum MCPEndpoint {
                                   memory: @escaping @MainActor () -> MemoryAPI? = { nil },
                                   assistant: @escaping @MainActor () -> AssistantAPI? = { nil },
                                   notifications: @escaping @MainActor () -> NotificationsAPI? = { nil },
+                                  records: @escaping @MainActor () -> RecordResolver? = { nil },
                                   respond: @escaping (String, Data) -> Void) {
         let path = request.path, body = request.body, caller = request.header(callerHeader)
         Task { @MainActor in
@@ -164,7 +192,7 @@ package enum MCPEndpoint {
             case "/mcp", jobPath, voicePath:
                 result = await handle(body, automations: automations(), tasks: tasks(), screen: screen(), desktop: desktop(),
                                       memory: memory(), assistant: assistant(), caller: caller, jobScope: path == jobPath,
-                                      voiceScope: path == voicePath, notifications: notifications())
+                                      voiceScope: path == voicePath, notifications: notifications(), records: records())
             case "/notifications":
                 guard let api = notifications() else { return respond("503 Service Unavailable", Data()) }
                 result = NotificationMCP.handleCLI(body, api: api)

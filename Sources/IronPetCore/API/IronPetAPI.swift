@@ -152,6 +152,13 @@ package final class IronPetAPI {
     package func attach(assistant context: AssistantContext) { assistant = AssistantAPI(context: context) }
 
     /// `services` is asked each time a `memory_*` tool runs, since it names the chat that is open then.
+    /// Resolves record ids for `get`. Attached by the app, which owns the database.
+    package private(set) var records: RecordResolver?
+
+    package func attach(records: RecordResolver) {
+        self.records = records
+    }
+
     package func attach(memory services: @escaping () -> MemoryMCP.Services?) {
         memory = MemoryAPI(services: services)
         MemoryAPI.live = memory

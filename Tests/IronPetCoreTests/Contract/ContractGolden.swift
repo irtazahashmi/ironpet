@@ -35,7 +35,9 @@ enum GoldenJSON {
     }
 
     /// The first difference between a golden value and what the API sent, as `path: what differs`, or nil when they match.
-    /// Keys are compared by name, so a renamed field is reported as a missing key and an extra key.
+    /// Keys are compared by name, so a renamed field is reported as a missing key and an extra key. A golden string that ends in `*`
+    /// matches any string with the rest of it as its prefix, for values that differ on every run, such as a new record's random id
+    /// (`task_*`). `UPDATE_GOLDENS=1` writes the real value, so put the `*` back afterwards.
     static func difference(golden: RemoteJSON, actual: RemoteJSON, path: String = "response") -> String? {
         switch (golden, actual) {
         case (.object(let want), .object(let got)):
@@ -56,6 +58,8 @@ enum GoldenJSON {
             for (index, pair) in zip(want, got).enumerated() {
                 if let found = difference(golden: pair.0, actual: pair.1, path: "\(path)[\(index)]") { return found }
             }
+            return nil
+        case (.string(let want), .string(let got)) where want.hasSuffix("*") && got.hasPrefix(want.dropLast()):
             return nil
         default:
             return golden == actual ? nil : "\(path): the golden file has \(render(golden)) and the API sent \(render(actual))"

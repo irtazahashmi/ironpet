@@ -129,10 +129,10 @@ package enum ApprovalRules {
     package static let ownTaskTools: Set<String> = Set(["tasks_list", "tasks_get", "tasks_create", "tasks_update", "tasks_close", "tasks_suggest",
                                          "tasks_suggestions_list", "tasks_suggestion_accept", "tasks_suggestion_reject",
                                          "task_filters_list", "task_filters_upsert", "task_filters_reorder",
-                                         "screen_search", "screen_window"]).union(plainNamedTools)
+                                         "screen_search", "screen_window", RecordMCP.name]).union(plainNamedTools)
 
     /// Tools whose names are plain enough (`memory_forget`, `status_overview`) to belong to another server.
-    package static let plainNamedTools: Set<String> = AssistantMCP.ownTools.union(MemoryMCP.names)
+    package static let plainNamedTools: Set<String> = AssistantMCP.ownTools.union(MemoryMCP.names).union([RecordMCP.name])
 
     /// Agents that name MCP tools `mcp__<server>__<tool>` must name the ironpet server; others report the bare tool name.
     package static func isOwnTaskTool(server: String?, tool: String) -> Bool {

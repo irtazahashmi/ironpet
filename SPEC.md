@@ -210,6 +210,15 @@ IronPet Remote is the iPhone client of the [Remote API](#remote-api), shipped as
 - **Mermaid diagrams.** A closed ```mermaid block (`ChatMarkdown.mermaidSource(of:)`) draws in `MermaidBlock` (`iOS/IronPetRemote/MermaidView.swift`) with the Mac's `Resources/mermaid.html`, one `WKWebView` per diagram, as tall as the drawn diagram and scrolling sideways only when it is wider than the screen. `MermaidStore` keeps the last 16 rendered web views, so a row that scrolls away and back does not run Mermaid again. An invalid diagram, an open fence, or a build without Mermaid shows the source as a code block. The page runs with a `default-src 'none'` policy and loads nothing from the network. The Xcode build runs `scripts/fetch_mermaid.sh` (the same pinned, SHA-256-checked mermaid.js as `scripts/bundle.sh`, cached in `build/vendor`); offline with an empty cache, no Mermaid is bundled and diagrams show as code.
 - **Tests.** `MockIronPetServer` (`Tests/IronPetKitTests/Support/`) is a loopback HTTP and WebSocket server, with TLS for the pinning tests. The same file is compiled into the iOS unit and UI test targets. `swift test --filter IronPetKitTests` runs the Kit tests. `xcodebuild test` on a simulator runs the unit and UI tests.
 
+## Record ids
+
+Every record has a public id: its kind's prefix, an underscore and six or more random lowercase hex digits (`task_9f3c1e`, `job_…`, `auto_…`, `filter_…`). The prefixes are in `RecordKind` (`Support/RecordID.swift`): `screen`, `meeting`, `chat`, `msg`, `task`, `auto`, `run`, `job`, `notif`, `page`, `claim` and `filter`. The digits never encode a title or a time, a new id gets one more digit only when every try collides, and an id is never reused.
+
+- **Where they live.** `record_refs(ref, kind, key)` in `ironpet.db` (`Support/RecordRefs.swift`, migration 551). A ref is created the first time its record is listed or read, and tasks and jobs get theirs in the migration. Automations and filters live in JSON and config, so they are looked up by key the same way.
+- **Old ids keep working.** A task's slug, a job's `job-…` id, an automation's id and a filter's id are still the keys, so they resolve to the same record. When two kinds share an old id (a task and a filter with the same slug), `get` says so and asks for the ref.
+- **`get`.** The MCP tool `get` (`id`) returns any record that has a reader: a task, a job, an automation or a filter. It answers with the tool for that kind, so `get` and `tasks_get` return the same text. Other kinds say they are not readable yet. `get` is read-only and needs no approval.
+- **Where refs appear.** `ref` is a field of each task, job, automation and filter in the tool and API answers. The records are otherwise unchanged.
+
 ## Tasks
 
 The agent's board, not the user's: the agent keeps track of the items, the user tells it what happened. Moving cards by hand would lose what the agent knows, so the UI only marks done, deletes, and adds or skips suggestions from meetings and watchers.

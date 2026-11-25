@@ -278,7 +278,7 @@ package final class UsageStore: @unchecked Sendable {
 /// Every feature's migrations, in the order the database applies them.
 package enum AppMigrations {
     package static let all = AutomationState.migrations + UsageStore.migrations + TaskStore.migrations + CaptureStore.migrations + ActivityLog.migrations
-        + JobService.migrations + MemoryIndex.migrations + NotificationStore.migrations + RemoteStore.migrations
+        + JobService.migrations + MemoryIndex.migrations + NotificationStore.migrations + RemoteStore.migrations + RecordRefs.migrations
 
     /// The schema version a database reaches once every migration ran. A release records it in Info.plist (`IronPetSchemaVersion`),
     /// so the update check can tell an older build from a newer one by its data, not only by its version number.
