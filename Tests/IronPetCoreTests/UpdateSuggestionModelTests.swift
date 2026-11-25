@@ -16,7 +16,7 @@ final class UpdateSuggestionModelTests: XCTestCase {
         return try XCTUnwrap(filed.first)
     }
 
-    func testAnUpdateSurvivesAReloadWithTheTargetsCurrentTitle() throws {
+    func testAnUpdateSurvivesAReloadWithTheTargetsCurrentTitle() async throws {
         let target = try store.create(title: "Send Tom the deck", source: .user, by: "test")
         let filed = try fileUpdate(target)
         XCTAssertEqual(filed.update?.targetTitle, "Send Tom the deck", "the title comes from the task, not from the agent")
@@ -27,7 +27,7 @@ final class UpdateSuggestionModelTests: XCTestCase {
         XCTAssertEqual(stored.headline, "Update: Send Tom the deck")
     }
 
-    func testAnUpdateForATaskThatIsDoneOrMissingOrChangesNothingIsNotFiled() throws {
+    func testAnUpdateForATaskThatIsDoneOrMissingOrChangesNothingIsNotFiled() async throws {
         let done = try store.create(title: "Old job", status: .done, source: .user, by: "test")
         let open = try store.create(title: "Open job", source: .user, by: "test")
         let filed = store.suggest(scanUpdates: [
@@ -38,7 +38,7 @@ final class UpdateSuggestionModelTests: XCTestCase {
         XCTAssertEqual(filed, [])
     }
 
-    func testTheRemoteFormCarriesTheOriginAndTheChange() throws {
+    func testTheRemoteFormCarriesTheOriginAndTheChange() async throws {
         let target = try store.create(title: "Send Tom the deck", source: .user, by: "test")
         let remote = RemoteSuggestion(try fileUpdate(target))
         XCTAssertEqual(remote.origin, "task-scan")
@@ -47,14 +47,14 @@ final class UpdateSuggestionModelTests: XCTestCase {
         XCTAssertEqual(remote.update?.summary, "Mark done. Note: Sent on Tuesday.")
     }
 
-    func testANewTaskSuggestionHasNoUpdateInTheRemoteForm() {
+    func testANewTaskSuggestionHasNoUpdateInTheRemoteForm() async {
         let filed = store.suggest(scan: [TaskSuggestion.Draft(key: "scan", title: "Book the room")])
         let remote = RemoteSuggestion(filed[0])
         XCTAssertNil(remote.update)
         XCTAssertEqual(remote.origin, "task-scan")
     }
 
-    func testTheToolJSONShowsTheTargetAndTheChange() throws {
+    func testTheToolJSONShowsTheTargetAndTheChange() async throws {
         let target = try store.create(title: "Send Tom the deck", source: .user, by: "test")
         let json = TaskJSON.json(try fileUpdate(target))
         XCTAssertEqual(json["origin"] as? String, "task-scan")
@@ -63,7 +63,7 @@ final class UpdateSuggestionModelTests: XCTestCase {
         XCTAssertEqual(change["status"] as? String, "done")
     }
 
-    func testAcceptKeepsTheReviewersNoteInTheTasksHistory() throws {
+    func testAcceptKeepsTheReviewersNoteInTheTasksHistory() async throws {
         let target = try store.create(title: "Send Tom the deck", source: .user, by: "test")
         let filed = try fileUpdate(target)
         try store.accept(filed.id, note: "Confirmed in the chat", by: "agent:mcp")
