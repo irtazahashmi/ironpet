@@ -346,6 +346,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         api.attach(assistant: assistant)
         api.session.serverVersion = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"
         api.attach(memory: { [weak self] in self?.memoryServices })
+        api.attach(records: RecordResolver(refs: RecordRefs(database: database)))
         pet.agents = api.agents
         chatModel = ChatViewModel(api: api.chat, voiceAPI: api.voice, events: events)
         chatModel.voice.voiceKey = voiceKey
@@ -1140,7 +1141,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         server.onAgentAPI = { [weak self] request, respond in
             MCPEndpoint.route(request, automations: { self?.api?.automations }, tasks: { self?.api?.tasks }, screen: { self?.api?.screen },
                               desktop: { self?.api?.desktop }, memory: { self?.api?.memory }, assistant: { self?.api?.assistant },
-                              notifications: { self?.api?.notifications }, respond: respond)
+                              notifications: { self?.api?.notifications }, records: { self?.api?.records }, respond: respond)
         }
         try server.start()
         self.server = server

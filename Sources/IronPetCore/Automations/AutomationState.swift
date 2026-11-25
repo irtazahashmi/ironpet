@@ -105,6 +105,9 @@ package final class AutomationState {
 
     private let database: Database
 
+    /// The public ids of automations, kept in the same database.
+    package var records: RecordRefs { RecordRefs(database: database) }
+
     /// Why the database is unavailable, when history is only in memory.
     package var unavailable: String? { database.unavailableReason }
 

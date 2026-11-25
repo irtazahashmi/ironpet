@@ -209,6 +209,8 @@ package final class TasksAPI {
     package init(store: TaskStore, config: ConfigStore? = nil) {
         self.store = store
         self.config = config
+        // Filters live in config, so they get their refs here, where agents first see the list. Old filter ids then resolve through `get`.
+        _ = store.records.refs(.filter, (config?.config.tasks.quickFilters ?? []).map(\.id))
         forwarding = [
             store.changes.observe { [weak self] in self?.changes.send() },
         ]
@@ -218,6 +220,9 @@ package final class TasksAPI {
     }
 
     var quickFilterStorage: [QuickFilter] { config?.config.tasks.quickFilters ?? memoryFilters }
+
+    /// The public id of a record kept with the tasks (a task or a filter), created on first use.
+    package func ref(_ kind: RecordKind, _ key: String) -> String? { store.records.ref(kind, key) }
 
     func setQuickFilterStorage(_ filters: [QuickFilter]) {
         guard let config else {

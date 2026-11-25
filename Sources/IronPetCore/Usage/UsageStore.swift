@@ -277,7 +277,7 @@ package final class UsageStore: @unchecked Sendable {
 /// Every feature's migrations, in the order the database applies them.
 package enum AppMigrations {
     package static let all = AutomationState.migrations + UsageStore.migrations + TaskStore.migrations + CaptureStore.migrations + ActivityLog.migrations
-        + JobService.migrations + MemoryIndex.migrations + NotificationStore.migrations + RemoteStore.migrations
+        + JobService.migrations + MemoryIndex.migrations + NotificationStore.migrations + RemoteStore.migrations + RecordRefs.migrations
 }
 
 // MARK: Agent usage

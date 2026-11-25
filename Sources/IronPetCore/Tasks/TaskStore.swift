@@ -142,6 +142,9 @@ package final class TaskStore {
 
     // MARK: Reading
 
+    /// The public ids of tasks, filters and other records kept in the same database.
+    package var records: RecordRefs { RecordRefs(database: database) }
+
     /// Why the database is unavailable, when tasks are only in memory.
     package var unavailable: String? { database.unavailableReason }
 
@@ -541,7 +544,14 @@ package final class TaskStore {
                 }
                 return (items, suggested)
             }
-            if items != tasks { tasks = items }
+            // Refs are written after the read, so the write never nests inside it.
+            let refs = records.refs(.task, items.map(\.id))
+            let withRefs = items.map { item -> TaskItem in
+                var item = item
+                item.ref = refs[item.id]
+                return item
+            }
+            if withRefs != tasks { tasks = withRefs }
             if suggested != suggestions { suggestions = suggested }
         } catch {
             NSLog("ironpet: could not read tasks: \(error.localizedDescription)")
