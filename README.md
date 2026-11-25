@@ -71,6 +71,7 @@ macOS will ask for these permissions as you use the features:
 | Screen Recording | Screenshots, and telling Cursor windows apart when several are open |
 | Accessibility | Screen capture and desktop control (both off by default). Also used, when already allowed, to attach the frontmost app's text selection when you open chat |
 | Microphone | Voice notes, voice mode and meeting transcripts (each off by default) |
+| Input Monitoring | Only when you choose Fn as the dictation shortcut. ironpet listens for Fn and never blocks it |
 | Screen & System Audio Recording | The other party's audio in a meeting transcript (off by default) |
 
 ## Using it
@@ -348,14 +349,16 @@ Turn it on under **Settings → Voice → Talk to Ghost**, then fill in the **Se
 | Transcription model | `voice.model` | Sent as the `model` field |
 | API key | none | Optional. Stored in the Keychain (`ironpet.voice`), never in `~/.ironpet` |
 | Voice shortcut | `hotkeys.voice` | Default <kbd>⌥⌘V</kbd>. Registered only while voice notes are on |
-| Dictation shortcut | `hotkeys.dictation` | Default <kbd>⌃⌥Space</kbd>, empty turns it off. Registered only while voice notes are on. See [Dictation in other apps](#dictation-in-other-apps) |
+| Dictation shortcut | `hotkeys.dictation` | Default <kbd>⌃⌥Space</kbd>, empty turns it off. Any key combination with ⌘, ⌥ or ⌃, a function key, <kbd>§</kbd> alone or with modifiers, or `fn` for Fn hold-to-talk. Registered only while voice notes are on. See [Dictation in other apps](#dictation-in-other-apps) |
 | Hold to talk | `voice.holdToTalk` | Default on: hold the shortcut to record and release to transcribe. Off: press once to start and again to stop |
 
 The transcript goes into the chat input for you to edit, or is sent right away when **Send voice notes automatically** is on in the chat's settings menu (on by default). Pasted, typed and Wispr Flow text is never sent automatically.
 
 ### Dictation in other apps
 
-Press the dictation shortcut in any app, speak, and press it again (or press Enter) to type the transcript at the cursor. A small dark pill with a recording dot, a dotted level meter and a close button shows while it records, above the focused field or at the top of the screen, in your macOS accent colour. Esc or the close button discards the recording and types nothing. Change or clear the shortcut in Settings → Voice.
+Press the dictation shortcut in any app, speak, and press it again (or press Enter) to type the transcript at the cursor. A small dark pill with a recording dot, a dotted level meter and a close button shows while it records, above the focused field or at the top of the screen, in your macOS accent colour. Esc or the close button discards the recording and types nothing. Change or clear the shortcut in Settings → Voice. The recorder accepts <kbd>§</kbd> (the ISO key left of 1) alone or with modifiers, and the JIS keys Yen, Underscore, Keypad Comma, Eisu and Kana with a modifier.
+
+To use Fn instead, click **Use Fn** next to the shortcut (`hotkeys.dictation` is then `fn`). Hold Fn, speak, and release to type the transcript. A tap shorter than 0.3 seconds starts recording and the next tap stops it. Fn pressed together with another key cancels a recording the press started. macOS asks for Input Monitoring only when you choose Fn, and ironpet installs a listen-only event tap only while Fn is chosen. It never consumes Fn, so Fn with other keys and the emoji picker keep working.
 
 The text goes in through Accessibility. If the app ignores that, ironpet pastes it with Cmd-V and puts your earlier clipboard back, unless you copied something else in the meantime. Password fields never get text. When no text field has focus, or Accessibility is not allowed, the transcript stays on the clipboard and a notice says so. It uses the same transcription server as voice notes and needs Microphone and Accessibility access. It does not touch the chat's own voice note.
 

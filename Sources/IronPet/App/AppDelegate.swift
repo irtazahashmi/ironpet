@@ -38,6 +38,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return controller
     }()
     private lazy var dictationKeys = RecordingKeys(voice: dictation.voice)
+    /// Fn hold-to-talk for dictation. Installs its event tap only while the dictation shortcut is "fn".
+    private lazy var dictationFn = FnDictationTrigger(
+        access: SystemInputMonitoringAccess(), source: FnEventTap(),
+        detector: FnKeyDetector(isRecording: { [weak self] in self?.dictation.voice.isBusy ?? false })
+    ) { [weak self] action in
+        // Safe: FnEventTap adds its run loop source to the main run loop, so this closure runs on the main thread.
+        MainActor.assumeIsolated {
+            switch action {
+            case .start, .stop: self?.dictation.shortcutPressed()
+            case .cancel: self?.dictation.cancel()
+            }
+        }
+    }
     private let notifier = Notifier()
     private let installer = HookInstaller()
     private var automations: AutomationService!
@@ -930,7 +943,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             failed.insert(config.config.hotkeys.voice)
         }
         // Dictation into the focused field of any app. Only registered with voice notes on; a press while recording stops.
-        if let text = DictationController.hotkey(in: config.config) {
+        let dictationText = DictationController.hotkey(in: config.config)
+        dictationFn.update(shortcut: dictationText)
+        if let text = dictationText, text.lowercased() != FnDictationTrigger.configValue {
             if let shortcut = Shortcut(text) {
                 let hotKey = HotKey(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers, id: 13) { [weak self] in
                     MainActor.assumeIsolated { self?.dictation.shortcutPressed() }
@@ -966,6 +981,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func unregisterHotKeys() {
+        dictationFn.update(shortcut: nil)
         hotKeys = []
     }
 
