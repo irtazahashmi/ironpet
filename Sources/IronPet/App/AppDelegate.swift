@@ -347,7 +347,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The app's one database. Features add their migrations to this list, in version order.
         let database = Database.open(path: Paths.root.appendingPathComponent("ironpet.db"), migrations: AppMigrations.all).database
         UsageStore.shared = UsageStore(database: database)
-        startUpdates(database: database)
         let log = ActivityLog(database: database)
         activity = log
         let tasks = TaskStore(database: database)
@@ -355,6 +354,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let service = AutomationService(store: store, engine: engine, database: database)
         let notificationStore = NotificationStore(database: database)
         api = IronPetAPI(stores: .init(tasks: tasks, automations: service, signals: signals, bubbles: announcer.bubbles, notifications: notificationStore, sessions: self.store, chat: chat, meeting: platform.meetings, meetingLibrary: meetings, config: config, speech: platform.speech, petAssets: platform.pets, files: platform.files, usage: UsageStore.shared, permissions: backgroundPermissions, nodeID: NodeIdentity.nodeID(in: database)), events: events, clients: clients)
+        // After `api`: it reads `settingsModel`, whose Telegram bridge needs `api.chat`.
+        startUpdates(database: database)
         pet.tasks = api.tasks
         pet.notifications = NotificationsModel(api: api.notifications, events: events)
         announcer.notifications = notificationStore
