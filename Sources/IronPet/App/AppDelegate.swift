@@ -55,6 +55,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Moves the automation clock in test mode (`POST /test/automations/advance`). Zero otherwise.
     private var testClockOffset: TimeInterval = 0
     private lazy var announcer = Announcer(notifier: notifier)
+    private let updates = UpdateController()
     private var bubblePanel: BubblePanel!
     private var server: EventServer?
     private var pet: PetController!
@@ -331,6 +332,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The app's one database. Features add their migrations to this list, in version order.
         let database = Database.open(path: Paths.root.appendingPathComponent("ironpet.db"), migrations: AppMigrations.all).database
         UsageStore.shared = UsageStore(database: database)
+        startUpdates(database: database)
         let log = ActivityLog(database: database)
         activity = log
         let tasks = TaskStore(database: database)
@@ -830,6 +832,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Applies settings that need more than being read at the point of use.
     private func apply(config new: Config, previous old: Config) {
+        updates.apply(new.updates)
         let (newAgents, oldAgents) = (hookAgents(in: new), hookAgents(in: old))
         setHooks(installed: newAgents.filter { !oldAgents.contains($0) })
         setHooks(removed: oldAgents.filter { !newAgents.contains($0) })
@@ -1009,6 +1012,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hookMenuItems().forEach(menu.addItem)
         return menu
     }
+
+    /// Starts the self-update check. A dev build never starts Sparkle (`UpdatePolicy`). A ready update waits while an agent turn,
+    /// a voice note or a meeting recording is running, and installs when they end or when the user clicks the pet's badge.
+    private func startUpdates(database: Database) {
+        updates.localSchemaVersion = { database.schemaVersion }
+        updates.activity = { [weak self] in
+            guard let self else { return UpdatePolicy.Activity() }
+            return UpdatePolicy.Activity(agentTurnRunning: chat.isRunning, voiceRecording: chatModel.voice.phase == .recording,
+                                         meetingRecording: [.recording, .finishing].contains(meeting.phase))
+        }
+        updates.onStateChange = { [weak self] in
+            guard let self else { return }
+            pet.view.updateReady = updates.isReady
+        }
+        updates.onReadyAndWaiting = { [weak self] version, busy in
+            guard let self else { return }
+            let name = config.config.pet.name
+            announcer.automation(AutomationNotice(
+                id: "update-ready", symbol: "arrow.down.circle.fill", tint: .info, title: "ironpet \(version) is ready",
+                body: busy.map { "\(name) will restart to install it once \($0) is done, or now if you click Restart." }
+                    ?? "\(name) restarts to install it in a moment.",
+                buttons: [.init(title: "Restart now", primary: true) { [weak self] in self?.updates.installNow() },
+                          .init(title: "Later") {}],
+                systemNotification: true))
+        }
+        pet.view.onUpdateClick = { [weak self] in self?.updates.installNow() }
+        settingsModel.updates = updates
+        updates.start(config: config.config.updates)
+    }
+
+    @objc func checkForUpdates(_ sender: Any?) { updates.checkNow() }
 
     private func startServer() throws {
         try Paths.ensureRoot()
@@ -1574,7 +1608,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let shortcut = Shortcut.display(config.config.hotkeys.copyVersion)
         let copy = NSMenuItem(title: shortcut.map { "Copy version  \($0)" } ?? "Copy version", action: #selector(copyVersion(_:)), keyEquivalent: "")
         copy.target = self
-        return [.separator(), line, copy]
+        let check = NSMenuItem(title: "Check for updates…", action: #selector(checkForUpdates(_:)), keyEquivalent: "")
+        check.target = self
+        check.isEnabled = updates.canCheck
+        return [.separator(), line, copy, check]
     }
 
     @objc func copyVersion(_ sender: Any?) {
@@ -1693,6 +1730,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         copy.target = self
         appMenu.addItem(about)
         appMenu.addItem(copy)
+        let check = NSMenuItem(title: "Check for updates…", action: #selector(checkForUpdates(_:)), keyEquivalent: "")
+        check.target = self
+        appMenu.addItem(check)
         appMenu.addItem(.separator())
         let settings = NSMenuItem(title: "Settings…", action: #selector(showSettings(_:)), keyEquivalent: ",")
         settings.target = self

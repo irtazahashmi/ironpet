@@ -12,6 +12,13 @@ name: Release macOS
 #   NOTARY_ISSUER_ID    the issuer ID shown above the keys in App Store Connect
 # Without them the workflow still runs and produces IronPet-<version>-unsigned.dmg. With the certificate but without the
 # notary secrets (or with a certificate that does not validate) it fails, rather than ship a weaker file.
+#
+# Auto-update (Sparkle) adds one secret and one variable in the same environment:
+#   SPARKLE_ED_PRIVATE_KEY   secret: the private key `generate_keys -x` writes (base64 of a 32-byte seed)
+#   SPARKLE_PUBLIC_ED_KEY    variable (not a secret): the public key `generate_keys` prints; it goes into Info.plist as SUPublicEDKey
+# With a Developer ID build and the secret, the run also uploads IronPet-<version>.zip and appcast.xml next to the DMG. Installed apps
+# read https://github.com/<repo>/releases/latest/download/appcast.xml, which resolves only to a published release, so a draft reaches
+# nobody. Without the secret the appcast step prints a notice and the release is as before, with no auto-update.
 # See CONTRIBUTING.md > Releasing the Mac app.
 #
 # Three jobs, so that no job that runs third-party code holds the signing secrets or can write to the repository:
@@ -201,6 +208,7 @@ jobs:
           NOTARY_KEY_B64: ${{ secrets.NOTARY_KEY_P8 }}
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          IRONPET_SPARKLE_PUBLIC_KEY: ${{ vars.SPARKLE_PUBLIC_ED_KEY }}
         run: |
           set -euo pipefail
           if [ -n "$NOTARY_KEY_B64" ]; then
@@ -218,6 +226,21 @@ jobs:
         run: |
           rm -f "$RUNNER_TEMP/notary.p8" "$RUNNER_TEMP/cert.p12"
           if [ -n "${KEYCHAIN_PATH:-}" ]; then security delete-keychain "$KEYCHAIN_PATH" || true; fi
+
+      # Only this step sees the Sparkle private key, which it passes to sign_update on standard input.
+      - name: Sign the update and write appcast.xml
+        if: steps.version.outputs.skip != 'true'
+        env:
+          SPARKLE_ED_PRIVATE_KEY: ${{ secrets.SPARKLE_ED_PRIVATE_KEY }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          set -euo pipefail
+          zip="dist/IronPet-$VERSION.zip"
+          if [ ! -f "$zip" ]; then
+            echo "::notice::No $zip: the build is not signed with a Developer ID, so there is no auto-update for it"
+            exit 0
+          fi
+          ./scripts/make_appcast.sh "$zip"
 
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: steps.version.outputs.skip != 'true'
@@ -287,6 +310,11 @@ jobs:
           VERSION: ${{ needs.mac.outputs.version }}
         run: |
           set -euo pipefail
+          # The DMG and its checksum always; the Sparkle zip and appcast.xml only when the mac job made them.
+          files=(dist/IronPet-*.dmg dist/IronPet-*.dmg.sha256)
+          for extra in dist/IronPet-*.zip dist/appcast.xml; do
+            if [ -f "$extra" ]; then files+=("$extra"); fi
+          done
           # Only "release not found" means there is no release yet. Any other failure (a 5xx, a rate limit) must stop the
           # run, or a second draft would be made for a tag that already has one.
           if state=$(gh release view "$TAG" --json isDraft -q .isDraft 2>&1); then
@@ -299,10 +327,10 @@ jobs:
             for asset in $(gh release view "$TAG" --json assets -q '.assets[].name'); do
               gh release delete-asset "$TAG" "$asset" --yes
             done
-            gh release upload "$TAG" dist/IronPet-*.dmg dist/IronPet-*.dmg.sha256
+            gh release upload "$TAG" "${files[@]}"
             gh release edit "$TAG" --title "IronPet $VERSION" --notes-file dist/notes.md --target "$GITHUB_SHA"
           elif [[ $state == *"release not found"* ]]; then
-            gh release create "$TAG" dist/IronPet-*.dmg dist/IronPet-*.dmg.sha256 \
+            gh release create "$TAG" "${files[@]}" \
               --draft --target "$GITHUB_SHA" --title "IronPet $VERSION" --notes-file dist/notes.md
           else
             echo "error: could not look up release $TAG: $state" >&2
