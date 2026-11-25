@@ -6,6 +6,22 @@ import XCTest
 final class MermaidTests: XCTestCase {
     /// Mermaid measures text, which needs the web view on screen, as it is in a chat row.
     private var window: UIWindow?
+    private var attached: [MermaidHost] = []
+
+    /// XCTest keeps a test case alive until the whole run ends, so a window with live web views would keep Mermaid and its web process
+    /// running while the next suites execute. Blank the pages and drop the window here.
+    override func tearDown() {
+        for host in attached {
+            host.webView.stopLoading()
+            host.webView.loadHTMLString("", baseURL: nil)
+            host.webView.removeFromSuperview()
+        }
+        attached = []
+        window?.isHidden = true
+        window = nil
+        RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        super.tearDown()
+    }
 
     private func wait(for host: MermaidHost, _ states: Set<MermaidHost.State>, timeout: TimeInterval = 20) {
         if host.webView.superview == nil {
@@ -15,6 +31,7 @@ final class MermaidTests: XCTestCase {
             host.webView.frame = CGRect(x: 0, y: 0, width: 360, height: 400)
             window.addSubview(host.webView)
         }
+        if !attached.contains(where: { $0 === host }) { attached.append(host) }
         let deadline = Date().addingTimeInterval(timeout)
         while !states.contains(host.state), Date() < deadline { RunLoop.current.run(until: Date().addingTimeInterval(0.05)) }
         XCTAssertTrue(states.contains(host.state), "state is \(host.state)")
