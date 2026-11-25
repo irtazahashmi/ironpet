@@ -21,6 +21,9 @@ public enum ClientError: Error, Equatable, LocalizedError {
     case pairingExpired
     case invalidResponse
     case transport(String)
+    /// The Mac did not answer within the request timeout. It is a transport failure that a client may choose not to retry, because
+    /// a read that timed out once makes the Mac build the same answer again.
+    case timedOut
 
     public var errorDescription: String? {
         switch self {
@@ -30,7 +33,7 @@ public enum ClientError: Error, Equatable, LocalizedError {
         case .pairingExpired: return "The pairing code expired. Make a new one on the Mac."
         case .invalidResponse: return "The Mac sent an answer this app does not understand."
         // URLSession's own wording ("The request timed out.") is for the log, never for the person.
-        case .transport: return "Can't reach your Mac."
+        case .transport, .timedOut: return "Can't reach your Mac."
         }
     }
 }
@@ -96,6 +99,7 @@ public final class IronPetClient: @unchecked Sendable {
             // A request the app cancelled is not a transport failure. Only the calling task's own cancellation counts: URLSession also
             // reports a rejected certificate pin as `.cancelled`, and that must stay a visible transport error.
             if error is CancellationError || ((error as? URLError)?.code == .cancelled && Task.isCancelled) { throw CancellationError() }
+            if (error as? URLError)?.code == .timedOut { throw ClientError.timedOut }
             throw ClientError.transport(error.localizedDescription)
         }
         guard let http = response as? HTTPURLResponse else { throw ClientError.invalidResponse }
@@ -272,8 +276,13 @@ public final class IronPetClient: @unchecked Sendable {
     /// older than paging ignores the query and sends the whole thread, with `hasMore` nil.
     /// The chat, unless it is still the one the phone saved. `etag` is the ETag of that saved chat. The answer is `.notModified` when the
     /// Mac says nothing changed, or the chat with the ETag to save next time.
-    public func chatIfChanged(etag: String?, limit: Int? = nil, before: String? = nil) async throws -> ChatRead {
+    public func chatIfChanged(etag: String?, limit: Int? = nil, before: String? = nil, after: Int? = nil, epoch: String? = nil) async throws -> ChatRead {
         var query: [URLQueryItem] = []
+        // The cursor of the last answer: the Mac sends only the messages that changed since. An older Mac ignores both.
+        if let after, let epoch {
+            query.append(URLQueryItem(name: "after", value: String(after)))
+            query.append(URLQueryItem(name: "epoch", value: epoch))
+        }
         if let limit { query.append(URLQueryItem(name: "limit", value: String(limit))) }
         if let before { query.append(URLQueryItem(name: "before", value: before)) }
         var headers: [String: String] = [:]
