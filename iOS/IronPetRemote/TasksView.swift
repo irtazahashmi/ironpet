@@ -203,11 +203,12 @@ struct SuggestionRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(suggestion.title)
+            Text(suggestion.update?.headline ?? suggestion.title)
+            if let update = suggestion.update { Text(update.summary).font(.subheadline).accessibilityIdentifier("change-\(suggestion.id)") }
             Text(origin).font(.caption).foregroundStyle(.secondary)
             if !suggestion.notes.isEmpty { Text(suggestion.notes).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
             HStack {
-                Button("Add") { Task { await model.add(suggestion) } }
+                Button(suggestion.update == nil ? "Add" : "Accept") { Task { await model.add(suggestion) } }
                     .buttonStyle(.borderedProminent).accessibilityIdentifier("add-\(suggestion.id)")
                 Button("Skip") { Task { await model.skip(suggestion) } }
                     .buttonStyle(.bordered).accessibilityIdentifier("skip-\(suggestion.id)")
@@ -219,7 +220,12 @@ struct SuggestionRow: View {
     }
 
     private var origin: String {
-        var text = suggestion.origin == "meeting" ? "Meeting" : (suggestion.originDetail.map { "From \($0)" } ?? "Automation")
+        var text: String
+        switch suggestion.origin {
+        case "meeting": text = "Meeting"
+        case "task-scan": text = "Task scan"
+        default: text = suggestion.originDetail.map { "From \($0)" } ?? "Automation"
+        }
         if let waiting = suggestion.waitingOn { text += " · Waiting on \(waiting)" }
         if let due = suggestion.due { text += " · Due \(due)" }
         return text

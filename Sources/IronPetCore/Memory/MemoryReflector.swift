@@ -1,8 +1,3 @@
-#if canImport(CryptoKit)
-import CryptoKit
-#else
-import Crypto
-#endif
 import Foundation
 
 /// The background pass that learns from what Ghost saw. Once an hour the digest reads what is new since the last one: each chat's
@@ -18,21 +13,9 @@ import Foundation
 @MainActor
 package final class MemoryReflector {
     /// Why the reflection agent gave no answer.
-    package struct RunError: Error, Equatable {
-        package let message: String
-        package init(_ message: String) { self.message = message }
-    }
-
+    package typealias RunError = ReflectionError
     /// The agent that reads one job, and its model (nil: the agent's default).
-    package struct Reader: Equatable {
-        package init(agent: String, model: String?) {
-            self.agent = agent
-            self.model = model
-        }
-
-        package let agent: String
-        package let model: String?
-    }
+    package typealias Reader = ReflectionReader
 
     /// Runs one prompt on the reader's agent and returns its answer, or why it failed.
     package typealias Runner = @MainActor (_ prompt: String, _ reader: Reader) async -> Result<String, RunError>
@@ -230,44 +213,12 @@ package final class MemoryReflector {
     /// The user's and Ghost's messages after the cursor, as `(item id, speaker, text)`. Tool output, screenshots and errors are left out,
     /// and so are automation turns: their prompt and the reply to it. An automation's answer is read on its own, as outside text.
     package func unread(in thread: ChatThread) -> [(id: String, user: Bool, text: String)] {
-        let cursor = index.cursor(thread.id)
-        var start = 0
-        if let cursor {
-            if let at = thread.items.firstIndex(where: { $0.id.uuidString == cursor.item }) {
-                start = at + 1
-            } else {
-                start = thread.items.firstIndex { ($0.date ?? .distantPast) > cursor.at } ?? thread.items.count
-            }
-        }
-        var automationTurn = false
-        var result: [(id: String, user: Bool, text: String)] = []
-        for (offset, item) in thread.items.enumerated() {
-            switch item.kind {
-            case .user(let text):
-                automationTurn = item.origin == ChatSession.automationOrigin
-                if offset >= start, !automationTurn { result.append((item.id.uuidString, true, text)) }
-            case .assistant(let text):
-                if offset >= start, !automationTurn { result.append((item.id.uuidString, false, text)) }
-            default:
-                break
-            }
-        }
-        return result.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        ReflectionReading.unread(in: thread, after: index.cursor(thread.id))
     }
 
     /// The newest messages that fit in `maxInput` characters, oldest first.
     package func transcript(_ messages: [(id: String, user: Bool, text: String)]) -> String {
-        var lines: [String] = [], used = 0
-        for message in messages.reversed() {
-            let line = (message.user ? "User: " : "\(petName()): ") + message.text
-            if used + line.count > Self.maxInput {
-                if lines.isEmpty { lines.append(String(line.suffix(Self.maxInput))) }
-                break
-            }
-            lines.append(line)
-            used += line.count + 1
-        }
-        return lines.reversed().joined(separator: "\n\n")
+        ReflectionReading.transcript(messages, petName: petName(), maxInput: Self.maxInput)
     }
 
     /// The tasks whose title, notes or status differ from what the last digest saw, with the stamp to store for each.
@@ -280,15 +231,12 @@ package final class MemoryReflector {
 
     /// The screen captures newer than the last digest read, newest first.
     private func freshCaptures() -> [StoredCapture] {
-        let last = Int64(index.cursor(Self.screenKey)?.item ?? "") ?? 0
-        return captures().filter { $0.id > last }
+        ReflectionReading.freshCaptures(captures(), after: index.cursor(Self.screenKey)?.item)
     }
 
     private static func taskKey(_ id: String) -> String { "task:" + id }
 
-    private static func stamp(_ text: String) -> String {
-        SHA256.hash(data: Data(text.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
-    }
+    private static func stamp(_ text: String) -> String { ReflectionReading.stamp(text) }
 
     private struct Input {
         let text: String
@@ -343,17 +291,7 @@ package final class MemoryReflector {
             let fresh = freshCaptures()
             guard let newest = fresh.first else { return nil }
             // The newest captures that fit, oldest first. The cursor moves past all of them, so older ones are not read later.
-            var lines: [String] = [], used = 0
-            for capture in fresh {
-                let line = "\(capture.appName) · \(capture.window): \(capture.text)"
-                if used + line.count > Self.maxInput {
-                    if lines.isEmpty { lines.append(String(line.suffix(Self.maxInput))) }
-                    break
-                }
-                lines.append(line)
-                used += line.count + 1
-            }
-            return Input(text: lines.reversed().joined(separator: "\n\n"), kind: "the text on the user's screen, as captured while they worked",
+            return Input(text: ReflectionReading.screenText(fresh, maxInput: Self.maxInput), kind: "the text on the user's screen, as captured while they worked",
                          source: "screen", agent: agent, project: nil, outside: true, cursors: [(key: Self.screenKey, item: String(newest.id))])
         case .merge:
             return nil
@@ -543,8 +481,7 @@ package final class MemoryReflector {
 
     /// The first JSON object in an answer, also when the agent wrapped it in a code fence or a sentence.
     package static func jsonObject(in answer: String) -> [String: Any]? {
-        guard let start = answer.firstIndex(of: "{"), let end = answer.lastIndex(of: "}"), start < end else { return nil }
-        return (try? JSONSerialization.jsonObject(with: Data(answer[start...end].utf8))) as? [String: Any]
+        ReflectionReading.jsonObject(in: answer)
     }
 
     /// The notes the agent proposed. Nil when the answer is not the notes object; entries without a known scope or text are skipped.
@@ -594,57 +531,7 @@ package final class MemoryReflector {
     /// The app's runner: the agent from Settings on a restricted backend in `~/.ironpet/scratch/memory`, every permission refused, with
     /// a three-minute limit. Its turns count as Memory in the Usage tab.
     package static func agentRunner(prompt: String, reader: Reader, spawner: ProcessSpawner) async -> Result<String, RunError> {
-        guard let agent = AgentCatalog.agent(id: reader.agent) else {
-            return .failure(RunError("the agent \"\(reader.agent)\" is not available. Pick another in Settings → Memory."))
-        }
-        let workspace = Paths.root.appendingPathComponent("scratch/memory")
-        try? FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
-        let backend = ACPBackend(agent: agent, spawner: spawner)
-        backend.restricted = true
-        backend.usageFeature = .memory
-        backend.onPermission = { _, respond in respond(.deny("Ghost's memory pass only answers")) }
-        let turn = ACPTurn(prompt: prompt, preamble: nil, workspace: workspace, resume: nil, model: reader.model, images: [], files: [])
-        let result = Answer()
-        let task = Task { @MainActor in
-            await backend.runTurn(turn) { event in
-                switch event {
-                case .assistant(let chunk): result.answer += chunk
-                case .finished(let error): result.finish(error.map { .failure(RunError($0)) } ?? .success(result.answer))
-                case .needsSignIn: result.finish(.failure(RunError("\(agent.name) needs you to sign in. Open it in the chat once.")))
-                case .needsRuntime: result.finish(.failure(RunError("\(agent.name) needs Node 22 or Bun. Open it in the chat once.")))
-                default: break
-                }
-            }
-        }
-        let watchdog = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(timeout))
-            result.finish(.failure(RunError("the agent did not answer within \(Int(timeout)) seconds")))
-        }
-        let value = await result.wait()
-        watchdog.cancel()
-        task.cancel()
-        backend.cancel()
-        backend.shutdown()
-        return value
-    }
-
-    /// One answer, delivered once, whichever of the turn and the watchdog ends first.
-    @MainActor
-    private final class Answer {
-        var answer = ""
-        private var value: Result<String, RunError>?
-        private var continuation: CheckedContinuation<Result<String, RunError>, Never>?
-
-        func finish(_ result: Result<String, RunError>) {
-            guard value == nil else { return }
-            value = result
-            continuation?.resume(returning: result)
-            continuation = nil
-        }
-
-        func wait() async -> Result<String, RunError> {
-            if let value { return value }
-            return await withCheckedContinuation { continuation = $0 }
-        }
+        await ReflectionAgent.run(prompt: prompt, reader: reader, spawner: spawner, scratch: "memory", feature: .memory,
+                                  refusal: "Ghost's memory pass only answers", settings: "Memory", timeout: timeout)
     }
 }

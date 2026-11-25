@@ -216,6 +216,7 @@ final class Announcer {
         switch first.origin {
         case .meeting: title = "From your meeting"
         case .automation(_, let name): title = name
+        case .taskScan: title = "Task scan"
         }
         let count = added.count
         return BubbleDraft(id: taskSuggestionsID, symbol: first.source.symbol, tint: .blue, title: title,
@@ -228,7 +229,7 @@ final class Announcer {
         guard var bubble = Self.taskSuggestionsBubble(added, review: review), let first = added.first else { return }
         var source = NotificationItem.systemSource
         if case .automation(let id, _) = first.origin { source = id }
-        let lines = added.map { "- " + $0.title }.joined(separator: "\n")
+        let lines = added.map { "- " + $0.headline }.joined(separator: "\n")
         let draft = NotificationDraft(source: source, type: .other, title: bubble.title,
                                       summary: "\(added.count) \(added.count == 1 ? "suggestion" : "suggestions") for review",
                                       description: lines + "\n\nAdd or skip them in the Tasks section.")

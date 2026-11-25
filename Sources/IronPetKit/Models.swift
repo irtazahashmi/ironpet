@@ -126,12 +126,49 @@ public struct RemoteTaskDetail: Codable, Equatable, Sendable {
     }
 }
 
+/// What an update suggestion would change on an existing task. Nothing changes until the user accepts it.
+public struct RemoteSuggestionUpdate: Codable, Equatable, Hashable, Sendable {
+    public var taskID: String
+    /// The target task's title when the Mac sent the suggestion, so a client can name it without loading the task.
+    public var taskTitle: String
+    /// Text appended to the task's notes.
+    public var note: String?
+    /// Only `done` is ever suggested.
+    public var status: String?
+    public var waitingOn: String?
+
+    enum CodingKeys: String, CodingKey {
+        case taskID = "task_id"
+        case taskTitle = "task_title"
+        case note, status
+        case waitingOn = "waiting_on"
+    }
+
+    public init(taskID: String, taskTitle: String, note: String? = nil, status: String? = nil, waitingOn: String? = nil) {
+        self.taskID = taskID; self.taskTitle = taskTitle; self.note = note; self.status = status; self.waitingOn = waitingOn
+    }
+
+    /// The change as one line: `Mark done. Waiting on Tom. Note: sent the deck.`
+    public var summary: String {
+        var parts: [String] = []
+        if status == "done" { parts.append("Mark done") }
+        if let waitingOn, !waitingOn.isEmpty { parts.append("Waiting on \(waitingOn)") }
+        if let note, !note.isEmpty { parts.append("Note: \(note)") }
+        return parts.isEmpty ? "No change" : parts.joined(separator: ". ")
+    }
+
+    /// The suggestion's headline: `Update: <task title>`.
+    public var headline: String { "Update: \(taskTitle)" }
+}
+
 public struct RemoteSuggestion: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var id: String
     public var title: String
     public var created: Date
-    /// `meeting` or `automation`.
+    /// `meeting`, `automation` or `task-scan`.
     public var origin: String
+    /// Set when the suggestion changes an existing task instead of adding one.
+    public var update: RemoteSuggestionUpdate?
     public var originDetail: String?
     /// Free text from a meeting ("Friday") or `yyyy-MM-dd`.
     public var due: String?
@@ -141,7 +178,7 @@ public struct RemoteSuggestion: Codable, Equatable, Hashable, Identifiable, Send
     public var sourceRef: RemoteJSON?
 
     enum CodingKeys: String, CodingKey {
-        case id, title, created, origin, due, notes, url
+        case id, title, created, origin, due, notes, url, update
         case originDetail = "origin_detail"
         case waitingOn = "waiting_on"
         case sourceRef = "source_ref"
@@ -149,7 +186,8 @@ public struct RemoteSuggestion: Codable, Equatable, Hashable, Identifiable, Send
 
     public init(id: String, title: String, created: Date = Date(timeIntervalSince1970: 1_700_000_000), origin: String = "meeting",
                 originDetail: String? = nil, due: String? = nil, notes: String = "", url: String? = nil, waitingOn: String? = nil,
-                sourceRef: RemoteJSON? = nil) {
+                sourceRef: RemoteJSON? = nil, update: RemoteSuggestionUpdate? = nil) {
+        self.update = update
         self.id = id; self.title = title; self.created = created; self.origin = origin; self.originDetail = originDetail
         self.due = due; self.notes = notes; self.url = url; self.waitingOn = waitingOn; self.sourceRef = sourceRef
     }
@@ -166,6 +204,7 @@ public struct RemoteSuggestion: Codable, Equatable, Hashable, Identifiable, Send
         url = try c.decodeIfPresent(String.self, forKey: .url)
         waitingOn = try c.decodeIfPresent(String.self, forKey: .waitingOn)
         sourceRef = try c.decodeIfPresent(RemoteJSON.self, forKey: .sourceRef)
+        update = try c.decodeIfPresent(RemoteSuggestionUpdate.self, forKey: .update)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -173,6 +212,7 @@ public struct RemoteSuggestion: Codable, Equatable, Hashable, Identifiable, Send
         try c.encode(id, forKey: .id)
         try c.encode(title, forKey: .title)
         try c.encode(created, forKey: .created)
+        try c.encodeIfPresent(update, forKey: .update)
         try c.encode(origin, forKey: .origin)
         try c.encodeIfPresent(originDetail, forKey: .originDetail)
         try c.encodeIfPresent(due, forKey: .due)

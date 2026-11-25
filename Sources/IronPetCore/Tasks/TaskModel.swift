@@ -1,5 +1,6 @@
 import Foundation
 import enum IronPetKit.SharedSymbols
+import struct IronPetKit.RemoteSuggestionUpdate
 
 /// Where a task stands. The agent moves tasks between these; the user only marks them done.
 package enum TaskStatus: String, CaseIterable, Codable {
@@ -20,7 +21,7 @@ package enum TaskStatus: String, CaseIterable, Codable {
 
 /// What created a task. Shown as a symbol in the list.
 package enum TaskSource: String, CaseIterable, Codable {
-    case chat, telegram, meeting, automation, cli, agent, user, capture, email, pr
+    case chat, telegram, meeting, automation, cli, agent, user, capture, email, pr, scan
 
     package var symbol: String {
         switch self {
@@ -34,6 +35,7 @@ package enum TaskSource: String, CaseIterable, Codable {
         case .capture: return "text.viewfinder"
         case .email: return "envelope"
         case .pr: return "arrow.triangle.pull"
+        case .scan: return "text.magnifyingglass"
         }
     }
 
@@ -137,7 +139,8 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
         origin: Origin,
         created: Date,
         waitingOn: String? = nil,
-        sourceRef: String? = nil
+        sourceRef: String? = nil,
+        update: Update? = nil
     ) {
         self.id = id
         self.title = title
@@ -148,18 +151,55 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
         self.created = created
         self.waitingOn = waitingOn
         self.sourceRef = sourceRef
+        self.update = update
     }
 
     package enum Origin: Equatable, Codable {
         /// The meeting folder.
         case meeting(URL)
         case automation(id: String, name: String)
+        /// The scheduled task scan of chats, meetings and the screen.
+        case taskScan
+    }
+
+    /// A change to a task that already exists. Accepting the suggestion applies it, skipping leaves the task as it is.
+    package struct Update: Equatable, Codable {
+        package init(target: String, targetTitle: String, note: String? = nil, markDone: Bool = false, waitingOn: String? = nil) {
+            self.target = target
+            self.targetTitle = targetTitle
+            self.note = note
+            self.markDone = markDone
+            self.waitingOn = waitingOn
+        }
+
+        /// The id of the task to change.
+        package var target: String
+        /// The task's title when the suggestion was filed. The inbox shows it, and it is not looked up again.
+        package var targetTitle: String
+        /// Text appended to the task's notes.
+        package var note: String?
+        /// Sets the status to done.
+        package var markDone = false
+        /// Who the task now waits on.
+        package var waitingOn: String?
+
+        package var isEmpty: Bool { !markDone && (note ?? "").isEmpty && (waitingOn ?? "").isEmpty }
+
+        /// The Kit form, which holds the wording shown on the Mac and on the iPhone.
+        package var remote: RemoteSuggestionUpdate {
+            RemoteSuggestionUpdate(taskID: target, taskTitle: targetTitle, note: note, status: markDone ? "done" : nil, waitingOn: waitingOn)
+        }
+
+        /// `Mark done. Waiting on Tom. Note: sent the deck.`
+        package var summary: String { remote.summary }
     }
 
     /// One suggestion before it is stored: a meeting action item, or what a watcher returned in a `suggest_task` action
     /// (cleaned by `init?(action:)`).
     package struct Draft: Equatable, Codable {
-        package init(key: String, title: String, due: String? = nil, notes: String = "", url: URL? = nil, waitingOn: String? = nil) {
+        package init(key: String, title: String, due: String? = nil, notes: String = "", url: URL? = nil, waitingOn: String? = nil,
+                     sourceRef: String? = nil) {
+            self.sourceRef = sourceRef
             self.key = key
             self.title = title
             self.due = due
@@ -176,6 +216,8 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
         package var url: URL?
         /// The owner of a meeting action item that is not the user. Watchers never set it.
         package var waitingOn: String?
+        /// Where the draft came from, when the producer knows (the task scan). Used when `store` is not given a reference.
+        package var sourceRef: String?
     }
 
     package let id: String
@@ -190,6 +232,11 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
     package var waitingOn: String? = nil
     /// Where the suggestion came from, for diagnostics: a JSON object. Copied to the task on accept.
     package var sourceRef: String? = nil
+    /// Set when the suggestion changes an existing task. The title then names that task.
+    package var update: Update? = nil
+
+    /// What the inbox shows as the headline: the title, or `Update: <task title>` for an update.
+    package var headline: String { update?.remote.headline ?? title }
 
     package var meeting: URL? {
         if case .meeting(let url) = origin { return url }
@@ -201,6 +248,7 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
         switch origin {
         case .meeting: return .meeting
         case .automation: return .automation
+        case .taskScan: return .scan
         }
     }
 
@@ -209,6 +257,7 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
         switch origin {
         case .meeting: return "Meeting"
         case .automation(_, let name): return "From \(name)"
+        case .taskScan: return "Task scan"
         }
     }
 }

@@ -41,6 +41,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var jobToOpen: String?
     /// Ghost's memory: the background reflection pass and the search index. Nil until the database is open.
     private var memory: MemoryReflector?
+    private var taskScanner: TaskScanner?
     private var dueReminders: TaskDueReminders?
     /// Nil until the database is open, a moment after launch.
     private var activity: ActivityLog?
@@ -312,6 +313,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AutomationMigration.defaults(from: config.config, sentryConfigured: AutomationDefaults.sentryConfigured)
         }, builtIns: AutomationDefaults.builtIns)
         HeartbeatRemoval.runOnce(store: store)
+        // The task scan replaced Screen review. A user who had it on starts with the scan's screen source on.
+        ScreenReviewMigration.run(store: store, config: config)
         let engine = AutomationEngine(env: .init(
             now: { [weak self] in Date().addingTimeInterval(self?.testClockOffset ?? 0) },
             presence: SessionPresence(registry: clients, local: platform.presence),
@@ -410,6 +413,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         service.nudge = { [weak self] moods in self?.pet.nudge(moods, each: moods == [.done] ? 3 : 4) }
         service.tasks = tasks
         service.suggested = { [weak self] added in self?.offerSuggestions(added) }
+        setUpTaskScan(service, tasks: tasks)
         let workspace = store.paths.workspace
         // Not read by memory: this restricted run is for prompts with item text from outside, and its answer is built from that text.
         let spawner = platform.processes
@@ -648,10 +652,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
+    /// The task scan is a system automation: the engine runs it, but it is not in `automations.json`, so the Automations list never
+    /// shows it. Settings → Tasks turns it off and sets the interval, and `apply(config:previous:)` passes that on.
+    private func setUpTaskScan(_ service: AutomationService, tasks: TaskStore) {
+        let scanner = TaskScanner(store: tasks, spawner: platform.processes)
+        scanner.config = { [config] in config.config }
+        scanner.captures = { [weak self] in self?.capture?.store.recent(limit: 200) ?? [] }
+        scanner.digestAgent = { [weak self] in self?.chat.agent.id }
+        scanner.onFiled = { [weak self] added in self?.offerSuggestions(added) }
+        scanner.seedIfNeeded()
+        taskScanner = scanner
+        service.runTaskScan = { [weak scanner] in await scanner?.scan() ?? TaskScanner.Outcome(skipped: true) }
+        // A test run starts no scan of its own, so an e2e scenario never files suggestions it did not ask for.
+        service.system = TestControl.isEnabled ? [] : AutomationDefaults.system(for: config.config.tasks)
+    }
+
     /// A summary was written or regenerated. `agent` wrote it; nil is the summary agent in Settings, which regeneration uses.
     private func memorySawMeeting(_ folder: URL, agent: String?) {
         EntityMemoryStore.shared.index.indexMeeting(folder)
-        memory?.meetingSummaryWritten(folder, agent: agent ?? config.config.meetings.summaryAgent)
+        let writer = agent ?? config.config.meetings.summaryAgent
+        memory?.meetingSummaryWritten(folder, agent: writer)
+        taskScanner?.meetingSummaryWritten(folder, agent: writer)
     }
 
     private func memorySawAutomation(_ id: String, answer: String, agent: String) {
@@ -828,6 +849,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Applies settings that need more than being read at the point of use.
     private func apply(config new: Config, previous old: Config) {
+        if new.tasks.scan != old.tasks.scan || new.tasks.scanMinutes != old.tasks.scanMinutes, !TestControl.isEnabled {
+            automations.system = AutomationDefaults.system(for: new.tasks)
+        }
+        if !new.tasks.scan { taskScanner?.cancel() }
         let (newAgents, oldAgents) = (hookAgents(in: new), hookAgents(in: old))
         setHooks(installed: newAgents.filter { !oldAgents.contains($0) })
         setHooks(removed: oldAgents.filter { !newAgents.contains($0) })

@@ -749,6 +749,13 @@ enum PreviewRenderer {
         store.suggest([TaskSuggestion.Draft(key: "msg-1", title: "Reply to Sam about the Q4 budget", due: nil,
                                             url: URL(string: "https://mail.google.com/mail/u/0/#inbox/1"))],
                       automation: "gmail-watch", name: "Gmail watcher")
+        // What the task scan files: a new task, and a change to a task that exists.
+        clock = Date().addingTimeInterval(-120)
+        store.suggest(scan: [TaskSuggestion.Draft(key: "scan", title: "Send Tom the deck", due: "2026-11-26")])
+        if let target = store.tasks.first(where: { $0.title == "Send the updated pricing deck" }) {
+            store.suggest(scanUpdates: [(TaskSuggestion.Update(target: target.id, targetTitle: target.title, note: "Sent on Tuesday, Ana confirmed.",
+                                                               markDone: true), nil)])
+        }
         clock = Date()
         let api = TasksAPI(store: store)
         _ = try? api.upsertQuickFilter(id: nil, name: "Open", query: ["not": ["status": "done"]])
