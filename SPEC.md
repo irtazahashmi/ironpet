@@ -213,13 +213,19 @@ IronPet Remote is the iPhone client of the [Remote API](#remote-api), shipped as
 
 ## Record ids
 
-Every record has a public id: its kind's prefix, an underscore and six or more random lowercase hex digits (`task_9f3c1e`, `job_…`, `auto_…`, `filter_…`). The prefixes are in `RecordKind` (`Support/RecordID.swift`): `screen`, `meeting`, `chat`, `msg`, `task`, `auto`, `run`, `job`, `notif`, `page`, `claim` and `filter`. The digits never encode a title or a time, a new id gets one more digit only when every try collides, and an id is never reused.
+Every record has a public id: its kind's prefix, an underscore and random lowercase hex digits (`task_9f3c1e5a07b2`, `job_…`, `auto_…`, `filter_…`). A new id has 12 digits (`RecordID.newDigits`), so installs that never talk to each other do not make the same id. Ids made before that have six digits, and `RecordID.parse` still accepts six or more. The prefixes are in `RecordKind` (`Support/RecordID.swift`): `screen`, `meeting`, `chat`, `msg`, `task`, `auto`, `run`, `job`, `notif`, `page`, `claim` and `filter`. The digits never encode a title or a time, a new id gets one more digit only when every try collides, and an id is never reused.
 
 - **Where they live.** `record_refs(ref, kind, key)` in `ironpet.db` (`Support/RecordRefs.swift`, migration 551). A ref is created the first time its record is listed or read, and tasks and jobs get theirs in the migration. Automations and filters live in JSON and config, so they are looked up by key the same way.
 - **Old ids keep working.** A task's slug, a job's `job-…` id, an automation's id and a filter's id are still the keys, so they resolve to the same record. When two kinds share an old id (a task and a filter with the same slug), `get` says so and asks for the ref.
 - **`get`.** The MCP tool `get` (`id`) returns any record: a task, a job, an automation or a filter answers with the tool for that kind, so `get` and `tasks_get` return the same text. A capture (`screen_`, through `screen_window`), a notification (`notif_`), a meeting (`meeting_`), a chat (`chat_`) and a message (`msg_`) answer with a JSON object that has `kind` and `ref`. The readers (`Records/RecordReaders.swift`) go through the owning API, never a store. `get` is read-only and needs no approval.
 - **Where refs appear.** `ref` is a field of each task, job, automation and filter; of each capture in `screen_search` and `screen_window`; of each notification in `notifications_list` and `notifications_get`; of each meeting in the meetings list (`MeetingInfo`); and of each chat thread (`ChatThreadInfo`). A message's ref is made when the chat asks for it (`ChatAPI.messageRef`); the chat UI shows it in the next PR.
 - **Meetings.** A meeting keeps its folder name as its key. Its id is in `meeting.id` inside the folder, so a database that is rebuilt gets the same id back. The audio and the transcript are not moved or changed.
+
+## Node and agent ids
+
+Every install has a node id, `node_` and 16 random hex digits (`NodeIdentity`, `Support/NodeIdentity.swift`). Migration 560 creates the one-row `node_identity` table and fills it, so a fresh database and an upgraded one both have an id from the first open, and it stays across restarts because it lives in `ironpet.db`. `session.hello` and `node.info` report it with the agent id. `AgentID.default` (`agent_default`) is the one agent until the agent registry exists, and that migration turns it into agent 1.
+
+Every write to shared data records who made it in nullable `node_id` and `agent_id` columns, filled by `Provenance.current(db)` inside the write: `task_items` (the last writer) and `task_events`, `memory_claims` (the writer that created the claim) and `memory_changes`, `automation_runs`, and `notification_items`. Migrations 552 to 555 add the columns. Rows from before have both empty, and readers must treat them as unknown. A database with no `node_identity` table, such as a test that opens one feature's migrations, writes a null node id.
 
 ## Tasks
 

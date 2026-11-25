@@ -1,0 +1,23 @@
+{
+  "cases" : [
+    {
+      "name" : "node.info names this install and its agent",
+      "request" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "method" : "node.info"
+      },
+      "response" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "agent" : "agent_default",
+          "id" : "node_0123456789abcdef"
+        }
+      }
+    }
+  ],
+  "seed" : [
+
+  ]
+}

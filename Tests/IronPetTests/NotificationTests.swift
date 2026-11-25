@@ -67,7 +67,7 @@ final class NotificationStoreTests: XCTestCase {
         XCTAssertEqual(try Database(path: file, migrations: before).schemaVersion, before.map(\.version).max())
         let store = NotificationStore(database: try Database(path: file, migrations: AppMigrations.all))
         XCTAssertNotNil(store.add(draft("New")))
-        XCTAssertEqual(NotificationStore.migrations.map(\.version), [530])
+        XCTAssertEqual(NotificationStore.migrations.map(\.version), [530, 555])
     }
 
     func testListIsNewestFirstAndFilters() throws {

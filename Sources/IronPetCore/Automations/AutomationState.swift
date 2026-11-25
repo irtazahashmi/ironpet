@@ -101,6 +101,13 @@ package final class AutomationState {
         .init(410, "automations: last daily slot", sql: """
             CREATE TABLE IF NOT EXISTS automation_daily(automation TEXT PRIMARY KEY, last_slot REAL NOT NULL) WITHOUT ROWID;
             """),
+        // Which install and which agent an automation run belongs to. Old runs keep both columns empty.
+        .init(554, "automations: node and agent on every run") { db in
+            let existing = try TaskStore.columns(db, "automation_runs")
+            for column in ["node_id", "agent_id"] where !existing.isEmpty && !existing.contains(column) {
+                try db.execute("ALTER TABLE automation_runs ADD COLUMN \(column) TEXT")
+            }
+        },
     ]
 
     private let database: Database
@@ -300,8 +307,8 @@ package final class AutomationState {
 
     package func record(_ id: String, _ run: Run) {
         write { db in
-            try db.execute("INSERT INTO automation_runs(automation, at, outcome, output) VALUES(?, ?, ?, ?)",
-                           [id, run.date.timeIntervalSince1970, run.outcome, run.output])
+            try db.execute("INSERT INTO automation_runs(automation, at, outcome, output, node_id, agent_id) VALUES(?, ?, ?, ?, ?, ?)",
+                           [id, run.date.timeIntervalSince1970, run.outcome, run.output] + Provenance.current(db).columns)
             try db.execute("""
                 DELETE FROM automation_runs WHERE automation = ?1
                   AND id <= COALESCE((SELECT id FROM automation_runs WHERE automation = ?1 ORDER BY id DESC LIMIT 1 OFFSET ?2), 0)
