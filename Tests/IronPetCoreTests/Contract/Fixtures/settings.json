@@ -133,7 +133,10 @@
             "meetingSuggestions" : true,
             "quickFilters" : [
 
-            ]
+            ],
+            "scan" : true,
+            "scanMinutes" : 60,
+            "scanScreen" : false
           },
           "telegram" : {
             "allowedUsers" : [
@@ -312,7 +315,10 @@
             "meetingSuggestions" : true,
             "quickFilters" : [
 
-            ]
+            ],
+            "scan" : true,
+            "scanMinutes" : 60,
+            "scanScreen" : false
           },
           "telegram" : {
             "allowedUsers" : [
@@ -488,7 +494,10 @@
             "meetingSuggestions" : true,
             "quickFilters" : [
 
-            ]
+            ],
+            "scan" : true,
+            "scanMinutes" : 60,
+            "scanScreen" : false
           },
           "telegram" : {
             "allowedUsers" : [

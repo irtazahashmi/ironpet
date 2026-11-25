@@ -123,7 +123,7 @@ extension ActivityEvent {
     }
 
     package static func taskSuggested(_ suggestion: TaskSuggestion, at: Date = Date()) -> ActivityEvent {
-        ActivityEvent(at: at, kind: .taskSuggested, ref: suggestion.id, title: suggestion.title, detail: suggestion.originLabel)
+        ActivityEvent(at: at, kind: .taskSuggested, ref: suggestion.id, title: suggestion.headline, detail: suggestion.originLabel)
     }
 
     package static func taskDue(_ task: TaskItem, at: Date = Date()) -> ActivityEvent {

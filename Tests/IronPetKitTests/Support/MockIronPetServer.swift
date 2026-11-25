@@ -611,8 +611,19 @@ final class MockIronPetServer: @unchecked Sendable {
             lock.unlock(); return fail(connection, 404, "not_found", "no suggestion \(id)")
         }
         let suggestion = _suggestions.remove(at: index)
-        let task = RemoteTask(id: "t-from-\(id)", title: suggestion.title, status: .backlog, source: suggestion.origin)
-        _tasks.append(task)
+        var task = RemoteTask(id: "t-from-\(id)", title: suggestion.title, status: .backlog, source: suggestion.origin)
+        if let update = suggestion.update {
+            // A change to an existing task, as the Mac applies it.
+            guard let target = _tasks.firstIndex(where: { $0.id == update.taskID }) else {
+                lock.unlock(); return fail(connection, 404, "not_found", "no task \(update.taskID)")
+            }
+            if update.status == "done" { _tasks[target].status = .done; _tasks[target].closed = Date() }
+            if let waitingOn = update.waitingOn { _tasks[target].waitingOn = waitingOn }
+            if let note = update.note { _tasks[target].notes += (_tasks[target].notes.isEmpty ? "" : "\n\n") + note }
+            task = _tasks[target]
+        } else {
+            _tasks.append(task)
+        }
         lock.unlock()
         respond(connection, 200, task)
         publish(RemoteEvent.tasksChanged, id: task.id)

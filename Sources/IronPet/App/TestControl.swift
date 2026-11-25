@@ -669,6 +669,8 @@ final class TestControl {
                                      "meeting": suggestion.meeting?.path ?? NSNull(), "url": suggestion.url?.absoluteString ?? NSNull(),
                                      "waiting_on": suggestion.waitingOn ?? NSNull()]
         if case .automation(let id, let name) = suggestion.origin { object["automation"] = ["id": id, "name": name] }
+        if suggestion.origin == .taskScan { object["origin"] = "task-scan" }
+        if let update = suggestion.update { object["update"] = ["task": update.target, "summary": update.summary] }
         return object
     }
 

@@ -151,6 +151,15 @@ package final class AutomationService {
                                 environment: CommandRunner.defaultEnvironment())
     }
 
+    /// Automations that app code defines and the engine runs, but that are not in `automations.json`, so the Automations list and the
+    /// automation tools never show them and a file edit cannot change them. The app sets them from its settings.
+    package var system: [Automation] = [] {
+        didSet { if system != oldValue { engine.set(store.automations + system) } }
+    }
+
+    /// Runs the task scan, one scan per call. Set by the app.
+    package var runTaskScan: (() async -> TaskScanner.Outcome)?
+
     private var pending: [String: AutomationEngine.Fire] = [:]
     private var announced: [String: String] = [:]
     private var running: Set<String> = []
@@ -170,7 +179,7 @@ package final class AutomationService {
         engine.onDone = { [weak self] automation in self?.deleteAfterRun(automation, reason: "the script returned done") }
         store.onChange = { [weak self] list in
             guard let self else { return }
-            engine.set(list)
+            engine.set(list + system)
             reviewApprovals()
         }
         store.onInvalid = { [weak self] message in
@@ -205,7 +214,7 @@ package final class AutomationService {
         if let message = store.error { store.onInvalid?(message) }
         engine.restoreSnoozes()
         pruneLogs(force: true)
-        engine.state.prune(now: engine.env.now(), keeping: Set(store.automations.map(\.id)))
+        engine.state.prune(now: engine.env.now(), keeping: Set((store.automations + system).map(\.id)))
         reviewApprovals()
         engine.startStreams()
     }
@@ -440,6 +449,21 @@ package final class AutomationService {
             }
         case "prompt" where runsInChat(a):
             deliverToChat(a, fire: fire, values: values)
+        case AutomationDefaults.taskScanAction:
+            return runInBackground(a, done: fire.finished) { [self] in
+                guard let scan = runTaskScan else {
+                    record(a.id, "failed", "the task scan is not available")
+                    return
+                }
+                let outcome = await scan()
+                if let error = outcome.errors.first {
+                    record(a.id, "failed", error)
+                } else if outcome.skipped {
+                    record(a.id, "ok", "nothing new to read")
+                } else {
+                    record(a.id, "ok", "\(outcome.filed.count) suggested")
+                }
+            }
         case "digest":
             guard let kind = a.action.digest.flatMap(Brief.Kind.init(rawValue:)), let brief = digest(kind, a, fire.slot) else {
                 record(a.id, "failed", "the brief is not available")

@@ -24,9 +24,10 @@ extension RemoteSuggestion {
         switch suggestion.origin {
         case .meeting(let folder): origin = "meeting"; detail = folder.path
         case .automation(let id, let name): origin = "automation"; detail = "\(name) (\(id))"
+        case .taskScan: origin = "task-scan"; detail = "Task scan"
         }
         self.init(id: suggestion.id, title: suggestion.title, created: suggestion.created, origin: origin, originDetail: detail, due: suggestion.due,
                   notes: suggestion.notes, url: suggestion.url?.absoluteString, waitingOn: suggestion.waitingOn,
-                  sourceRef: suggestion.sourceRef.map { RemoteJSON(reference: $0) })
+                  sourceRef: suggestion.sourceRef.map { RemoteJSON(reference: $0) }, update: suggestion.update?.remote)
     }
 }
