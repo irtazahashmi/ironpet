@@ -67,6 +67,8 @@ package enum TaskMCP {
                            "reason": ["type": "string", "minLength": 1, "description": "One sentence on why this task exists"]]]
         let links: [String: Any] = ["type": "array", "items": link, "maxItems": TaskValidator.maxLinks]
         let due: [String: Any] = ["type": "string", "description": "ISO 8601 date or date and time. In changes, null clears it."]
+        let project: [String: Any] = ["type": "string",
+                                      "description": "The id of the GTD project this task is a step of (task_projects_list). In changes, null takes it out."]
         let deferUntil: [String: Any] = ["type": "string",
                                          "description": "ISO 8601 date or date and time. The task stays out of the list until then. In changes, null shows it again."]
         let waitingOn: [String: Any] = ["type": "string", "maxLength": TaskValidator.maxWaitingOn,
@@ -84,12 +86,12 @@ package enum TaskMCP {
             tool("tasks_get", "Get one task in full, with its history.", id, required: ["id"]),
             tool("tasks_create", "Add a task. id is made from the title.\n\n" + guide,
                  ["title": ["type": "string", "maxLength": TaskValidator.maxTitle], "notes": ["type": "string"], "status": status,
-                  "origin": origin, "due": due, "links": links, "waiting_on": waitingOn, "labels": labels, "defer_until": deferUntil],
+                  "origin": origin, "due": due, "links": links, "waiting_on": waitingOn, "labels": labels, "defer_until": deferUntil, "project": project],
                  required: ["title", "origin"]),
             tool("tasks_update", "Change a task. Only the fields in changes are touched; links replaces the whole list; labels adds or overwrites keys and remove_labels removes keys, so omitted labels stay. note is required when the status changes.",
                  id.merging(["changes": ["type": "object", "properties": ["title": ["type": "string"], "notes": ["type": "string"],
                                                                           "status": status, "due": due, "links": links,
-                                                                          "waiting_on": waitingOn, "labels": labels, "defer_until": deferUntil,
+                                                                          "waiting_on": waitingOn, "labels": labels, "defer_until": deferUntil, "project": project,
                                                                           "remove_labels": ["type": "array", "items": ["type": "string"],
                                                                                             "description": "Label keys to remove"]]],
                              "note": note]) { a, _ in a },
@@ -117,6 +119,16 @@ package enum TaskMCP {
             tool("task_filters_delete", "Delete a quick filter. Tasks are not touched.", id, required: ["id"]),
             tool("task_filters_reorder", "Set the order of the chips: the ids listed go first, in this order; others keep their order after them.",
                  ["ids": ["type": "array", "items": ["type": "string"]]], required: ["ids"]),
+            tool("task_projects_list", "List the user's GTD projects (outcomes that take more than one step, not code folders), active and someday unless status says otherwise. Each has its next_actions (open tasks nobody else holds, not deferred), stalled (active with no next action) and due_for_review. Keep every active project moving: when one is stalled, propose its next step with tasks_suggest.",
+                 ["status": ["type": "string", "enum": TaskProject.Status.allCases.map(\.rawValue)]]),
+            tool("task_projects_upsert", "Create a GTD project, or change one when id names it. Link tasks to it with tasks_create or tasks_update (project). reviewed: true records that the user reviewed it now.",
+                 ["id": ["type": "string", "description": "Leave out to create; the id is made from the title."],
+                  "title": ["type": "string", "maxLength": TaskProjectValidator.maxTitle],
+                  "outcome": ["type": "string", "description": "What done looks like, in one sentence."],
+                  "area": ["type": "string"], "goal": ["type": "string"],
+                  "status": ["type": "string", "enum": TaskProject.Status.allCases.map(\.rawValue)],
+                  "review_days": ["type": "integer", "minimum": 1, "maximum": TaskProjectValidator.maxReviewDays],
+                  "reviewed": ["type": "boolean"]]),
             tool("tasks_delete", "Delete a task that should never have existed. Prefer tasks_close for finished work.", id, required: ["id"]),
         ]
     }

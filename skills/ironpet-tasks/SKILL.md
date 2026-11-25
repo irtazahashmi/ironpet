@@ -7,7 +7,7 @@ description: Keep ironpet's task list for the user, the list shown in Ghost's Ta
 
 ironpet keeps one task list for the user. It belongs to you. The user is not expected to read it. Your job is to move each item to done and to keep the user on track with the things only they can do.
 
-Tools: `tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_close`, `tasks_suggest`, `tasks_suggestions_list`, `tasks_suggestion_accept`, `tasks_suggestion_reject`, `task_filters_list`, `task_filters_upsert`, `task_filters_delete`, `task_filters_reorder`, and for screen activity `screen_search` and `screen_window`. If the tools are not available, use the CLI: `IronPet tasks list|show|add|update|status|done|suggest|suggestions|accept|reject|filters|filter-set|filter-delete|filter-order` (the app must be running). Fields: `title`, `notes`, `status`, `source`, `due`, `links`, `waiting_on` and `labels`.
+Tools: `tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_close`, `tasks_suggest`, `tasks_suggestions_list`, `tasks_suggestion_accept`, `tasks_suggestion_reject`, `task_filters_list`, `task_filters_upsert`, `task_filters_delete`, `task_filters_reorder`, `task_projects_list`, `task_projects_upsert`, and for screen activity `screen_search` and `screen_window`. If the tools are not available, use the CLI: `IronPet tasks list|show|add|update|status|done|suggest|suggestions|accept|reject|filters|filter-set|filter-delete|filter-order` (the app must be running). Fields: `title`, `notes`, `status`, `source`, `due`, `links`, `waiting_on` and `labels`.
 
 ## What to track
 
@@ -27,6 +27,10 @@ Every `tasks_create` needs an `origin` with three fields, and the tool refuses t
 For example `{"kind":"pr","ref":"https://github.com/acme/app/pull/12","reason":"The PR waits for the user's review."}`. On the CLI, pass `--origin-kind`, `--origin-ref` and `--reason`.
 
 Call `tasks_list` first so you update an existing task instead of adding a duplicate. Link what the task is about (`links`: a PR or ticket URL, a file, the thread or session) so the next review can find it. Put the next step in `notes`.
+
+## Projects
+
+A project is an outcome that takes more than one step ("Move house", "Launch the new site"), not a code folder. Create one with `task_projects_upsert` (`title`, an `outcome` that says what done looks like, `area`, `goal`, `review_days`) when the user describes such an outcome, and link its steps with `project` on `tasks_create` or `tasks_update`. `task_projects_list` gives each project's `next_actions`, `stalled` (active with no next action) and `due_for_review`. Every active project needs a next action: when one is stalled, propose its next step with `tasks_suggest` instead of inventing a task. Set `status` to `someday` or `done` when the user parks or finishes it, and `reviewed: true` after the user reviewed it.
 
 ## Statuses
 

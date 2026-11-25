@@ -76,8 +76,10 @@ package struct TaskItem: Identifiable, Equatable, Codable {
         waitingOn: String? = nil,
         sourceRef: String? = nil,
         labels: [String: String] = [:],
-        deferUntil: Date? = nil
+        deferUntil: Date? = nil,
+        project: String? = nil
     ) {
+        self.project = project
         self.deferUntil = deferUntil
         self.id = id
         self.title = title
@@ -115,6 +117,8 @@ package struct TaskItem: Identifiable, Equatable, Codable {
 
     /// The tickler: the task stays out of the list until this moment (a plain date is local midnight). Nil shows it now.
     package var deferUntil: Date? = nil
+    /// The id of the GTD project this task is a step of (`TaskProject`). Nil for a standalone task.
+    package var project: String? = nil
 
     /// Hidden until its defer date. A done task is never deferred.
     package func isDeferred(now: Date = Date()) -> Bool {

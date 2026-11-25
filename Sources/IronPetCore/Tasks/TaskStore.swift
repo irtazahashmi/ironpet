@@ -13,6 +13,8 @@ package final class TaskStore {
     package let changes = ChangeSignal()
     package private(set) var tasks: [TaskItem] = [] { willSet { changes.send() } }
     package private(set) var suggestions: [TaskSuggestion] = [] { willSet { changes.send() } }
+    /// GTD projects (`TaskProjects.swift`), title order.
+    package internal(set) var projects: [TaskProject] = [] { willSet { changes.send() } }
 
     package nonisolated static let migrations: [Database.Migration] = [
         .init(200, "tasks: items, links, events, suggestions", sql: """
@@ -142,7 +144,7 @@ package final class TaskStore {
                 try db.execute("ALTER TABLE task_suggestions ADD COLUMN \(column) \(type)")
             }
         },
-    ]
+    ] + projectMigrations
 
     /// A source reference as stored: a JSON object, keys sorted.
     package nonisolated static func refText(_ object: [String: Any]) -> String? { TaskRef.text(object) }
@@ -166,13 +168,13 @@ package final class TaskStore {
     /// Where changes are published for API clients: `tasks.changed` with the task's id, `suggestions.changed` without one.
     package weak var events: APIEventBus?
 
-    private func didChange(_ id: String?) {
+    func didChange(_ id: String?) {
         events?.publish(id == nil ? .suggestionsChanged : .tasksChanged, id: id)
         onChange?(id)
     }
 
-    private let database: Database
-    private let now: () -> Date
+    let database: Database
+    let now: () -> Date
     private let keepDoneDays: @MainActor () -> Int
     private var lastPrune = Date.distantPast
 
@@ -225,7 +227,8 @@ package final class TaskStore {
     @discardableResult
     package func create(title: String, notes: String = "", status: TaskStatus = .backlog, source: TaskSource, due: Date? = nil,
                 links: [TaskLink] = [], waitingOn: String? = nil, sourceRef: String? = nil, labels: [String: String] = [:],
-                deferUntil: Date? = nil, by: String) throws -> TaskItem {
+                deferUntil: Date? = nil, project: String? = nil, by: String) throws -> TaskItem {
+        if let project, self.project(project) == nil { throw TaskError(message: "no project with id \"\(project)\"") }
         guard labels.count <= TaskValidator.maxLabels else { throw TaskError(message: "at most \(TaskValidator.maxLabels) labels") }
         let title = try TaskValidator.title(title)
         let notes = try TaskValidator.notes(notes)
@@ -234,10 +237,10 @@ package final class TaskStore {
         let time = now()
         let item = TaskItem(id: id, title: title, notes: notes, status: status, source: source, due: due, links: links,
                             created: time, updated: time, closed: status == .done ? time : nil, waitingOn: waitingOn, sourceRef: sourceRef, labels: labels,
-                            deferUntil: deferUntil)
+                            deferUntil: deferUntil, project: project)
         try database.write { db in
             try Self.save(item, db)
-            try Self.log(db, id, time, by, .created, "\(status.rawValue): \(title)" + (waitingOn.map { " (waiting on \($0))" } ?? "")
+            try Self.log(db, id, time, by, .created, "\(status.rawValue): \(title)" + (project.map { " (project \($0))" } ?? "") + (waitingOn.map { " (waiting on \($0))" } ?? "")
                          + (sourceRef.map { " [source: \(source.rawValue) \($0)]" } ?? "")
                          + (labels.isEmpty ? "" : " [labels: \(Self.describe(labels))]"))
         }
@@ -250,7 +253,7 @@ package final class TaskStore {
     @discardableResult
     package func update(_ id: String, title: String? = nil, notes: String? = nil, status: TaskStatus? = nil, due: Date?? = nil,
                 links: [TaskLink]? = nil, waitingOn: String?? = nil, addLabels: [String: String] = [:], removeLabels: [String] = [],
-                deferUntil: Date?? = nil, note: String? = nil, by: String) throws -> TaskItem {
+                deferUntil: Date?? = nil, project: String?? = nil, note: String? = nil, by: String) throws -> TaskItem {
         guard var item = task(id) else { throw TaskError(message: "no task with id \"\(id)\"") }
         let time = now()
         var events: [(TaskEvent.Kind, String)] = []
@@ -265,6 +268,11 @@ package final class TaskStore {
         if let due, due != item.due {
             item.due = due
             events.append((.edited, "due: \(due.map { ISO8601DateFormatter().string(from: $0) } ?? "none")"))
+        }
+        if let project, project != item.project {
+            if let id = project, self.project(id) == nil { throw TaskError(message: "no project with id \"\(id)\"") }
+            item.project = project
+            events.append((.edited, "project: \(project ?? "none")"))
         }
         if let deferUntil, deferUntil != item.deferUntil {
             item.deferUntil = deferUntil
@@ -677,7 +685,7 @@ package final class TaskStore {
                     guard let task = row[0] as? String, let key = row[1] as? String, let value = row[2] as? String else { continue }
                     labels[task, default: [:]][key] = value
                 }
-                let items = try db.rows("SELECT id, title, notes, status, source, due, created, updated, closed, waiting_on, source_ref, defer_until FROM task_items").compactMap { row -> TaskItem? in
+                let items = try db.rows("SELECT id, title, notes, status, source, due, created, updated, closed, waiting_on, source_ref, defer_until, project FROM task_items").compactMap { row -> TaskItem? in
                     guard let id = row[0] as? String, let title = row[1] as? String,
                           let status = (row[3] as? String).flatMap(TaskStatus.init(rawValue:)),
                           let created = row[6] as? Double, let updated = row[7] as? Double else { return nil }
@@ -687,7 +695,7 @@ package final class TaskStore {
                                     created: Date(timeIntervalSince1970: created), updated: Date(timeIntervalSince1970: updated),
                                     closed: (row[8] as? Double).map(Date.init(timeIntervalSince1970:)), waitingOn: row[9] as? String,
                                     sourceRef: row[10] as? String, labels: labels[id] ?? [:],
-                                    deferUntil: (row[11] as? Double).map(Date.init(timeIntervalSince1970:)))
+                                    deferUntil: (row[11] as? Double).map(Date.init(timeIntervalSince1970:)), project: row[12] as? String)
                 }
                 let suggested = try db.rows("""
                     SELECT id, title, due, notes, url, meeting, automation, automation_name, created, waiting_on, source_ref,
@@ -729,6 +737,8 @@ package final class TaskStore {
             }
             if withRefs != tasks { tasks = withRefs }
             if suggested != suggestions { suggestions = suggested }
+            let loaded = (try? database.read { try Self.readProjects($0) }) ?? []
+            if loaded != projects { projects = loaded }
         } catch {
             NSLog("ironpet: could not read tasks: \(error.localizedDescription)")
         }
@@ -737,11 +747,11 @@ package final class TaskStore {
     private static func save(_ item: TaskItem, _ db: Database.Connection) throws {
         try db.execute("""
             INSERT OR REPLACE INTO task_items(id, title, notes, status, source, due, created, updated, closed, waiting_on, source_ref,
-                                              defer_until, node_id, agent_id)
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                              defer_until, project, node_id, agent_id)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [item.id, item.title, item.notes, item.status.rawValue, item.source.rawValue, item.due?.timeIntervalSince1970,
                   item.created.timeIntervalSince1970, item.updated.timeIntervalSince1970, item.closed?.timeIntervalSince1970,
-                  item.waitingOn, item.sourceRef, item.deferUntil?.timeIntervalSince1970] + Provenance.current(db).columns)
+                  item.waitingOn, item.sourceRef, item.deferUntil?.timeIntervalSince1970, item.project] + Provenance.current(db).columns)
         try db.execute("DELETE FROM task_links WHERE task = ?", [item.id])
         for (position, link) in item.links.enumerated() {
             try db.execute("INSERT INTO task_links(task, position, kind, ref, label) VALUES(?, ?, ?, ?, ?)",

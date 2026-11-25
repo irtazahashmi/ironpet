@@ -158,7 +158,8 @@ struct TaskListView: View {
             }
             let content = Self.content(unavailable: tasks.unavailable != nil, isEmpty: tasks.suggestions.isEmpty && tasks.all.isEmpty)
             let columns = Self.columns(tasks.all, filter: activeFilter, query: search)
-            if content == .list || !tasks.quickFilters.isEmpty {
+            // Quick filters narrow tasks, not projects, so the Projects view has no chips.
+            if mode != .projects, content == .list || !tasks.quickFilters.isEmpty {
                 QuickFilterBar(filters: QuickFilter.chips(tasks.quickFilters), builtIn: tasks.builtInQuickFilters, selection: shownFilter,
                                onAdd: { filterRequest = .add },
                                onEdit: { filterRequest = .edit($0) },
@@ -170,6 +171,8 @@ struct TaskListView: View {
                 && (mode == .board || isNextActions || TaskBoard.deferred(tasks.all, filter: activeFilter, query: search).isEmpty)
             if content == .unavailable {
                 Spacer()
+            } else if mode == .projects {
+                TaskProjectsView(tasks: tasks, onOpenTask: { nav.open($0) })
             } else if content == .empty {
                 EmptyState(symbol: SharedSymbols.tasks, title: "No tasks yet",
                            detail: "Ask \(petName) to keep track of something, or finish a meeting.")
@@ -252,8 +255,8 @@ struct TaskListView: View {
         .pickerStyle(.segmented)
         .labelsHidden()
         .fixedSize()
-        .accessibilityLabel("Show tasks as a list or a board")
-        .help("Show the tasks as a list or as a board of columns")
+        .accessibilityLabel("Show tasks as a list, a board or by project")
+        .help("Show the tasks as a list, as a board of columns, or grouped by project")
     }
 
     @ViewBuilder private var suggestions: some View {
