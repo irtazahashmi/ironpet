@@ -353,9 +353,13 @@ package final class TaskScanner {
     static func clarify(_ entry: [String: Any]) -> TaskSuggestion.Clarify? {
         let context = (entry["context"] as? String).flatMap { try? TaskContext.checked($0.trimmingCharacters(in: .whitespaces)) }
             .flatMap(TaskContext.init(rawValue:))
-        let area = (entry["area"] as? String).flatMap { try? TaskValidator.labels(["area": $0])["area"] }
+        // Scan text comes from chats, meetings and the screen, so the area is cleaned like the title and notes.
+        let area = (entry["area"] as? String).map { TaskSuggestion.Draft.clean($0, limit: TaskValidator.maxLabelValue, newlines: false) }
+            .flatMap { try? TaskValidator.labels(["area": $0])["area"] }
+        // Work someone else holds is a waiting-on task, not a someday idea.
+        let waiting = (entry["waiting_on"] as? String).map { !$0.trimmingCharacters(in: .whitespaces).isEmpty } ?? false
         let clarify = TaskSuggestion.Clarify(context: context, area: area, twoMinute: entry["two_minute"] as? Bool ?? false,
-                                             someday: entry["someday"] as? Bool ?? false)
+                                             someday: !waiting && (entry["someday"] as? Bool ?? false))
         return clarify.isEmpty ? nil : clarify
     }
 

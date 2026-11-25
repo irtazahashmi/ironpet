@@ -203,6 +203,10 @@ struct SuggestionRow: View {
             Text(suggestion.update?.headline ?? suggestion.title)
             if let update = suggestion.update { Text(update.summary).font(.subheadline).accessibilityIdentifier("change-\(suggestion.id)") }
             Text(origin).font(.caption).foregroundStyle(.secondary)
+            if let clarify = suggestion.clarify {
+                Label("Files as: \(clarify.summary)", systemImage: "sparkles").font(.caption).foregroundStyle(.secondary)
+                    .accessibilityIdentifier("clarify-\(suggestion.id)")
+            }
             if !suggestion.notes.isEmpty { Text(suggestion.notes).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
             HStack {
                 Button(suggestion.update == nil ? "Add" : "Accept") { Task { await model.add(suggestion) } }

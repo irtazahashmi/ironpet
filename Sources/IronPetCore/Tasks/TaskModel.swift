@@ -1,6 +1,7 @@
 import Foundation
 import enum IronPetKit.SharedSymbols
 import struct IronPetKit.RemoteSuggestionUpdate
+import struct IronPetKit.RemoteSuggestionClarify
 
 /// Where a task stands. The agent moves tasks between these; the user only marks them done.
 package enum TaskStatus: String, CaseIterable, Codable {
@@ -244,8 +245,7 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
 
         /// `Phone · Health · 2 min · Someday`
         package var summary: String {
-            ([context?.title, area, twoMinute ? "2 min" : nil, someday ? TaskStatus.someday.title : nil] as [String?])
-                .compactMap { $0 }.joined(separator: " · ")
+            RemoteSuggestionClarify(context: context?.rawValue, area: area, twoMinute: twoMinute, someday: someday).summary
         }
     }
 

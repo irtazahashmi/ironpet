@@ -516,7 +516,7 @@ package final class TaskStore {
         package var status: String?
     }
 
-    /// Turns a suggestion into a backlog task, linked to its meeting folder or to the url the automation gave, and waiting
+    /// Turns a suggestion into a backlog (or, as the scan proposed, someday) task, linked to its meeting folder or to the url the automation gave, and waiting
     /// on the suggestion's owner if it has one. `note` goes to the new task's history.
     @discardableResult
     package func accept(_ suggestionID: String, overrides: Overrides = Overrides(), note: String? = nil, by: String = "user") throws -> TaskItem {

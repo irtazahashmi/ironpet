@@ -492,13 +492,13 @@ private struct SuggestionRow: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
-                                .accessibilityLabel("Proposed: \(clarify.summary)")
+                                .accessibilityLabel("Files as: \(clarify.summary)")
                         }
                         HStack(spacing: 6) {
                             Button(suggestion.update == nil ? "Add" : "Accept", action: onAdd)
                                 .help(suggestion.update != nil ? "Apply this change to the task"
-                                      : suggestion.clarify != nil ? "Add as proposed: \(suggestion.clarify?.summary ?? "")"
-                                      : suggestion.waitingOn == nil ? "Add to the backlog" : "Add to Waiting on others")
+                                      : suggestion.clarify.map { "Add as proposed: \($0.summary)" } ??
+                                      (suggestion.waitingOn == nil ? "Add to the backlog" : "Add to Waiting on others"))
                             Button("Skip", action: onSkip)
                                 .help(suggestion.update == nil ? "Dismiss this suggestion" : "Leave the task as it is")
                         }

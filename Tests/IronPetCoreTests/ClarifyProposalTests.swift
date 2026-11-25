@@ -1,5 +1,6 @@
 import XCTest
 @testable import IronPetCore
+import IronPetKit
 
 /// The task scan's clarify proposal: parsed from the agent, kept with the suggestion, applied when it is added.
 @MainActor
@@ -70,5 +71,25 @@ final class ClarifyProposalTests: XCTestCase {
         XCTAssertEqual(clarify["context"] as? String, "mac")
         XCTAssertEqual(clarify["two_minute"] as? Bool, true)
         XCTAssertNil(clarify["area"])
+    }
+
+    func testTheAreaIsCleanedLikeTheRestOfTheScanText() throws {
+        let entry: [String: Any] = ["title": "A", "area": "Sa\u{202E}les\u{0007}"]
+        XCTAssertEqual(TaskScanner.clarify(entry)?.area, "Sales")
+    }
+
+    func testWorkSomeoneElseHoldsIsNeverProposedAsSomeday() throws {
+        let entry: [String: Any] = ["title": "A", "waiting_on": "Ana", "someday": true, "context": "calls"]
+        XCTAssertEqual(TaskScanner.clarify(entry), TaskSuggestion.Clarify(context: .calls))
+    }
+
+    func testThePhoneReceivesTheProposalWithTheSameWording() throws {
+        let suggestion = try file(TaskSuggestion.Clarify(context: .phone, area: "Health", twoMinute: true))
+        let remote = RemoteSuggestion(suggestion)
+        XCTAssertEqual(remote.clarify, RemoteSuggestionClarify(context: "phone", area: "Health", twoMinute: true))
+        XCTAssertEqual(remote.clarify?.summary, suggestion.clarify?.summary)
+        XCTAssertEqual(remote.clarify?.summary, "Phone · Health · 2 min")
+        let decoded = try JSONDecoder().decode(RemoteSuggestionClarify.self, from: Data(#"{"context":"mac"}"#.utf8))
+        XCTAssertEqual(decoded, RemoteSuggestionClarify(context: "mac"), "missing flags read as false")
     }
 }

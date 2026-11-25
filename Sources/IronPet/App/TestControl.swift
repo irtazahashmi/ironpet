@@ -671,6 +671,7 @@ final class TestControl {
         if case .automation(let id, let name) = suggestion.origin { object["automation"] = ["id": id, "name": name] }
         if suggestion.origin == .taskScan { object["origin"] = "task-scan" }
         if let update = suggestion.update { object["update"] = ["task": update.target, "summary": update.summary] }
+        if let clarify = TaskJSON.json(suggestion)["clarify"] { object["clarify"] = clarify }
         return object
     }
 
