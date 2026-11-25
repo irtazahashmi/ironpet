@@ -75,7 +75,7 @@ package enum TaskMCP {
                   "include_done": ["type": "boolean", "description": "Also list done tasks"],
                   "labels": ["type": "object", "additionalProperties": ["type": "string"],
                              "description": "Only tasks that have all of these labels with these values"],
-                  "filter": ["type": "string", "description": "The id of a saved quick filter (task_filters_list). Done tasks are included unless the filter or status leaves them out."],
+                  "filter": ["type": "string", "description": "The id of a saved quick filter (task_filters_list), or next-actions for the built-in Next actions (open tasks nobody else holds). Done tasks are included unless the filter or status leaves them out."],
                   "query": ["type": "object", "description": "A quick filter query, used without saving it. Schema: see task_filters_upsert. Combined with filter by and."]]),
             tool("tasks_get", "Get one task in full, with its history.", id, required: ["id"]),
             tool("tasks_create", "Add a task. id is made from the title.\n\n" + guide,

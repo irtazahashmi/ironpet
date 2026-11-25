@@ -2,7 +2,9 @@ import XCTest
 @testable import IronPet
 @testable import IronPetCore
 import enum IronPetKit.BuiltInQuickFilters
+import struct IronPetKit.QuickFilter
 import enum IronPetKit.QuickFilterNode
+import enum IronPetKit.RemoteJSON
 
 @MainActor
 final class NextActionsTests: XCTestCase {
@@ -79,6 +81,30 @@ final class NextActionsTests: XCTestCase {
 
         let saved = try api.upsertQuickFilter(id: nil, name: "Next-actions", query: ["status": "needs_you"])
         XCTAssertNotEqual(saved.id, BuiltInQuickFilters.nextActionsID, "a generated id skips the built-in one")
+    }
+
+    func testAgentsAndTheCLICanListNextActions() throws {
+        try add("Open")
+        try add("Finished", .done)
+        let text = String(describing: try TaskJSON.call(api, "list", ["filter": BuiltInQuickFilters.nextActionsID], by: "agent:mcp").get())
+        XCTAssertTrue(text.contains("Open"))
+        XCTAssertFalse(text.contains("Finished"))
+    }
+
+    func testAFilterSavedEarlierWithTheBuiltInIdKeepsWorkingAndCanBeEdited() throws {
+        let query = try JSONDecoder().decode(RemoteJSON.self, from: Data(#"{"status":"needs_you"}"#.utf8))
+        api.setQuickFilterStorage([QuickFilter(id: BuiltInQuickFilters.nextActionsID, name: "Next actions", query: query)])
+
+        XCTAssertTrue(api.builtInQuickFilters.isEmpty, "the built-in chip steps aside instead of showing a second chip with the same id")
+        XCTAssertEqual(api.quickFilter(BuiltInQuickFilters.nextActionsID)?.query, query, "the saved query is the one applied")
+
+        let edited = try api.upsertQuickFilter(id: BuiltInQuickFilters.nextActionsID, name: "Next actions", query: ["status": "backlog"])
+        XCTAssertEqual(edited.name, "Next actions", "an edit may keep the name it already had")
+        XCTAssertThrowsError(try api.upsertQuickFilter(id: nil, name: "Next actions", query: ["status": "backlog"]), "a new filter still cannot take it")
+    }
+
+    func testAContextStoredBeforeTheCheckIsReadWhateverItsCase() {
+        XCTAssertEqual(TaskContext.of(["context": " Mac "]), .mac)
     }
 
     func testSettingTheContextAddsAndRemovesTheLabel() throws {

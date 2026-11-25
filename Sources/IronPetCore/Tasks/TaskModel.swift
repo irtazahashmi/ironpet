@@ -351,9 +351,10 @@ package enum TaskContext: String, CaseIterable {
         return value
     }
 
-    /// The context the labels name, or nil when there is none or it is not one of the six.
+    /// The context the labels name, or nil when there is none or it is not one of the six. Values stored before the
+    /// check existed may have another case or spaces, so they are read the way the check would store them.
     package static func of(_ labels: [String: String]) -> TaskContext? {
-        labels[key].flatMap { TaskContext(rawValue: $0) }
+        labels[key].flatMap { TaskContext(rawValue: $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) }
     }
 }
 

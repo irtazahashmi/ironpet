@@ -102,9 +102,12 @@ struct TaskListView: View {
     }
 
     /// The built-in chips first, then the saved ones, in the order the bar shows them.
-    private var shownChips: [QuickFilter] { BuiltInQuickFilters.all + QuickFilter.chips(tasks.quickFilters) }
+    private var shownChips: [QuickFilter] { tasks.builtInQuickFilters + QuickFilter.chips(tasks.quickFilters) }
 
-    private var isNextActions: Bool { selectedFilter == BuiltInQuickFilters.nextActionsID }
+    /// Only the built-in chip groups by context. A saved filter that happens to use its id is a plain filter.
+    private var isNextActions: Bool {
+        selectedFilter == BuiltInQuickFilters.nextActionsID && tasks.builtInQuickFilters.contains { $0.id == BuiltInQuickFilters.nextActionsID }
+    }
 
     private var removingShown: Binding<Bool> {
         Binding(get: { removingFilter != nil }, set: { if !$0 { removingFilter = nil } })
@@ -112,7 +115,7 @@ struct TaskListView: View {
 
     /// The chosen filter's query, or nil for "All". A filter that was removed or that this build cannot read counts as "All".
     private var activeFilter: QuickFilterNode? {
-        selectedFilter.flatMap { id in BuiltInQuickFilters.all.first { $0.id == id } ?? tasks.quickFilter(id) }?.node
+        selectedFilter.flatMap { tasks.quickFilter($0)?.node }
     }
 
     /// The chip to highlight. A filter the agent removed meanwhile leaves "All" highlighted, which is what the list shows.
@@ -157,7 +160,7 @@ struct TaskListView: View {
             let content = Self.content(unavailable: tasks.unavailable != nil, isEmpty: tasks.suggestions.isEmpty && tasks.all.isEmpty)
             let columns = Self.columns(tasks.all, filter: activeFilter, query: search)
             if content == .list || !tasks.quickFilters.isEmpty {
-                QuickFilterBar(filters: QuickFilter.chips(tasks.quickFilters), builtIn: BuiltInQuickFilters.all, selection: shownFilter,
+                QuickFilterBar(filters: QuickFilter.chips(tasks.quickFilters), builtIn: tasks.builtInQuickFilters, selection: shownFilter,
                                onAdd: { filterRequest = .add },
                                onEdit: { filterRequest = .edit($0) },
                                onRemove: { removingFilter = $0 },

@@ -167,7 +167,7 @@ enum PreviewRenderer {
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks")
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks-light", scheme: .light)
         // The Next actions chip, selected: the open tasks grouped under their contexts.
-        UserDefaults.standard.set(BuiltInQuickFilters.nextActionsID, forKey: QuickFilterSelection.key)
+        QuickFilterSelection.save(BuiltInQuickFilters.nextActionsID)
         render(list(sessions, tasks: tasks, on: .tasks, height: 1000), to: dir, "tasks-next-actions")
         QuickFilterSelection.save(nil)
         for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
