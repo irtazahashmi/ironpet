@@ -91,7 +91,7 @@ package struct UpdateTaskRequest: Codable, Equatable {
         by: String = "user"
     ) {
         self.deferUntil = deferUntil
-        self.clearDeferUntil = clearDeferUntil
+        self.clearDeferUntil = clearDeferUntil ? true : nil
         self.id = id
         self.title = title
         self.notes = notes
@@ -121,8 +121,9 @@ package struct UpdateTaskRequest: Codable, Equatable {
     /// Label keys to remove.
     package var removeLabels: [String] = []
     package var deferUntil: Date?
-    /// Shows the task again now. `deferUntil` is ignored when this is set.
-    package var clearDeferUntil = false
+    /// Shows the task again now. `deferUntil` is ignored when this is true. Optional, so a request from a client that
+    /// predates it still decodes.
+    package var clearDeferUntil: Bool?
     /// Goes to the history only, to say why something changed.
     package var note: String?
     package var by = "user"
@@ -290,7 +291,7 @@ package final class TasksAPI {
                              due: request.clearDue ? .some(nil) : request.due.map { .some($0) },
                              links: request.links, waitingOn: request.waitingOn.map { .some($0) }, addLabels: request.labels,
                              removeLabels: request.removeLabels,
-                             deferUntil: request.clearDeferUntil ? .some(nil) : request.deferUntil.map { .some($0) },
+                             deferUntil: request.clearDeferUntil == true ? .some(nil) : request.deferUntil.map { .some($0) },
                              note: request.note, by: request.by)
         }
     }
