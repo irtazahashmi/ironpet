@@ -30,7 +30,8 @@ package struct Config: Codable, Equatable {
         screenCapture: ScreenCapture = ScreenCapture(),
         desktopControl: DesktopControl = DesktopControl(),
         memory: Memory = Memory(),
-        remote: Remote = Remote()
+        remote: Remote = Remote(),
+        updates: Updates = Updates()
     ) {
         self.pet = pet
         self.chat = chat
@@ -54,6 +55,7 @@ package struct Config: Codable, Equatable {
         self.desktopControl = desktopControl
         self.memory = memory
         self.remote = remote
+        self.updates = updates
     }
 
     package struct Pet: Codable, Equatable {
@@ -474,6 +476,21 @@ package struct Config: Codable, Equatable {
         package var allowedUsers: [User] = []
     }
 
+    /// Updates of the Mac app itself, through Sparkle (SPEC.md > Updates). A build made by `scripts/install.sh` ignores both switches.
+    package struct Updates: Codable, Equatable {
+        package init(checkAutomatically: Bool = true, installAutomatically: Bool = true) {
+            self.checkAutomatically = checkAutomatically
+            self.installAutomatically = installAutomatically
+        }
+
+        /// Ask the release feed once a day whether a newer published release exists. The request carries only the app and Sparkle
+        /// versions in its User-Agent.
+        package var checkAutomatically = true
+        /// Download a newer release as soon as it is found. It installs when no agent turn, voice note or meeting is running,
+        /// or when the user clicks the pet's update badge. Off: the user is asked before the download.
+        package var installAutomatically = true
+    }
+
     /// The remote API a paired phone reaches over the Wi-Fi or the tailnet. Off by default: turning it on opens an HTTPS listener on the chosen
     /// network address and a plain one on 127.0.0.1, and both answer only requests with a device token (see SECURITY.md).
     package struct Remote: Codable, Equatable {
@@ -690,6 +707,7 @@ package struct Config: Codable, Equatable {
     package var desktopControl = DesktopControl()
     package var memory = Memory()
     package var remote = Remote()
+    package var updates = Updates()
 
     package static let file = Paths.root.appendingPathComponent("config.json")
 

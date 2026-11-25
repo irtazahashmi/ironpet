@@ -12,6 +12,8 @@
 # IRONPET_DEVELOPER_ID picks one identity by name when the keychain has several.
 # IRONPET_REQUIRE_NOTARIZED=1 turns every downgrade into an error: no identity, or no notary credentials, stops the build
 # instead of producing an unsigned or un-notarized file. The release workflow sets it whenever it imported a certificate.
+# IRONPET_SPARKLE_PUBLIC_KEY is the Sparkle EdDSA public key that goes into Info.plist (see bundle.sh). With a Developer ID identity
+# the script also writes dist/IronPet-<version>.zip, the archive Sparkle downloads; scripts/make_appcast.sh signs it and writes appcast.xml.
 # IRONPET_ALLOW_NEW_TOOLCHAIN=1 lets a build through whose executable needs a Swift library that macOS 14 and 15 lack
 # (a toolchain newer than Xcode 16.4 does that); the notes then say it needs macOS 26 or later. Without it the script stops.
 set -euo pipefail
@@ -81,7 +83,12 @@ fi
 # the bundle (libswiftCompatibilitySpan from Swift 6.2 on). It runs on the Mac that built it and on macOS 26 and later,
 # and fails to launch on the macOS 14 and 15 that Info.plist promises, so a download must not carry it.
 DEPS=$(otool -L "$APP/Contents/MacOS/IronPet")   # outside the pipe below, so an otool failure stops the script
-LOOSE=$(printf '%s\n' "$DEPS" | awk 'NR > 1 {print $1}' | grep '^@rpath/' || true)
+# Sparkle sits in Contents/Frameworks, where the rpath that bundle.sh adds finds it, so it is not a loose library.
+LOOSE=$(printf '%s\n' "$DEPS" | awk 'NR > 1 {print $1}' | grep '^@rpath/' | grep -v '^@rpath/Sparkle\.framework/' || true)
+if [ ! -d "$APP/Contents/Frameworks/Sparkle.framework" ]; then
+  echo "error: Sparkle.framework is not in the app" >&2
+  exit 1
+fi
 NEEDS_NEW_MACOS=no
 if [ -n "$LOOSE" ]; then
   echo "The executable needs libraries that are not in the app:" >&2
@@ -137,6 +144,18 @@ if [ -n "$IDENTITY" ]; then
   fi
 fi
 hdiutil verify "$DMG" >/dev/null
+
+# The archive Sparkle downloads. Only a Developer ID build gets one: an ad hoc build cannot replace a signed one. The app inside
+# the DMG is covered by the DMG's notarization ticket, so staple it here before it is zipped, to open without a network check.
+ZIP=""
+if [ -n "$IDENTITY" ]; then
+  if [ "$NOTARIZED" = yes ]; then
+    xcrun stapler staple "$APP" || echo "warning: could not staple the app; the zip still works, Gatekeeper checks online" >&2
+  fi
+  ZIP="dist/$NAME.zip"
+  ditto -c -k --sequesterRsrc --keepParent "$APP" "$ZIP"
+  echo "Built $ZIP for Sparkle"
+fi
 
 (cd dist && shasum -a 256 "$NAME.dmg" > "$NAME.dmg.sha256")
 
