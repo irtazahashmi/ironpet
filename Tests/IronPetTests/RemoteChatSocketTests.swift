@@ -62,6 +62,8 @@ final class RemoteChatSocketTests: XCTestCase {
         let item = try XCTUnwrap(chat.items.last { if case .user = $0.kind { true } else { false } })
         XCTAssertEqual(ack.itemID, item.id.uuidString)
         XCTAssertEqual(item.origin, "ios")
+        // The turn starts one yield after the ack, so the memory notes are not built while the phone waits.
+        for _ in 0..<200 where turns.isEmpty { try await Task.sleep(nanoseconds: 10_000_000) }
         XCTAssertEqual(turns.map(\.prompt), ["hello over the socket"])
         let posts = h.service.store.accessLog().filter { $0.method == "POST" && $0.route.hasPrefix("/v1/chat") }
         XCTAssertTrue(posts.isEmpty, "no HTTPS POST for a socket send: \(posts.map(\.route))")

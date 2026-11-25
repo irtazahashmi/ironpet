@@ -862,12 +862,17 @@ package final class ChatSession {
             items += shots.map { Item(kind: .screenshot($0.path), origin: origin) }
             items.append(Item(kind: .user(prompt), origin: origin, reply: reply))
         }
-        // The first turn of every new agent session carries the memory notes, including the one after a rollover.
+        // The first turn of every new agent session carries the memory notes, including the one after a rollover. Building them reads the
+        // memory store and the config from disk. A client's message waits for its ack on this actor, so for a client the build moves
+        // after the ack (see `run`). A message typed on the Mac builds it here, as before.
+        let handoff = pendingHandoff
+        let buildPreamble: (() -> String?)? = agentSessionID == nil ? {
+            let built = Self.preambleBuilder(workspace, prompt)
+            if let handoff, let built { return SessionHandoff.insert(handoff, into: built) }
+            return built
+        } : nil
         var preamble: String?
-        if agentSessionID == nil {
-            preamble = MemoryPreamble.build(store: EntityMemoryStore.shared, workspace: workspace, firstMessage: prompt)
-            if let handoff = pendingHandoff, let built = preamble { preamble = SessionHandoff.insert(handoff, into: built) }
-        }
+        if client == nil { preamble = buildPreamble?() }
         turnOrigin = client
         turnSpoken = client == nil && automation == nil && !silent
         turnAskedApproval = false
@@ -880,11 +885,19 @@ package final class ChatSession {
         var text = silent ? MetaTag.triggerLead : Self.withVoiceMode(sent, on: voiceModeOn())
         if !pendingMeta.isEmpty { text += "\n\n" + MetaTag.block(pendingMeta) }
         run(ACPTurn(prompt: text, preamble: preamble, workspace: workspace, resume: agentSessionID, model: model,
-                    images: shots.filter(FolderFileIntake.isImageFile), files: shots.filter { !FolderFileIntake.isImageFile($0) }))
+                    images: shots.filter(FolderFileIntake.isImageFile), files: shots.filter { !FolderFileIntake.isImageFile($0) }),
+            laterPreamble: client == nil ? nil : buildPreamble)
         return true
     }
 
-    private func run(_ turn: ACPTurn) {
+    /// Builds the memory notes for a new agent session. A test replaces it to make the build slow.
+    package static var preambleBuilder: (URL, String) -> String? = { workspace, firstMessage in
+        MemoryPreamble.build(store: EntityMemoryStore.shared, workspace: workspace, firstMessage: firstMessage)
+    }
+
+    /// Starts the turn. With `laterPreamble`, the turn is marked running at once but the notes are built and the agent started after one
+    /// yield, so a caller that is waiting on this actor (the phone's ack) is not held up by the disk reads.
+    private func run(_ turn: ACPTurn, laterPreamble: (() -> String?)? = nil) {
         lastTurn = turn
         runtimeOffer = nil
         signInOptions = []
@@ -894,6 +907,21 @@ package final class ChatSession {
         lastRunDuration = nil
         let id = UUID()
         turnID = id
+        if let laterPreamble {
+            Task { [weak self] in
+                await Task.yield()
+                guard let self, self.turnID == id else { return }
+                var turn = turn
+                turn.preamble = laterPreamble()
+                self.launch(turn, id: id)
+            }
+            return
+        }
+        launch(turn, id: id)
+    }
+
+    private func launch(_ turn: ACPTurn, id: UUID) {
+        lastTurn = turn
         if let turnRunner {
             Task { [weak self] in await turnRunner(turn) { event in self?.handle(event, turn: id) } }
             return
