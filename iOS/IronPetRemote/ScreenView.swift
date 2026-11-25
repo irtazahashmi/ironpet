@@ -41,6 +41,7 @@ struct ScreenView: View {
         .navigationTitle("Screen")
         .navigationBarTitleDisplayMode(.inline)
         .themedScreen()
+        .fullPageLoadError(model)
         .screenPrivacy()
         .onChange(of: scenePhase) { _, phase in
             model.gate.scenePhaseChanged(phase)
@@ -82,12 +83,6 @@ struct ScreenView: View {
     private var list: some View {
         List {
             Group {
-                if let message = model.errorMessage {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("screen-error")
-                        Button("Retry") { Task { await model.refresh() } }.accessibilityIdentifier("screen-retry")
-                    }
-                }
                 if let notice = model.notice {
                     Label(notice, systemImage: "info.circle").accessibilityIdentifier("screen-notice")
                 }
@@ -210,9 +205,8 @@ struct ScreenCaptureView: View {
                         .accessibilityIdentifier("screen-capture-text")
                 } else if loading {
                     ProgressView()
-                } else if let message = model.errorMessage {
-                    Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("screen-capture-error")
-                    Button("Retry") { Task { await load() } }.accessibilityIdentifier("screen-capture-retry")
+                } else if model.network.failingSince != nil {
+                    LoadErrorView { await load() }
                 } else {
                     Text("This capture is gone or the screen is locked.").foregroundStyle(.secondary)
                 }

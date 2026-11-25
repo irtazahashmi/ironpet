@@ -27,6 +27,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var recordingKeys = RecordingKeys(voice: chatModel.voice, heldModifiers: {
         Shortcut(ConfigStore.shared.config.hotkeys.voice)?.modifiers ?? 0
     })
+    /// Dictation into other apps. It records with its own `VoiceController`, so the chat's voice note is untouched.
+    private lazy var dictation: DictationController = {
+        let controller = DictationController(delivery: DictationDelivery(focus: AXFocusReader(), board: .general, sendPaste: PasteKeystroke.send))
+        controller.voice.voiceKey = voiceKey
+        controller.canStart = { [weak self] in !(self?.chatModel.voice.isBusy ?? false) }
+        controller.onNotice = { [weak self] title, body in
+            self?.announcer.automation(AutomationNotice(id: "dictation", symbol: "mic.fill", tint: .warn, title: title, body: body, expires: 8))
+        }
+        return controller
+    }()
+    private lazy var dictationKeys = RecordingKeys(voice: dictation.voice)
     private let notifier = Notifier()
     private let installer = HookInstaller()
     private var automations: AutomationService!
@@ -271,6 +282,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // After the API exists: the hotkeys read the settings model, which builds the Telegram bridge over `api.chat`.
         registerHotKeys()
         _ = recordingKeys // Starts following the recording phase.
+        _ = dictationKeys
         // These read `api`, which `setUpAutomations()` builds.
         settingsModel.voice = api.voice
         telegram.onPairingRequest = { [weak self] request in
@@ -351,6 +363,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pet.agents = api.agents
         chatModel = ChatViewModel(api: api.chat, voiceAPI: api.voice, events: events)
         chatModel.voice.voiceKey = voiceKey
+        chatModel.voice.isEnabled = { [weak self] in ConfigStore.shared.config.voice.enabled && !(self?.dictation.voice.isBusy ?? false) }
         api.voice.voiceKey = voiceKey
         api.voice.transcoder = platform.audio
         // The settings model needs the API (through the Telegram bridge), so it is wired here and not in `wirePlatform`.
@@ -838,7 +851,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             || new.meetings.enabled != old.meetings.enabled || new.voiceMode.enabled != old.voiceMode.enabled { registerHotKeys() }
         if !new.voiceMode.enabled { voiceMode.conversation.end() }
         if new.telegram.enabled != old.telegram.enabled { telegram.setEnabled(new.telegram.enabled) }
-        if !new.voice.enabled { chatModel.voice.cancel() }
+        if !new.voice.enabled { chatModel.voice.cancel(); dictation.cancel() }
         if old.speech.enabled, !new.speech.enabled { chat.speech.stop() }
         if !new.meetings.enabled { meeting.dismiss() }
         startCallMonitor()
@@ -887,6 +900,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if hotKey.isRegistered { hotKeys.append(hotKey) } else { failed.insert(text) }
         } else if config.config.voice.enabled, !config.config.hotkeys.voice.isEmpty {
             failed.insert(config.config.hotkeys.voice)
+        }
+        // Dictation into the focused field of any app. Only registered with voice notes on; a press while recording stops.
+        if let text = DictationController.hotkey(in: config.config) {
+            if let shortcut = Shortcut(text) {
+                let hotKey = HotKey(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers, id: 13) { [weak self] in
+                    MainActor.assumeIsolated { self?.dictation.shortcutPressed() }
+                }
+                if hotKey.isRegistered { hotKeys.append(hotKey) } else { failed.insert(text) }
+            } else {
+                failed.insert(text)
+            }
         }
         // Start or stop a meeting transcript. Only registered with meetings on, and unbound by default.
         if let text = MeetingController.hotkey(in: config.config) {

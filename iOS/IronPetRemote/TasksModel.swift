@@ -4,12 +4,10 @@ import Observation
 
 /// The Tasks tab: the list as the Mac's `TaskListView` groups it, kept current by the event socket.
 @MainActor @Observable
-final class TasksModel {
+final class TasksModel: SocketModel {
     /// What the list shows: the Mac's tasks with the changes still waiting to sync applied on top.
     private(set) var tasks: [RemoteTask] = []
     private(set) var suggestions: [RemoteSuggestion] = []
-    private(set) var loaded = false
-    var errorMessage: String?
     /// The Mac's saved quick filters, in chip order. Empty when the Mac predates them, which hides the chips.
     private(set) var filters: [QuickFilter] = []
     /// False once the Mac answered 404 to the filter route.
@@ -23,23 +21,17 @@ final class TasksModel {
     /// The changes made on the phone that the Mac has not confirmed, oldest first. They are saved, so a relaunch keeps them.
     private(set) var pendingOps: [TaskOp] = []
 
-    @ObservationIgnored let client: IronPetClient
     @ObservationIgnored private let syncStore: (any TaskSyncStoring)?
     @ObservationIgnored private var serverTasks: [RemoteTask] = []
     @ObservationIgnored private var flushing = false
-    @ObservationIgnored private let events: any EventSignalSource
-    @ObservationIgnored private let onUnauthorized: () -> Void
-    @ObservationIgnored private var listener: Task<Void, Never>?
     @ObservationIgnored private let defaults: UserDefaults
 
     init(client: IronPetClient, events: (any EventSignalSource)? = nil, defaults: UserDefaults = .standard, store: (any TaskSyncStoring)? = nil,
-         onUnauthorized: @escaping () -> Void) {
-        self.client = client
+         network: NetworkHealth? = nil, onUnauthorized: @escaping () -> Void) {
         self.syncStore = store
         self.defaults = defaults
         self.selectedFilterID = QuickFilterSelection.load(defaults)
-        self.events = events ?? EventConnection(client: client)
-        self.onUnauthorized = onUnauthorized
+        super.init(client: client, events: events ?? EventConnection(client: client), network: network, onUnauthorized: onUnauthorized)
         // The last list the Mac sent and the changes that never reached it show at once, before the first request.
         if let snapshot = store?.loadSnapshot() {
             serverTasks = snapshot.tasks
@@ -54,7 +46,17 @@ final class TasksModel {
     // MARK: Pending sync
 
     /// True while a change to this task waits for the Mac. A created task has a local id until the Mac answers.
-    func isPendingSync(_ id: String) -> Bool { pendingOps.contains { $0.taskID == id } }
+    func isPendingSync(_ id: String) -> Bool {
+        #if DEBUG
+        if debugAllPending { return true }
+        #endif
+        return pendingOps.contains { $0.taskID == id }
+    }
+
+    #if DEBUG
+    /// UI tests mark every task as waiting to sync, to take a screenshot of the mark without queueing real changes.
+    @ObservationIgnored var debugAllPending = false
+    #endif
 
     /// The ids of the tasks with a change waiting for the Mac.
     var pendingSyncIDs: Set<String> { Set(pendingOps.map(\.taskID)) }
@@ -98,68 +100,49 @@ final class TasksModel {
 
     // MARK: Loading
 
-    /// Loads the list, then follows the event socket until `stop()`.
-    func start() {
-        guard listener == nil else { return }
-        let signals = events.signals()
-        listener = Task { [weak self] in
-            for await signal in signals {
-                guard let self else { return }
-                await self.handle(signal)
-            }
-        }
-        Task {
-            await flush()
-            await reload()
-        }
-    }
-
-    func stop() {
-        listener?.cancel()
-        listener = nil
-    }
-
-    func handle(_ signal: EventSignal) async {
-        switch signal {
-        // The Mac is reachable again: send what waited for it first, so the reload shows the result.
-        case .connected, .resync:
-            await flush()
-            await reload()
-        case .resumed: await flush()
-        case .unauthorized: onUnauthorized()
-        case .event(let event):
-            switch event.kind {
-            case RemoteEvent.tasksChanged: await reloadTasks()
-            case RemoteEvent.suggestionsChanged: await reloadSuggestions()
-            case RemoteEvent.settingsChanged: await reloadFilters()
-            default: break
-            }
-        }
-    }
-
-    func reload() async {
+    /// The Mac is reachable again: send what waited for it first, so the reload shows the result.
+    override func reload() async {
+        await flush()
         await reloadTasks()
         await reloadSuggestions()
         await reloadFilters()
-        loaded = true
+    }
+
+    override func handle(_ signal: EventSignal) async {
+        if case .resumed = signal { await flush() }
+        await super.handle(signal)
+    }
+
+    override func handle(_ event: RemoteEvent) async {
+        switch event.kind {
+        case RemoteEvent.tasksChanged: await reloadTasks()
+        case RemoteEvent.suggestionsChanged: await reloadSuggestions()
+        case RemoteEvent.settingsChanged: await reloadFilters()
+        default: break
+        }
     }
 
     /// A 404 means the Mac is older than quick filters: no chips, and no error banner.
     func reloadFilters() async {
         do {
-            filters = QuickFilter.chips(try await client.taskFilters())
+            let list = try await RequestRetry.perform(network.retryPolicy, sleep: network.sleep) { try await self.client.taskFilters() }
+            network.reportAnswered()
+            filters = QuickFilter.chips(list)
             filtersSupported = true
             persistSnapshot()
             if let id = selectedFilterID, !filters.contains(where: { $0.id == id }) { selectedFilterID = nil }
         } catch ClientError.api(let status, _, _) where status == 404 {
+            network.reportAnswered()
             filters = []
             filtersSupported = false
             selectedFilterID = nil
             persistSnapshot()
         } catch ClientError.unauthorized {
             onUnauthorized()
+        } catch is CancellationError {
         } catch {
-            // Keep the chips that are shown; the task list has its own error banner.
+            // Keep the chips that are shown. The strip reports the connection.
+            network.report(error)
         }
     }
 
@@ -174,7 +157,7 @@ final class TasksModel {
     }
 
     func reloadTasks() async {
-        if let list = await run({ try await self.client.tasks() }) {
+        if let list = await read({ try await self.client.tasks() }) {
             serverTasks = list
             rebuild()
             persistSnapshot()
@@ -182,23 +165,7 @@ final class TasksModel {
     }
 
     func reloadSuggestions() async {
-        if let list = await run({ try await self.client.suggestions() }) { suggestions = list }
-    }
-
-    /// Runs one request. A 401 drops the token; any other failure becomes the visible error.
-    @discardableResult
-    func run<T>(_ call: () async throws -> T) async -> T? {
-        do {
-            let value = try await call()
-            errorMessage = nil
-            return value
-        } catch ClientError.unauthorized {
-            onUnauthorized()
-        } catch is CancellationError {
-        } catch {
-            errorMessage = error.localizedDescription
-        }
-        return nil
+        if let list = await read({ try await self.client.suggestions() }) { suggestions = list }
     }
 
     // MARK: Actions
@@ -214,7 +181,7 @@ final class TasksModel {
     func detail(_ id: String) async -> RemoteTaskDetail? {
         // A task created offline has no page on the Mac yet.
         if TaskOp.isLocal(id) { return nil }
-        return await run { try await self.client.task(id: id) }
+        return await read { try await self.client.task(id: id) }
     }
 
     /// Each change applies on the phone at once, waits in `pendingOps` and goes to the Mac in order. True when the Mac took it or it is
@@ -345,7 +312,9 @@ final class TasksModel {
         for _ in 0..<3 {
             if op.kind != .create, TaskOp.isLocal(op.taskID) { return .dropped(nil) }
             do {
-                return .applied(try await perform(op))
+                let task = try await perform(op)
+                network.reportAnswered()
+                return .applied(task)
             } catch ClientError.api(let status, _, _) where status == 409 && op.kind != .create {
                 // The task changed on the Mac after the phone read it. The Mac's value wins for each field it changed.
                 do {
@@ -364,6 +333,7 @@ final class TasksModel {
     }
 
     private func outcome(for error: Error, _ op: TaskOp) -> Outcome {
+        if !(error is CancellationError), error as? ClientError != .unauthorized { network.report(error) }
         switch error {
         case ClientError.unauthorized: return .unauthorized
         case is CancellationError: return .unreachable
