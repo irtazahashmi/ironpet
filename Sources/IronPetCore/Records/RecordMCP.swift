@@ -7,9 +7,10 @@ package enum RecordMCP {
 
     package static let tools: [[String: Any]] = [
         ["name": name,
-         "description": "Get one record by its id, whatever its kind: a task (task_…), a background job (job_…), an automation (auto_…) or a "
-            + "saved quick filter (filter_…). Old ids also work: a task's slug, a job's job-… id, an automation's id or a filter's id. "
-            + "Returns the record as the tool for its kind would.",
+         "description": "Get one record by its id, whatever its kind: a task (task_…), a background job (job_…), an automation (auto_…), "
+            + "one automation run (run_…), a saved quick filter (filter_…), a screen capture (screen_…), a meeting (meeting_…), a chat "
+            + "(chat_…), a chat message (msg_…), a notification (notif_…), a memory page (page_…) or a memory claim (claim_…). Old ids also "
+            + "work: a task's slug, a job's job-… id, an automation's id or a filter's id. Returns the record as the tool for its kind would.",
          "inputSchema": ["type": "object",
                          "properties": ["id": ["type": "string", "minLength": 1, "description": "A record id, such as task_9f3c1e"]],
                          "required": ["id"]]],

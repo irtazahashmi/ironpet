@@ -40,9 +40,11 @@ public struct RemoteTask: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var updated: Date
     /// What made the task, as the agent recorded it: a JSON object, or text when it is not JSON.
     public var sourceRef: RemoteJSON?
+    /// The public `task_<hex>` id. Nil from a Mac older than record ids.
+    public var ref: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, title, notes, status, source, due, closed, links, labels, created, updated
+        case id, title, notes, status, source, due, closed, links, labels, created, updated, ref
         case waitingOn = "waiting_on"
         case sourceRef = "source_ref"
     }
@@ -50,10 +52,10 @@ public struct RemoteTask: Codable, Equatable, Hashable, Identifiable, Sendable {
     public init(id: String, title: String, notes: String = "", status: TaskStatus = .backlog, source: String = "user", due: Date? = nil,
                 closed: Date? = nil, waitingOn: String? = nil, links: [TaskLink] = [], labels: [String: String] = [:],
                 created: Date = Date(timeIntervalSince1970: 1_700_000_000), updated: Date = Date(timeIntervalSince1970: 1_700_000_000),
-                sourceRef: RemoteJSON? = nil) {
+                sourceRef: RemoteJSON? = nil, ref: String? = nil) {
         self.id = id; self.title = title; self.notes = notes; self.status = status; self.source = source; self.due = due
         self.closed = closed; self.waitingOn = waitingOn; self.links = links; self.labels = labels; self.created = created; self.updated = updated
-        self.sourceRef = sourceRef
+        self.sourceRef = sourceRef; self.ref = ref
     }
 
     public init(from decoder: Decoder) throws {
@@ -71,6 +73,7 @@ public struct RemoteTask: Codable, Equatable, Hashable, Identifiable, Sendable {
         created = try c.decode(Date.self, forKey: .created)
         updated = try c.decode(Date.self, forKey: .updated)
         sourceRef = try c.decodeIfPresent(RemoteJSON.self, forKey: .sourceRef)
+        ref = try c.decodeIfPresent(String.self, forKey: .ref)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -88,6 +91,7 @@ public struct RemoteTask: Codable, Equatable, Hashable, Identifiable, Sendable {
         try c.encode(created, forKey: .created)
         try c.encode(updated, forKey: .updated)
         try c.encodeIfPresent(sourceRef, forKey: .sourceRef)
+        try c.encodeIfPresent(ref, forKey: .ref)
     }
 
     /// Only the user can take the next step. A task waiting on someone else never counts, whatever its status.

@@ -189,7 +189,9 @@ package final class IronPetAPI {
             screen: { [weak self] in self?.screen },
             notifications: { [weak self] in self?.notifications },
             meetings: { [weak self] in self?.meetings },
-            chat: { [weak self] in self?.chat }))
+            chat: { [weak self] in self?.chat },
+            memory: { [weak self] in self?.memory },
+            automations: { [weak self] in self?.automations }))
     }
 
     package func attach(memory services: @escaping () -> MemoryMCP.Services?) {

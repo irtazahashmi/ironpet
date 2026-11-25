@@ -8,7 +8,7 @@ extension RemoteTask {
         self.init(id: item.id, title: item.title, notes: item.notes, status: IronPetKit.TaskStatus(rawValue: item.status.rawValue) ?? .backlog,
                   source: item.source.rawValue, due: item.due, closed: item.closed, waitingOn: item.waitingOn,
                   links: item.links.map { IronPetKit.TaskLink(kind: $0.kind.rawValue, ref: $0.ref, label: $0.label) }, labels: item.labels,
-                  created: item.created, updated: item.updated, sourceRef: item.sourceRef.map { RemoteJSON(reference: $0) })
+                  created: item.created, updated: item.updated, sourceRef: item.sourceRef.map { RemoteJSON(reference: $0) }, ref: item.ref)
     }
 }
 
