@@ -47,7 +47,7 @@ final class AgentOwnerTests: XCTestCase {
         {"agent":"cursor","id":"old-thread","items":[],"title":"Old chat","updatedAt":"2026-01-01T10:00:00Z","workspace":"/tmp/work"}
         """
 
-    func testAThreadFileWithoutAnOwnerBelongsToAgentOneAndIsNotRewritten() throws {
+    func testAThreadFileWithoutAnOwnerBelongsToAgentOneAndIsNotRewritten() async throws {
         try FileManager.default.createDirectory(at: ThreadStore.directory, withIntermediateDirectories: true)
         let file = ThreadStore.directory.appendingPathComponent("old-thread.json")
         try Data(oldThread.utf8).write(to: file)
@@ -62,7 +62,7 @@ final class AgentOwnerTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), oldThread, "reading does not rewrite the file")
     }
 
-    func testAThreadSavedWithoutAnOwnerWritesNoOwnerField() throws {
+    func testAThreadSavedWithoutAnOwnerWritesNoOwnerField() async throws {
         ThreadStore.save(ChatThread(id: "plain", title: "t", workspace: "/tmp", updatedAt: Date(), items: [], agent: "cursor"))
         let text = try String(contentsOf: ThreadStore.directory.appendingPathComponent("plain.json"), encoding: .utf8)
         XCTAssertFalse(text.contains("agentId"))
@@ -72,7 +72,7 @@ final class AgentOwnerTests: XCTestCase {
         XCTAssertEqual(ThreadStore.all(agent: "agent_default").map(\.id), ["plain"])
     }
 
-    func testAnAutomationFileWithoutOwnersLoadsAsAgentOneAndIsNotRewritten() throws {
+    func testAnAutomationFileWithoutOwnersLoadsAsAgentOneAndIsNotRewritten() async throws {
         let file = directory.appendingPathComponent("automations.json")
         let text = """
             {
@@ -108,7 +108,7 @@ final class AgentOwnerTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), text, "loading does not rewrite the file")
     }
 
-    func testASessionNoHookAttributedBelongsToAgentOne() {
+    func testASessionNoHookAttributedBelongsToAgentOne() async {
         let store = SessionStore()
         store.apply(HookEvent(source: .claude, name: "UserPromptSubmit", payload: ["session_id": "a", "prompt": "hi"], origin: SessionOrigin()))
         store.apply(HookEvent(source: .claude, name: "UserPromptSubmit", payload: ["session_id": "b", "prompt": "hi"], origin: SessionOrigin(),
@@ -169,7 +169,7 @@ final class AgentOwnerTests: XCTestCase {
         XCTAssertEqual((unknown["error"] as? [String: Any])?["code"] as? Int, -32001)
     }
 
-    func testTheSessionToolsListAsTheCallingAgent() throws {
+    func testTheSessionToolsListAsTheCallingAgent() async throws {
         let context = AssistantContext()
         let sessions = [AgentSession(id: "s1", source: .claude, status: .running), AgentSession(id: "s2", source: .codex, status: .running, agentId: "agent_two")]
         context.sessions = { sessions }
@@ -207,7 +207,7 @@ final class AgentOwnerTests: XCTestCase {
         "{\"name\":\"\(name)\",\"trigger\":{\"type\":\"interval\",\"minutes\":30,\"clock\":\"wall\"},\"action\":{\"type\":\"bubble\",\"title\":\"hi\"}}"
     }
 
-    func testAnAutomationIsCreatedForTheAgentNamedOrAgentOne() throws {
+    func testAnAutomationIsCreatedForTheAgentNamedOrAgentOne() async throws {
         let (api, _) = try automationRig()
         XCTAssertEqual(try api.create(CreateAutomationRequest(definition: definition("From the UI"))).agentId, "agent_default")
         XCTAssertEqual(try api.create(CreateAutomationRequest(definition: definition("For two"), agentId: "agent_two")).agentId, "agent_two")
@@ -266,7 +266,7 @@ final class AgentOwnerTests: XCTestCase {
         XCTAssertTrue(text.contains("Theirs"), "the automation's own session lists its owner's automations")
     }
 
-    func testAnOwnerWrittenOnABuiltInIsIgnored() throws {
+    func testAnOwnerWrittenOnABuiltInIsIgnored() async throws {
         var morning = AutomationDefaults.morningBrief()
         morning.agentId = "agent_two"
         XCTAssertNil(morning.ownerAgentID)
