@@ -31,10 +31,7 @@ final class ChatTextSizeUITests: XCTestCase {
         app.launchArguments = (reset ? ["--reset-credentials"] : []) + (dark ? ["--force-dark"] : [])
         app.launch()
         if reset {
-            let field = app.textFields["pairing-link-field"]
-            XCTAssertTrue(field.waitForExistence(timeout: 10))
-            field.tap()
-            field.typeText(server.pairingLink)
+            app.enterPairingLink(server.pairingLink)
             app.buttons["pair-button"].tap()
         }
     }

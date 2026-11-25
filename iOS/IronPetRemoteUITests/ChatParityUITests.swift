@@ -60,10 +60,7 @@ final class ChatParityUITests: XCTestCase {
     private func pair() {
         app.launchArguments = ["--reset-credentials"] + (dark ? ["--force-dark"] : [])
         app.launch()
-        let field = app.textFields["pairing-link-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.tap()
-        field.typeText(server.pairingLink)
+        app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
     }
 

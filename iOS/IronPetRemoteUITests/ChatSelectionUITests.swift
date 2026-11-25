@@ -40,10 +40,7 @@ final class ChatSelectionUITests: XCTestCase {
         server.chat.state = "done"
         app.launchArguments = ["--reset-credentials"]
         app.launch()
-        let field = app.textFields["pairing-link-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.tap()
-        field.typeText(server.pairingLink)
+        app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         let tab = app.tabBars.buttons["Chat"]
         XCTAssertTrue(tab.waitForExistence(timeout: 20))
