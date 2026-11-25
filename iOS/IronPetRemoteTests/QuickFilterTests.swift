@@ -41,6 +41,7 @@ final class QuickFilterPhoneTests: XCTestCase {
     func testTheChipsAreTheMacsFiltersAndPickingOneFiltersTheListLocally() async {
         let model = model()
         await model.reload()
+        await model.setShowsDone(true)
         XCTAssertEqual(model.filters.map(\.name), ["Epic", "Needs me"])
         XCTAssertEqual(Set((model.needsYou + model.inProgress + model.backlog + model.waiting + model.done).map(\.id)), ["t-epic", "t-mine", "t-done"], "All shows everything")
 
@@ -139,6 +140,7 @@ final class QuickFilterPhoneTests: XCTestCase {
         QuickFilterSelection.save("deleted", defaults)
         let model = model(defaults: defaults)
         await model.reload()
+        await model.setShowsDone(true)
         XCTAssertNil(model.selectedFilterID)
         XCTAssertNil(QuickFilterSelection.load(defaults))
         XCTAssertNil(model.errorMessage)

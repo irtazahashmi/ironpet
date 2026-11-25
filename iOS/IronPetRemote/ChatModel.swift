@@ -148,7 +148,6 @@ final class ChatModel: SocketModel {
     /// The ETag of the page the Mac last answered and the phone holds as it is. Nil once a message changed on the phone, so the next read asks in full.
     @ObservationIgnored private var etag: String?
     @ObservationIgnored private var cache: (any ChatCaching)?
-    @ObservationIgnored private var reloadDebounce: Task<Void, Never>?
     var draft = ""
     var attachments: [PendingAttachment] = []
     /// The message the next one answers.
@@ -257,12 +256,6 @@ final class ChatModel: SocketModel {
 
     override func reload() async { await fetch() }
 
-    override func stop() {
-        reloadDebounce?.cancel()
-        reloadDebounce = nil
-        super.stop()
-    }
-
     /// Loads the page of messages before the oldest one shown. The transcript calls it when its top comes into view, so a long chat
     /// reads a page at a time. A failure leaves the top as it was; the next time the top shows, it tries again.
     func loadOlder() async {
@@ -278,12 +271,7 @@ final class ChatModel: SocketModel {
     /// A reload after a burst of `chat.state` events. It waits until the events stop, so a turn that changes the state many times reads
     /// the chat once.
     private func scheduleReload() {
-        reloadDebounce?.cancel()
-        reloadDebounce = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled, let self else { return }
-            await self.reload()
-        }
+        debouncer.run("chat") { [weak self] in await self?.reload() }
     }
 
     /// Reads the newest page of chat, and keeps the older pages already loaded before it. Returns false when the read failed. The shared

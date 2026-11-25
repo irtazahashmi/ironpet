@@ -36,9 +36,9 @@ final class AssetCacheOnPhoneTests: XCTestCase {
     var directory: URL!
 
     override func setUpWithError() throws {
+        directory = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-phone-assets-\(UUID().uuidString)")
         server = MockIronPetServer()
         try server.start()
-        directory = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-phone-assets-\(UUID().uuidString)")
     }
 
     override func tearDown() {

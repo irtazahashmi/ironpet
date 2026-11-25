@@ -112,6 +112,7 @@ final class TasksModelTests: XCTestCase {
     func testSectionsFollowTheMacsList() async {
         let model = makeModel()
         await model.reload()
+        await model.setShowsDone(true)
         XCTAssertEqual(model.suggestions.map(\.id), ["s-1", "s-2"])
         XCTAssertEqual(model.needsYou.map(\.id), ["t-needs"])
         XCTAssertEqual(model.inProgress.map(\.id), ["t-progress"])
@@ -128,6 +129,7 @@ final class TasksModelTests: XCTestCase {
         server.tasks = server.tasks.map { $0.id == "t-done" ? recent : $0 }
         let model = makeModel()
         await model.reload()
+        await model.setShowsDone(true)
         return model
     }
 
@@ -215,6 +217,7 @@ final class TasksModelTests: XCTestCase {
         await model.reload()
         let closed = await model.close("t-needs", note: "checked")
         XCTAssertTrue(closed)
+        await model.setShowsDone(true)
         XCTAssertTrue(model.done.contains { $0.id == "t-needs" })
         let moved = await model.setStatus("t-backlog", status: .inProgress, note: "started")
         XCTAssertTrue(moved)
