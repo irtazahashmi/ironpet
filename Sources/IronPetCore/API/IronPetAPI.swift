@@ -118,6 +118,7 @@ package final class IronPetAPI {
         session = SessionAPI(clients: registry, events: events, node: node.info()) { served() }
         stores.tasks.events = events
         stores.automations.store.events = events
+        stores.automations.registry = stores.agents
         tasks = TasksAPI(store: stores.tasks, config: stores.config)
         automations = AutomationsAPI(service: stores.automations)
         stores.signals.events = events
@@ -128,9 +129,11 @@ package final class IronPetAPI {
         notifications = NotificationsAPI(store: stores.notifications)
         stores.sessions.events = events
         agents = AgentsAPI(store: stores.sessions)
+        agents.registry = stores.agents
         agentRecords = stores.agents.map { AgentRecordsAPI(registry: $0) }
         stores.chat.events = events
         chat = ChatAPI(session: stores.chat, files: stores.files)
+        chat.registry = stores.agents
         chat.background = stores.permissions
         alerts.permissions = stores.permissions
         stores.meeting.events = events

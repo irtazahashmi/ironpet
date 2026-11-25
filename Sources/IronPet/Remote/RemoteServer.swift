@@ -406,7 +406,10 @@ final class RemoteServer {
 
     /// Automations (phase 4). The device is the author of what it creates or changes, so risky automations wait for Approve on the Mac.
     private func addAutomationRoutes(to router: Router<RemoteContext>) {
-        router.get("/v1/automations") { [self] _, context in await self.phoneFour(context) { RemoteAutomations(api: $0, device: $1).list() } }
+        router.get("/v1/automations") { [self] request, context in
+            let agent = Self.query(request)["agentId"]?.first
+            return await self.phoneFour(context) { try RemoteAutomations(api: $0, device: $1).list(agentId: agent) }
+        }
         router.post("/v1/automations") { [self] request, context in
             let body = try await Self.object(request, context)
             return await self.phoneFour(context, status: 201) { try RemoteAutomations(api: $0, device: $1).create(body) }
@@ -561,7 +564,10 @@ final class RemoteServer {
             let path = Self.query(request)["path"]?.first ?? ""
             return await self.filePreview(path, context)
         }
-        router.get("/v1/chat/threads") { [self] _, context in await self.chat(context) { await $0.threads() } }
+        router.get("/v1/chat/threads") { [self] request, context in
+            let agent = Self.query(request)["agentId"]?.first
+            return await self.chat(context) { try await $0.threads(agentId: agent) }
+        }
         router.get("/v1/chat/threads/:id") { [self] _, context in
             let id = Self.parameter(context, "id")
             return await self.chat(context) { try await $0.thread(id) }
@@ -660,7 +666,10 @@ final class RemoteServer {
             let id = Self.parameter(context, "id"), action = Self.parameter(context, "action")
             return await self.resources(context) { try $0.press(bubble: id, action: action) }
         }
-        router.get("/v1/agents") { [self] _, context in await self.resources(context) { $0.agents() } }
+        router.get("/v1/agents") { [self] request, context in
+            let agent = Self.query(request)["agentId"]?.first
+            return await self.resources(context) { try $0.agents(agentId: agent) }
+        }
         router.get("/v1/agents/:id") { [self] _, context in
             let id = Self.parameter(context, "id")
             return await self.resources(context) { try $0.agent(id) }

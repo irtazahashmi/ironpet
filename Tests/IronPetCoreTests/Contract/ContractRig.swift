@@ -21,11 +21,25 @@ final class ContractRig {
     /// What the transport knows about the caller. A fixture is a client that connected over stdio, so `session.hello` has a connection.
     let connection = RPCConnection(deviceID: "contract-cli", name: "Contract test", kind: .cli, connection: .inProcess)
 
-    /// `seed` names the state a fixture starts from: `alerts`, `agents`, `memory`, `asks`, `screen`, `screenUnsupported`.
+    /// The agent id `agentTwo` adds.
+    static let secondAgentID = "agent_two"
+
+    private let threadsBefore: URL
+
+    /// `seed` names the state a fixture starts from: `alerts`, `agents`, `memory`, `asks`, `screen`, `screenUnsupported`, and `agentTwo`,
+    /// which adds a second agent with a thread and a session of its own beside agent 1's.
     init(seed: [String] = []) throws {
         TestMemory.isolate()
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-contract-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        // The chat reads threads when it is built, so they are the rig's own and never the user's.
+        threadsBefore = ThreadStore.directory
+        ThreadStore.directory = directory.appendingPathComponent("threads")
+        if seed.contains("agentTwo") {
+            ThreadStore.save(ChatThread(id: "thread-one", title: "Agent one's chat", workspace: "/tmp", updatedAt: Self.epoch, items: [], agent: "cursor"))
+            ThreadStore.save(ChatThread(id: "thread-two", title: "Agent two's chat", workspace: "/tmp", updatedAt: Self.epoch.addingTimeInterval(-60),
+                                        items: [], agent: "claude", agentId: Self.secondAgentID))
+        }
         let now = { ContractRig.epoch }
         let tasks = TaskStore(database: Self.memoryDatabase(), now: now, keepDoneDays: { 30 })
         let paths = AutomationPaths(file: directory.appendingPathComponent("automations.json"), directory: directory.appendingPathComponent("automations"))
@@ -33,6 +47,9 @@ final class ContractRig {
         let engine = AutomationEngine(env: AutomationEngine.Environment(now: now, calendar: Self.calendar))
         let service = AutomationService(store: store, engine: engine)
         service.runShell = { _, _ in CommandResult(code: 0, stdout: "ok") }
+        let registryDatabase = Self.memoryDatabase()
+        let registry = AgentRegistry(database: registryDatabase, now: now)
+        if seed.contains("agentTwo") { try Self.addAgent(Self.secondAgentID, number: 2, cli: "claude", model: "opus", to: registryDatabase) }
         let chat = ChatSession(restore: false, speech: UnsupportedSpeechOutput())
         let signals = SignalStore()
         let sessions = SessionStore()
@@ -42,7 +59,7 @@ final class ContractRig {
             meeting: UnsupportedMeetingRecorder(), meetingLibrary: MeetingLibrary(root: directory.appendingPathComponent("meetings")),
             config: ConfigStore(memory: Config()), speech: chat.speech,
             files: FolderFileIntake(directory: directory.appendingPathComponent("attachments")), nodeID: ContractRig.nodeID,
-            agents: AgentRegistry(database: Self.memoryDatabase(), now: now)))
+            agents: registry))
         api.today.now = now
         api.today.calendar = Self.calendar
         dispatcher = RPCDispatcher(api: api)
@@ -54,6 +71,12 @@ final class ContractRig {
         if seed.contains("agents") {
             sessions.loadPreview([AgentSession(id: "session-1", source: .claude, status: .needsInput, prompt: "Fix the build",
                                                updatedAt: Self.epoch, turnStartedAt: Self.epoch)])
+        }
+        if seed.contains("agentTwo") {
+            sessions.loadPreview([AgentSession(id: "session-1", source: .claude, status: .needsInput, prompt: "Agent one's session",
+                                               updatedAt: Self.epoch, turnStartedAt: Self.epoch),
+                                  AgentSession(id: "session-2", source: .codex, status: .running, prompt: "Agent two's session",
+                                               updatedAt: Self.epoch, turnStartedAt: Self.epoch, agentId: Self.secondAgentID)])
         }
         if seed.contains("asks") {
             api.alerts.askHandler = { _ in }
@@ -67,7 +90,18 @@ final class ContractRig {
         }
     }
 
-    deinit { try? FileManager.default.removeItem(at: directory) }
+    deinit {
+        ThreadStore.directory = threadsBefore
+        try? FileManager.default.removeItem(at: directory)
+    }
+
+    /// Adds a second agent to the registry's database. No API creates one yet, so tests write the row.
+    static func addAgent(_ id: String, number: Int, cli: String, model: String?, permissions: String = "{}", to database: Database) throws {
+        try database.write { db in
+            try db.execute("INSERT INTO agents(id, number, name, agent_cli, model, permissions, created, updated) VALUES(?, ?, ?, ?, ?, ?, 0, 0)",
+                           [id, number, "Agent \(number)", cli, model, permissions])
+        }
+    }
 
     static let calendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)

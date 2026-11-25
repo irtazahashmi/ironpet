@@ -297,6 +297,11 @@ package struct RemoteChat {
 
     package func threads() async -> [String: Any] { ["threads": await api.chat.threads().map(Self.json)] }
 
+    /// The threads one agent owns, newest first. Nil is agent 1.
+    package func threads(agentId: String?) async throws -> [String: Any] {
+        ["threads": try await api.chat.threads(agentId: agentId).map(Self.json)]
+    }
+
     package func thread(_ id: String) async throws -> [String: Any] {
         let found = try await api.chat.thread(id)
         var object = Self.json(found.info)

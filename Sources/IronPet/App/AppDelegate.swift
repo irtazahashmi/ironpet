@@ -589,6 +589,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let context = AssistantContext()
         context.jobs = { [weak self] in self?.jobs }
         context.sessions = { [weak self] in self?.store.ordered.filter { $0.source != .job } ?? [] }
+        context.resolveAgent = { [weak self] id in try AgentOwner.resolve(id, registry: self?.api?.agentRecords?.registry) }
         context.tasks = { [weak self] in self?.api?.tasks }
         context.alerts = { [weak self] in self?.signals.signals ?? [] }
         context.brief = { [weak self] kind in self?.brief?.brief(BriefRequest(kind: kind)) }
@@ -1291,7 +1292,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         server.onAgentAPI = { [weak self] request, respond in
             MCPEndpoint.route(request, automations: { self?.api?.automations }, tasks: { self?.api?.tasks }, screen: { self?.api?.screen },
                               desktop: { self?.api?.desktop }, memory: { self?.api?.memory }, assistant: { self?.api?.assistant },
-                              notifications: { self?.api?.notifications }, records: { self?.api?.records }, agentRecords: { self?.api?.agentRecords }, respond: respond)
+                              notifications: { self?.api?.notifications }, records: { self?.api?.records }, agentRecords: { self?.api?.agentRecords },
+                              chat: { self?.api?.chat }, respond: respond)
         }
         try server.start()
         self.server = server

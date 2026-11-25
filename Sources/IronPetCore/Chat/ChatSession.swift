@@ -273,7 +273,9 @@ package final class ChatSession {
             onFormsChanged?()
         }
     }
-    package private(set) var history: [ChatThread] = ThreadStore.recent() {
+    /// The agent whose main chat this is. Its threads are the ones `history` lists. Agent 1 until each agent has a chat of its own.
+    package let ownerAgentID = AgentOwner.defaultID
+    package private(set) var history: [ChatThread] = ThreadStore.recent(agent: AgentOwner.defaultID) {
         willSet { changes.send() }
         didSet { events?.publish(.chatState, id: "threads") }
     }
@@ -784,7 +786,8 @@ package final class ChatSession {
             if case .user(let text) = item.kind { return text } else { return nil }
         }.first ?? "Chat"
         let title = firstPrompt.count > 60 ? String(firstPrompt.prefix(57)) + "…" : firstPrompt
-        var thread = ChatThread(id: threadID, title: title, workspace: workspace.path, updatedAt: Date(), items: items, agent: agent.id)
+        var thread = ChatThread(id: threadID, title: title, workspace: workspace.path, updatedAt: Date(), items: items, agent: agent.id,
+                                agentId: ownerAgentID)
         // Continuing an automation's thread keeps it marked as one, and keeps its run count.
         if let earlier = ThreadStore.load(threadID), earlier.automation != nil {
             thread.title = earlier.title
@@ -801,11 +804,11 @@ package final class ChatSession {
         thread.previousSessions = previousSessions.isEmpty ? nil : previousSessions
         thread.handoff = pendingHandoff
         ThreadStore.save(thread)
-        history = ThreadStore.recent()
+        history = ThreadStore.recent(agent: ownerAgentID)
     }
 
     /// Reloads the thread list after something else saved a thread, such as an automation run.
-    package func refreshHistory() { history = ThreadStore.recent() }
+    package func refreshHistory() { history = ThreadStore.recent(agent: ownerAgentID) }
 
     /// A background job saved `thread`. When it is the one on screen and no turn of the chat's own is running, the
     /// transcript shows the job's new steps.

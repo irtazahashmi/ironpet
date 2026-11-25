@@ -263,11 +263,12 @@ Coding-agent sessions ironpet watches.
 | `agents.acknowledgeAll` | none | `null` | none |
 | `agents.ask` | `ID` | `null` | `POST /v1/agents/:id/ask` |
 | `agents.get` | `ID` | `AgentSession` | `GET /v1/agents/:id` |
-| `agents.list` | none | `[AgentSession]` | `GET /v1/agents` |
+| `agents.list` | `AgentScopeRequest` | `[AgentSession]` | `GET /v1/agents` |
 
 `agents.focus` is not on the wire. It needs a window on the Mac that runs the host, so it stays in Swift.
 
-`status` is the raw number of `AgentStatus` (0 idle, 1 running, 2 done, 3 failed, 4 needs input, as the Swift enum orders them).
+`status` is the raw number of `AgentStatus` (0 idle, 1 running, 2 done, 3 failed, 4 needs input, as the Swift enum orders them). `agentId` is the id
+of the agent that launched the session. It is left out when no hook said, which is agent 1. See "Agent owners".
 
 ### `automations`
 
@@ -280,7 +281,7 @@ Reminders, watchers and scheduled jobs.
 | `automations.delete` | `ID` | `null` | `DELETE /v1/automations/:id` |
 | `automations.get` | `ID` | `Automation` | `GET /v1/automations/:id` |
 | `automations.history` | `AutomationHistoryRequest` | `[AutomationRunInfo]` | `GET /v1/automations/:id/history` |
-| `automations.list` | none | `[Automation]` | `GET /v1/automations` |
+| `automations.list` | `AgentScopeRequest` | `[Automation]` | `GET /v1/automations` |
 | `automations.logs` | `AutomationLogRequest` | `[AutomationLogEntry]` | `GET /v1/automations/:id/log` |
 | `automations.reject` | `ID` | `null` | none |
 | `automations.runNow` | `ID` | `AutomationRunResult` | `POST /v1/automations/:id/run-now` |
@@ -288,6 +289,9 @@ Reminders, watchers and scheduled jobs.
 | `automations.setSchedule` | `SetAutomationScheduleRequest` | `null` | none |
 | `automations.status` | `ID` | `AutomationStatus` | none |
 | `automations.update` | `UpdateAutomationRequest` | `Automation` | `PATCH /v1/automations/:id` |
+
+`automations.create` also takes an optional `agentId` beside `definition` and `by`. `Automation` has an optional `agentId`: the agent that owns it. See
+"Agent owners".
 
 `automations.setEnabled` takes `{"id", "enabled"}`. REST has two routes for it, pause and resume. `definition` and `changes` are JSON documents inside a string, as in Swift.
 
@@ -309,7 +313,7 @@ The open chat with Ghost.
 | `chat.status` | none | `ChatStatus` | none |
 | `chat.stop` | none | `ChatStopResult` | `POST /v1/chat/current/stop` |
 | `chat.submitForm` | `UUIDParam` | `null` | `POST /v1/chat/forms/:id/submit` |
-| `chat.threads` | none | `[ChatThreadInfo]` | `GET /v1/chat/threads` |
+| `chat.threads` | `AgentScopeRequest` | `[ChatThreadInfo]` | `GET /v1/chat/threads` |
 
 `origin` is `{"client", "ref", "device"}`. `client` is the kind of sender such as `ios` or `telegram`, `ref` is its own id for the conversation, and `device` is the paired device's id when there is one. "My screen" in the turn means that device's screen (see "Clients and capabilities"). `chat.send` with an empty text and no `origin` returns `{"outcome": "ignored"}`. With an `origin` it fails with `invalid`. `chat.thread` returns a tuple in Swift, so it is not on the wire yet.
 
@@ -377,6 +381,31 @@ Today there is one agent, agent 1, with `number` 1 and the id `agent_default`, t
 An empty id also finds agent 1. `agent.get` with any other unknown id fails with `notFound`. Both methods fail with `unavailable` on a host
 with no database. `GET /v1/agent-records` answers `{"agents":[AgentRecord]}`. The MCP tools `agents_list` and `agents_get` return the same
 objects (`{"agents":[...]}` and one object). No method writes an agent yet; Settings write agent 1 in Swift.
+
+### Agent owners
+
+Chat threads, agent sessions and automations each have an owner, an agent id. A missing owner is agent 1, `agent_default`: a thread file, an
+automation in `automations.json` or a session no hook attributed to an agent, written before owners existed, belongs to agent 1 and is not
+rewritten. A file is written with its owner only when it is saved anyway.
+
+`AgentScopeRequest` is `{"agentId"}`, and `agentId` is optional. `agents.list`, `automations.list` and `chat.threads` take it and return only that
+agent's sessions, automations or threads. Without it the call is agent 1's, which is what the Mac's window shows, so a client that does not know
+about agents sees what it saw before. An id no agent has fails with `notFound`. `ChatThreadInfo.agentId` is the thread's owner, left out for a thread
+saved before owners existed. `GET /v1/agents`, `GET /v1/automations` and `GET /v1/chat/threads` take the same value as the query parameter `agentId`.
+
+`automations.create` stores the owner it is given in `agentId`, and agent 1 when it is given none. The MCP tools do the same with the calling agent
+instead of agent 1: the agent a stdio bridge speaks for (the `IRONPET_AGENT_ID` variable, sent as the `x-ironpet-agent` header), else the owner of
+the automation whose session makes the call. `automations_list`, `status_sessions`, `status_overview` and the new `chat_threads_list` take an optional
+`agentId` and default to the calling agent. A hook sends `x-ironpet-agent` to attribute its session to an agent.
+
+The built-in and system automations (`morning-brief`, `day-recap`, `task-review`, `mail-calendar`, `task-scan`) are node-level: they have no
+owner, an `agentId` written on them is ignored, they are listed for every agent, and they run as they did before. The memory pass is not an automation
+and stays node-level.
+
+An automation run uses its owner's CLI, model and permissions, and a result it posts to "the chat" goes to its owner's main chat. `permissions` on an
+agent record maps a tool rule such as `Bash` or `Bash(git status:*)` to `allow` or `deny`. A `deny` always applies. An `allow` applies after the
+automation's own `allowedTools`. Agent 1's model is the chat's model and automations have never used it, so an automation of agent 1 keeps the CLI's
+default model unless it names one.
 
 ### `node`
 
