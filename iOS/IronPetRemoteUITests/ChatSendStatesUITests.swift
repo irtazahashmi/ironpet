@@ -177,6 +177,10 @@ final class ChatSendStatesUITests: XCTestCase {
         XCTAssertFalse(any("chat-error").exists)
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH \"Can't reach your Mac\" AND label CONTAINS \"Retrying\"")).firstMatch.exists)
         attach("chat-one-strip", dark: dark)
+        // The outbox survives a relaunch and the next test's server would receive this message and start a turn. Delete it.
+        bubble("typed while away").press(forDuration: 1.2)
+        if app.buttons["outgoing-delete"].waitForExistence(timeout: 5) { app.buttons["outgoing-delete"].tap() }
+        XCTAssertTrue(bubble("typed while away").waitForNonExistence(timeout: 10), "the waiting message is deleted")
     }
 
     // S7
