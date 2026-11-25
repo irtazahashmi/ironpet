@@ -31,7 +31,8 @@ package final class IronPetAPI {
             files: FileIntake = FolderFileIntake(directory: Paths.attachments),
             usage: UsageStore? = nil,
             permissions: BackgroundPermissions? = nil,
-            nodeID: String? = nil
+            nodeID: String? = nil,
+            agents: AgentRegistry? = nil
         ) {
             self.tasks = tasks
             self.automations = automations
@@ -49,6 +50,7 @@ package final class IronPetAPI {
             self.usage = usage
             self.permissions = permissions
             self.nodeID = nodeID
+            self.agents = agents
         }
 
         package var tasks: TaskStore
@@ -72,9 +74,12 @@ package final class IronPetAPI {
         package var permissions: BackgroundPermissions?
         /// This install's node id (`NodeIdentity`), read from the app database. Nil where there is no database to keep one.
         package var nodeID: String?
+        /// The `agents` table. Nil where there is no database to keep it, as in a test that opens only one feature's migrations.
+        package var agents: AgentRegistry?
     }
 
     package let events: APIEventBus
+    private var petMirror: APIEventBus.Subscription?
     /// Which install this is, and the agent its changes are attributed to.
     package let node: NodeAPI
     package let tasks: TasksAPI
@@ -82,7 +87,10 @@ package final class IronPetAPI {
     package let alerts: AlertsAPI
     package let bubbles: BubblesAPI
     package let notifications: NotificationsAPI
+    /// The coding-agent sessions Ghost watches. Not the agent records: those are `agentRecords`.
     package let agents: AgentsAPI
+    /// The agents as records, with agent 1 the chat agent. Nil where there is no database to keep them.
+    package let agentRecords: AgentRecordsAPI?
     package let chat: ChatAPI
     package let meetings: MeetingsAPI
     package let settings: SettingsAPI
@@ -120,6 +128,7 @@ package final class IronPetAPI {
         notifications = NotificationsAPI(store: stores.notifications)
         stores.sessions.events = events
         agents = AgentsAPI(store: stores.sessions)
+        agentRecords = stores.agents.map { AgentRecordsAPI(registry: $0) }
         stores.chat.events = events
         chat = ChatAPI(session: stores.chat, files: stores.files)
         chat.background = stores.permissions
@@ -141,12 +150,22 @@ package final class IronPetAPI {
         // Tests build their own API over a memory-only config and must not replace the app's.
         if stores.config === ConfigStore.shared { SettingsAPI.live = settings }
         meetings = MeetingsAPI(recorder: stores.meeting, library: stores.meetingLibrary)
+        if let agentRecords {
+            // `settings.changed` comes after the change, so the pet's new name and sprite are in the config by now.
+            let config = stores.config
+            petMirror = events.subscribe { [weak agentRecords] event in
+                guard event.kind == .settingsChanged else { return }
+                agentRecords?.mirror(pet: config.config.pet)
+            }
+            if stores.config === ConfigStore.shared { AgentRegistry.live = agentRecords.registry }
+        }
         served = { [unowned self] in self.servedFacades }
     }
 
     /// The facades `session.hello` reports: the ones a client can call now. `memory` and `screen` join once they are attached.
     private var servedFacades: [String] {
         var names = ["agents", "alerts", "automations", "bubbles", "chat", "meetings", "node", "notifications", "session", "settings", "tasks", "today"]
+        if agentRecords != nil { names.append("agentrecords") }
         if memory != nil { names.append("memory") }
         if screen != nil { names.append("screen") }
         return names.sorted()

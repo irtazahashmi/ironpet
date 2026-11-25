@@ -63,14 +63,14 @@ The result:
   "server":{"name":"IronPetCore","version":"1.4.0"},
   "node":{"id":"node_9f3c1e5a07b2c4d8","agent":"agent_default"},
   "session":"b1c0...",
-  "capabilities":["agents","alerts","automations","bubbles","chat","meetings","node","notifications","session","settings","tasks","today"],
+  "capabilities":["agentrecords","agents","alerts","automations","bubbles","chat","meetings","node","notifications","session","settings","tasks","today"],
   "seq":130,
   "gap":false}}
 ```
 
 `node.id` is the id of the install that answered: `node_` and 16 random hex digits, made once when the database is first opened and kept in
 `ironpet.db`, so it is the same after a restart. `node.agent` is the agent the host attributes its changes to. Until the agent registry exists
-that is always `agent_default`, which the registry migration turns into agent 1. `node` is absent when the host has no database to keep an id in.
+that is always `agent_default`, which is agent 1 (see `agentrecords`). `node` is absent when the host has no database to keep an id in.
 
 `capabilities` lists the facades this host serves, in name order. It is not what the client can do for the host (see "Clients and capabilities").
 `memory` and `screen` appear once the host has attached them. `seq` is the newest event number. `gap` is true when the host no longer held every event
@@ -321,7 +321,7 @@ Ghost's notes and search over past chats, meetings and the screen.
 |---|---|---|---|
 | `memory.call` | `MemoryCall` | `JSON` | none |
 
-`memory.call` runs one `memory_*` tool. `params` is `{"name", "arguments", "caller"}` where `name` is `memory_remember`, `memory_forget`, `memory_page`, `memory_links`, `memory_search` or `memory_get`, and `arguments` is that tool's input object. The result is the tool's JSON output. A failure of the tool is `invalid` with the tool's message. It fails with `unavailable` until the host attaches the memory services.
+`memory.call` runs one `memory_*` tool. `params` is `{"name", "arguments", "caller"}` where `name` is `memory_remember`, `memory_forget`, `memory_merge`, `memory_page`, `memory_links`, `memory_search` or `memory_get`, and `arguments` is that tool's input object. The result is the tool's JSON output. A failure of the tool is `invalid` with the tool's message. It fails with `unavailable` until the host attaches the memory services.
 
 The phone's Memory screen uses five REST routes that have no dispatcher method. `GET /v1/memory?filter=<all|people|projects|organizations|topics|tools>&q=<text>` answers `{pages, total, count_label, other_matches}`, with the same chip and search rule as the Mac. `GET /v1/memory/pages/:ref` answers one page with its facts (pinned first), earlier facts and link groups, by the `page_` ref. `POST /v1/memory/facts/:ref/pin` takes `{"pinned": true|false}`. `DELETE /v1/memory/facts/:ref` and `DELETE /v1/memory/pages/:ref` forget a fact or every fact of a page. No route edits a fact, merges pages or starts the learning pass.
 
@@ -359,6 +359,24 @@ The handshake, and the clients connected to the host.
 | `session.hello` | `HelloRequest` | `HelloResult` | none |
 
 `HelloRequest` and `HelloResult` are the objects in "Handshake", with `protocol` for the version. It needs a connection, so a transport with none gets `unavailable`.
+
+### `agentrecords`
+
+The agents as records: name, pet, agent CLI, model, instructions and tool permissions. These are the agents themselves. `agents.*` above is
+the coding-agent sessions ironpet watches, and keeps its own methods and routes. The two have different method prefixes (`agent.` and
+`agents.`) and different REST prefixes (`/v1/agent-records` and `/v1/agents`).
+
+| Method | Params | Result | REST route |
+|---|---|---|---|
+| `agent.get` | `ID` | `AgentRecord` | `GET /v1/agent-records/:id` |
+| `agent.list` | none | `[AgentRecord]` | `GET /v1/agent-records` |
+
+`AgentRecord` is `{"id","number","name","pet","agentCli","model","cliModels","instructions","permissions","created","updated"}`. `pet` and `model`
+are left out when unset (the bundled Ghost, and the CLI's own default model). `cliModels` maps each agent CLI to the model last picked for it.
+Today there is one agent, agent 1, with `number` 1 and the id `agent_default`, the id every change was attributed to before agents existed.
+An empty id also finds agent 1. `agent.get` with any other unknown id fails with `notFound`. Both methods fail with `unavailable` on a host
+with no database. `GET /v1/agent-records` answers `{"agents":[AgentRecord]}`. The MCP tools `agents_list` and `agents_get` return the same
+objects (`{"agents":[...]}` and one object). No method writes an agent yet; Settings write agent 1 in Swift.
 
 ### `node`
 
@@ -551,6 +569,8 @@ audio, or an area that is not on the wire yet.
 | `POST /v1/pet/tricks/:name` | none |
 | `GET /v1/bubbles` | `bubbles.list` |
 | `POST /v1/bubbles/:id/actions/:action` | none |
+| `GET /v1/agent-records` | `agent.list` |
+| `GET /v1/agent-records/:id` | `agent.get` |
 | `GET /v1/agents` | `agents.list` |
 | `GET /v1/agents/:id` | `agents.get` |
 | `POST /v1/agents/:id/acknowledge` | `agents.acknowledge` |

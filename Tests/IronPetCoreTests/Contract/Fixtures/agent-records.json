@@ -1,0 +1,88 @@
+{
+  "cases" : [
+    {
+      "name" : "list returns agent 1 with its settings",
+      "request" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "method" : "agent.list"
+      },
+      "response" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "result" : [
+          {
+            "agentCli" : "cursor",
+            "cliModels" : {
+
+            },
+            "created" : "<date>",
+            "id" : "agent_default",
+            "instructions" : "",
+            "name" : "Ghost",
+            "number" : 1,
+            "permissions" : {
+
+            },
+            "updated" : "<date>"
+          }
+        ]
+      }
+    },
+    {
+      "name" : "get by id returns agent 1",
+      "request" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "method" : "agent.get",
+        "params" : {
+          "id" : "agent_default"
+        }
+      },
+      "response" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "agentCli" : "cursor",
+          "cliModels" : {
+
+          },
+          "created" : "<date>",
+          "id" : "agent_default",
+          "instructions" : "",
+          "name" : "Ghost",
+          "number" : 1,
+          "permissions" : {
+
+          },
+          "updated" : "<date>"
+        }
+      }
+    },
+    {
+      "name" : "get with an unknown id is not found",
+      "request" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "method" : "agent.get",
+        "params" : {
+          "id" : "agent_nope"
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32001,
+          "data" : {
+            "code" : "not_found"
+          },
+          "message" : "no agent with id \"agent_nope\""
+        },
+        "id" : 3,
+        "jsonrpc" : "2.0"
+      }
+    }
+  ],
+  "seed" : [
+
+  ]
+}

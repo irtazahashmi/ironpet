@@ -26,6 +26,9 @@ public enum APIPath {
     public static func agent(_ id: String) -> String { "/v1/agents/\(id)" }
     public static func acknowledgeAgent(_ id: String) -> String { "/v1/agents/\(id)/acknowledge" }
     public static func askAboutAgent(_ id: String) -> String { "/v1/agents/\(id)/ask" }
+    /// The agents as records (`agent.list`, `agent.get`). `/v1/agents` above is the coding-agent sessions.
+    public static let agentRecords = "/v1/agent-records"
+    public static func agentRecord(_ id: String) -> String { "/v1/agent-records/\(id)" }
     public static let alerts = "/v1/alerts"
     public static let dismissAllAlerts = "/v1/alerts/dismiss-all"
     public static func dismissAlert(_ id: String) -> String { "/v1/alerts/\(id)/dismiss" }

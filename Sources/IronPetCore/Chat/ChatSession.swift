@@ -15,6 +15,7 @@ package final class ChatSession {
             date: Date? = Date(),
             origin: String? = nil,
             reply: Reply? = nil,
+            selection: FrontSelection? = nil,
             meta: [ItemMeta]? = nil,
             metaSent: Bool? = nil
         ) {
@@ -23,6 +24,7 @@ package final class ChatSession {
             self.date = date
             self.origin = origin
             self.reply = reply
+            self.selection = selection
             self.meta = meta
             self.metaSent = metaSent
         }
@@ -46,6 +48,8 @@ package final class ChatSession {
         package var origin: String?
         /// The earlier message this one answers, when the user used Reply.
         package var reply: Reply?
+        /// Text selected in another app that went with this user message. Older saved threads lack it.
+        package var selection: FrontSelection?
         /// Context for the agent that the chat never draws. Set only by IronPet code.
         package var meta: [ItemMeta]?
         /// True once `meta` has gone to the agent in a turn.
@@ -318,9 +322,27 @@ package final class ChatSession {
     package var model: String? {
         willSet { changes.send() }
         didSet {
-            UserDefaults.standard.set(model, forKey: "chatModel.\(agent.id)")
+            if let registry { _ = try? registry.update(AgentRegistry.chatAgentID, AgentRecordPatch(model: .some(model))) }
+            else { UserDefaults.standard.set(model, forKey: "chatModel.\(agent.id)") }
             events?.publish(.chatState, id: "options")
         }
+    }
+    /// Agent 1's record. Once set, the chat's CLI and model are read from it and written to it, not kept in `UserDefaults`.
+    private var registry: AgentRegistry?
+
+    /// Starts reading and writing the chat's agent CLI and model on agent 1. The registry needs the database, which opens after the
+    /// chat is built, so the app calls this once it is open (after `AgentRegistry.adoptLegacySettings`).
+    package func attach(registry: AgentRegistry) {
+        guard let record = registry.chatAgent else { return }
+        self.registry = registry
+        guard let stored = AgentCatalog.agent(id: record.agentCli) else { return }
+        if stored != agent {
+            agent = stored
+            models = Self.cachedModels(for: stored)
+            commands = SlashCommand.cached(for: stored.id)
+            if !agents.contains(stored) { agents.append(stored) }
+        }
+        if model != record.model { model = record.model }
     }
     /// Set when an adapter has no runtime: the chat offers a one-time Bun download.
     package private(set) var runtimeOffer: String? {
@@ -529,8 +551,14 @@ package final class ChatSession {
 
     private func select(_ next: ACPAgent) {
         agent = next
-        UserDefaults.standard.set(next.id, forKey: ChatAgentPreference.key)
-        model = UserDefaults.standard.string(forKey: "chatModel.\(next.id)")
+        if let registry {
+            // The record brings back the model last picked for this CLI.
+            let record = try? registry.update(AgentRegistry.chatAgentID, AgentRecordPatch(agentCli: next.id))
+            model = record?.model
+        } else {
+            UserDefaults.standard.set(next.id, forKey: ChatAgentPreference.key)
+            model = UserDefaults.standard.string(forKey: "chatModel.\(next.id)")
+        }
         models = Self.cachedModels(for: next)
         commands = SlashCommand.cached(for: next.id)
         if !agents.contains(next) { agents.append(next) }
@@ -860,7 +888,7 @@ package final class ChatSession {
         let origin = client?.client ?? (automation != nil ? Self.automationOrigin : nil)
         if !silent {
             items += shots.map { Item(kind: .screenshot($0.path), origin: origin) }
-            items.append(Item(kind: .user(prompt), origin: origin, reply: reply))
+            items.append(Item(kind: .user(prompt), origin: origin, reply: reply, selection: selection))
         }
         // The first turn of every new agent session carries the memory notes, including the one after a rollover. Building them reads the
         // memory store and the config from disk. A client's message waits for its ack on this actor, so for a client the build moves
@@ -1028,7 +1056,7 @@ package final class ChatSession {
             let origin = message.origin?.client
             items += message.attachments.map { Item(kind: .screenshot($0.path), origin: origin) }
             let prompt = Self.displayText(message)
-            items.append(Item(kind: .user(prompt), origin: origin, reply: message.reply))
+            items.append(Item(kind: .user(prompt), origin: origin, reply: message.reply, selection: message.selection))
             if let sender = message.origin, stops != generation {
                 // Stop came while the message was on its way. Nothing is left to report the turn's end to this sender.
                 onTurn?(sender, .failed("Stopped on the Mac."))

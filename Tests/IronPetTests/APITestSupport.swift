@@ -11,7 +11,7 @@ enum APITestSupport {
                         automations: [Automation] = [], clock: AutomationTestClock = AutomationTestClock(),
                         signals: SignalStore? = nil, bubbles: BubbleStore? = nil, notifications: NotificationStore? = nil, sessions: SessionStore? = nil, chat: ChatSession? = nil,
                         meeting: MeetingRecorder? = nil, meetingLibrary: MeetingLibrary? = nil, config: ConfigStore? = nil, speech: SpeechOutput? = nil, petAssets: PetAssets? = nil,
-                        files: FileIntake? = nil, usage: UsageStore? = nil,
+                        files: FileIntake? = nil, usage: UsageStore? = nil, agents: AgentRegistry? = nil,
                         configureAutomations: ((AutomationService) -> Void)? = nil) -> IronPetAPI {
         TestMemory.isolate()
         let tasks = TaskStore(database: memoryDatabase(), now: now, keepDoneDays: { 30 })
@@ -30,7 +30,7 @@ enum APITestSupport {
                                  petAssets: petAssets ?? MacPetAssets(library: dir.appendingPathComponent("pets"), bundled: nil,
                                                                       backgrounds: dir.appendingPathComponent("backgrounds")),
                                  files: files ?? FolderFileIntake(directory: dir.appendingPathComponent("attachments")),
-                                 usage: usage ?? UsageStore(database: memoryDatabase())),
+                                 usage: usage ?? UsageStore(database: memoryDatabase()), agents: agents),
                           events: events)
     }
 

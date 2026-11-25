@@ -1,6 +1,6 @@
 import Foundation
 
-/// The `memory_*` MCP tools: save and forget notes, read an entity's page and links, and search what Ghost has seen. ironpet writes the
+/// The `memory_*` MCP tools: save, forget and merge notes, read an entity's page and links, and search what Ghost has seen. ironpet writes the
 /// claims itself, adds the date and the source, and refuses notes with secrets. Search reads the local index and, when screen capture
 /// has data, the stored captures.
 @MainActor
@@ -37,6 +37,15 @@ package enum MemoryMCP {
                                             "entity": text("Only the notes on this project, organization, topic or tool"),
                                             "project": text("The project folder. Defaults to the chat's folder")],
                              "required": ["query"]]],
+            ["name": "memory_merge",
+             "description": "Merge duplicate pages of one type, such as \"Irtaza\" and \"Irtaza Hashimi\", into one. Moves the facts and links of "
+                + "the other pages onto the kept page, keeps their names as aliases of it so later notes about them land there, and deletes them. "
+                + "It cannot be undone, so use it only when the user asked for it or confirmed that the pages are the same. Tell the user what moved.\n\n" + guide,
+             "inputSchema": ["type": "object",
+                             "properties": ["keep": ["type": "string", "minLength": 1, "description": "The page to keep: its name, an alias or its page_ ref"],
+                                            "merge": ["type": "array", "minItems": 1, "items": ["type": "string", "minLength": 1],
+                                                      "description": "The pages to merge into it, by name, alias or page_ ref. Each must be of the same type as the kept page"]],
+                             "required": ["keep", "merge"]]],
             ["name": "memory_page",
              "description": "Read one entity's page: the dated facts on it, each with where it came from, and its links to other entities. The name "
                 + "can be a person, a project, an organization, a topic, a tool or the user's own page (me). Use it when the user asks what is known about someone or something, "
@@ -72,7 +81,7 @@ package enum MemoryMCP {
         ]
     }
 
-    package nonisolated static let names: Set<String> = ["memory_remember", "memory_forget", "memory_page", "memory_links", "memory_search", "memory_get"]
+    package nonisolated static let names: Set<String> = ["memory_remember", "memory_forget", "memory_merge", "memory_page", "memory_links", "memory_search", "memory_get"]
 
     package struct Failure: Error { let message: String }
 
@@ -158,6 +167,15 @@ package enum MemoryMCP {
                     return .success(["removed": removed.map { ["note": $0.note.text, "page": $0.page, "person": $0.section ?? NSNull()] as [String: Any] }])
                 case .failure(let failure): return .failure(Failure(message: failure.message))
                 }
+            }
+        case "memory_merge":
+            guard !outside else { return .failure(Failure(message: "only the user's chat may merge pages")) }
+            guard let keep = text("keep") else { return .failure(Failure(message: "keep is required")) }
+            let others = (args["merge"] as? [String] ?? []).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+            guard !others.isEmpty else { return .failure(Failure(message: "merge needs at least one page")) }
+            switch services.store.mergePages(others, into: keep) {
+            case .success(let merge): return .success(mergeJSON(merge))
+            case .failure(let failure): return .failure(Failure(message: failure.message))
             }
         case "memory_page":
             guard let name = text("name") else { return .failure(Failure(message: "name is required")) }
@@ -267,6 +285,11 @@ package enum MemoryMCP {
         ]
     }
 
+    package static func mergeJSON(_ merge: EntityMemoryStore.PageMerge) -> [String: Any] {
+        ["kept": merge.kept.name, "ref": merge.kept.ref, "type": merge.kept.type.rawValue, "aliases": merge.kept.aliases, "facts": merge.facts,
+         "merged": merge.merged.map { ["name": $0.name, "facts": $0.facts, "links": $0.links] as [String: Any] }]
+    }
+
     private static func linkJSON(_ link: MemoryLink) -> [String: Any] {
         ["type": link.type, "from": link.from, "to": link.to, "count": link.count, "sources": link.sources]
     }
@@ -275,5 +298,61 @@ package enum MemoryMCP {
         let formatter = ISO8601DateFormatter()
         formatter.timeZone = calendar.timeZone
         return formatter.string(from: date)
+    }
+}
+
+extension MemoryMCP {
+    /// `POST /memory` with `{"op": "merge", "args": {"keep": ..., "merge": [...]}}`, for the CLI. It runs the same tool as an agent's call,
+    /// as the user's own session, so the same rules and the same answer apply.
+    package static func handleCLI(_ body: Data, api: MemoryAPI) -> (status: String, body: Data) {
+        guard let message = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any], let op = message["op"] as? String else {
+            return ("400 Bad Request", MCPEndpoint.encode(["ok": false, "error": "send {\"op\": ..., \"args\": {...}}"]))
+        }
+        guard op == "merge" else { return ("200 OK", MCPEndpoint.encode(["ok": false, "error": "unknown memory command \(op)"])) }
+        switch api.callTool("memory_merge", message["args"] as? [String: Any] ?? [:]) {
+        case .success(let value): return ("200 OK", MCPEndpoint.encode(["ok": true, "result": value]))
+        case .failure(let error): return ("200 OK", MCPEndpoint.encode(["ok": false, "error": error.message]))
+        }
+    }
+}
+
+/// `IronPet memory …`: runs in a separate process, talking to the running app.
+package enum MemoryCLI {
+    package static let usage = """
+        usage: IronPet memory <command>
+          merge <keep> <other>...         move the facts and links of the other pages onto <keep>, keep their names as aliases of it, and delete them
+        A page is its name, an alias or its page_ ref. The pages must be of one type. A merge cannot be undone.
+        The app must be running. Output is JSON.
+        """
+
+    package static func run(_ arguments: [String]) -> Int32 {
+        let result = execute(arguments)
+        if !result.out.isEmpty { print(result.out) }
+        if !result.err.isEmpty { FileHandle.standardError.write(Data((result.err + "\n").utf8)) }
+        return result.code
+    }
+
+    package static func execute(_ arguments: [String]) -> (code: Int32, out: String, err: String) {
+        guard let command = arguments.first else { return (2, usage, "") }
+        if command == "help" || command == "--help" { return (0, usage, "") }
+        do {
+            let (op, args) = try request(arguments)
+            return AutomationCLI.send(path: "/memory", op: op, args: args)
+        } catch {
+            return AutomationCLI.fail((error as? TaskError)?.message ?? error.localizedDescription)
+        }
+    }
+
+    /// The operation and arguments a command sends to `POST /memory`.
+    package static func request(_ arguments: [String]) throws -> (op: String, args: [String: Any]) {
+        guard let command = arguments.first else { throw TaskError(message: "no command") }
+        switch command {
+        case "merge":
+            let pages = Array(arguments.dropFirst())
+            guard pages.count >= 2 else { throw TaskError(message: "merge needs the page to keep and at least one page to merge into it") }
+            return ("merge", ["keep": pages[0], "merge": Array(pages.dropFirst())])
+        default:
+            throw TaskError(message: "unknown command \"\(command)\"")
+        }
     }
 }

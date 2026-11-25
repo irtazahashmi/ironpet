@@ -66,6 +66,12 @@ package final class MemoryAPI {
     @discardableResult
     package func forgetPage(_ page: String) -> Bool { pages().forgetPage(page, source: MemoryNote.userSource) }
 
+    /// Merges pages of one type into `keep` (ids, `page_` refs or names). Moves their facts and links, keeps their names as aliases and
+    /// deletes them. This cannot be undone.
+    package func mergePages(_ others: [String], into keep: String) -> Result<EntityMemoryStore.PageMerge, MemoryError> {
+        pages().mergePages(others, into: keep)
+    }
+
     /// Puts a change back. Refuses when the page has changed since.
     package func undo(_ change: MemoryChange) -> Result<Void, MemoryError> { pages().undo(change) }
 
