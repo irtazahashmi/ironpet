@@ -14,16 +14,18 @@ package enum MemoryMCP {
     package static var tools: [[String: Any]] {
         let text = { (what: String) -> [String: Any] in ["type": "string", "description": what] }
         let scope: [String: Any] = ["type": "string", "enum": MemoryScope.allCases.map(\.rawValue),
-                                    "description": "me: the user's own preferences and habits. project: this repo or folder. people: one person, named in person."]
+                                    "description": "me: the user's own preferences and habits. people: one person, named in person. project, org, topic, tool: the named project (a product, codebase or client project), organization (a company or team), recurring subject or software the note is about, named in entity. A project note with no entity goes on this repo or folder."]
         return [
             ["name": "memory_remember",
              "description": "Save one lasting fact as a note: a preference, a habit, a project convention, where something lives, or who someone is. "
+                + "File it on the page of what it is about, not on the repo you run in: pass the project, organization, topic or tool in entity. "
                 + "One line, at most \(MemoryNote.maxLength) characters, no secrets. ironpet adds the date and where it came from. "
                 + "A note that is already saved is not added twice.\n\n" + guide,
              "inputSchema": ["type": "object",
                              "properties": ["text": ["type": "string", "minLength": 1, "maxLength": MemoryNote.maxLength, "description": "The note, such as \"Prefers pnpm over npm\""],
                                             "scope": scope, "person": text("The person's name, for scope people"),
-                                            "project": text("The project folder, for scope project. Defaults to the chat's folder")],
+                                            "entity": text("The name of the project, organization, topic or tool the note is about, such as \"Acme\" or \"Xcode\". An existing page with that name, alias or identifier is reused; a new name makes a page"),
+                                            "project": text("The project folder, a hint for scope project when entity is not given. Defaults to the chat's folder")],
                              "required": ["text", "scope"]]],
             ["name": "memory_forget",
              "description": "Remove the notes that contain every word of query, when the user asks you to forget something. Removed notes are kept in "
@@ -32,11 +34,12 @@ package enum MemoryMCP {
              "inputSchema": ["type": "object",
                              "properties": ["query": ["type": "string", "minLength": 1, "description": "Words in the note, such as \"pnpm\""],
                                             "scope": scope, "person": text("Only this person's notes"),
+                                            "entity": text("Only the notes on this project, organization, topic or tool"),
                                             "project": text("The project folder. Defaults to the chat's folder")],
                              "required": ["query"]]],
             ["name": "memory_page",
              "description": "Read one entity's page: the dated facts on it, each with where it came from, and its links to other entities. The name "
-                + "can be a person, a project, a tool or the user's own page (me). Use it when the user asks what is known about someone or something, "
+                + "can be a person, a project, an organization, a topic, a tool or the user's own page (me). Use it when the user asks what is known about someone or something, "
                 + "or before you answer a question about a person or project.\n\n" + guide,
              "inputSchema": ["type": "object",
                              "properties": ["name": ["type": "string", "minLength": 1, "description": "The name, an alias or a repo, such as \"Ana\" or \"ironpet\""]],
@@ -126,7 +129,7 @@ package enum MemoryMCP {
         let outside = MemoryNote.isOutside(source)
         func scope() -> Result<MemoryScope?, Failure> {
             guard let raw = text("scope") else { return .success(nil) }
-            guard let scope = MemoryScope(rawValue: raw.lowercased()) else { return .failure(Failure(message: "scope is me, project or people, not \(raw)")) }
+            guard let scope = MemoryScope(rawValue: raw.lowercased()) else { return .failure(Failure(message: "scope is me, project or people, or org, topic or tool, not \(raw)")) }
             return .success(scope)
         }
         switch name {
@@ -134,13 +137,13 @@ package enum MemoryMCP {
             guard let note = text("text") else { return .failure(Failure(message: "text is required")) }
             switch scope() {
             case .failure(let failure): return .failure(failure)
-            case .success(nil): return .failure(Failure(message: "scope is required: me, project or people"))
+            case .success(nil): return .failure(Failure(message: "scope is required: me, project, people, org, topic or tool"))
             case .success(.me) where outside:
-                return .failure(Failure(message: "an automation's session may not save notes about the user (scope me); use project or people"))
+                return .failure(Failure(message: "an automation's session may not save notes about the user (scope me); use project, people, org, topic or tool"))
             case .success(let scope?):
-                switch services.store.remember(note, scope: scope, person: text("person"), project: project, source: source) {
+                switch services.store.remember(note, scope: scope, person: text("person"), project: project, entity: text("entity"), source: source) {
                 case .success(let saved):
-                    return .success(["saved": saved.text, "page": services.store.location(scope, project: project) ?? ""])
+                    return .success(["saved": saved.text, "page": services.store.location(scope, project: project, entity: text("entity")) ?? ""])
                 case .failure(let failure): return .failure(Failure(message: failure.message))
                 }
             }
@@ -150,7 +153,7 @@ package enum MemoryMCP {
             switch scope() {
             case .failure(let failure): return .failure(failure)
             case .success(let scope):
-                switch services.store.forget(query, scope: scope, person: text("person"), project: project, source: source) {
+                switch services.store.forget(query, scope: scope, person: text("person"), project: project, entity: text("entity"), source: source) {
                 case .success(let removed):
                     return .success(["removed": removed.map { ["note": $0.note.text, "page": $0.page, "person": $0.section ?? NSNull()] as [String: Any] }])
                 case .failure(let failure): return .failure(Failure(message: failure.message))

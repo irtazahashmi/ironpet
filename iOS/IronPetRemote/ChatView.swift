@@ -274,15 +274,20 @@ private struct TranscriptGroupView: View {
         case .tools(let steps):
             ToolStepsRow(steps: steps)
         case .item(let item):
+            let status: AnyView? = {
+                if let message = outbox.first(where: { $0.itemID == item.id }) { return AnyView(OutgoingStatus(message: message, onRetry: { onRetry(message.id) }, onDelete: { onDelete(message.id) })) }
+                if item.id == deliveredID {
+                    return AnyView(Label("Delivered", systemImage: "checkmark").font(.caption2).foregroundStyle(.secondary).accessibilityIdentifier("outgoing-delivered"))
+                }
+                return nil
+            }()
+            // A text bubble draws the status beside its source and time. A photo or other row has no such line, so the status goes below it.
+            let inline: Bool = { if case .user = item.row { return true } else { return false } }()
             VStack(alignment: .trailing, spacing: 2) {
                 MessageRow(item: item, photo: item.fileName.flatMap { photos[$0] }, images: images, avatar: avatar, expanded: expanded.contains(item.id),
                            onToggleExpand: { toggleExpand(item.id) }, onReply: item.canReply && !OutgoingMessage.isPending(item.id) ? { selection in onReply(item, selection) } : nil,
-                           readAloud: item.kind == "assistant" ? readAloud(item) : nil, find: highlights[item.id])
-                if let message = outbox.first(where: { $0.itemID == item.id }) { OutgoingStatus(message: message, onRetry: { onRetry(message.id) }, onDelete: { onDelete(message.id) }) }
-                else if item.id == deliveredID {
-                    Label("Delivered", systemImage: "checkmark").font(.caption2).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("outgoing-delivered")
-                }
+                           readAloud: item.kind == "assistant" ? readAloud(item) : nil, find: highlights[item.id], status: inline ? status : nil)
+                if !inline, let status { status }
             }
         }
     }
@@ -354,13 +359,15 @@ struct MessageRow: View {
     var readAloud: ReadAloud?
     /// The highlights of Find in chat for this message. Nil outside a search.
     var find: RemoteChatFind.RowHighlight?
+    /// The send state of a message from this phone, drawn on the row of the source and the time. Only a text bubble has that row.
+    var status: AnyView?
     @Environment(\.openFilePath) private var openFilePath
     @State private var selecting = false
 
     var body: some View {
         Group {
             switch item.row {
-            case .user(let text): UserBubble(item: item, text: text, expanded: expanded, onToggleExpand: onToggleExpand, find: find)
+            case .user(let text): UserBubble(item: item, text: text, expanded: expanded, onToggleExpand: onToggleExpand, find: find, status: status)
             case .assistant(let text): AssistantBubble(item: item, text: text, avatar: avatar, readAloud: readAloud, find: find)
             case .tool: ToolStepsRow(steps: [item])
             case .error(let text): ErrorRow(text: text)

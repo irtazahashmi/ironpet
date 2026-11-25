@@ -111,7 +111,7 @@ launch that numbered it, on the phone. `GET /v1/events?since=<seq>&epoch=<epoch>
 - It replays every event above `since` in order, with no throttling, then sends `{"kind":"resumed","seq":n,"replayed":k}`, and the live stream follows. The phone reads nothing again.
 - It sends `{"kind":"resync","seq":n}` and no events when `since` is below the oldest event it still holds, above its newest event, or `epoch` is not its own. The phone reads each area once and goes on from `seq`.
 
-The Mac holds the last 500 events (`APIEventBus.capacity`), and an event merged into a newer one for the same message does not count as lost.
+The Mac holds the last 4,000 events (`APIEventBus.capacity`), which covers a gap of more than an hour at 46 events a minute, and an event merged into a newer one for the same message does not count as lost.
 It logs `events resume_from=K replayed=N` or `events resume_from=K too_old=true`, with no device or message text. The phone forgets the saved pair when it unpairs or pairs again. A phone sends no `since` on its
 first connection, and a Mac whose hello lacks `events.resume` sends neither `resumed` nor `resync` after a replay, so the phone reads everything again
 on every connect, as it did before. The queued messages of the outbox below go out after `resumed` or `resync`, so the replayed events are
@@ -190,7 +190,7 @@ The host sends one notification for each `APIEvent`. The method is the event nam
 ```
 
 `params` holds `seq`, `at`, and `id` when one thing changed. An event carries no text of the user's. The client reads the area again with
-the method in the last column. `seq` counts up from 1 for the life of the app. The host keeps the last 500 events, and keeps only the newest `chat.item` and `chat.state`
+the method in the last column. `seq` counts up from 1 for the life of the app. The host keeps the last 4,000 events, and keeps only the newest `chat.item` and `chat.state`
 event for each id.
 
 | Notification | Sent when | Read again with |
@@ -564,6 +564,24 @@ audio, or an area that is not on the wire yet.
 | `GET /v1/assets/:sha256` | none |
 | `GET /v1/events` | none |
 | `GET /v1/voice` | none |
+
+### Reading the chat over REST
+
+`GET /v1/chat/current` takes two optional query parameters.
+
+- `limit` (1 to 200) returns the newest `limit` visible messages in `items`, oldest first. `before` (a message id) returns the `limit` messages
+  before that message. An unknown `before` returns no items. The answer always has `has_more`, which says whether older messages exist.
+- A request with no `limit` gets the newest 200 messages (`RemoteChat.defaultLimit`), not the whole thread. A phone from before paging
+  showed the whole thread and now shows the newest 200 of it. A newer phone sends `limit` itself.
+
+**Reading only what changed.** Every answer carries `epoch` (names the Mac launch) and `seq` (the last event it covers). A phone that sends them back as `epoch` and `after` gets `delta: true` and in `items` only the messages that were added or edited after that event, in thread order, with no `has_more`. If the Mac cannot honour the cursor (another launch, a gap in the event buffer, or a change with no message id such as a removal) it answers the newest page with `reset: true`, as for a read with no cursor. A Mac that does not know these parameters ignores them and answers a page, so an older Mac still works. The phone keeps the shown messages, replaces each id it already has and appends new ones.
+
+The answer carries an `ETag` and `Cache-Control: no-cache`. The ETag stands for the page asked for (`limit` and `before`) and the number of
+chat events the Mac has published since it launched, so it changes whenever the chat changes and also after the Mac restarts. A request
+whose `If-None-Match` equals it gets `304` with no body, and the Mac builds nothing for it. The Mac builds the body of a changed chat off the
+main actor, so a long chat does not hold up `/v1/pet`, `/v1/today` or `/v1/tasks`.
+
+A phone should not retry a timed-out chat read: the Mac is slow, and a retry asks it to do the same work again.
 
 ## Conformance tests
 

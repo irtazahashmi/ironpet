@@ -385,6 +385,8 @@ private struct GeneralSettings: View {
 private struct ShortcutRow: View {
     let title: String
     let path: WritableKeyPath<Config.Hotkeys, String>
+    /// Offers Fn (globe) hold-to-talk as a choice. Only the dictation shortcut has it.
+    var allowsFn = false
     @ObservedObject var model: SettingsModel
     @ObservedObject private var store = SettingsAPI.live
     @State private var recording = false
@@ -392,14 +394,19 @@ private struct ShortcutRow: View {
     @State private var message: String?
 
     private var value: String { store.config.hotkeys[keyPath: path] }
+    private var isFn: Bool { allowsFn && value.lowercased() == FnDictationTrigger.configValue }
 
     var body: some View {
         LabeledContent(title) {
             VStack(alignment: .trailing, spacing: 2) {
                 HStack {
                     Button(action: toggleRecording) {
-                        Text(recording ? "Type shortcut…" : Shortcut.display(value) ?? (value.isEmpty ? "Off" : "Invalid"))
+                        Text(recording ? "Type shortcut…" : isFn ? "Fn" : Shortcut.display(value) ?? (value.isEmpty ? "Off" : "Invalid"))
                             .frame(minWidth: 110)
+                    }
+                    if allowsFn && !isFn && !recording {
+                        Button("Use Fn") { store.update { $0.hotkeys[keyPath: path] = FnDictationTrigger.configValue } }
+                            .help("Hold Fn to talk, release to type. Needs Input Monitoring.")
                     }
                     if !value.isEmpty && !recording {
                         Button { store.update { $0.hotkeys[keyPath: path] = "" } } label: { Image(systemName: SharedSymbols.removeAttachment) }
@@ -411,7 +418,7 @@ private struct ShortcutRow: View {
                     Text(message).font(.caption).foregroundStyle(.orange)
                 } else if model.failedHotKeys.contains(value) {
                     Text("In use by another app; pick another.").font(.caption).foregroundStyle(.orange)
-                } else if !value.isEmpty, Shortcut(value) == nil {
+                } else if !value.isEmpty, !isFn, Shortcut(value) == nil {
                     Text("Can't read \"\(value)\" in config.json.").font(.caption).foregroundStyle(.orange)
                 }
             }
@@ -433,7 +440,7 @@ private struct ShortcutRow: View {
                 return nil
             }
             guard let shortcut = Shortcut(event: event) else {
-                message = "Use ⌘, ⌥ or ⌃ (Shift alone isn't enough), or a function key."
+                message = Shortcut.rejection(keyCode: Int(event.keyCode), modifierFlags: event.modifierFlags)
                 return nil
             }
             let others = [\Config.Hotkeys.chat, \.captureWindow, \.captureRegion, \.voice, \.dictation, \.meeting, \.voiceMode, \.copyVersion].filter { $0 != path }
@@ -479,7 +486,7 @@ struct VoiceSettings: View {
                                                     set: { on in store.update { $0.voice.enabled = on } }))
                 Group {
                     ShortcutRow(title: "Voice shortcut", path: \.voice, model: model)
-                    ShortcutRow(title: "Dictation shortcut", path: \.dictation, model: model)
+                    ShortcutRow(title: "Dictation shortcut", path: \.dictation, allowsFn: true, model: model)
                     Toggle("Hold to talk", isOn: Binding(get: { store.config.voice.holdToTalk },
                                                          set: { on in store.update { $0.voice.holdToTalk = on } }))
                 }
@@ -487,7 +494,7 @@ struct VoiceSettings: View {
             } header: {
                 Text("Talk to \(name)")
             } footer: {
-                Text("Hold the shortcut or the chat's microphone button, speak, and let go. The text lands in the chat box, or is sent at once when \"Send voice notes automatically\" is on in the chat's menu. With Hold to talk off, press once to start and again to stop. Esc cancels.\n\nThe dictation shortcut works in any app: press it, speak, and press it again (or Enter) to type the transcript where the cursor is. Esc cancels and types nothing. Text goes in through Accessibility, or is pasted with your clipboard put back afterwards. Password fields never get text, and when no text field has focus the transcript stays on the clipboard. It needs Accessibility and Microphone access.")
+                Text("Hold the shortcut or the chat's microphone button, speak, and let go. The text lands in the chat box, or is sent at once when \"Send voice notes automatically\" is on in the chat's menu. With Hold to talk off, press once to start and again to stop. Esc cancels.\n\nThe dictation shortcut works in any app: press it, speak, and press it again (or Enter) to type the transcript where the cursor is. Esc cancels and types nothing. Text goes in through Accessibility, or is pasted with your clipboard put back afterwards. Password fields never get text, and when no text field has focus the transcript stays on the clipboard. It needs Accessibility and Microphone access.\n\nChoose Use Fn to hold the Fn (globe) key to talk and let go to type; a quick tap starts dictation and a second tap stops it. Fn is read through Input Monitoring, which macOS asks for only when you choose Fn. ironpet only listens for Fn and never blocks it, so Fn with another key and the emoji picker keep working. Turn the Globe key's own action off in System Settings > Keyboard if it opens the emoji picker on a tap.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             SpokenReplySettings(voiceAPI: model.voice)
