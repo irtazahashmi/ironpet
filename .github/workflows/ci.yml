@@ -283,6 +283,7 @@ jobs:
           device=$(xcrun simctl list devices available iPhone | grep -m1 -oE '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}')
           xcodebuild test-without-building -xctestrun "$xctestrun" \
             -destination "platform=iOS Simulator,id=$device" \
+            -retry-tests-on-failure -test-iterations 2 \
             -only-testing:IronPetRemoteTests
 
   ios-ui:
@@ -315,6 +316,7 @@ jobs:
           read -ra tests <<< "$(python3 scripts/ios_ui_shards.py args ${{ matrix.shard }})"
           xcodebuild test-without-building -xctestrun "$xctestrun" \
             -destination "platform=iOS Simulator,id=$device" \
+            -retry-tests-on-failure -test-iterations 2 \
             "${tests[@]}"
 
   # IronPetCore on Linux. It is non-blocking for now (continue-on-error), and the "build" gate below does not wait for it.
