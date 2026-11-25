@@ -12,7 +12,9 @@ package enum TaskMCP {
         - backlog: noted, nobody is on it yet.
         - in_progress: being worked on now.
         - needs_you: only the user can take the next step (a decision, a review, a login, a reply). Say what they need to do in the note.
+        - someday: the user may do it one day but has not committed to it. It is never a next action.
         - done: finished or no longer needed. Close it with tasks_close and a note rather than deleting it.
+        defer_until hides a task until that day (the tickler), for something that cannot or should not start before then. null shows it again.
         waiting_on names the person the user is waiting on (a meeting action item someone else owns). Those tasks are shown apart and \
         never count as needing the user. Clear it (null) once the next step is the user's again.
         Every task needs an origin ({kind, ref, reason}) when you create it, and closing a task, changing its status or resolving a suggestion needs a note.
@@ -33,7 +35,7 @@ package enum TaskMCP {
         - {"not": node}
         - {"label": {"key": "value"}}: the task has this label with exactly this value.
         - {"labelExists": "key"}: the task has this label, whatever its value.
-        - {"status": "needs_you"} or {"status": ["backlog", "in_progress"]}: backlog, in_progress, needs_you, done.
+        - {"status": "needs_you"} or {"status": ["backlog", "in_progress"]}: backlog, in_progress, needs_you, someday, done.
         - {"waitingOn": "Ana"} (case does not matter) or {"waitingOn": null} for tasks that wait on nobody.
         - {"due": {"before": "2026-12-01"}}, {"due": {"after": "2026-12-01"}}, {"due": "overdue"} (open and past due) or {"due": "none"}. \
         before and after compare the due day; tasks without a due date match neither.
@@ -65,6 +67,8 @@ package enum TaskMCP {
                            "reason": ["type": "string", "minLength": 1, "description": "One sentence on why this task exists"]]]
         let links: [String: Any] = ["type": "array", "items": link, "maxItems": TaskValidator.maxLinks]
         let due: [String: Any] = ["type": "string", "description": "ISO 8601 date or date and time. In changes, null clears it."]
+        let deferUntil: [String: Any] = ["type": "string",
+                                         "description": "ISO 8601 date or date and time. The task stays out of the list until then. In changes, null shows it again."]
         let waitingOn: [String: Any] = ["type": "string", "maxLength": TaskValidator.maxWaitingOn,
                                         "description": "Who the user is waiting on, such as a colleague's name. In changes, null clears it."]
         let labels: [String: Any] = ["type": "object", "additionalProperties": ["type": "string", "maxLength": TaskValidator.maxLabelValue],
@@ -80,12 +84,12 @@ package enum TaskMCP {
             tool("tasks_get", "Get one task in full, with its history.", id, required: ["id"]),
             tool("tasks_create", "Add a task. id is made from the title.\n\n" + guide,
                  ["title": ["type": "string", "maxLength": TaskValidator.maxTitle], "notes": ["type": "string"], "status": status,
-                  "origin": origin, "due": due, "links": links, "waiting_on": waitingOn, "labels": labels],
+                  "origin": origin, "due": due, "links": links, "waiting_on": waitingOn, "labels": labels, "defer_until": deferUntil],
                  required: ["title", "origin"]),
             tool("tasks_update", "Change a task. Only the fields in changes are touched; links replaces the whole list; labels adds or overwrites keys and remove_labels removes keys, so omitted labels stay. note is required when the status changes.",
                  id.merging(["changes": ["type": "object", "properties": ["title": ["type": "string"], "notes": ["type": "string"],
                                                                           "status": status, "due": due, "links": links,
-                                                                          "waiting_on": waitingOn, "labels": labels,
+                                                                          "waiting_on": waitingOn, "labels": labels, "defer_until": deferUntil,
                                                                           "remove_labels": ["type": "array", "items": ["type": "string"],
                                                                                             "description": "Label keys to remove"]]],
                              "note": note]) { a, _ in a },
@@ -157,7 +161,7 @@ package enum TaskCLI {
           {"status": "done"}, {"waitingOn": "Ana"|null}, {"due": {"before": "YYYY-MM-DD"}|{"after": ..}|"overdue"|"none"},
           {"source": "meeting"}, {"text": "invoice"}.
         Origin kinds: chat, agent, meeting, capture, automation, email, pr, user. A note is required for done, accept and reject, and when the status changes.
-        Statuses: backlog, in_progress, needs_you, done. Dates are ISO 8601 (2026-11-20).
+        Statuses: backlog, in_progress, needs_you, someday, done. Dates are ISO 8601 (2026-11-20). update --json takes "defer_until".
         The app must be running. Output is JSON.
         """
 

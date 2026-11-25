@@ -238,6 +238,17 @@ struct TaskDetailPage: View {
                 }
             }
             Divider()
+            SummaryRow(label: "Defer until", symbol: "moon.zzz") {
+                if task.deferUntil != nil {
+                    DuePicker(due: task.deferUntil, disabled: task.status == .done) { new in attempt { _ = try TaskEdits.setDeferUntil(new, of: id, in: tasks) } }
+                } else {
+                    NoneWithSet(action: "Set date", disabled: task.status == .done) {
+                        let tomorrow = Calendar.current.date(byAdding: .day, value: 1, to: Calendar.current.startOfDay(for: Date()))
+                        attempt { _ = try TaskEdits.setDeferUntil(tomorrow, of: id, in: tasks) }
+                    }
+                }
+            }
+            Divider()
             SummaryRow(label: "Waiting on", symbol: "person.badge.clock") {
                 if task.waitingOn != nil || editingWaiting {
                     TextField("Waiting on", text: $waiting)

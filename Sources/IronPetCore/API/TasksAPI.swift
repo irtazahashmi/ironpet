@@ -40,6 +40,7 @@ package struct CreateTaskRequest: Codable, Equatable {
         waitingOn: String? = nil,
         sourceRef: String? = nil,
         labels: [String: String] = [:],
+        deferUntil: Date? = nil,
         by: String = "user"
     ) {
         self.title = title
@@ -51,6 +52,7 @@ package struct CreateTaskRequest: Codable, Equatable {
         self.waitingOn = waitingOn
         self.sourceRef = sourceRef
         self.labels = labels
+        self.deferUntil = deferUntil
         self.by = by
     }
 
@@ -64,6 +66,8 @@ package struct CreateTaskRequest: Codable, Equatable {
     package var sourceRef: String?
     /// Key/value labels, such as `merge=auto`. Data for filtering, never instructions.
     package var labels: [String: String] = [:]
+    /// Keeps the task out of the list until then.
+    package var deferUntil: Date?
     /// Who is asking: `user`, `agent:mcp`, `agent:cli`. It goes to the task's history.
     package var by = "user"
 }
@@ -81,9 +85,13 @@ package struct UpdateTaskRequest: Codable, Equatable {
         waitingOn: String? = nil,
         labels: [String: String] = [:],
         removeLabels: [String] = [],
+        deferUntil: Date? = nil,
+        clearDeferUntil: Bool = false,
         note: String? = nil,
         by: String = "user"
     ) {
+        self.deferUntil = deferUntil
+        self.clearDeferUntil = clearDeferUntil
         self.id = id
         self.title = title
         self.notes = notes
@@ -112,6 +120,9 @@ package struct UpdateTaskRequest: Codable, Equatable {
     package var labels: [String: String] = [:]
     /// Label keys to remove.
     package var removeLabels: [String] = []
+    package var deferUntil: Date?
+    /// Shows the task again now. `deferUntil` is ignored when this is set.
+    package var clearDeferUntil = false
     /// Goes to the history only, to say why something changed.
     package var note: String?
     package var by = "user"
@@ -267,7 +278,8 @@ package final class TasksAPI {
     package func create(_ request: CreateTaskRequest) throws -> TaskItem {
         try run {
             try store.create(title: request.title, notes: request.notes, status: request.status, source: request.source, due: request.due,
-                             links: request.links, waitingOn: request.waitingOn, sourceRef: request.sourceRef, labels: request.labels, by: request.by)
+                             links: request.links, waitingOn: request.waitingOn, sourceRef: request.sourceRef, labels: request.labels,
+                             deferUntil: request.deferUntil, by: request.by)
         }
     }
 
@@ -277,7 +289,9 @@ package final class TasksAPI {
             try store.update(request.id, title: request.title, notes: request.notes, status: request.status,
                              due: request.clearDue ? .some(nil) : request.due.map { .some($0) },
                              links: request.links, waitingOn: request.waitingOn.map { .some($0) }, addLabels: request.labels,
-                             removeLabels: request.removeLabels, note: request.note, by: request.by)
+                             removeLabels: request.removeLabels,
+                             deferUntil: request.clearDeferUntil ? .some(nil) : request.deferUntil.map { .some($0) },
+                             note: request.note, by: request.by)
         }
     }
 

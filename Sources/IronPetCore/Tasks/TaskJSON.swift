@@ -42,6 +42,7 @@ package enum TaskJSON {
         if let ref = item.ref { object["ref"] = ref }
         if !item.notes.isEmpty { object["notes"] = item.notes }
         if let due = item.due { object["due"] = iso.string(from: due) }
+        if let deferUntil = item.deferUntil { object["defer_until"] = iso.string(from: deferUntil) }
         if let closed = item.closed { object["closed"] = iso.string(from: closed) }
         if let waitingOn = item.waitingOn { object["waiting_on"] = waitingOn }
         if let ref = item.sourceRef { object["source_ref"] = refValue(ref) }
@@ -146,7 +147,7 @@ package enum TaskJSON {
                     title: try TaskValidator.title(args["title"]), notes: try TaskValidator.notes(args["notes"]), status: status,
                     source: origin.kind, due: try TaskValidator.due(args["due"]), links: try TaskValidator.links(args["links"]),
                     waitingOn: try TaskValidator.waitingOn(args["waiting_on"]), sourceRef: origin.ref,
-                    labels: try TaskValidator.labels(args["labels"]), by: by))
+                    labels: try TaskValidator.labels(args["labels"]), deferUntil: try TaskValidator.due(args["defer_until"]), by: by))
                 return .success(json(item))
             case "update":
                 let current = try api.get(try id(args)).task
@@ -161,6 +162,10 @@ package enum TaskJSON {
                 if changes.keys.contains("due") {
                     request.due = try TaskValidator.due(changes["due"])
                     request.clearDue = request.due == nil
+                }
+                if changes.keys.contains("defer_until") {
+                    request.deferUntil = try TaskValidator.due(changes["defer_until"])
+                    request.clearDeferUntil = request.deferUntil == nil
                 }
                 request.links = try changes["links"].map { try TaskValidator.links($0) }
                 request.labels = try TaskValidator.labels(changes["labels"])

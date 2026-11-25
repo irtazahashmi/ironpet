@@ -4,6 +4,8 @@ public enum TaskStatus: String, Codable, CaseIterable, Sendable {
     case backlog
     case inProgress = "in_progress"
     case needsYou = "needs_you"
+    /// Only sent to a client that asks for it (`include_someday`), since older phones cannot decode it.
+    case someday
     case done
 
     public var title: String {
@@ -11,6 +13,7 @@ public enum TaskStatus: String, Codable, CaseIterable, Sendable {
         case .backlog: return "Backlog"
         case .inProgress: return "In progress"
         case .needsYou: return "Needs you"
+        case .someday: return "Someday"
         case .done: return "Done"
         }
     }
@@ -40,20 +43,23 @@ public struct RemoteTask: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var updated: Date
     /// What made the task, as the agent recorded it: a JSON object, or text when it is not JSON.
     public var sourceRef: RemoteJSON?
+    /// The task stays out of the list until then. A phone that predates it ignores the key.
+    public var deferUntil: Date?
 
     enum CodingKeys: String, CodingKey {
         case id, title, notes, status, source, due, closed, links, labels, created, updated
         case waitingOn = "waiting_on"
         case sourceRef = "source_ref"
+        case deferUntil = "defer_until"
     }
 
     public init(id: String, title: String, notes: String = "", status: TaskStatus = .backlog, source: String = "user", due: Date? = nil,
                 closed: Date? = nil, waitingOn: String? = nil, links: [TaskLink] = [], labels: [String: String] = [:],
                 created: Date = Date(timeIntervalSince1970: 1_700_000_000), updated: Date = Date(timeIntervalSince1970: 1_700_000_000),
-                sourceRef: RemoteJSON? = nil) {
+                sourceRef: RemoteJSON? = nil, deferUntil: Date? = nil) {
         self.id = id; self.title = title; self.notes = notes; self.status = status; self.source = source; self.due = due
         self.closed = closed; self.waitingOn = waitingOn; self.links = links; self.labels = labels; self.created = created; self.updated = updated
-        self.sourceRef = sourceRef
+        self.sourceRef = sourceRef; self.deferUntil = deferUntil
     }
 
     public init(from decoder: Decoder) throws {
@@ -71,6 +77,7 @@ public struct RemoteTask: Codable, Equatable, Hashable, Identifiable, Sendable {
         created = try c.decode(Date.self, forKey: .created)
         updated = try c.decode(Date.self, forKey: .updated)
         sourceRef = try c.decodeIfPresent(RemoteJSON.self, forKey: .sourceRef)
+        deferUntil = try c.decodeIfPresent(Date.self, forKey: .deferUntil)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -88,6 +95,7 @@ public struct RemoteTask: Codable, Equatable, Hashable, Identifiable, Sendable {
         try c.encode(created, forKey: .created)
         try c.encode(updated, forKey: .updated)
         try c.encodeIfPresent(sourceRef, forKey: .sourceRef)
+        try c.encodeIfPresent(deferUntil, forKey: .deferUntil)
     }
 
     /// Only the user can take the next step. A task waiting on someone else never counts, whatever its status.

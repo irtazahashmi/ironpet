@@ -166,6 +166,8 @@ enum PreviewRenderer {
         ConfigStore.shared.usePreview(screenConfig)
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks")
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks-light", scheme: .light)
+        // Tall enough to show the folded groups at the end: Someday, Deferred and Done.
+        render(list(sessions, tasks: tasks, on: .tasks, height: 1200), to: dir, "tasks-all-groups")
         // The Next actions chip, selected: the open tasks grouped under their contexts.
         QuickFilterSelection.save(BuiltInQuickFilters.nextActionsID)
         render(list(sessions, tasks: tasks, on: .tasks, height: 1000), to: dir, "tasks-next-actions")
@@ -813,6 +815,11 @@ enum PreviewRenderer {
         add("Rotate the Sentry token", .done, .user, ago: 2 * 3600)
         add("Answer Maya about the onboarding copy", .done, .meeting, ago: day + 3600)
         add("Remove the old feature flags", .done, .agent, ago: 3 * day)
+        add("Learn to bake sourdough", .someday, .chat, ago: 5 * day)
+        add("Renew the domain", .backlog, .user, ago: day)
+        if let renew = store.tasks.first(where: { $0.title == "Renew the domain" }) {
+            _ = try? store.update(renew.id, deferUntil: .some(today.addingTimeInterval(10 * day)), by: "agent:mcp")
+        }
         for (title, context) in [("Make the settings page work on mobile", "phone"), ("Fix the flaky login test", "mac"),
                                  ("Upgrade the docs site to Node 20", "agent")] {
             if let task = store.tasks.first(where: { $0.title == title }) {

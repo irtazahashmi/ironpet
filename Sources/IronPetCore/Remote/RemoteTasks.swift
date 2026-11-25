@@ -64,7 +64,7 @@ package struct RemoteTasks {
 
     // MARK: Tasks
 
-    /// `status` (comma separated or repeated), `include_done` and `label` (`key:value`, repeated).
+    /// `status` (comma separated or repeated), `include_done`, `include_someday` and `label` (`key:value`, repeated).
     package func list(query: [String: [String]]) throws -> [String: Any] {
         try available()
         var request = TaskListRequest()
@@ -79,7 +79,11 @@ package struct RemoteTasks {
             labels[String(pair[..<colon])] = String(pair[pair.index(after: colon)...])
         }
         request.labels = try TaskValidator.labels(labels)
-        return RemoteWire.object(TaskListResponse(tasks: tasks.list(request).map { RemoteTask($0) }))
+        // A phone built before `someday` existed fails to decode the whole list when one task has it, so it is sent only
+        // to a client that asks (`include_someday`) or names the status.
+        let someday = ["1", "true"].contains(query["include_someday"]?.first ?? "") || request.statuses?.contains(.someday) == true
+        let listed = tasks.list(request).filter { someday || $0.status != .someday }
+        return RemoteWire.object(TaskListResponse(tasks: listed.map { RemoteTask($0) }))
     }
 
     package func get(_ id: String) throws -> [String: Any] {
