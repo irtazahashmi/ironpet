@@ -27,6 +27,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var recordingKeys = RecordingKeys(voice: chatModel.voice, heldModifiers: {
         Shortcut(ConfigStore.shared.config.hotkeys.voice)?.modifiers ?? 0
     })
+    /// Dictation into other apps. It records with its own `VoiceController`, so the chat's voice note is untouched.
+    private lazy var dictation: DictationController = {
+        let controller = DictationController(delivery: DictationDelivery(focus: AXFocusReader(), board: .general, sendPaste: PasteKeystroke.send))
+        controller.voice.voiceKey = voiceKey
+        controller.canStart = { [weak self] in !(self?.chatModel.voice.isBusy ?? false) }
+        controller.onNotice = { [weak self] title, body in
+            self?.announcer.automation(AutomationNotice(id: "dictation", symbol: "mic.fill", tint: .warn, title: title, body: body, expires: 8))
+        }
+        return controller
+    }()
+    private lazy var dictationKeys = RecordingKeys(voice: dictation.voice)
     private let notifier = Notifier()
     private let installer = HookInstaller()
     private var automations: AutomationService!
@@ -41,6 +52,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var jobToOpen: String?
     /// Ghost's memory: the background reflection pass and the search index. Nil until the database is open.
     private var memory: MemoryReflector?
+    private var taskScanner: TaskScanner?
     private var dueReminders: TaskDueReminders?
     /// Nil until the database is open, a moment after launch.
     private var activity: ActivityLog?
@@ -55,6 +67,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Moves the automation clock in test mode (`POST /test/automations/advance`). Zero otherwise.
     private var testClockOffset: TimeInterval = 0
     private lazy var announcer = Announcer(notifier: notifier)
+    private let updates = UpdateController()
     private var bubblePanel: BubblePanel!
     private var server: EventServer?
     private var pet: PetController!
@@ -221,7 +234,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
         meeting.onOpenInChat = { [weak self] files in self?.openMeetingInChat(files) }
-        meetings.onDeleted = { folder in FileMemoryStore.shared.index?.removeMeeting(folder) }
+        meetings.onDeleted = { folder in EntityMemoryStore.shared.index.removeMeeting(folder) }
         meetings.regenerator.onReplaced = { [weak self] replaced in
             self?.memorySawMeeting(replaced.folder, agent: replaced.agent)
             self?.meetings.reload()
@@ -270,6 +283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // After the API exists: the hotkeys read the settings model, which builds the Telegram bridge over `api.chat`.
         registerHotKeys()
         _ = recordingKeys // Starts following the recording phase.
+        _ = dictationKeys
         // These read `api`, which `setUpAutomations()` builds.
         settingsModel.voice = api.voice
         telegram.onPairingRequest = { [weak self] request in
@@ -312,6 +326,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AutomationMigration.defaults(from: config.config, sentryConfigured: AutomationDefaults.sentryConfigured)
         }, builtIns: AutomationDefaults.builtIns)
         HeartbeatRemoval.runOnce(store: store)
+        // The task scan replaced Screen review. A user who had it on starts with the scan's screen source on.
+        ScreenReviewMigration.run(store: store, config: config)
         let engine = AutomationEngine(env: .init(
             now: { [weak self] in Date().addingTimeInterval(self?.testClockOffset ?? 0) },
             presence: SessionPresence(registry: clients, local: platform.presence),
@@ -331,6 +347,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // The app's one database. Features add their migrations to this list, in version order.
         let database = Database.open(path: Paths.root.appendingPathComponent("ironpet.db"), migrations: AppMigrations.all).database
         UsageStore.shared = UsageStore(database: database)
+        startUpdates(database: database)
         let log = ActivityLog(database: database)
         activity = log
         let tasks = TaskStore(database: database)
@@ -349,6 +366,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pet.agents = api.agents
         chatModel = ChatViewModel(api: api.chat, voiceAPI: api.voice, events: events)
         chatModel.voice.voiceKey = voiceKey
+        chatModel.voice.isEnabled = { [weak self] in ConfigStore.shared.config.voice.enabled && !(self?.dictation.voice.isBusy ?? false) }
         api.voice.voiceKey = voiceKey
         api.voice.transcoder = platform.audio
         // The settings model needs the API (through the Telegram bridge), so it is wired here and not in `wirePlatform`.
@@ -382,7 +400,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         pet.settings = settingsModel
         pet.onSettings = { [weak self] in self?.showSettings(tab: nil) }
         pet.onScreenSettings = { [weak self] in self?.showSettings(tab: "screen") }
+        pet.onMemorySettings = { [weak self] in self?.showSettings(tab: "memory") }
         settingsModel.showScreenSection = { [weak self] in self?.pet.showWindow(.screen) }
+        settingsModel.showMemorySection = { [weak self] in self?.pet.showWindow(.memory) }
         setUpScreenCapture(database)
         setUpDesktopControl()
         setUpMemory(database)
@@ -410,6 +430,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         service.nudge = { [weak self] moods in self?.pet.nudge(moods, each: moods == [.done] ? 3 : 4) }
         service.tasks = tasks
         service.suggested = { [weak self] added in self?.offerSuggestions(added) }
+        setUpTaskScan(service, tasks: tasks)
         let workspace = store.paths.workspace
         // Not read by memory: this restricted run is for prompts with item text from outside, and its answer is built from that text.
         let spawner = platform.processes
@@ -519,7 +540,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return (chat.agent, configured.isEmpty ? FrontDesk.fastestModel(in: chat.models) ?? chat.model : configured)
         }
         desk.onThreadSaved = { [weak self] thread in self?.chat.threadSaved(thread) }
-        desk.onConversationEnded = { [weak self] thread in self?.memory?.left(thread: thread) }
         let controller = VoiceModeController(frontDesk: desk)
         controller.voiceKey = voiceKey
         controller.petFrame = { [weak self] in self?.pet.panel.frame ?? .zero }
@@ -614,40 +634,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         changeTokens.append(automations.observeDigestShown { [weak self] shown in self?.pet.setTodayShown(shown) })
     }
 
-    /// Builds Ghost's memory on the shared database: the store with its index, the one-time cleanup of the old folder layout, the
-    /// background indexing of saved chats and meetings, and the reflection pass, which reads a chat once it goes quiet.
+    /// Builds Ghost's memory on the shared database: the entity store, the one-time move of the old note files onto pages, the background
+    /// indexing of saved chats and meetings, and the hourly digest that learns from them.
     private func setUpMemory(_ database: Database) {
-        let index = MemoryIndex(database: database)
-        let store = FileMemoryStore(directory: FileMemoryStore.directory, index: index)
-        FileMemoryStore.shared = store
-        store.migrateLayout()
-        // Only when there are note files to index: with none, this would walk `.history` on the main thread at every launch.
-        if index.count(.note) == 0, !store.files().isEmpty { store.reindexAll() }
+        let store = EntityMemoryStore(database: database)
+        EntityMemoryStore.shared = store
+        MemoryMigration.run(into: store)
+        let index = store.index
         ThreadStore.didSave = { [index] thread in index.indexThread(thread) }
-        index.backfill(threads: { ThreadStore.recent(limit: .max, automationLimit: 0) }, meetings: Paths.meetings)
-        let reflector = MemoryReflector(store: store, index: index, spawner: platform.processes)
+        store.index.backfill(threads: { ThreadStore.recent(limit: .max, automationLimit: 0) }, meetings: Paths.meetings)
+        let reflector = MemoryReflector(store: store, index: store.index, spawner: platform.processes)
         reflector.automatic = !TestControl.isEnabled
         reflector.onChange = { [weak self] in self?.settingsModel.memory?.reload() }
         reflector.seedIfNeeded()
+        reflector.tasks = { [weak self] in self?.taskStore?.tasks ?? [] }
+        reflector.captures = { [weak self] in self?.capture?.store.recent(limit: 200) ?? [] }
+        reflector.digestAgent = { [weak self] in self?.chat.agent.id }
+        // A name that stays ambiguous is asked once, not again with a notification every digest.
+        reflector.post = { [weak self] signal in
+            guard let self else { return }
+            signals.add(signal, notify: !signals.signals.contains { $0.id == signal.id })
+        }
         memory = reflector
-        let memorySettings = MemorySettingsModel(store: store, index: index, reflector: reflector)
+        let memorySettings = MemorySettingsModel(api: api.memory ?? MemoryAPI(services: { nil }), reflector: reflector)
         memorySettings.spawner = platform.processes
         settingsModel.memory = memorySettings
-        chat.onTurnEnded = { [weak reflector] id in reflector?.turnEnded(thread: id) }
-        chat.onThreadLeft = { [weak reflector] id in reflector?.left(thread: id) }
-        timers.append(Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak reflector] _ in
+        // Every minute the digest checks whether `memory.digestMinutes` have passed. A minute after launch it runs once, so the agents are
+        // not started while the app is still coming up. An automated run reads only what it sends.
+        timers.append(Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak reflector] _ in
             MainActor.assumeIsolated { reflector?.tick() }
         })
-        // A minute after launch, so the agents are not started while the app is still coming up. An automated run reads only what it sends.
         if !TestControl.isEnabled {
-            DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak reflector] in reflector?.catchUp() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak reflector] in reflector?.tick() }
         }
+    }
+
+    /// The task scan is a system automation: the engine runs it, but it is not in `automations.json`, so the Automations list never
+    /// shows it. Settings → Tasks turns it off and sets the interval, and `apply(config:previous:)` passes that on.
+    private func setUpTaskScan(_ service: AutomationService, tasks: TaskStore) {
+        let scanner = TaskScanner(store: tasks, spawner: platform.processes)
+        scanner.config = { [config] in config.config }
+        scanner.captures = { [weak self] in self?.capture?.store.recent(limit: 200) ?? [] }
+        scanner.digestAgent = { [weak self] in self?.chat.agent.id }
+        scanner.onFiled = { [weak self] added in self?.offerSuggestions(added) }
+        scanner.seedIfNeeded()
+        taskScanner = scanner
+        service.runTaskScan = { [weak scanner] in await scanner?.scan() ?? TaskScanner.Outcome(skipped: true) }
+        // A test run starts no scan of its own, so an e2e scenario never files suggestions it did not ask for.
+        service.system = TestControl.isEnabled ? [] : AutomationDefaults.system(for: config.config.tasks)
     }
 
     /// A summary was written or regenerated. `agent` wrote it; nil is the summary agent in Settings, which regeneration uses.
     private func memorySawMeeting(_ folder: URL, agent: String?) {
-        FileMemoryStore.shared.index?.indexMeeting(folder)
-        memory?.meetingSummaryWritten(folder, agent: agent ?? config.config.meetings.summaryAgent)
+        EntityMemoryStore.shared.index.indexMeeting(folder)
+        let writer = agent ?? config.config.meetings.summaryAgent
+        memory?.meetingSummaryWritten(folder, agent: writer)
+        taskScanner?.meetingSummaryWritten(folder, agent: writer)
     }
 
     private func memorySawAutomation(_ id: String, answer: String, agent: String) {
@@ -807,7 +849,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// What the `memory_*` tools work on. The chat that is running names the note's source and the default project.
     private var memoryServices: MemoryMCP.Services? {
         guard memory != nil else { return nil }
-        let store = FileMemoryStore.shared
+        let store = EntityMemoryStore.shared
         return MemoryMCP.Services(store: store, index: store.index, screen: capture?.store,
                                   context: { [weak self] in (self?.chat.threadID, self?.chat.workspace) },
                                   jobFolder: { [weak self] id in self?.jobs?.job(id).map { URL(fileURLWithPath: $0.folder) } })
@@ -824,6 +866,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Applies settings that need more than being read at the point of use.
     private func apply(config new: Config, previous old: Config) {
+        if new.tasks.scan != old.tasks.scan || new.tasks.scanMinutes != old.tasks.scanMinutes, !TestControl.isEnabled {
+            automations.system = AutomationDefaults.system(for: new.tasks)
+        }
+        if !new.tasks.scan { taskScanner?.cancel() }
+        updates.apply(new.updates)
         let (newAgents, oldAgents) = (hookAgents(in: new), hookAgents(in: old))
         setHooks(installed: newAgents.filter { !oldAgents.contains($0) })
         setHooks(removed: oldAgents.filter { !newAgents.contains($0) })
@@ -831,7 +878,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             || new.meetings.enabled != old.meetings.enabled || new.voiceMode.enabled != old.voiceMode.enabled { registerHotKeys() }
         if !new.voiceMode.enabled { voiceMode.conversation.end() }
         if new.telegram.enabled != old.telegram.enabled { telegram.setEnabled(new.telegram.enabled) }
-        if !new.voice.enabled { chatModel.voice.cancel() }
+        if !new.voice.enabled { chatModel.voice.cancel(); dictation.cancel() }
         if old.speech.enabled, !new.speech.enabled { chat.speech.stop() }
         if !new.meetings.enabled { meeting.dismiss() }
         startCallMonitor()
@@ -880,6 +927,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if hotKey.isRegistered { hotKeys.append(hotKey) } else { failed.insert(text) }
         } else if config.config.voice.enabled, !config.config.hotkeys.voice.isEmpty {
             failed.insert(config.config.hotkeys.voice)
+        }
+        // Dictation into the focused field of any app. Only registered with voice notes on; a press while recording stops.
+        if let text = DictationController.hotkey(in: config.config) {
+            if let shortcut = Shortcut(text) {
+                let hotKey = HotKey(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers, id: 13) { [weak self] in
+                    MainActor.assumeIsolated { self?.dictation.shortcutPressed() }
+                }
+                if hotKey.isRegistered { hotKeys.append(hotKey) } else { failed.insert(text) }
+            } else {
+                failed.insert(text)
+            }
         }
         // Start or stop a meeting transcript. Only registered with meetings on, and unbound by default.
         if let text = MeetingController.hotkey(in: config.config) {
@@ -1003,6 +1061,37 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         hookMenuItems().forEach(menu.addItem)
         return menu
     }
+
+    /// Starts the self-update check. A dev build never starts Sparkle (`UpdatePolicy`). A ready update waits while an agent turn,
+    /// a voice note or a meeting recording is running, and installs when they end or when the user clicks the pet's badge.
+    private func startUpdates(database: Database) {
+        updates.localSchemaVersion = { database.schemaVersion }
+        updates.activity = { [weak self] in
+            guard let self else { return UpdatePolicy.Activity() }
+            return UpdatePolicy.Activity(agentTurnRunning: chat.isRunning, voiceRecording: chatModel.voice.phase == .recording,
+                                         meetingRecording: [.recording, .finishing].contains(meeting.phase))
+        }
+        updates.onStateChange = { [weak self] in
+            guard let self else { return }
+            pet.view.updateReady = updates.isReady
+        }
+        updates.onReadyAndWaiting = { [weak self] version, busy in
+            guard let self else { return }
+            let name = config.config.pet.name
+            announcer.automation(AutomationNotice(
+                id: "update-ready", symbol: "arrow.down.circle.fill", tint: .info, title: "ironpet \(version) is ready",
+                body: busy.map { "\(name) will restart to install it once \($0) is done, or now if you click Restart." }
+                    ?? "\(name) restarts to install it in a moment.",
+                buttons: [.init(title: "Restart now", primary: true) { [weak self] in self?.updates.installNow() },
+                          .init(title: "Later") {}],
+                systemNotification: true))
+        }
+        pet.view.onUpdateClick = { [weak self] in self?.updates.installNow() }
+        settingsModel.updates = updates
+        updates.start(config: config.config.updates)
+    }
+
+    @objc func checkForUpdates(_ sender: Any?) { updates.checkNow() }
 
     private func startServer() throws {
         try Paths.ensureRoot()
@@ -1568,7 +1657,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let shortcut = Shortcut.display(config.config.hotkeys.copyVersion)
         let copy = NSMenuItem(title: shortcut.map { "Copy version  \($0)" } ?? "Copy version", action: #selector(copyVersion(_:)), keyEquivalent: "")
         copy.target = self
-        return [.separator(), line, copy]
+        let check = NSMenuItem(title: "Check for updates…", action: #selector(checkForUpdates(_:)), keyEquivalent: "")
+        check.target = self
+        check.isEnabled = updates.canCheck
+        return [.separator(), line, copy, check]
     }
 
     @objc func copyVersion(_ sender: Any?) {
@@ -1687,6 +1779,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         copy.target = self
         appMenu.addItem(about)
         appMenu.addItem(copy)
+        let check = NSMenuItem(title: "Check for updates…", action: #selector(checkForUpdates(_:)), keyEquivalent: "")
+        check.target = self
+        appMenu.addItem(check)
         appMenu.addItem(.separator())
         let settings = NSMenuItem(title: "Settings…", action: #selector(showSettings(_:)), keyEquivalent: ",")
         settings.target = self

@@ -2,7 +2,8 @@ import XCTest
 import IronPetKit
 @testable import IronPetRemote
 
-/// A failed background read retries quietly. Only a run of failures shows one plain banner, and it clears when the Mac answers.
+/// A failed background read goes through the shared retry policy. Nothing on the chat screen retries or shows an error of its own: the
+/// connection state lives in `NetworkHealth`, which shows the strip after a sustained outage and clears when the Mac answers.
 @MainActor
 final class ChatConnectionTests: XCTestCase {
     var server: MockIronPetServer!
@@ -14,11 +15,12 @@ final class ChatConnectionTests: XCTestCase {
 
     override func tearDown() { server.stop() }
 
-    private func started() async -> ChatModel {
+    private func started(network: NetworkHealth? = nil) async -> ChatModel {
+        let network = network ?? NetworkHealth()
         let client = IronPetClient(endpoint: ServerEndpoint(baseURL: server.baseURL), token: server.token)
         let events = SharedEventSource(EventConnection(client: client, backoff: .init(initial: .milliseconds(20), maximum: .milliseconds(100))))
-        let model = ChatModel(client: client, events: events, onUnauthorized: {})
-        model.retryBase = .milliseconds(30)
+        network.retryPolicy = RetryPolicy(attempts: 3, base: .milliseconds(30), maxDelay: .milliseconds(120))
+        let model = ChatModel(client: client, events: events, network: network, onUnauthorized: {})
         model.start()
         await poll { model.loaded && model.snapshot != nil }
         // The socket's own connect refresh can still be in flight and would take the failure a test arms next. The socket opens
@@ -38,58 +40,60 @@ final class ChatConnectionTests: XCTestCase {
         while !condition(), Date() < deadline { try? await Task.sleep(nanoseconds: 5_000_000) }
     }
 
-    // S1
-    func testOneFailedRefreshShowsNoBannerAndTheRetrySucceeds() async {
-        let model = await started()
-        model.retryBase = .milliseconds(400)
+    // S3
+    func testOneFailedReadIsRetriedAndNothingShows() async {
+        let network = NetworkHealth()
+        let model = await started(network: network)
         server.chat.title = "After the retry"
         server.chatReadFailures = 1
         await model.refresh()
-        XCTAssertNotEqual(model.title, "After the retry", "the first read failed")
-        XCTAssertFalse(model.connectionLost)
+        XCTAssertEqual(model.title, "After the retry", "the shared client read again after the first failure")
         XCTAssertNil(model.errorMessage)
-        await poll { model.title == "After the retry" }
-        XCTAssertEqual(model.title, "After the retry", "the quiet retry read the chat again")
-        XCTAssertFalse(model.connectionLost)
-        XCTAssertNil(model.errorMessage)
+        XCTAssertNil(network.failingSince, "one retried timeout is never reported")
+        XCTAssertFalse(network.stripVisible)
         model.stop()
     }
 
     // S2
-    func testASustainedOutageShowsOneBannerThatClearsByItself() async {
-        let model = await started()
+    func testASustainedOutageShowsTheStripAndClearsWhenTheMacAnswers() async {
+        let network = NetworkHealth(stripDelay: .milliseconds(200))
+        let model = await started(network: network)
         server.chatReadFailures = Int.max
         await model.refresh()
-        XCTAssertFalse(model.connectionLost, "one failure is not an outage")
-        await poll { model.connectionLost }
-        XCTAssertTrue(model.connectionLost)
-        XCTAssertNil(model.errorMessage, "the banner is the only message")
+        XCTAssertNotNil(network.failingSince)
+        XCTAssertFalse(network.stripVisible, "a short outage shows nothing")
+        await poll { network.stripVisible }
+        XCTAssertTrue(network.stripVisible)
+        XCTAssertNil(model.errorMessage, "the strip is the only place the outage shows")
         server.chatReadFailures = 0
-        await poll { !model.connectionLost }
-        XCTAssertFalse(model.connectionLost, "the banner goes once the Mac answers")
+        await model.refresh()
+        XCTAssertFalse(network.stripVisible, "the strip hides with the first answer")
+        XCTAssertNotNil(network.lastSync)
         model.stop()
     }
 
-    func testRetriesDoNotPileUp() async {
-        let model = await started()
-        model.retryBase = .seconds(60)
+    // S3
+    func testTheScreenReadsAgainWhenTheConnectionComesBack() async {
+        let network = NetworkHealth()
+        let model = await started(network: network)
         server.chatReadFailures = Int.max
-        for _ in 0..<5 { await model.refresh() }
-        let settled = server.count("GET /v1/chat/current")
-        await poll(0.4) { false }
-        XCTAssertEqual(server.count("GET /v1/chat/current"), settled, "five failures wait on one retry, which has not fired")
+        await model.refresh()
+        XCTAssertNotNil(network.failingSince)
+        server.chat.title = "Back again"
+        server.chatReadFailures = 0
+        // Any answer from the Mac, here a read of another screen, announces the reconnect, and the started screen reads without being asked.
+        network.reportAnswered()
+        await poll { model.title == "Back again" }
+        XCTAssertEqual(model.title, "Back again")
         model.stop()
     }
 
-    func testTheRetryButtonReadsAtOnce() async {
+    func testAReadIsTriedAtMostOncePerAttemptOfThePolicy() async {
         let model = await started()
-        model.retryBase = .seconds(60)
         server.chatReadFailures = Int.max
-        for _ in 0..<3 { await model.refresh() }
-        XCTAssertTrue(model.connectionLost)
-        server.chatReadFailures = 0
-        await model.retryNow()
-        XCTAssertFalse(model.connectionLost)
+        let before = server.count("GET /v1/chat/current")
+        await model.refresh()
+        XCTAssertEqual(server.count("GET /v1/chat/current") - before, 3, "three tries, then the failure is reported once")
         model.stop()
     }
 
@@ -101,7 +105,6 @@ final class ChatConnectionTests: XCTestCase {
         await model.send()
         XCTAssertTrue(model.outbox.first?.isFailed ?? false)
         XCTAssertNil(model.errorMessage)
-        XCTAssertFalse(model.connectionLost)
         model.stop()
     }
 
@@ -113,11 +116,13 @@ final class ChatConnectionTests: XCTestCase {
         XCTAssertEqual(PlainError.message(for: NSError(domain: "x", code: 1)), "Something went wrong. Try again.")
     }
 
-    func testAFailedUserActionKeepsAPlainMessage() async {
-        let model = await started()
+    func testAFailedUserActionReportsToTheStripAndShowsNoRow() async {
+        let network = NetworkHealth()
+        let model = await started(network: network)
         server.stop()
         await model.stopTurn()
-        XCTAssertEqual(model.errorMessage, "Can't reach your Mac.")
+        XCTAssertNil(model.errorMessage)
+        XCTAssertNotNil(network.failingSince)
         model.stop()
     }
 }

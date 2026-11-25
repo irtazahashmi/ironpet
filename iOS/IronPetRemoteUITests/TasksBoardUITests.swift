@@ -71,6 +71,42 @@ final class TasksBoardUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["section-needs-you"].waitForExistence(timeout: 30), "the list is shown again after a relaunch")
     }
 
+    private func restartServer(tasks: [RemoteTask]) throws {
+        server.stop()
+        server = MockIronPetServer(tasks: tasks, suggestions: [])
+        try server.start()
+    }
+
+    private var columnIDs: [String] { ["needs-you", "in-progress", "backlog", "waiting", "done"] }
+
+    private func assertSameWidth(_ message: String) {
+        let widths = columnIDs.map { app.descendants(matching: .any)["board-column-\($0)"].frame.width }
+        XCTAssertTrue(widths.allSatisfy { $0 > 0 }, "every column is laid out: \(widths)")
+        XCTAssertEqual(widths.max()! - widths.min()!, 0, accuracy: 1, "\(message): \(widths)")
+    }
+
+    /// S1
+    func testEmptyColumnsHaveTheSameWidthAsFullOnes() throws {
+        try restartServer(tasks: [MockIronPetServer.sampleTasks[0]])
+        pairAndOpenTasks()
+        choose("Board")
+        XCTAssertTrue(app.buttons["task-t-needs"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["board-header-in-progress"].exists, "an empty column keeps its header")
+        assertSameWidth("an empty column is as wide as a full one")
+        attach("tasks-board-empty-columns")
+    }
+
+    /// S2
+    func testAllColumnsEmptyStillShowAtFullWidth() throws {
+        try restartServer(tasks: [])
+        pairAndOpenTasks()
+        choose("Board")
+        XCTAssertTrue(app.descendants(matching: .any)["tasks-board"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["board-header-needs-you"].waitForExistence(timeout: 10))
+        assertSameWidth("all empty columns share one width")
+        attach("tasks-board-all-empty")
+    }
+
     /// S7
     func testDraggingACardToAnotherColumnReachesTheMac() {
         pairAndOpenTasks()

@@ -16,6 +16,7 @@ struct MeetingsView: View {
         .navigationTitle("Meetings")
         .navigationBarTitleDisplayMode(.inline)
         .themedScreen()
+        .fullPageLoadError(model)
         .privacySensitive()
         .onChange(of: scenePhase) { _, phase in
             model.gate.scenePhaseChanged(phase)
@@ -44,12 +45,6 @@ struct MeetingsView: View {
     private var unlocked: some View {
         List {
             Group {
-                if let message = model.errorMessage {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("meetings-error")
-                        Button("Retry") { Task { await model.refresh() } }.accessibilityIdentifier("meetings-retry")
-                    }
-                }
                 if let notice = model.notice {
                     Label(notice, systemImage: "info.circle").accessibilityIdentifier("meetings-notice")
                 }
@@ -116,9 +111,8 @@ struct MeetingDetailView: View {
                     Text(text).textSelection(.enabled).accessibilityIdentifier("meeting-text")
                 } else if loading {
                     ProgressView()
-                } else if let message = model.errorMessage {
-                    Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("meeting-text-error")
-                    Button("Retry") { Task { await load() } }.accessibilityIdentifier("meeting-text-retry")
+                } else if model.network.failingSince != nil {
+                    LoadErrorView { await load() }
                 } else {
                     Text("This meeting has no \(kind) yet.").foregroundStyle(.secondary)
                 }

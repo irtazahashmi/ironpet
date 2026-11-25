@@ -59,7 +59,7 @@ final class ContractRig {
         if seed.contains("screen") { api.attach(capture: ContractCaptureControl(supported: true)) }
         if seed.contains("screenUnsupported") { api.attach(capture: ContractCaptureControl(supported: false)) }
         if seed.contains("memory") {
-            let memory = MemoryMCP.Services(store: FileMemoryStore(directory: directory.appendingPathComponent("memory")), index: nil)
+            let memory = MemoryMCP.Services(store: EntityMemoryStore(database: Self.memoryDatabase()), index: nil)
             api.attach(memory: { memory })
         }
     }

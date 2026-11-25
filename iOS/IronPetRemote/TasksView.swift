@@ -11,6 +11,7 @@ struct TasksView: View {
     /// A card dropped on Waiting on others, until the person says who holds it.
     @State private var holdingTask: String?
     @State private var holder = ""
+    @State private var creating = false
 
     private var mode: TasksViewMode { TasksViewMode(rawValue: modeRaw) ?? .list }
 
@@ -33,7 +34,14 @@ struct TasksView: View {
             .navigationTitle("Tasks")
             .navigationBarTitleDisplayMode(.inline)
             .themedScreen()
-            .toolbar { modeToolbar }
+            .fullPageLoadError(model)
+            .toolbar {
+                modeToolbar
+                ToolbarItem(placement: .topBarLeading) {
+                    Button { creating = true } label: { Label("New task", systemImage: "plus") }.accessibilityIdentifier("new-task")
+                }
+            }
+            .sheet(isPresented: $creating) { TaskEditSheet(mode: .create) { title, notes in await model.create(title: title, notes: notes) } }
             .navigationDestination(for: RemoteTask.self) { TaskDetailView(model: model, task: $0) }
             .alert("Waiting on whom?", isPresented: Binding(get: { holdingTask != nil }, set: { if !$0 { holdingTask = nil } })) {
                 TextField("Name", text: $holder).accessibilityIdentifier("waiting-name-field")
@@ -86,10 +94,6 @@ struct TasksView: View {
     private var board: some View {
         VStack(spacing: 0) {
             chips
-            if let message = model.errorMessage {
-                Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).font(.footnote)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal).accessibilityIdentifier("tasks-error")
-            }
             if !model.suggestions.isEmpty {
                 List {
                     Group {
@@ -121,9 +125,6 @@ struct TasksView: View {
                         .listRowSeparator(.hidden)
                 }
                 Group {
-                    if let message = model.errorMessage {
-                        Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("tasks-error")
-                    }
                     if !model.suggestions.isEmpty {
                         Section { ForEach(model.suggestions) { SuggestionRow(suggestion: $0, model: model) } } header: { header("Suggestions", id: "suggestions") }
                     }
@@ -168,17 +169,20 @@ struct TasksView: View {
     }
 
     private func row(_ task: RemoteTask) -> some View {
-        NavigationLink(value: task) { TaskRow(task: task) }.accessibilityIdentifier("task-\(task.id)")
+        NavigationLink(value: task) { TaskRow(task: task, pendingSync: model.isPendingSync(task.id)) }.accessibilityIdentifier("task-\(task.id)")
     }
 }
 
 struct TaskRow: View {
     let task: RemoteTask
+    /// The task changed on this phone and the Mac has not confirmed it.
+    var pendingSync = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(task.title).strikethrough(task.status == .done)
             if let line = detail { Text(line).font(.caption).foregroundStyle(.secondary) }
+            if pendingSync { PendingSyncMark() }
         }
     }
 
@@ -196,11 +200,12 @@ struct SuggestionRow: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(suggestion.title)
+            Text(suggestion.update?.headline ?? suggestion.title)
+            if let update = suggestion.update { Text(update.summary).font(.subheadline).accessibilityIdentifier("change-\(suggestion.id)") }
             Text(origin).font(.caption).foregroundStyle(.secondary)
             if !suggestion.notes.isEmpty { Text(suggestion.notes).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
             HStack {
-                Button("Add") { Task { await model.add(suggestion) } }
+                Button(suggestion.update == nil ? "Add" : "Accept") { Task { await model.add(suggestion) } }
                     .buttonStyle(.borderedProminent).accessibilityIdentifier("add-\(suggestion.id)")
                 Button("Skip") { Task { await model.skip(suggestion) } }
                     .buttonStyle(.bordered).accessibilityIdentifier("skip-\(suggestion.id)")
@@ -212,7 +217,12 @@ struct SuggestionRow: View {
     }
 
     private var origin: String {
-        var text = suggestion.origin == "meeting" ? "Meeting" : (suggestion.originDetail.map { "From \($0)" } ?? "Automation")
+        var text: String
+        switch suggestion.origin {
+        case "meeting": text = "Meeting"
+        case "task-scan": text = "Task scan"
+        default: text = suggestion.originDetail.map { "From \($0)" } ?? "Automation"
+        }
         if let waiting = suggestion.waitingOn { text += " · Waiting on \(waiting)" }
         if let due = suggestion.due { text += " · Due \(due)" }
         return text
@@ -275,7 +285,7 @@ private struct BoardColumnView: View {
             }
         }
         .padding(10)
-        .frame(maxHeight: .infinity, alignment: .top)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(RoundedRectangle(cornerRadius: 12).fill(SharedTheme.card))
         .overlay(RoundedRectangle(cornerRadius: 12).stroke(macAccent, lineWidth: targeted ? 2 : 0))
         .dropDestination(for: String.self) { ids, _ in
@@ -311,5 +321,13 @@ private struct BoardCard: View {
         notes.split(whereSeparator: \.isNewline)
             .map { $0.trimmingCharacters(in: CharacterSet(charactersIn: "#-*> ").union(.whitespaces)) }
             .first { !$0.isEmpty }
+    }
+}
+
+/// "Waiting to sync" under a task whose change the Mac has not confirmed. It clears when the Mac confirms.
+struct PendingSyncMark: View {
+    var body: some View {
+        Label("Waiting to sync", systemImage: "arrow.up.arrow.down").font(.caption2).foregroundStyle(.secondary)
+            .accessibilityIdentifier("task-pending-sync")
     }
 }

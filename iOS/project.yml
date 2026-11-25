@@ -27,6 +27,20 @@ targets:
         product: IronPetKit
       - target: IronPetWidget
         embed: true
+    # Mermaid diagrams in the chat: the Mac's mermaid.html plus the pinned mermaid.js that scripts/fetch_mermaid.sh downloads
+    # (checked against its SHA-256) go into the app's resources. Offline the script copies nothing and diagrams show as code.
+    preBuildScripts:
+      - name: Bundle Mermaid
+        basedOnDependencyAnalysis: false
+        script: |
+          dest="$TARGET_BUILD_DIR/$UNLOCALIZED_RESOURCES_FOLDER_PATH"
+          mkdir -p "$dest"
+          rm -f "$dest/mermaid.html" "$dest/mermaid.min.js"
+          js=$("$SRCROOT/../scripts/fetch_mermaid.sh") || js=""
+          if [ -n "$js" ]; then
+            cp "$js" "$dest/mermaid.min.js"
+            cp "$SRCROOT/../Resources/mermaid.html" "$dest/mermaid.html"
+          fi
     entitlements:
       path: IronPetRemote/IronPetRemote.entitlements
     info:
@@ -51,6 +65,8 @@ targets:
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         GENERATE_INFOPLIST_FILE: NO
         TARGETED_DEVICE_FAMILY: "1"
+        # The Bundle Mermaid phase downloads a file and writes into the app, which the script sandbox forbids.
+        ENABLE_USER_SCRIPT_SANDBOXING: NO
   IronPetWidget:
     type: app-extension
     platform: iOS

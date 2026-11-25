@@ -115,6 +115,7 @@ final class RemoteServer {
     private let uploads: RemoteUploads
     /// The messages phones sent over the event socket, so a resend creates nothing.
     private let sends = RemoteSendLedger()
+    private let taskChanges = RemoteTaskLedger()
     /// How often one message's `chat.item` event may reach a socket.
     var itemInterval: Duration = .milliseconds(100)
     private var tasks: [Task<Void, Never>] = []
@@ -365,6 +366,7 @@ final class RemoteServer {
         addChatRoutes(to: router)
         addAutomationRoutes(to: router)
         addMeetingRoutes(to: router)
+        addMemoryRoutes(to: router)
         addSettingsRoutes(to: router)
         addScreenRoutes(to: router)
     }
@@ -445,6 +447,33 @@ final class RemoteServer {
         router.post("/v1/automations/:id/run-now") { [self] _, context in
             let id = Self.parameter(context, "id")
             return await self.phoneFour(context) { try await RemoteAutomations(api: $0, device: $1).runNow(id) }
+        }
+    }
+
+    /// Memory: browse, search, pin and forget. No route edits a fact or merges pages.
+    private func addMemoryRoutes(to router: Router<RemoteContext>) {
+        router.get("/v1/memory") { [self] request, context in
+            let query = Self.query(request)
+            let filter = query["filter"]?.first, text = query["q"]?.first
+            return await self.phoneFour(context) { api, _ in try RemoteMemory(api: api).list(filter: filter, query: text) }
+        }
+        router.get("/v1/memory/pages/:ref") { [self] _, context in
+            let ref = Self.parameter(context, "ref")
+            return await self.phoneFour(context) { api, _ in try RemoteMemory(api: api).page(ref) }
+        }
+        router.delete("/v1/memory/pages/:ref") { [self] _, context in
+            let ref = Self.parameter(context, "ref")
+            return await self.phoneFour(context) { api, _ in try RemoteMemory(api: api).forgetPage(ref) }
+        }
+        router.post("/v1/memory/facts/:ref/pin") { [self] request, context in
+            let ref = Self.parameter(context, "ref")
+            let body = try await Self.object(request, context)
+            guard let pinned = body["pinned"] as? Bool else { return Self.errorResponse(RemoteFailure.invalid("pinned must be true or false")) }
+            return await self.phoneFour(context) { api, _ in try RemoteMemory(api: api).pin(ref, pinned: pinned) }
+        }
+        router.delete("/v1/memory/facts/:ref") { [self] _, context in
+            let ref = Self.parameter(context, "ref")
+            return await self.phoneFour(context) { api, _ in try RemoteMemory(api: api).forgetFact(ref) }
         }
     }
 
@@ -710,9 +739,9 @@ final class RemoteServer {
     /// Runs a task call on the main actor, as every other client of `IronPetAPI` does, and turns its result or error into a response.
     private func call(_ context: RemoteContext, status: Int = 200, _ body: @MainActor (RemoteTasks) throws -> [String: Any]) async throws -> Response {
         guard let device = context.device else { return Self.error(401, "unauthorized", "unauthorized") }
-        let api = api
+        let api = api, ledger = taskChanges
         return await MainActor.run {
-            do { return Self.json(status, try body(RemoteTasks(api: api, by: "remote:\(device.id)"))) } catch {
+            do { return Self.json(status, try body(RemoteTasks(api: api, by: "remote:\(device.id)", ledger: ledger))) } catch {
                 return Self.errorResponse(RemoteFailure(error))
             }
         }

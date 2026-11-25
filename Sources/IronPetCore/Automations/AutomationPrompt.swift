@@ -14,7 +14,7 @@ package enum AutomationPrompt {
     /// Only what reads. This run carries outside item text, so even Ghost's memory notes, which a chat may edit without a card, are
     /// refused: they reach every new chat's preamble.
     package nonisolated static func decision(for call: ACPToolCall) -> ApprovalDecision {
-        if case .allow = ApprovalRules.policy(for: call, isMemoryFile: { _ in false }) { return .allow }
+        if case .allow = ApprovalRules.policy(for: call) { return .allow }
         return .deny("Automations can only read")
     }
 

@@ -865,7 +865,7 @@ package final class ChatSession {
         // The first turn of every new agent session carries the memory notes, including the one after a rollover.
         var preamble: String?
         if agentSessionID == nil {
-            preamble = MemoryPreamble.build(store: FileMemoryStore.shared, workspace: workspace, firstMessage: prompt)
+            preamble = MemoryPreamble.build(store: EntityMemoryStore.shared, workspace: workspace, firstMessage: prompt)
             if let handoff = pendingHandoff, let built = preamble { preamble = SessionHandoff.insert(handoff, into: built) }
         }
         turnOrigin = client

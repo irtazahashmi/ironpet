@@ -167,6 +167,9 @@ final class VoiceController: ObservableObject {
         onFailure?(message, false)
     }
 
+    /// Drops the kept recording, for callers that never offer Retry.
+    func discardRetryAudio() { retryAudio = nil }
+
     /// Sends the kept recording again.
     func retry() {
         guard phase == .idle, let audio = retryAudio else { return }

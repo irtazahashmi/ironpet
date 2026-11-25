@@ -16,12 +16,16 @@ import sys
 
 SHARDS = [
     # Shard 1 (28 tests)
-    ["BackgroundUITests", "ChatTextSizeUITests", "ChatFileLinksUITests", "ChatSwipeReplyUITests", "ChatMenuKeyboardUITests"],
-    # Shard 2 (26 tests)
-    ["PasteUITests", "QuickFilterUITests", "PhaseThreeUITests", "TasksBoardUITests", "ChatStreamingUITests", "ChatPagingUITests", "ChatCacheUITests"],
+    ["BackgroundUITests", "ChatTextSizeUITests", "ChatFileLinksUITests", "ChatSwipeReplyUITests", "ChatMenuKeyboardUITests",
+     "ChatSelectionUITests"],
+    # Shard 2 (27 tests)
+    ["PasteUITests", "QuickFilterUITests", "PhaseThreeUITests", "TasksBoardUITests", "TasksOfflineUITests", "ChatStreamingUITests", "ChatPagingUITests",
+     "ChatCacheUITests"],
     # Shard 3 (24 tests)
     ["IronPetRemoteUITests", "ChatParityUITests", "PhaseFourUITests", "PhaseFiveUITests",
      "VoiceRecordingUITests", "AttachPhotoUITests", "ChatModeUITests", "ChatFindUITests", "ChatOutboxUITests"],
+    # Shard 4 (14 tests). Kept apart: shard 3 plus these ran past the 30 minute job limit.
+    ["NetworkStatesUITests", "MemoryUITests", "ChatMermaidUITests"],
 ]
 
 TARGET = "IronPetRemoteUITests"

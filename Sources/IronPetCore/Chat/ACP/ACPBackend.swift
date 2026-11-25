@@ -200,8 +200,6 @@ package final class ACPBackend {
 
     /// A restricted run gets only its own working folder: no memory or screenshot folders. Meeting summaries use it.
     package var restricted = false
-    /// False leaves the memory folder out of an unrestricted session's extra folders, for a session that is not the user's chat.
-    package var sharesMemoryFolder = true
 
     /// The feature this backend's turns count under in the Usage tab. Nil records nothing, which is the default for anything
     /// that is not an ironpet feature.
@@ -606,7 +604,7 @@ package final class ACPBackend {
         if let meta = Self.toolRulesMeta(turn) { params["_meta"] = meta }
         let sessionCapabilities = capabilities["sessionCapabilities"] as? JSON ?? [:]
         if sessionCapabilities["additionalDirectories"] != nil, !restricted {
-            let folders = (sharesMemoryFolder ? [FileMemoryStore.directory] : []) + [Paths.screenshots]
+            let folders = [Paths.screenshots]
             for dir in folders { try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true) }
             params["additionalDirectories"] = folders.map(\.path)
         }

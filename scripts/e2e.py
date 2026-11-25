@@ -2121,7 +2121,7 @@ def scenario_memory():
         record("Memory: reset leaves no notes", not reset["files"] and not reset["changes"])
         config = json.load(open(CONFIG)) if os.path.exists(CONFIG) else {}
         # The defaults: each chat is read by its own agent, with Claude Code's haiku.
-        config["memory"] = {"reflect": True, "quietMinutes": 30}
+        config["memory"] = {"reflect": True}
         json.dump(config, open(CONFIG, "w"))
         time.sleep(3)
 
@@ -2143,7 +2143,7 @@ def scenario_memory():
         record("Memory: the reflection pass saves the preference with the chat as its source",
                end and end["state"] == "done" and bool(learned) and all(n["source"].startswith("chat:") for n in learned),
                f"outcome={state.get('lastOutcome')} notes={learned}")
-        record("Memory: Recently learned lists it", any(c["action"] == "added" and "pnpm" in c["note"].lower() for c in state["changes"]),
+        record("Memory: the change log lists it", any(c["action"] == "added" and "pnpm" in c["note"].lower() for c in state["changes"]),
                str(state["changes"][:3]))
 
         end = run_memory_turn("Which package manager should I use for a new script here? One word.", workspace=MEMORY_WORKTREE)

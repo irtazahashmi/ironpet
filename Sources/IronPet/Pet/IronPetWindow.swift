@@ -5,7 +5,7 @@ import SwiftUI
 
 /// A page of the ironpet window, in sidebar order.
 enum IronPetSection: String, CaseIterable, Identifiable {
-    case chat, agents, alerts, notifications, tasks, transcripts, screen, actions, automations, today
+    case chat, agents, alerts, notifications, tasks, transcripts, screen, actions, automations, memory, today
 
     var id: String { rawValue }
 
@@ -20,6 +20,7 @@ enum IronPetSection: String, CaseIterable, Identifiable {
         case .screen: return "Screen"
         case .actions: return "Actions"
         case .automations: return "Automations"
+        case .memory: return "Memory"
         case .today: return "Today"
         }
     }
@@ -35,6 +36,7 @@ enum IronPetSection: String, CaseIterable, Identifiable {
         case .screen: return SharedSymbols.screen
         case .actions: return "sparkles"
         case .automations: return SharedSymbols.automations
+        case .memory: return SharedSymbols.memory
         case .today: return "sun.horizon"
         }
     }
@@ -211,6 +213,21 @@ struct IronPetWindowView: View {
     var brief: BriefModel?
     let actions: SessionActions
     @ObservedObject private var config = SettingsAPI.live
+    @ObservedObject private var memoryModel = MemorySectionModel.shared
+
+    /// A source chip under a fact: open the chat, meeting, task or capture it came from.
+    private func openMemorySource(_ source: MemorySource) {
+        switch source.kind {
+        case .meeting:
+            if let folder = source.target { model.focusMeeting = folder }
+            model.section = .transcripts
+        case .task: model.section = .tasks
+        case .screen: model.section = .screen
+        case .automation: model.section = .automations
+        case .chat: model.section = .chat
+        case .user, .other: break
+        }
+    }
 
     var body: some View {
         // One background under the sidebar and the page; the sidebar is glass over it.
@@ -249,6 +266,8 @@ struct IronPetWindowView: View {
             }
         }
         .animation(.easeOut(duration: 0.12), value: model.railTip)
+        // The pages the user followed in Memory are forgotten when they leave the section.
+        .onChange(of: model.section) { _, section in if section != .memory { memoryModel.showList() } }
     }
 
     private var shown: [IronPetSection] {
@@ -404,6 +423,8 @@ struct IronPetWindowView: View {
                     if let settings {
                         AutomationsSettings(model: settings).frame(maxHeight: .infinity)
                     }
+                case .memory:
+                    MemorySection(model: memoryModel, onOpenSource: openMemorySource, onOpenSettings: actions.onMemorySettings)
                 case .today:
                     if let brief {
                         TodayView(model: brief, kind: $model.briefKind, onOpen: actions.onBriefOpen)
@@ -426,6 +447,8 @@ struct SessionActions {
     var onSettings: () -> Void = {}
     /// Opens Settings on the Screen tab.
     var onScreenSettings: () -> Void = {}
+    /// Opens Settings on the Memory tab.
+    var onMemorySettings: () -> Void = {}
     /// A row of the Today page.
     var onBriefOpen: (Brief.Target) -> Void = { _ in }
     static let none = SessionActions(onAsk: { _ in }, onTrick: { _ in }, onTellGhost: { _ in },

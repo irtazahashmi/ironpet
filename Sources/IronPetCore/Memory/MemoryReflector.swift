@@ -1,36 +1,21 @@
-#if canImport(CryptoKit)
-import CryptoKit
-#else
-import Crypto
-#endif
 import Foundation
 
-/// The background pass that learns from what Ghost saw. A chat is read `quietMinutes` after its last turn, or at once when the
-/// user starts a new chat or opens another thread; a meeting summary and an automation's final answer are read when they arrive.
-/// Each run sends only what is new since the last run of that thread to the reflection agent, with the notes Ghost already has, and
-/// saves what the agent names through `MemoryStore`. One run at a time.
+/// The background pass that learns from what Ghost saw. Once an hour the digest reads what is new since the last one: each chat's
+/// messages, each meeting summary written since, the task list, the screen captures when `memory.learnFromScreen` is on, and any page
+/// with more claims than `memory.maxClaimsPerEntity`, which it merges. An automation's final answer is read when it arrives. Each run
+/// sends only what is new to one agent, with the notes Ghost already has, and saves what the agent names through `MemoryStore`. One run
+/// at a time.
 ///
 /// The agent runs restricted, like meeting summaries: no MCP servers, a scratch folder, every permission request refused. It only
-/// answers with JSON; ironpet checks each note and writes the files. Text only goes to the reflection agent when that agent already
-/// had it (the chat's agent, the meeting summary agent, the agent that ran the automation), so no provider sees anything new.
+/// answers with JSON; ironpet checks each note and writes the claims. Text only goes to an agent that already had it: a chat to its own
+/// agent, a meeting summary to the summary agent, an automation's answer to the agent that ran it. Tasks, screen text and merges go to
+/// the digest agent, the one that already reads chats (`memory.reflectAgent`, else the chat's agent).
 @MainActor
 package final class MemoryReflector {
     /// Why the reflection agent gave no answer.
-    package struct RunError: Error, Equatable {
-        package let message: String
-        package init(_ message: String) { self.message = message }
-    }
-
+    package typealias RunError = ReflectionError
     /// The agent that reads one job, and its model (nil: the agent's default).
-    package struct Reader: Equatable {
-        package init(agent: String, model: String?) {
-            self.agent = agent
-            self.model = model
-        }
-
-        package let agent: String
-        package let model: String?
-    }
+    package typealias Reader = ReflectionReader
 
     /// Runs one prompt on the reader's agent and returns its answer, or why it failed.
     package typealias Runner = @MainActor (_ prompt: String, _ reader: Reader) async -> Result<String, RunError>
@@ -41,6 +26,12 @@ package final class MemoryReflector {
         case meeting(URL, agent: String)
         /// Only the run's final answer, never the item text an automation fetched. `agent` is the one that ran it.
         case automation(id: String, name: String, answer: String, agent: String)
+        /// The tasks that are new or changed since the last digest.
+        case tasks(agent: String)
+        /// The screen captures since the last digest.
+        case screen(agent: String)
+        /// The oldest facts of one page that holds more than `memory.maxClaimsPerEntity`, merged into fewer.
+        case merge(entity: String, agent: String)
     }
 
     package struct Outcome: Equatable {
@@ -56,7 +47,7 @@ package final class MemoryReflector {
         package var saved: [String] = []
         package var dropped: [String] = []
         package var error: String?
-        /// True when there was nothing new to read, reflection is off, or the text went to another agent than the reflection agent.
+        /// True when there was nothing new to read, learning is off, or the text went to another agent than the reader.
         package var skipped = false
     }
 
@@ -65,30 +56,42 @@ package final class MemoryReflector {
     package static var maxNotes: Int { ConfigStore.shared.config.memory.reflectMaxNotes }
     package static var maxInput: Int { ConfigStore.shared.config.memory.reflectMaxInputChars }
     package static var timeout: TimeInterval { TimeInterval(ConfigStore.shared.config.memory.reflectTimeoutSeconds) }
-    /// Launch catches up on threads from `memory.catchUpDays` back, at most `memory.catchUpThreads` of them.
-    package static var catchUpDays: Double { Double(ConfigStore.shared.config.memory.catchUpDays) }
-    package static var catchUpLimit: Int { ConfigStore.shared.config.memory.catchUpThreads }
+    /// Most merges one pass of the merge job may make.
+    package static let maxMerges = 5
+    /// Most of a page's oldest facts one merge pass shows the agent.
+    package static let maxMergeCandidates = 40
     /// The cursor row that says earlier chats were marked as read.
     package static let seededKey = "catch-up:seeded"
+    /// The cursor row of the last screen capture a digest read.
+    static let screenKey = "screen"
 
-    package let store: MemoryStore
+    package let store: EntityMemoryStore
     package let index: MemoryIndex
     package var runner: Runner
     package var config: () -> Config.Memory = { ConfigStore.shared.config.memory }
     package var now: () -> Date = Date.init
     package var threads: (String) -> ChatThread? = ThreadStore.load
     package var recentThreads: () -> [ChatThread] = { ThreadStore.recent(limit: 50, automationLimit: 0) }
+    package var tasks: () -> [TaskItem] = { [] }
+    /// Newest first, as `CaptureStore.recent` returns them.
+    package var captures: () -> [StoredCapture] = { [] }
+    /// The chat's agent, which reads tasks, screen text and merges when `memory.reflectAgent` is not set.
+    package var digestAgent: () -> String? = { nil }
     package var petName: () -> String = { ConfigStore.shared.config.pet.name }
+    /// Shows a question in the alerts, such as which of two people a name means.
+    package var post: (Signal) -> Void = { _ in }
     /// Off in test mode, where only `reflectNow` runs a pass, so an e2e scenario never writes notes it did not ask for.
     package var automatic = true
     /// Called after a run saved notes or failed, so Settings can refresh and show the failure.
     package var onChange: (() -> Void)?
 
-    /// Threads waiting to go quiet, and when they will be read.
-    package private(set) var due: [String: Date] = [:]
     package private(set) var queue: [Job] = []
     package private(set) var running: Job?
     package private(set) var lastOutcome: Outcome?
+    /// When the last digest ran. Nil until one has.
+    private var lastDigest: Date?
+    /// Meeting summaries written since the last digest, and the agent that wrote each.
+    private var pendingMeetings: [(folder: URL, agent: String)] = []
     private var waiting: [(Job, CheckedContinuation<Outcome, Never>)] = []
     /// Bumped by `cancelAll`, so the answer of a run that started before it is thrown away.
     private var generation = 0
@@ -96,7 +99,7 @@ package final class MemoryReflector {
     private var lastAnswers: [String: String] = [:]
 
     /// `spawner` starts the default runner's agent. A `runner` passed in does not use it.
-    package init(store: MemoryStore, index: MemoryIndex, spawner: ProcessSpawner = UnsupportedProcessSpawner(), runner: Runner? = nil) {
+    package init(store: EntityMemoryStore, index: MemoryIndex, spawner: ProcessSpawner = UnsupportedProcessSpawner(), runner: Runner? = nil) {
         self.store = store
         self.index = index
         self.runner = runner ?? { prompt, reader in await MemoryReflector.agentRunner(prompt: prompt, reader: reader, spawner: spawner) }
@@ -104,32 +107,37 @@ package final class MemoryReflector {
 
     // MARK: Triggers
 
-    /// A turn ended in this thread. It is read once it has been quiet for `quietMinutes`.
-    package func turnEnded(thread: String) {
+    /// Runs the digest when `memory.digestMinutes` have passed since the last one, or when none has run yet. The app calls it every minute.
+    package func tick() {
         guard automatic else { return }
-        guard config().reflect, let agent = threads(thread)?.agent, config().reader(for: agent) != nil else { return markRead(thread) }
-        due[thread] = now().addingTimeInterval(Double(config().quietMinutes) * 60)
+        if let lastDigest, now().timeIntervalSince(lastDigest) < Double(config().digestMinutes) * 60 { return }
+        digest()
     }
 
-    /// The user started a new chat or opened another thread: this one is read now.
-    package func left(thread: String) {
-        guard automatic else { return }
-        due[thread] = nil
-        guard config().reflect else { return markRead(thread) }
-        enqueue(.thread(thread))
-    }
-
-    /// Moves the thread's cursor past what it holds now, so what was said while learning was off, or to an agent the user did not
-    /// pick, is never read later.
-    private func markRead(_ thread: String) {
-        guard let last = threads(thread)?.items.last else { return }
-        index.setCursor(thread, item: last.id.uuidString, at: now())
-    }
-
-    /// `agent` is the summary agent that wrote it.
-    package func meetingSummaryWritten(_ folder: URL, agent: String) {
+    /// The hourly digest: queues what is new since the last one.
+    package func digest() {
         guard automatic, config().reflect else { return }
-        enqueue(.meeting(folder, agent: agent))
+        lastDigest = now()
+        let config = config()
+        for thread in recentThreads() where !thread.isAutomationRun && thread.job == nil && config.reader(for: thread.agent) != nil {
+            if !unread(in: thread).isEmpty { enqueue(.thread(thread.id)) }
+        }
+        for meeting in pendingMeetings { enqueue(.meeting(meeting.folder, agent: meeting.agent)) }
+        pendingMeetings = []
+        // Tasks, screen text and merges go to the chat's agent: it already reads the tasks and the captures through its tools. Under a picked
+        // agent they go only when that is the chat's agent, since `reader(for:)` skips other text.
+        guard let agent = digestReaderAgent(), config.reader(for: agent) != nil else { return }
+        if !changedTasks().isEmpty { enqueue(.tasks(agent: agent)) }
+        if config.learnFromScreen, !freshCaptures().isEmpty { enqueue(.screen(agent: agent)) }
+        for entity in store.entities() where store.claims(of: entity.id).count > config.maxClaimsPerEntity {
+            enqueue(.merge(entity: entity.id, agent: agent))
+        }
+    }
+
+    /// A meeting summary was written. It is read by the next digest, by the agent that wrote it.
+    package func meetingSummaryWritten(_ folder: URL, agent: String) {
+        guard automatic, config().reflect, !pendingMeetings.contains(where: { $0.folder == folder }) else { return }
+        pendingMeetings.append((folder, agent))
     }
 
     /// An automation's final answer, from the agent that ran it. Its quiet reply, and an answer the same as its last one, are skipped.
@@ -139,15 +147,6 @@ package final class MemoryReflector {
               lastAnswers[id] != text else { return }
         lastAnswers[id] = text
         enqueue(.automation(id: id, name: name, answer: text, agent: agent))
-    }
-
-    /// Queues the threads whose quiet time is over. The app calls it on a timer.
-    package func tick() {
-        let current = now()
-        for (thread, at) in due.sorted(by: { $0.value < $1.value }) where at <= current {
-            due[thread] = nil
-            enqueue(.thread(thread))
-        }
     }
 
     /// At launch: the recent threads with messages no run has read, newest first.
@@ -161,19 +160,9 @@ package final class MemoryReflector {
         index.setCursor(Self.seededKey, item: "1", at: now())
     }
 
-    package func catchUp() {
-        guard automatic, config().reflect else { return }
-        let cutoff = now().addingTimeInterval(-Self.catchUpDays * 86_400)
-        let config = config()
-        let pending = recentThreads().filter { thread in
-            thread.updatedAt >= cutoff && !thread.isAutomationRun && thread.job == nil && config.reader(for: thread.agent) != nil && !unread(in: thread).isEmpty
-        }
-        for thread in pending.prefix(Self.catchUpLimit) { enqueue(.thread(thread.id)) }
-    }
-
-    /// Forget Everything: drops the waiting threads and jobs, and the run in flight saves nothing.
+    /// Forget Everything: drops the queued jobs and the run in flight saves nothing.
     package func cancelAll() {
-        due = [:]
+        pendingMeetings = []
         queue = []
         generation += 1
         let dropped = waiting.filter { $0.0 != running }
@@ -183,11 +172,15 @@ package final class MemoryReflector {
 
     /// Runs the job now (after any that are already queued) and returns what it did. For the test endpoint.
     package func reflectNow(_ job: Job) async -> Outcome {
-        if case .thread(let id) = job { due[id] = nil }
         return await withCheckedContinuation { continuation in
             waiting.append((job, continuation))
             enqueue(job, force: true)
         }
+    }
+
+    /// The agent that reads tasks, screen text and merges: the chat's agent. Nil when no chat has an agent yet.
+    package func digestReaderAgent() -> String? {
+        digestAgent()
     }
 
     private func enqueue(_ job: Job, force: Bool = false) {
@@ -205,6 +198,10 @@ package final class MemoryReflector {
             let outcome = await self.perform(job, generation: generation)
             self.lastOutcome = outcome
             self.running = nil
+            // A meeting summary's cursor did not move, so the next digest must queue it again; it is not in `pendingMeetings` any more.
+            if outcome.error != nil, case .meeting(let folder, let agent) = job, !self.pendingMeetings.contains(where: { $0.folder == folder }) {
+                self.pendingMeetings.append((folder, agent))
+            }
             if let at = self.waiting.firstIndex(where: { $0.0 == job }) { self.waiting.remove(at: at).1.resume(returning: outcome) }
             if !outcome.saved.isEmpty || outcome.error != nil { self.onChange?() }
             self.pump()
@@ -216,47 +213,30 @@ package final class MemoryReflector {
     /// The user's and Ghost's messages after the cursor, as `(item id, speaker, text)`. Tool output, screenshots and errors are left out,
     /// and so are automation turns: their prompt and the reply to it. An automation's answer is read on its own, as outside text.
     package func unread(in thread: ChatThread) -> [(id: String, user: Bool, text: String)] {
-        let cursor = index.cursor(thread.id)
-        var start = 0
-        if let cursor {
-            if let at = thread.items.firstIndex(where: { $0.id.uuidString == cursor.item }) {
-                start = at + 1
-            } else {
-                start = thread.items.firstIndex { ($0.date ?? .distantPast) > cursor.at } ?? thread.items.count
-            }
-        }
-        var automationTurn = false
-        var result: [(id: String, user: Bool, text: String)] = []
-        for (offset, item) in thread.items.enumerated() {
-            switch item.kind {
-            case .user(let text):
-                automationTurn = item.origin == ChatSession.automationOrigin
-                if offset >= start, !automationTurn { result.append((item.id.uuidString, true, text)) }
-            case .assistant(let text):
-                if offset >= start, !automationTurn { result.append((item.id.uuidString, false, text)) }
-            default:
-                break
-            }
-        }
-        return result.filter { !$0.text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+        ReflectionReading.unread(in: thread, after: index.cursor(thread.id))
     }
 
     /// The newest messages that fit in `maxInput` characters, oldest first.
     package func transcript(_ messages: [(id: String, user: Bool, text: String)]) -> String {
-        var lines: [String] = [], used = 0
-        for message in messages.reversed() {
-            let line = (message.user ? "User: " : "\(petName()): ") + message.text
-            if used + line.count > Self.maxInput {
-                if lines.isEmpty { lines.append(String(line.suffix(Self.maxInput))) }
-                break
-            }
-            lines.append(line)
-            used += line.count + 1
-        }
-        return lines.reversed().joined(separator: "\n\n")
+        ReflectionReading.transcript(messages, petName: petName(), maxInput: Self.maxInput)
     }
 
-    // MARK: Run
+    /// The tasks whose title, notes or status differ from what the last digest saw, with the stamp to store for each.
+    private func changedTasks() -> [(task: TaskItem, stamp: String)] {
+        tasks().compactMap { task in
+            let stamp = Self.stamp("\(task.title)\n\(task.notes)\n\(task.status)")
+            return index.cursor(Self.taskKey(task.id))?.item == stamp ? nil : (task, stamp)
+        }
+    }
+
+    /// The screen captures newer than the last digest read, newest first.
+    private func freshCaptures() -> [StoredCapture] {
+        ReflectionReading.freshCaptures(captures(), after: index.cursor(Self.screenKey)?.item)
+    }
+
+    private static func taskKey(_ id: String) -> String { "task:" + id }
+
+    private static func stamp(_ text: String) -> String { ReflectionReading.stamp(text) }
 
     private struct Input {
         let text: String
@@ -265,9 +245,10 @@ package final class MemoryReflector {
         /// The agent that already had this text.
         let agent: String
         let project: ProjectKey?
-        /// Meeting summaries and automation answers hold what other people wrote. They may not write `me.md`.
+        /// Meeting summaries, automation answers, tasks and screen text hold what other people wrote or saw. They may not write `me.md`.
         let outside: Bool
-        let cursor: (key: String, item: String)?
+        /// The cursors to move once the run succeeds, or when there is nothing to read.
+        let cursors: [(key: String, item: String)]
     }
 
     private func input(for job: Job) -> Input? {
@@ -278,26 +259,51 @@ package final class MemoryReflector {
             guard !messages.isEmpty, let last = thread.items.last else { return nil }
             return Input(text: transcript(messages), kind: "a chat between the user and \(petName())", source: "chat:" + id.prefix(8),
                          agent: thread.agent, project: MemoryMCP.project(URL(fileURLWithPath: thread.workspace)), outside: false,
-                         cursor: (id, last.id.uuidString))
+                         cursors: [(key: id, item: last.id.uuidString)])
         case .meeting(let folder, let agent):
             guard let summary = try? String(contentsOf: folder.appendingPathComponent("summary.md"), encoding: .utf8),
                   !summary.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
             let key = "meeting:" + folder.path
-            let digest = SHA256.hash(data: Data(summary.utf8)).prefix(8).map { String(format: "%02x", $0) }.joined()
+            let digest = Self.stamp(summary)
             guard index.cursor(key)?.item != digest else { return nil }
             return Input(text: String(summary.prefix(Self.maxInput)), kind: "the summary of a meeting the user recorded",
-                         source: "meeting:" + folder.lastPathComponent, agent: agent, project: nil, outside: true, cursor: (key, digest))
+                         source: "meeting:" + folder.lastPathComponent, agent: agent, project: nil, outside: true, cursors: [(key: key, item: digest)])
         case .automation(let id, let name, let answer, let agent):
             return Input(text: String(answer.prefix(Self.maxInput)), kind: "the answer \(petName()) gave in the automation \"\(name)\"",
-                         source: "automation:" + id, agent: agent, project: nil, outside: true, cursor: nil)
+                         source: "automation:" + id, agent: agent, project: nil, outside: true, cursors: [])
+        case .tasks(let agent):
+            // Whole tasks only, newest first, so a long list is read in part and the rest is read by a later digest.
+            var lines: [String] = [], cursors: [(key: String, item: String)] = [], used = 0
+            for (task, stamp) in changedTasks() {
+                let notes = task.notes.trimmingCharacters(in: .whitespacesAndNewlines)
+                let line = "- \(task.title) (\(task.status))" + (notes.isEmpty ? "" : ": \(notes)")
+                if used + line.count > Self.maxInput { break }
+                lines.append(line)
+                cursors.append((key: Self.taskKey(task.id), item: stamp))
+                used += line.count + 1
+            }
+            guard !lines.isEmpty else { return nil }
+            return Input(text: lines.joined(separator: "\n"), kind: "the user's task list, the tasks that are new or changed",
+                         source: "tasks", agent: agent, project: nil, outside: true, cursors: cursors)
+        case .screen(let agent):
+            // A job queued before the switch was turned off must not read the screen after it.
+            guard config().learnFromScreen else { return nil }
+            let fresh = freshCaptures()
+            guard let newest = fresh.first else { return nil }
+            // The newest captures that fit, oldest first. The cursor moves past all of them, so older ones are not read later.
+            return Input(text: ReflectionReading.screenText(fresh, maxInput: Self.maxInput), kind: "the text on the user's screen, as captured while they worked",
+                         source: "screen", agent: agent, project: nil, outside: true, cursors: [(key: Self.screenKey, item: String(newest.id))])
+        case .merge:
+            return nil
         }
     }
 
     private func perform(_ job: Job, generation started: Int) async -> Outcome {
+        if case .merge(let entity, let agent) = job { return await merge(entity, agent: agent, generation: started) }
         var outcome = Outcome(job: job)
         let config = config()
         guard config.reflect, let input = input(for: job), let found = config.reader(for: input.agent) else {
-            if config.reflect, let input = input(for: job), let cursor = input.cursor { index.setCursor(cursor.key, item: cursor.item, at: now()) }
+            if config.reflect, let input = input(for: job) { moveCursors(input.cursors) }
             outcome.skipped = true
             return outcome
         }
@@ -315,7 +321,7 @@ package final class MemoryReflector {
         }
         switch answer {
         case .failure(let failure):
-            // The cursor stays, so the next trigger reads these messages again.
+            // The cursors stay, so the next digest reads these messages again.
             outcome.error = failure.message
             NSLog("ironpet: memory reflection failed: \(failure.message)")
             return outcome
@@ -324,12 +330,16 @@ package final class MemoryReflector {
                 outcome.error = "the agent did not answer with the notes JSON"
                 return outcome
             }
-            var touched: Set<MemoryScope> = []
-            // Like forget, one pass may replace at most `maxForget` notes in all, so a misled pass cannot empty a file.
+            // Like forget, one pass may replace at most `maxForget` notes in all, so a misled pass cannot empty a page.
             var replaced = 0
             for proposal in proposals.prefix(Self.maxNotes) {
                 if let reason = Self.refusal(proposal, outside: input.outside, hasProject: input.project != nil) {
                     outcome.dropped.append("\(proposal.text) (\(reason))")
+                    continue
+                }
+                if proposal.scope == .people, let name = MemoryNote.personName(proposal.person), let candidates = store.ambiguousPeople(name) {
+                    ask(name, candidates: candidates)
+                    outcome.dropped.append("\(proposal.text) (more than one person is called \(name))")
                     continue
                 }
                 guard replaced + proposal.replaces.count <= MemoryNote.maxForget else {
@@ -341,21 +351,89 @@ package final class MemoryReflector {
                                      project: input.project, source: input.source) {
                 case .success(let note):
                     outcome.saved.append(note.text)
-                    touched.insert(proposal.scope)
                 case .failure(let failure):
                     outcome.dropped.append("\(proposal.text) (\(failure.message))")
                 }
             }
-            if let cursor = input.cursor { index.setCursor(cursor.key, item: cursor.item, at: now()) }
-            // Tidying rewrites whole files, so only the file store has it.
-            if config.tidy, !input.outside, let files = store as? FileMemoryStore {
-                for scope in touched {
-                    guard let url = files.file(scope, project: input.project), let limit = FileMemoryStore.sizeLimit[scope] else { continue }
-                    await MemoryTidier.tidy(url, limit: limit, store: files, reader: reader, runner: runner)
-                }
+            // After the notes, so a person the pass just named already has a page to link.
+            for link in Self.parseLinks(answer).prefix(Self.maxNotes) {
+                guard let from = resolve(link.from), let to = resolve(link.to), from != to else { continue }
+                store.link(from: from, to: to, type: link.type, source: input.source)
             }
+            moveCursors(input.cursors)
             return outcome
         }
+    }
+
+    private func moveCursors(_ cursors: [(key: String, item: String)]) {
+        for cursor in cursors { index.setCursor(cursor.key, item: cursor.item, at: now()) }
+    }
+
+    /// The page a name in an answer names: the one match, or nil when none or more than one page has it.
+    private func resolve(_ name: String) -> String? {
+        switch EntityMatcher.match(name: name, in: store.entities().map(\.record)) {
+        case .found(let id): return id
+        case .none, .ambiguous: return nil
+        }
+    }
+
+    /// Asks the user which of several pages a name means. Nothing is guessed: the fact waits until they say.
+    private func ask(_ name: String, candidates: [String]) {
+        let list = candidates.joined(separator: " or ")
+        post(Signal(id: "memory-ambiguous:" + EntityMatcher.normalize(name), title: "Which \(name)?",
+                    subtitle: "\(list). Ghost did not guess.", url: nil, label: "Memory", symbol: "person.2.fill", mood: .needsInput,
+                    ask: "Which \(name) did I mean: \(list)? Tell me, so I can note it for the right one."))
+    }
+
+    /// One merge pass on a page that holds too many claims: the oldest unpinned facts go to the agent, which answers with the merges.
+    private func merge(_ entity: String, agent: String, generation started: Int) async -> Outcome {
+        let job = Job.merge(entity: entity, agent: agent)
+        var outcome = Outcome(job: job)
+        let settings = config()
+        let claims = store.claims(of: entity)
+        let overflow = claims.count - settings.maxClaimsPerEntity
+        guard settings.reflect, overflow > 0, let found = settings.reader(for: agent) else {
+            outcome.skipped = true
+            return outcome
+        }
+        // The oldest unpinned facts: enough to bring the page under the limit, and a few more to merge.
+        let oldest = Array(claims.filter { !$0.pinned }.reversed().prefix(min(Self.maxMergeCandidates, max(2, overflow + 4))))
+        guard oldest.count >= 2 else {
+            outcome.skipped = true
+            return outcome
+        }
+        let facts = oldest.map { "\($0.ref): \($0.text)" }.joined(separator: "\n")
+        let prompt = Prompts.render(id: "memory-merge", [
+            "pet": petName(), "claims": facts, "maxLength": String(MemoryNote.maxLength),
+        ])
+        let answer = await runner(prompt, Reader(agent: found.agent, model: found.model))
+        guard generation == started, self.config().reflect else {
+            outcome.skipped = true
+            return outcome
+        }
+        switch answer {
+        case .failure(let failure):
+            outcome.error = failure.message
+            NSLog("ironpet: memory merge failed: \(failure.message)")
+        case .success(let answer):
+            guard let merges = Self.parseMerges(answer) else {
+                outcome.error = "the agent did not answer with the merges JSON"
+                return outcome
+            }
+            let shown = Dictionary(oldest.map { ($0.ref, $0.id) }, uniquingKeysWith: { first, _ in first })
+            for item in merges.prefix(Self.maxMerges) {
+                let ids = item.ids.compactMap { shown[$0] }
+                guard Set(item.ids).count >= 2, ids.count == item.ids.count else {
+                    outcome.dropped.append("\(item.text) (it names claims that were not shown)")
+                    continue
+                }
+                switch store.merge(entity, replacing: ids, with: item.text, source: "digest:merge") {
+                case .success(let note): outcome.saved.append(note.text)
+                case .failure(let failure): outcome.dropped.append("\(item.text) (\(failure.message))")
+                }
+            }
+        }
+        return outcome
     }
 
     /// The notes the agent compares against: the same budget and the same choice of people as a chat's preamble, so the reflection
@@ -403,8 +481,7 @@ package final class MemoryReflector {
 
     /// The first JSON object in an answer, also when the agent wrapped it in a code fence or a sentence.
     package static func jsonObject(in answer: String) -> [String: Any]? {
-        guard let start = answer.firstIndex(of: "{"), let end = answer.lastIndex(of: "}"), start < end else { return nil }
-        return (try? JSONSerialization.jsonObject(with: Data(answer[start...end].utf8))) as? [String: Any]
+        ReflectionReading.jsonObject(in: answer)
     }
 
     /// The notes the agent proposed. Nil when the answer is not the notes object; entries without a known scope or text are skipped.
@@ -428,62 +505,33 @@ package final class MemoryReflector {
         return nil
     }
 
+    /// The links an answer names. An entry without two names or a type that is not a short snake_case verb is skipped.
+    package static func parseLinks(_ answer: String) -> [(from: String, type: String, to: String)] {
+        guard let links = jsonObject(in: answer)?["links"] as? [Any] else { return [] }
+        return links.compactMap { raw in
+            guard let entry = raw as? [String: Any], let from = entry["from"] as? String, let to = entry["to"] as? String,
+                  let type = (entry["type"] as? String)?.lowercased(), (2...24).contains(type.count),
+                  type.allSatisfy({ $0.isASCII && ($0.isLetter || $0 == "_") }),
+                  !from.trimmingCharacters(in: .whitespaces).isEmpty, !to.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+            return (from, type, to)
+        }
+    }
+
+    /// The merges an answer proposes: the claim refs (`claim_<hex>`) and the sentence that replaces them. Nil when the answer is not the merges object.
+    package static func parseMerges(_ answer: String) -> [(ids: [String], text: String)]? {
+        guard let merges = jsonObject(in: answer)?["merges"] as? [Any] else { return nil }
+        return merges.compactMap { raw in
+            guard let entry = raw as? [String: Any], let text = entry["text"] as? String, let ids = entry["ids"] as? [Any] else { return nil }
+            return (ids.compactMap { $0 as? String }, text)
+        }
+    }
+
     // MARK: Agent
 
     /// The app's runner: the agent from Settings on a restricted backend in `~/.ironpet/scratch/memory`, every permission refused, with
     /// a three-minute limit. Its turns count as Memory in the Usage tab.
     package static func agentRunner(prompt: String, reader: Reader, spawner: ProcessSpawner) async -> Result<String, RunError> {
-        guard let agent = AgentCatalog.agent(id: reader.agent) else {
-            return .failure(RunError("the agent \"\(reader.agent)\" is not available. Pick another in Settings → Memory."))
-        }
-        let workspace = Paths.root.appendingPathComponent("scratch/memory")
-        try? FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
-        let backend = ACPBackend(agent: agent, spawner: spawner)
-        backend.restricted = true
-        backend.usageFeature = .memory
-        backend.onPermission = { _, respond in respond(.deny("Ghost's memory pass only answers")) }
-        let turn = ACPTurn(prompt: prompt, preamble: nil, workspace: workspace, resume: nil, model: reader.model, images: [], files: [])
-        let result = Answer()
-        let task = Task { @MainActor in
-            await backend.runTurn(turn) { event in
-                switch event {
-                case .assistant(let chunk): result.answer += chunk
-                case .finished(let error): result.finish(error.map { .failure(RunError($0)) } ?? .success(result.answer))
-                case .needsSignIn: result.finish(.failure(RunError("\(agent.name) needs you to sign in. Open it in the chat once.")))
-                case .needsRuntime: result.finish(.failure(RunError("\(agent.name) needs Node 22 or Bun. Open it in the chat once.")))
-                default: break
-                }
-            }
-        }
-        let watchdog = Task { @MainActor in
-            try? await Task.sleep(for: .seconds(timeout))
-            result.finish(.failure(RunError("the agent did not answer within \(Int(timeout)) seconds")))
-        }
-        let value = await result.wait()
-        watchdog.cancel()
-        task.cancel()
-        backend.cancel()
-        backend.shutdown()
-        return value
-    }
-
-    /// One answer, delivered once, whichever of the turn and the watchdog ends first.
-    @MainActor
-    private final class Answer {
-        var answer = ""
-        private var value: Result<String, RunError>?
-        private var continuation: CheckedContinuation<Result<String, RunError>, Never>?
-
-        func finish(_ result: Result<String, RunError>) {
-            guard value == nil else { return }
-            value = result
-            continuation?.resume(returning: result)
-            continuation = nil
-        }
-
-        func wait() async -> Result<String, RunError> {
-            if let value { return value }
-            return await withCheckedContinuation { continuation = $0 }
-        }
+        await ReflectionAgent.run(prompt: prompt, reader: reader, spawner: spawner, scratch: "memory", feature: .memory,
+                                  refusal: "Ghost's memory pass only answers", settings: "Memory", timeout: timeout)
     }
 }

@@ -150,9 +150,20 @@ final class ChatModel: SocketModel {
     @ObservationIgnored private var cache: (any ChatCaching)?
     var draft = ""
     var attachments: [PendingAttachment] = []
-    /// The message the next one answers, with the part of it the user selected, if any.
-    var replyTo: RemoteChatItem?
+    /// The message the next one answers.
+    var replyTo: RemoteChatItem? {
+        didSet { if replyTo == nil || replyTo?.id != oldValue?.id { replySelection = nil } }
+    }
+    /// The part of `replyTo` the reader selected and chose Ask about this for. Nil when the whole message is quoted.
+    var replySelection: String?
     private(set) var sending = false
+
+    /// Starts a reply to `item`, quoting only `selection` when the reader selected part of it. Blank text counts as no selection.
+    func reply(to item: RemoteChatItem, selection: String? = nil) {
+        let trimmed = selection?.trimmingCharacters(in: .whitespacesAndNewlines)
+        replyTo = item
+        replySelection = trimmed?.isEmpty == false ? trimmed : nil
+    }
     /// Messages sent from this phone that the transcript has not caught up with. They show at the end of `displayItems`.
     private(set) var outbox: [OutgoingMessage] = []
     /// The event socket, set by the app. Typed messages go over it while it is open. Nil in tests that use HTTPS only.
@@ -183,16 +194,11 @@ final class ChatModel: SocketModel {
     private(set) var uploadFailure: String?
     /// Screenshots and attached images the Mac holds, fetched by the id of their message.
     @ObservationIgnored lazy var images = ChatImages(client: client)
-    /// True after a run of failed background reads (3 tries, or 10 s since the first). Shows one banner with Retry, and clears when a read works.
-    private(set) var connectionLost = false
-    @ObservationIgnored var bannerAfterTries = 3
-    @ObservationIgnored var bannerAfter: Duration = .seconds(10)
-    /// The wait before the first quiet retry. Each failure doubles it, up to 8 times this.
-    @ObservationIgnored var retryBase: Duration = .seconds(1)
-    @ObservationIgnored private var readFailures = 0
-    @ObservationIgnored private var firstReadFailure: ContinuousClock.Instant?
-    /// The one pending quiet retry. A failure while it waits does not start another.
-    @ObservationIgnored private var quietRetry: Task<Void, Never>?
+    /// The last message typed on this phone that the Mac has confirmed, which shows the check. Earlier ones stay quiet.
+    var deliveredID: String? {
+        guard let last = items.last(where: { $0.kind == "user" && $0.origin == "ios" }) else { return nil }
+        return outbox.contains { $0.itemID == last.id } ? nil : last.id
+    }
 
     var approvals: [RemoteApproval] { snapshot?.approvals ?? [] }
     var forms: [RemoteForm] { snapshot?.forms ?? [] }
@@ -250,26 +256,16 @@ final class ChatModel: SocketModel {
 
     override func reload() async { await fetch() }
 
-    override func stop() {
-        quietRetry?.cancel()
-        quietRetry = nil
-        super.stop()
-    }
-
     /// Loads the page of messages before the oldest one shown. The transcript calls it when its top comes into view, so a long chat
     /// reads a page at a time. A failure leaves the top as it was; the next time the top shows, it tries again.
     func loadOlder() async {
         guard hasOlderHistory, !loadingOlder, let oldest = items.first?.id else { return }
         loadingOlder = true
         defer { loadingOlder = false }
-        do {
-            let page = try await client.chat(limit: Self.pageSize, before: oldest)
-            let shown = Set(items.map(\.id))
-            items = page.items.filter { !shown.contains($0.id) } + items
-            hasOlderHistory = page.hasMore ?? false
-        } catch ClientError.unauthorized {
-            onUnauthorized()
-        } catch {}
+        guard let page = await read({ try await self.client.chat(limit: Self.pageSize, before: oldest) }) else { return }
+        let shown = Set(items.map(\.id))
+        items = page.items.filter { !shown.contains($0.id) } + items
+        hasOlderHistory = page.hasMore ?? false
     }
 
     /// A reload after a burst of `chat.state` events. It waits until the events stop, so a turn that changes the state many times reads
@@ -278,34 +274,22 @@ final class ChatModel: SocketModel {
         debouncer.run("chat") { [weak self] in await self?.reload() }
     }
 
-    override func message(for error: Error) -> String { PlainError.message(for: error) }
-
-    /// Reads the newest page of chat, and keeps the older pages already loaded before it. Returns false when the read failed. A failure
-    /// retries quietly, and only a run of them shows the banner.
+    /// Reads the newest page of chat, and keeps the older pages already loaded before it. Returns false when the read failed. The shared
+    /// client retries and reports, so a failure here only leaves the transcript as it was.
     @discardableResult
     private func fetch() async -> Bool {
-        do {
-            // A 304 means the Mac's chat is still the page saved with this ETag: what is shown already is current.
-            switch try await client.chatIfChanged(etag: etag, limit: Self.pageSize) {
-            case .notModified: break
-            case .snapshot(let fresh, let newETag): adopt(fresh, etag: newETag)
-            }
-            lastRead = ContinuousClock.now
-            errorMessage = nil
-            readSucceeded()
-            quietRetry?.cancel()
-            quietRetry = nil
-            // A sent message of attachments only has no text to match. The full read holds the Mac's copy.
-            outbox.removeAll { $0.isAttachmentOnly && $0.state == .sent }
-            reconcile()
-            return true
-        } catch ClientError.unauthorized {
-            onUnauthorized()
-        } catch is CancellationError {
-        } catch {
-            if !Task.isCancelled { readFailed() }
+        guard let result = await read({ try await self.client.chatIfChanged(etag: self.etag, limit: Self.pageSize) }) else { return false }
+        // A 304 means the Mac's chat is still the page saved with this ETag: what is shown already is current.
+        switch result {
+        case .notModified: break
+        case .snapshot(let fresh, let newETag): adopt(fresh, etag: newETag)
         }
-        return false
+        lastRead = ContinuousClock.now
+        errorMessage = nil
+        // A sent message of attachments only has no text to match. The full read holds the Mac's copy.
+        outbox.removeAll { $0.isAttachmentOnly && $0.state == .sent }
+        reconcile()
+        return true
     }
 
     /// Takes the newest page the Mac answered. It replaces the newest messages, keeps the older pages already loaded, and is saved with
@@ -342,34 +326,6 @@ final class ChatModel: SocketModel {
         items = saved.snapshot.items
         hasOlderHistory = saved.hasOlderHistory
         etag = saved.etag
-    }
-
-    /// The Retry button: reads now instead of waiting for the next quiet retry.
-    func retryNow() async {
-        quietRetry?.cancel()
-        quietRetry = nil
-        await fetch()
-    }
-
-    private func readSucceeded() {
-        readFailures = 0
-        firstReadFailure = nil
-        connectionLost = false
-    }
-
-    private func readFailed() {
-        readFailures += 1
-        let first = firstReadFailure ?? .now
-        firstReadFailure = first
-        if readFailures >= bannerAfterTries || ContinuousClock.now - first >= bannerAfter { connectionLost = true }
-        guard quietRetry == nil else { return }
-        let delay = retryBase * (1 << min(readFailures - 1, 3))
-        quietRetry = Task { [weak self] in
-            try? await Task.sleep(for: delay)
-            guard !Task.isCancelled, let self else { return }
-            self.quietRetry = nil
-            await self.fetch()
-        }
     }
 
     override func handle(_ event: RemoteEvent) async {
@@ -434,21 +390,15 @@ final class ChatModel: SocketModel {
     /// One streamed message: read it and replace it, or add it at the end. A message the Mac no longer has means the chat changed under us.
     private func refreshItem(_ id: String) async {
         let revision = revisions[id, default: 0], reads = fullReads
-        do {
-            let item = try await client.chatMessage(id: id)
-            // An event or a full read that finished while this one was in flight holds newer text than this answer.
-            guard revisions[id, default: 0] == revision, fullReads == reads else { return }
-            apply(item, from: .read)
-            PhoneHopLog.mark("phone.item")
-            readSucceeded()
-        } catch ClientError.unauthorized {
-            onUnauthorized()
-        } catch ClientError.api(404, _, _) {
-            await reload()
-        } catch is CancellationError {
-        } catch {
-            if !Task.isCancelled { readFailed() }
+        guard let item = await read({ try await self.client.chatMessage(id: id) }) else {
+            // A message the Mac no longer has means the chat changed under us.
+            if case ClientError.api(404, _, _)? = lastError { await reload() }
+            return
         }
+        // An event or a full read that finished while this one was in flight holds newer text than this answer.
+        guard revisions[id, default: 0] == revision, fullReads == reads else { return }
+        apply(item, from: .read)
+        PhoneHopLog.mark("phone.item")
     }
 
     // MARK: Composer
@@ -521,17 +471,18 @@ final class ChatModel: SocketModel {
         defer { sending = false }
         PhoneHopLog.mark("phone.send")
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-        let original = draft, pending = attachments, quoted = replyTo
+        let original = draft, pending = attachments, quoted = replyTo, quotedSelection = replySelection
         draft = ""
         attachments = []
         replyTo = nil
+        replySelection = nil
         func restore() {
             // Something typed while the send was running stays, after the text that came back.
             draft = draft.isEmpty ? original : original + "\n" + draft
             attachments = pending + attachments
-            if replyTo == nil { replyTo = quoted }
+            if replyTo == nil { replyTo = quoted; replySelection = quotedSelection }
         }
-        let quote = quoted.map { RemoteReplyRef(itemID: $0.id) }
+        let quote = quoted.map { RemoteReplyRef(itemID: $0.id, selectionText: quotedSelection) }
         // Every message goes through the outbox, with its attachments, so one that cannot be sent now waits with its photos.
         var message = OutgoingMessage(id: UUID(), text: text, date: Date(), state: .sending, known: userItemIDs, reply: quote)
         message.files = pending.map { StagedFile(fileName: $0.fileName, contentType: $0.contentType, data: $0.data, isImage: $0.isImage) }
@@ -688,7 +639,7 @@ final class ChatModel: SocketModel {
 
     /// True when the Mac could not be reached. The relay answers 502, 503 or 504 when it cannot reach the Mac (tunnel down, Mac asleep).
     /// Any other status came from the Mac itself, so the message fails with Retry.
-    private static func isUnreachable(_ error: Error) -> Bool {
+    static func isUnreachable(_ error: Error) -> Bool {
         switch error {
         case ClientError.transport: return true
         case ClientError.api(let status, _, _): return [502, 503, 504].contains(status)
@@ -979,7 +930,9 @@ final class ChatModel: SocketModel {
         } catch ClientError.unauthorized {
             onUnauthorized()
         } catch {
-            errorMessage = PlainError.message(for: error)
+            network.report(error)
+            // A refusal from the Mac is an answer to what the person asked for. A network failure is the strip's to show.
+            if case ClientError.api(_, _, let message) = error { errorMessage = message }
         }
         return false
     }

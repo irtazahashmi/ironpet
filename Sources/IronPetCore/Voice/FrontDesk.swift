@@ -51,7 +51,7 @@ package final class FrontDesk: FrontDeskTalking {
         backend.onElicitation = { _, respond in respond(.decline) }
         return backend
     }
-    package var memory: () -> MemoryStore = { FileMemoryStore.shared }
+    package var memory: () -> MemoryStore = { EntityMemoryStore.shared }
     /// The newest threads, for the chat the user was just in. Tests answer with their own.
     package var recentThreads: () -> [ChatThread] = { ThreadStore.recent(limit: 5) }
     package var petName: () -> String = { ConfigStore.shared.config.pet.name }

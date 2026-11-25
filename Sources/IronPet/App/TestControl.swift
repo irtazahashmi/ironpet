@@ -472,12 +472,12 @@ final class TestControl {
         return Self.encode(voiceMode.testSnapshot())
     }
 
-    /// `GET /test/memory` is the files, the recent changes and the last reflection. `reflect` runs the reflection pass now on the open
-    /// thread (or `thread`) and answers at once; poll `GET` until `running` is false. `undo` presses Undo on a change in Settings → Memory.
-    /// `reset` forgets everything, or with `reindex` only rebuilds the notes' index from the files, for after a test puts them back.
+    /// `GET /test/memory` is the pages, the recent changes and the last reflection. `reflect` runs the reflection pass now on the open
+    /// thread (or `thread`) and answers at once; poll `GET` until `running` is false. `undo` undoes a change.
+    /// `reset` forgets everything, or with `reindex` only rebuilds the search documents from the database.
     private func memoryEndpoint(_ path: String, _ body: [String: Any]) -> Data {
         guard let memory else { return Self.encode(["ok": false, "error": "memory is not built"]) }
-        let store = FileMemoryStore.shared
+        let store = EntityMemoryStore.shared
         switch path {
         case "/test/memory/reflect":
             guard let thread = body["thread"] as? String ?? chat.threadID else { return Self.encode(["ok": false, "error": "no open thread"]) }
@@ -487,9 +487,9 @@ final class TestControl {
             guard let change = store.recentChanges(limit: 50).first(where: { $0.id == id }) else {
                 return Self.encode(["ok": false, "error": "no change \(id)"])
             }
-            if let memorySettings { memorySettings.undo(change) } else { _ = store.undo(change) }
+            _ = store.undo(change)
         case "/test/memory/reset":
-            if body["reindex"] as? Bool == true { store.reindexAll() } else { memory.cancelAll(); store.forgetEverything() }
+            if body["reindex"] as? Bool == true { store.reindex() } else { memory.cancelAll(); store.forgetEverything() }
             memorySettings?.reload()
         default:
             break
@@ -498,7 +498,7 @@ final class TestControl {
     }
 
     private func memorySnapshot(_ memory: MemoryReflector) -> Data {
-        let store = FileMemoryStore.shared
+        let store = EntityMemoryStore.shared
         var outcome: [String: Any] = [:]
         if let last = memory.lastOutcome {
             var job = ""
@@ -506,21 +506,24 @@ final class TestControl {
             case .thread(let id): job = "thread:\(id)"
             case .meeting(let folder, _): job = "meeting:\(folder.path)"
             case .automation(let id, _, _, _): job = "automation:\(id)"
+            case .tasks: job = "tasks"
+            case .screen: job = "screen"
+            case .merge(let entity, _): job = "merge:\(entity)"
             }
             outcome = ["job": job, "saved": last.saved, "dropped": last.dropped, "error": last.error ?? NSNull(), "skipped": last.skipped]
         }
-        let project = chat.workspace.flatMap(MemoryMCP.project).map { store.relativePath(store.projectFile($0)) }
+        let project = chat.workspace.flatMap(MemoryMCP.project).map { "project:" + $0.key }
         return Self.encode([
             "ok": true,
-            "directory": store.directory.path,
             "reflect": ConfigStore.shared.config.memory.reflect,
             "running": memory.running != nil || !memory.queue.isEmpty,
-            "due": Array(memory.due.keys),
+            "queued": memory.queue.count,
             "lastOutcome": outcome,
             "thread": chat.threadID ?? "",
             "project": project ?? NSNull(),
-            "files": store.files().map { file in
-                ["path": file.path, "notes": (store.document(file.url)?.notes ?? []).map { ["text": $0.text, "source": $0.source] }]
+            "pages": store.entities().map { entity in
+                ["id": entity.id, "name": entity.name, "type": entity.type.rawValue, "stub": entity.isStub,
+                 "notes": store.claims(of: entity.id).map { ["id": $0.id, "text": $0.text, "source": $0.sources.last ?? "", "pinned": $0.pinned] }]
             },
             "changes": store.recentChanges(limit: 20).map { change in
                 ["id": change.id, "action": change.action.rawValue, "note": MemoryNote.parse(change.note)?.text ?? change.note,
@@ -666,6 +669,8 @@ final class TestControl {
                                      "meeting": suggestion.meeting?.path ?? NSNull(), "url": suggestion.url?.absoluteString ?? NSNull(),
                                      "waiting_on": suggestion.waitingOn ?? NSNull()]
         if case .automation(let id, let name) = suggestion.origin { object["automation"] = ["id": id, "name": name] }
+        if suggestion.origin == .taskScan { object["origin"] = "task-scan" }
+        if let update = suggestion.update { object["update"] = ["task": update.target, "summary": update.summary] }
         return object
     }
 

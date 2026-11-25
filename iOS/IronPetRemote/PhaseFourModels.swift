@@ -15,7 +15,7 @@ final class AutomationsModel: SocketModel {
     var notice: String?
 
     override func reload() async {
-        if let list = await run({ try await self.client.automations() }) { automations = list }
+        if let list = await read({ try await self.client.automations() }) { automations = list }
     }
 
     override func handle(_ event: RemoteEvent) async {
@@ -66,9 +66,9 @@ final class AutomationsModel: SocketModel {
         return true
     }
 
-    func detail(_ id: String) async -> RemoteAutomation? { await run { try await self.client.automation(id: id) } }
-    func history(_ id: String) async -> [RemoteAutomationRun] { await run { try await self.client.automationHistory(id: id) } ?? [] }
-    func log(_ id: String) async -> [RemoteAutomationLogEntry] { await run { try await self.client.automationLog(id: id) } ?? [] }
+    func detail(_ id: String) async -> RemoteAutomation? { await read { try await self.client.automation(id: id) } }
+    func history(_ id: String) async -> [RemoteAutomationRun] { await read { try await self.client.automationHistory(id: id) } ?? [] }
+    func log(_ id: String) async -> [RemoteAutomationLogEntry] { await read { try await self.client.automationLog(id: id) } ?? [] }
 }
 
 // MARK: Transcripts gate
@@ -154,13 +154,13 @@ final class MeetingsModel: SocketModel {
     var notice: String?
     let gate: TranscriptGate
 
-    /// "No meetings" is true only after a load that worked and found none. A failed load shows its error instead.
-    var showsEmptyState: Bool { loaded && meetings.isEmpty && errorMessage == nil }
+    /// "No meetings" is true only after a load that worked and found none. A failed load shows nothing here: the strip speaks, or the full-page error when the screen never loaded.
+    var showsEmptyState: Bool { loaded && meetings.isEmpty && errorMessage == nil && !lastRefreshFailed }
 
-    init(client: IronPetClient, events: any EventSignalSource, gate: TranscriptGate? = nil, onUnauthorized: @escaping () -> Void) {
+    init(client: IronPetClient, events: any EventSignalSource, gate: TranscriptGate? = nil, network: NetworkHealth? = nil, onUnauthorized: @escaping () -> Void) {
         let gate = gate ?? TranscriptGate()
         self.gate = gate
-        super.init(client: client, events: events, onUnauthorized: onUnauthorized)
+        super.init(client: client, events: events, network: network, onUnauthorized: onUnauthorized)
         gate.onLock = { [weak self] in self?.forget() }
     }
 
@@ -179,19 +179,8 @@ final class MeetingsModel: SocketModel {
 
     override func reload() async {
         guard gate.isUnlocked else { return }
-        // `run` clears the error after a success, so a failed list must be kept past the state call that follows it.
-        var failure: String?
-        if let list = await run({ try await self.client.meetings() }) {
-            if gate.isUnlocked { meetings = list }
-        } else {
-            failure = errorMessage
-        }
-        if let current = await run({ try await self.client.meetingState() }) {
-            if gate.isUnlocked { state = current }
-        } else {
-            failure = failure ?? errorMessage
-        }
-        errorMessage = failure
+        if let list = await read({ try await self.client.meetings() }), gate.isUnlocked { meetings = list }
+        if let current = await read({ try await self.client.meetingState() }), gate.isUnlocked { state = current }
     }
 
     override func handle(_ event: RemoteEvent) async {
@@ -204,8 +193,8 @@ final class MeetingsModel: SocketModel {
         let key = "\(id)/\(kind)"
         if let held = texts[key] { return held }
         let fetched: String?
-        if kind == "summary" { fetched = await run { try await self.client.meetingSummary(id: id) } } else {
-            fetched = await run { try await self.client.meetingTranscript(id: id) }
+        if kind == "summary" { fetched = await read { try await self.client.meetingSummary(id: id) } } else {
+            fetched = await read { try await self.client.meetingTranscript(id: id) }
         }
         guard gate.isUnlocked, let fetched else { return nil }
         texts[key] = fetched
@@ -249,9 +238,9 @@ final class PhoneSettingsModel: SocketModel {
     private(set) var usageDays = 7
 
     override func reload() async {
-        if let fresh = await run({ try await self.client.settings() }) { config = fresh }
-        if let list = await run({ try await self.client.pets() }) { pets = list }
-        if let fresh = await run({ try await self.client.usage(days: self.usageDays) }) { usage = fresh }
+        if let fresh = await read({ try await self.client.settings() }) { config = fresh }
+        if let list = await read({ try await self.client.pets() }) { pets = list }
+        if let fresh = await read({ try await self.client.usage(days: self.usageDays) }) { usage = fresh }
     }
 
     override func handle(_ event: RemoteEvent) async {
@@ -284,6 +273,6 @@ final class PhoneSettingsModel: SocketModel {
 
     func setUsageDays(_ days: Int) async {
         usageDays = days
-        if let fresh = await run({ try await self.client.usage(days: days) }) { usage = fresh }
+        if let fresh = await read({ try await self.client.usage(days: days) }) { usage = fresh }
     }
 }
