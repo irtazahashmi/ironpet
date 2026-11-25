@@ -1,6 +1,7 @@
 import AppKit
 import enum IronPetKit.SharedSymbols
 import IronPetCore
+import IronPetKit
 import SwiftUI
 import Carbon
 import Combine
@@ -1055,6 +1056,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         pet.show()
         return false
+    }
+
+    /// `ironpet://<id>` opens the record the id names. Other links, such as the pairing link for the phone, are not for the Mac.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            guard let id = RecordLinks.id(from: url) else { continue }
+            guard let records = api.records else { return }
+            switch records.resolve(id) {
+            case .success(let found):
+                openRecord(found)
+            case .failure(let error):
+                showError("Could not open \(id)", error)
+            }
+        }
+    }
+
+    /// Shows a record in the section that owns it. A record with no page of its own opens the nearest one.
+    private func openRecord(_ found: RecordResolver.Found) {
+        switch found.kind {
+        case .task:
+            pet.windowModel.focusTask = found.key
+            pet.showWindow(.tasks)
+        case .filter:
+            pet.showWindow(.tasks)
+        case .job:
+            openJob(found.key)
+        case .auto, .run:
+            pet.showWindow(.automations)
+        case .notif:
+            pet.openNotification(found.key)
+        case .meeting:
+            pet.windowModel.focusMeeting = found.key
+            pet.showWindow(.transcripts)
+        case .chat:
+            pet.onOpenThread?(found.key)
+        case .msg:
+            // A message opens its thread; the message itself is not scrolled to yet.
+            pet.onOpenThread?(String(found.key.prefix { $0 != "/" }))
+        case .screen:
+            pet.showWindow(.screen)
+        case .page, .claim:
+            pet.showWindow(.memory)
+        }
     }
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
