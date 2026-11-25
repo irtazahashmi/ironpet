@@ -83,6 +83,12 @@ final class NextActionsTests: XCTestCase {
         XCTAssertNotEqual(saved.id, BuiltInQuickFilters.nextActionsID, "a generated id skips the built-in one")
     }
 
+    func testOnlyTheBuiltInChipGroupsByContext() {
+        XCTAssertTrue(api.groupsByContext(BuiltInQuickFilters.nextActionsID))
+        XCTAssertFalse(api.groupsByContext(nil), "All lists by status")
+        XCTAssertFalse(api.groupsByContext("epic"))
+    }
+
     func testAgentsAndTheCLICanListNextActions() throws {
         try add("Open")
         try add("Finished", .done)
@@ -97,6 +103,7 @@ final class NextActionsTests: XCTestCase {
 
         XCTAssertTrue(api.builtInQuickFilters.isEmpty, "the built-in chip steps aside instead of showing a second chip with the same id")
         XCTAssertEqual(api.quickFilter(BuiltInQuickFilters.nextActionsID)?.query, query, "the saved query is the one applied")
+        XCTAssertFalse(api.groupsByContext(BuiltInQuickFilters.nextActionsID), "the saved filter lists plainly, without context groups")
 
         let edited = try api.upsertQuickFilter(id: BuiltInQuickFilters.nextActionsID, name: "Next actions", query: ["status": "backlog"])
         XCTAssertEqual(edited.name, "Next actions", "an edit may keep the name it already had")

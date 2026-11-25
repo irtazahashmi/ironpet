@@ -104,10 +104,7 @@ struct TaskListView: View {
     /// The built-in chips first, then the saved ones, in the order the bar shows them.
     private var shownChips: [QuickFilter] { tasks.builtInQuickFilters + QuickFilter.chips(tasks.quickFilters) }
 
-    /// Only the built-in chip groups by context. A saved filter that happens to use its id is a plain filter.
-    private var isNextActions: Bool {
-        selectedFilter == BuiltInQuickFilters.nextActionsID && tasks.builtInQuickFilters.contains { $0.id == BuiltInQuickFilters.nextActionsID }
-    }
+    private var isNextActions: Bool { tasks.groupsByContext(selectedFilter) }
 
     private var removingShown: Binding<Bool> {
         Binding(get: { removingFilter != nil }, set: { if !$0 { removingFilter = nil } })

@@ -82,6 +82,11 @@ extension TasksAPI {
         quickFilterStorage.first { $0.id == id } ?? builtInQuickFilters.first { $0.id == id }
     }
 
+    /// Whether the list groups the selection by context. Only the built-in Next actions chip does; a saved filter that uses its id is a plain filter.
+    package func groupsByContext(_ selection: String?) -> Bool {
+        selection == BuiltInQuickFilters.nextActionsID && builtInQuickFilters.contains { $0.id == BuiltInQuickFilters.nextActionsID }
+    }
+
     /// The built-in chips to show. One whose id or name a saved filter already has is left out, so a filter the user saved
     /// before the chip existed keeps working and is not shadowed.
     package var builtInQuickFilters: [QuickFilter] {

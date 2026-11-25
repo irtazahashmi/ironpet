@@ -30,7 +30,7 @@ enum QuickFilterRequest: Identifiable {
     }
 }
 
-/// The chips above the task list: "All" first, then the saved quick filters. A chip's right-click menu edits, moves or removes it,
+/// The chips above the task list: "All" first, then the built-in chips, then the saved quick filters. A chip's right-click menu edits, moves or removes it,
 /// and the menu at the end adds one. Adding and editing go to the chat agent, which writes the query.
 struct QuickFilterBar: View {
     let filters: [QuickFilter]
