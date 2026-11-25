@@ -20,9 +20,11 @@ SHARDS = [
     # Shard 2 (27 tests)
     ["PasteUITests", "QuickFilterUITests", "PhaseThreeUITests", "TasksBoardUITests", "TasksOfflineUITests", "ChatStreamingUITests", "ChatPagingUITests",
      "ChatCacheUITests"],
-    # Shard 3 (25 tests)
+    # Shard 3 (24 tests)
     ["IronPetRemoteUITests", "ChatParityUITests", "PhaseFourUITests", "PhaseFiveUITests",
-     "VoiceRecordingUITests", "AttachPhotoUITests", "ChatModeUITests", "ChatFindUITests", "ChatOutboxUITests", "MemoryUITests"],
+     "VoiceRecordingUITests", "AttachPhotoUITests", "ChatModeUITests", "ChatFindUITests", "ChatOutboxUITests"],
+    # Shard 4 (10 tests). Kept apart: shard 3 plus these ran past the 30 minute job limit.
+    ["NetworkStatesUITests", "MemoryUITests"],
 ]
 
 TARGET = "IronPetRemoteUITests"

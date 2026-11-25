@@ -12,6 +12,9 @@ public enum EventSignal: Equatable, Sendable {
     /// The socket is open again and the Mac replayed the `replayed` events the phone missed, each as an `.event` before this signal.
     /// The reader does not read everything again. It does whatever waited for the connection, such as sending queued messages.
     case resumed(replayed: Int)
+    /// The socket could not open or closed without the phone asking. It is tried again after the back-off. The connection state follows it, so
+    /// the phone notices a Mac that went away without waiting for a request to fail.
+    case disconnected
     /// The upgrade answered 401: the token is gone.
     case unauthorized
 }
@@ -335,6 +338,7 @@ public final class EventConnection: @unchecked Sendable {
                     continuation.finish()
                     return
                 }
+                if !Task.isCancelled { continuation.yield(.disconnected) }
             }
             closed(socket)
             socket.cancel(with: .goingAway, reason: nil)

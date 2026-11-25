@@ -14,10 +14,10 @@ enum SelectionProbe {
         if let view = NSApp.keyWindow?.firstResponder as? ChatTextView { return selectedText(in: view) }
         let board = NSPasteboard.general
         let before = board.changeCount
-        let saved = snapshot(board)
+        let saved = PasteboardSnapshot(board)
         guard NSApp.sendAction(#selector(NSText.copy(_:)), to: nil, from: nil), board.changeCount != before else { return nil }
         let text = board.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !keepOnPasteboard { restore(saved, to: board) }
+        if !keepOnPasteboard { saved.restore(to: board) }
         guard let text, !text.isEmpty else { return nil }
         return text
     }
@@ -71,21 +71,5 @@ enum SelectionProbe {
 
     static func anchor(for view: ChatTextView) -> (id: UUID, point: CGPoint)? {
         try? resolveAnchor(for: view).get()
-    }
-
-    private static func snapshot(_ board: NSPasteboard) -> [[(NSPasteboard.PasteboardType, Data)]] {
-        (board.pasteboardItems ?? []).map { item in
-            item.types.compactMap { type in item.data(forType: type).map { (type, $0) } }
-        }
-    }
-
-    private static func restore(_ saved: [[(NSPasteboard.PasteboardType, Data)]], to board: NSPasteboard) {
-        board.clearContents()
-        let items = saved.map { entries -> NSPasteboardItem in
-            let item = NSPasteboardItem()
-            for (type, data) in entries { item.setData(data, forType: type) }
-            return item
-        }
-        if !items.isEmpty { board.writeObjects(items) }
     }
 }

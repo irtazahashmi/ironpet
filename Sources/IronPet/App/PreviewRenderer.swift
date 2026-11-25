@@ -38,6 +38,15 @@ enum PreviewRenderer {
             model.voice.loadPreview()
             render(ChatView(session: model).frame(width: 520, height: 640).panel(), to: dir, "chat-voice-recording" + suffix, scheme: scheme)
         }
+        // The dictation bar over another app, in two accent colours and both appearances.
+        for (accent, color) in [("pink", Color.pink), ("blue", Color.blue), ("green", Color.green)] {
+            for (suffix, scheme) in [("dark", ColorScheme.dark), ("light", .light)] {
+                let voice = VoiceController()
+                voice.loadPreview()
+                let backdrop = scheme == .dark ? Color(white: 0.07) : Color(white: 0.93)
+                render(DictationPill(voice: voice, accent: color).padding(24).background(backdrop), to: dir, "dictation-bar-\(accent)-\(suffix)", scheme: scheme)
+            }
+        }
         // The reply markdown sample at the narrow chat width and a wider one, in both appearances, and with find open.
         for width in [420.0, 520.0] {
             for (suffix, scheme) in [("dark", ColorScheme.dark), ("light", .light)] {

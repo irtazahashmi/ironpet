@@ -31,13 +31,13 @@ final class ScreenModel: SocketModel {
     var notice: String?
     let gate: TranscriptGate
 
-    /// "Nothing captured" is true only after a load that worked and found no changes. A failed load shows its error instead.
-    var showsEmptyState: Bool { loaded && windows.isEmpty && errorMessage == nil }
+    /// "Nothing captured" is true only after a load that worked and found no changes. A failed load shows nothing here: the strip speaks, or the full-page error when the screen never loaded.
+    var showsEmptyState: Bool { loaded && windows.isEmpty && errorMessage == nil && !lastRefreshFailed }
 
-    init(client: IronPetClient, events: any EventSignalSource, gate: TranscriptGate? = nil, onUnauthorized: @escaping () -> Void) {
+    init(client: IronPetClient, events: any EventSignalSource, gate: TranscriptGate? = nil, network: NetworkHealth? = nil, onUnauthorized: @escaping () -> Void) {
         let gate = gate ?? TranscriptGate(reason: "Show screen text")
         self.gate = gate
-        super.init(client: client, events: events, onUnauthorized: onUnauthorized)
+        super.init(client: client, events: events, network: network, onUnauthorized: onUnauthorized)
         gate.onLock = { [weak self] in self?.forget() }
     }
 
@@ -60,38 +60,28 @@ final class ScreenModel: SocketModel {
 
     override func reload() async {
         guard gate.isUnlocked else { return }
-        // `call` clears the error after a success, so a failed status must be kept past the change list that follows it.
-        var failure: String?
-        if let current = await call({ try await self.client.screenStatus() }) {
-            if gate.isUnlocked { status = current }
-        } else {
-            failure = errorMessage
-        }
+        if let current = await call({ try await self.client.screenStatus() }), gate.isUnlocked { status = current }
         guard !forbidden else { return }
-        if let list = await call({ try await self.client.screenChanges(since: self.range.rawValue) }) {
-            if gate.isUnlocked { windows = list }
-        } else {
-            failure = failure ?? errorMessage
-        }
-        errorMessage = failure
+        if let list = await call({ try await self.client.screenChanges(since: self.range.rawValue) }), gate.isUnlocked { windows = list }
     }
 
-    /// Runs one request. A 403 means the scope is off, which the screen explains instead of showing an error line.
-    private func call<T>(_ request: () async throws -> T) async -> T? {
-        do {
-            let value = try await request()
+    /// Reads through the shared client. A 403 means the scope is off, which the screen explains instead of showing an error line.
+    private func call<T>(writing: Bool = false, _ request: () async throws -> T) async -> T? {
+        let value = writing ? await run(request) : await read(request)
+        if value != nil {
             forbidden = false
             errorMessage = nil
-            return value
-        } catch ClientError.api(let status, _, _) where status == 403 {
+        }
+        return value
+    }
+
+    override func didFail(_ error: Error) {
+        guard case ClientError.api(let status, _, _) = error else { return }
+        if status == 403 {
             forbidden = true
             errorMessage = nil
-            return nil
-        } catch ClientError.api(let status, _, _) where status == 429 {
+        } else if status == 429 {
             errorMessage = "Too many screen requests. Try again in a few minutes."
-            return nil
-        } catch {
-            return await run { throw error }
         }
     }
 
@@ -128,8 +118,8 @@ final class ScreenModel: SocketModel {
     func pause(minutes: Int?) async {
         guard gate.isUnlocked else { return }
         let result: RemoteScreenStatus?
-        if let minutes { result = await call { try await self.client.pauseScreen(minutes: minutes) } } else {
-            result = await call { try await self.client.pauseScreenUntilTomorrow() }
+        if let minutes { result = await call(writing: true) { try await self.client.pauseScreen(minutes: minutes) } } else {
+            result = await call(writing: true) { try await self.client.pauseScreenUntilTomorrow() }
         }
         if let result, gate.isUnlocked {
             status = result

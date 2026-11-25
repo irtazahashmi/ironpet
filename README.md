@@ -347,9 +347,16 @@ Turn it on under **Settings → Voice → Talk to Ghost**, then fill in the **Se
 | Transcription model | `voice.model` | Sent as the `model` field |
 | API key | none | Optional. Stored in the Keychain (`ironpet.voice`), never in `~/.ironpet` |
 | Voice shortcut | `hotkeys.voice` | Default <kbd>⌥⌘V</kbd>. Registered only while voice notes are on |
+| Dictation shortcut | `hotkeys.dictation` | Default <kbd>⌃⌥Space</kbd>, empty turns it off. Registered only while voice notes are on. See [Dictation in other apps](#dictation-in-other-apps) |
 | Hold to talk | `voice.holdToTalk` | Default on: hold the shortcut to record and release to transcribe. Off: press once to start and again to stop |
 
 The transcript goes into the chat input for you to edit, or is sent right away when **Send voice notes automatically** is on in the chat's settings menu (on by default). Pasted, typed and Wispr Flow text is never sent automatically.
+
+### Dictation in other apps
+
+Press the dictation shortcut in any app, speak, and press it again (or press Enter) to type the transcript at the cursor. A small dark pill with a recording dot, a dotted level meter and a close button shows while it records, above the focused field or at the top of the screen, in your macOS accent colour. Esc or the close button discards the recording and types nothing. Change or clear the shortcut in Settings → Voice.
+
+The text goes in through Accessibility. If the app ignores that, ironpet pastes it with Cmd-V and puts your earlier clipboard back, unless you copied something else in the meantime. Password fields never get text. When no text field has focus, or Accessibility is not allowed, the transcript stays on the clipboard and a notice says so. It uses the same transcription server as voice notes and needs Microphone and Accessibility access. It does not touch the chat's own voice note.
 
 **Test connection** sends a one-second tone and shows the server's answer or the error.
 

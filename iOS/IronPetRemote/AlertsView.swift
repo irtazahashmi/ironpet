@@ -10,9 +10,6 @@ struct AlertsView: View {
     var body: some View {
         List {
             Group {
-                if let message = model.errorMessage {
-                    Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("alerts-error")
-                }
                 if let notice = model.notice {
                     Label(notice, systemImage: "paperplane").accessibilityIdentifier("alerts-notice")
                 }
@@ -43,6 +40,7 @@ struct AlertsView: View {
         .navigationTitle("Alerts")
         .navigationBarTitleDisplayMode(.inline)
         .themedScreen()
+        .fullPageLoadError(model)
         .refreshable { await model.refresh() }
         .toolbar {
             if !model.alerts.isEmpty {
