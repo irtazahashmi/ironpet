@@ -115,6 +115,8 @@ struct AXFocusReader: DictationFocusReader {
         guard AXIsProcessTrusted() else { return .noAccess }
         var value: CFTypeRef?
         let system = AXUIElementCreateSystemWide()
+        // These calls run on the main thread, so a hung app must not hold it for the 6 s default.
+        AXUIElementSetMessagingTimeout(system, 0.5)
         guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &value) == .success,
               let value, CFGetTypeID(value) == AXUIElementGetTypeID() else { return .none }
         return Self.classify(value as! AXUIElement)

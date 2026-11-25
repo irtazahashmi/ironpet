@@ -275,7 +275,7 @@ Spoken replies are a separate opt-in (`speech.enabled`, off by default, labelled
 
 `DictationPill` is the bar: a non-activating `DictationBarPanel` over other apps, placed above the focused field (below it when there is no room, top of the screen under the mouse when the field's frame is unknown). It reads the accent colour the chat uses.
 
-`Voice/DictationInsertion.swift` has the delivery rules as plain types over small protocols, so tests drive them with fakes. `DictationDelivery.deliver` reads the focus once, when the transcript is ready:
+`Voice/DictationInsertion.swift` has the delivery rules as plain types over small protocols, so tests drive them with fakes. The bar reads the focused field's frame when recording starts. `DictationDelivery.deliver` reads the focus again, once, when the transcript is ready, and decides from that read:
 
 - a secure text field (`AXSecureTextField`) gets nothing; the text goes to the clipboard;
 - no text field, or Accessibility not trusted, also goes to the clipboard, with a notice;
