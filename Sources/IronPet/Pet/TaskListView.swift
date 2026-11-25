@@ -496,7 +496,6 @@ private struct SuggestionRow: View {
                                 .font(.caption)
                                 .foregroundStyle(.secondary)
                                 .lineLimit(1)
-                                .accessibilityLabel("Files as: \(clarify.summary)")
                         }
                         HStack(spacing: 6) {
                             Button(suggestion.update == nil ? "Add" : "Accept", action: onAdd)

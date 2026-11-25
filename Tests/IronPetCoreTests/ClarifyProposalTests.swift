@@ -92,4 +92,15 @@ final class ClarifyProposalTests: XCTestCase {
         let decoded = try JSONDecoder().decode(RemoteSuggestionClarify.self, from: Data(#"{"context":"mac"}"#.utf8))
         XCTAssertEqual(decoded, RemoteSuggestionClarify(context: "mac"), "missing flags read as false")
     }
+
+    func testTheWireSuggestionCarriesTheProposalAndReadsItBack() throws {
+        let suggestion = try file(TaskSuggestion.Clarify(context: .calls, twoMinute: true))
+        let data = try JSONEncoder().encode(RemoteSuggestion(suggestion))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])
+        let clarify = try XCTUnwrap(object["clarify"] as? [String: Any])
+        XCTAssertEqual(clarify["two_minute"] as? Bool, true)
+        XCTAssertEqual(clarify["context"] as? String, "calls")
+        XCTAssertNil(clarify["area"])
+        XCTAssertEqual(try JSONDecoder().decode(RemoteSuggestion.self, from: data).clarify, RemoteSuggestion(suggestion).clarify)
+    }
 }
