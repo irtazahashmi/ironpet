@@ -25,28 +25,48 @@ package struct RecordRefs {
         refs(kind, [key])[key]
     }
 
-    /// The refs of several records of one kind, created where missing. One write, so a list of tasks costs one round trip.
+    /// The refs of several records of one kind, created where missing. One write, so a list of tasks costs one round trip. Only the
+    /// asked keys are read, so a long list of messages does not load every ref of its kind.
     package func refs(_ kind: RecordKind, _ keys: [String]) -> [String: String] {
-        guard !keys.isEmpty else { return [:] }
+        let wanted = Array(Set(keys))
+        guard !wanted.isEmpty else { return [:] }
         do {
             return try database.write { db in
                 var known: [String: String] = [:]
-                for row in try db.rows("SELECT key, ref FROM record_refs WHERE kind = ?", [kind.rawValue]) {
-                    if let key = row[0] as? String, let ref = row[1] as? String { known[key] = ref }
+                for start in stride(from: 0, to: wanted.count, by: 500) {
+                    let part = Array(wanted[start..<min(start + 500, wanted.count)])
+                    let marks = part.map { _ in "?" }.joined(separator: ", ")
+                    for row in try db.rows("SELECT key, ref FROM record_refs WHERE kind = ? AND key IN (\(marks))", [kind.rawValue] + part) {
+                        if let key = row[0] as? String, let ref = row[1] as? String { known[key] = ref }
+                    }
                 }
-                for key in Set(keys) where known[key] == nil {
+                for key in wanted where known[key] == nil {
                     let ref = try RecordID.make(kind, taken: { ref in
                         try !db.rows("SELECT 1 FROM record_refs WHERE ref = ?", [ref]).isEmpty
                     })
                     try db.execute("INSERT INTO record_refs(ref, kind, key) VALUES(?, ?, ?)", [ref, kind.rawValue, key])
                     known[key] = ref
                 }
-                return known.filter { keys.contains($0.key) }
+                return known
             }
         } catch {
             NSLog("ironpet: could not assign record ids: \(error.localizedDescription)")
             return [:]
         }
+    }
+
+    /// Records an existing ref for a key, such as one read from a meeting's marker file, so a database that lost its rows gets the
+    /// same id back. When the key or the ref is already taken, the stored ref wins and is returned.
+    package func adopt(_ ref: String, _ kind: RecordKind, _ key: String) -> String? {
+        guard RecordID.parse(ref)?.kind == kind else { return self.ref(kind, key) }
+        do {
+            try database.write { db in
+                try db.execute("INSERT OR IGNORE INTO record_refs(ref, kind, key) VALUES(?, ?, ?)", [ref, kind.rawValue, key])
+            }
+        } catch {
+            NSLog("ironpet: could not record an id: \(error.localizedDescription)")
+        }
+        return self.ref(kind, key)
     }
 
     /// The record a ref names: its kind and key. Nil for a ref that does not exist.

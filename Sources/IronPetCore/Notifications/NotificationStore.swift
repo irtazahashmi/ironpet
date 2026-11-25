@@ -35,6 +35,9 @@ package final class NotificationStore {
     private let now: () -> Date
     private var lastPrune = Date.distantPast
 
+    /// The public ids of the notifications (`notif_…`), kept in the same database.
+    package var records: RecordRefs { RecordRefs(database: database) }
+
     package init(database: Database, now: @escaping () -> Date = Date.init) {
         self.database = database
         self.now = now

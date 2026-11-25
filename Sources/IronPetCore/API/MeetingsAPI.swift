@@ -6,8 +6,9 @@ import Combine
 
 /// A meeting as a client that cannot read the Mac's folders sees it.
 package struct MeetingInfo: Codable, Equatable, Identifiable {
-    package init(id: String, date: Date, preview: String, hasSummary: Bool, hasTranscript: Bool, hasAudio: Bool, active: Bool) {
+    package init(id: String, date: Date, preview: String, hasSummary: Bool, hasTranscript: Bool, hasAudio: Bool, active: Bool, ref: String? = nil) {
         self.id = id
+        self.ref = ref
         self.date = date
         self.preview = preview
         self.hasSummary = hasSummary
@@ -26,6 +27,8 @@ package struct MeetingInfo: Codable, Equatable, Identifiable {
     package var hasAudio: Bool
     /// The meeting is being recorded or summarized now.
     package var active: Bool
+    /// The meeting's public id (`meeting_…`), from its marker file in the folder.
+    package var ref: String?
 }
 
 package enum MeetingText: String, Codable {
@@ -148,9 +151,15 @@ package final class MeetingsAPI {
     package func list() -> [MeetingInfo] {
         library.loadIfNeeded()
         let active = activeFolder
-        return library.meetings.map { MeetingInfo(id: $0.id, date: $0.date, preview: $0.preview, hasSummary: $0.hasSummary,
-                                                  hasTranscript: $0.hasTranscript, hasAudio: $0.hasAudio, active: $0.folder == active) }
+        return library.meetings.map { meeting in
+            MeetingInfo(id: meeting.id, date: meeting.date, preview: meeting.preview, hasSummary: meeting.hasSummary,
+                        hasTranscript: meeting.hasTranscript, hasAudio: meeting.hasAudio, active: meeting.folder == active,
+                        ref: records.flatMap { MeetingIdentity.ref(folder: meeting.folder, records: $0) })
+        }
     }
+
+    /// The ids of meetings are kept in the app's database. Set by the API owner once the database is open.
+    package var records: RecordRefs?
 
     package func get(_ id: String) throws -> MeetingInfo {
         guard let info = list().first(where: { $0.id == id }) else { throw APIError.notFound("no meeting with id \"\(id)\"") }

@@ -155,8 +155,15 @@ package final class IronPetAPI {
     /// Resolves record ids for `get`. Attached by the app, which owns the database.
     package private(set) var records: RecordResolver?
 
-    package func attach(records: RecordResolver) {
-        self.records = records
+    /// Opens the record ids on the app's database: the resolver `get` uses, and the id source of meetings and chats.
+    package func attach(records refs: RecordRefs) {
+        meetings.records = refs
+        chat.records = refs
+        records = RecordResolver(refs: refs, readers: RecordReaders.make(
+            screen: { [weak self] in self?.screen },
+            notifications: { [weak self] in self?.notifications },
+            meetings: { [weak self] in self?.meetings },
+            chat: { [weak self] in self?.chat }))
     }
 
     package func attach(memory services: @escaping () -> MemoryMCP.Services?) {

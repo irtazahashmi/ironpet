@@ -25,6 +25,8 @@ final class TasksModel: SocketModel {
     @ObservationIgnored private var serverTasks: [RemoteTask] = []
     @ObservationIgnored private var flushing = false
     @ObservationIgnored private let defaults: UserDefaults
+    /// Done tasks are asked for only while the Done section is open, so a collapsed list does not carry them.
+    private(set) var showsDone = false
 
     init(client: IronPetClient, events: (any EventSignalSource)? = nil, defaults: UserDefaults = .standard, store: (any TaskSyncStoring)? = nil,
          network: NetworkHealth? = nil, onUnauthorized: @escaping () -> Void) {
@@ -115,9 +117,9 @@ final class TasksModel: SocketModel {
 
     override func handle(_ event: RemoteEvent) async {
         switch event.kind {
-        case RemoteEvent.tasksChanged: await reloadTasks()
-        case RemoteEvent.suggestionsChanged: await reloadSuggestions()
-        case RemoteEvent.settingsChanged: await reloadFilters()
+        case RemoteEvent.tasksChanged: debouncer.run("tasks") { [weak self] in await self?.reloadTasks() }
+        case RemoteEvent.suggestionsChanged: debouncer.run("suggestions") { [weak self] in await self?.reloadSuggestions() }
+        case RemoteEvent.settingsChanged: debouncer.run("filters") { [weak self] in await self?.reloadFilters() }
         default: break
         }
     }
@@ -157,11 +159,18 @@ final class TasksModel: SocketModel {
     }
 
     func reloadTasks() async {
-        if let list = await read({ try await self.client.tasks() }) {
+        if let list = await read({ try await self.client.tasks(includeDone: self.showsDone) }) {
             serverTasks = list
             rebuild()
             persistSnapshot()
         }
+    }
+
+    /// The Done section opened or closed. Opening it asks the Mac for the done tasks; closing it drops them from the list.
+    func setShowsDone(_ shown: Bool) async {
+        guard showsDone != shown else { return }
+        showsDone = shown
+        await reloadTasks()
     }
 
     func reloadSuggestions() async {

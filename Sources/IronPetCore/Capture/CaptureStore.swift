@@ -96,6 +96,8 @@ package final class CaptureStore: @unchecked Sendable {
     package static let maxListedCharacters = 60_000
 
     package let database: Database
+    /// The public ids of captures (`screen_…`), kept in the same database.
+    package var records: RecordRefs { RecordRefs(database: database) }
     package var filter: CapturePrivacyFilter
     /// How many tree nodes the last capture wrote. The rest were already stored. Tests read it.
     package var lastNodeWrites = 0

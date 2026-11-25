@@ -593,6 +593,7 @@ private struct FormCard: View {
     @State private var pager: ElicitationPager?
 
     private var current: ElicitationPager { pager ?? ElicitationPager(pageCount: form.pages.count) }
+    private var pending: Bool { model.submittingForms.contains(form.id) }
 
     var body: some View {
         let pages = form.pages
@@ -622,8 +623,10 @@ private struct FormCard: View {
                 // and the card does not grow on the last page.
                 let nextButton = Button { move { $0.forward() } } label: { Image(systemName: SharedSymbols.chevron) }.buttonStyle(.bordered)
                     .accessibilityLabel("Next").accessibilityIdentifier("next-\(form.id)")
-                let submitButton = Button { submit() } label: { Label("Submit", systemImage: SharedSymbols.allow).frame(minWidth: 70) }.buttonStyle(.borderedProminent)
-                    .disabled(!page.isPaged && !form.canSubmit)
+                let submitButton = Button { submit() } label: {
+                    if pending { ProgressView().frame(minWidth: 70) } else { Label("Submit", systemImage: SharedSymbols.allow).frame(minWidth: 70) }
+                }.buttonStyle(.borderedProminent)
+                    .disabled((!page.isPaged && !form.canSubmit) || pending)
                     .accessibilityIdentifier("submit-\(form.id)")
                 if page.isPaged {
                     ZStack(alignment: .leading) {
@@ -637,7 +640,7 @@ private struct FormCard: View {
                 Button { Task { await model.skip(form) } } label: {
                     if page.isPaged { Label("Skip", systemImage: SharedSymbols.skip).labelStyle(.iconOnly) }
                     else { Label("Skip", systemImage: SharedSymbols.skip).frame(minWidth: 70) }
-                }.buttonStyle(.bordered).accessibilityLabel("Skip")
+                }.buttonStyle(.bordered).disabled(pending).accessibilityLabel("Skip")
                     .accessibilityIdentifier("skip-\(form.id)")
             }
         }

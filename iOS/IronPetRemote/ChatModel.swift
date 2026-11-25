@@ -148,7 +148,6 @@ final class ChatModel: SocketModel {
     /// The ETag of the page the Mac last answered and the phone holds as it is. Nil once a message changed on the phone, so the next read asks in full.
     @ObservationIgnored private var etag: String?
     @ObservationIgnored private var cache: (any ChatCaching)?
-    @ObservationIgnored private var reloadDebounce: Task<Void, Never>?
     var draft = ""
     var attachments: [PendingAttachment] = []
     /// The message the next one answers.
@@ -202,7 +201,20 @@ final class ChatModel: SocketModel {
     }
 
     var approvals: [RemoteApproval] { snapshot?.approvals ?? [] }
-    var forms: [RemoteForm] { snapshot?.forms ?? [] }
+    /// The Mac's questions with the answers this phone chose and the Mac has not confirmed yet laid over them.
+    var forms: [RemoteForm] {
+        (snapshot?.forms ?? []).map { form in
+            guard let chosen = pendingAnswers[form.id] else { return form }
+            var shown = form
+            shown.answers.merge(chosen) { _, mine in mine }
+            return shown
+        }
+    }
+    /// Answers chosen on the phone and not yet confirmed by the Mac, by form id and field id. They draw at once and go when the Mac's
+    /// own copy arrives, or roll back when the Mac refuses.
+    private(set) var pendingAnswers: [String: [String: RemoteFormAnswer]] = [:]
+    /// Forms whose Submit or Skip is on its way to the Mac. The card shows them as pending and ignores a second tap.
+    private(set) var submittingForms: Set<String> = []
     var queue: [RemoteQueued] { snapshot?.queue ?? [] }
     var running: Bool { snapshot?.running ?? false }
     var title: String { snapshot?.title ?? "Chat" }
@@ -257,12 +269,6 @@ final class ChatModel: SocketModel {
 
     override func reload() async { await fetch() }
 
-    override func stop() {
-        reloadDebounce?.cancel()
-        reloadDebounce = nil
-        super.stop()
-    }
-
     /// Loads the page of messages before the oldest one shown. The transcript calls it when its top comes into view, so a long chat
     /// reads a page at a time. A failure leaves the top as it was; the next time the top shows, it tries again.
     func loadOlder() async {
@@ -278,12 +284,7 @@ final class ChatModel: SocketModel {
     /// A reload after a burst of `chat.state` events. It waits until the events stop, so a turn that changes the state many times reads
     /// the chat once.
     private func scheduleReload() {
-        reloadDebounce?.cancel()
-        reloadDebounce = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(300))
-            guard !Task.isCancelled, let self else { return }
-            await self.reload()
-        }
+        debouncer.run("chat") { [weak self] in await self?.reload() }
     }
 
     /// Reads the newest page of chat, and keeps the older pages already loaded before it. Returns false when the read failed. The shared
@@ -895,16 +896,38 @@ final class ChatModel: SocketModel {
         if await run({ try await self.client.decide(approval: approval.id, allow: allow) }) != nil { await reload() }
     }
 
+    /// The choice shows on the next frame. The Mac's answer settles it, and a refusal puts the old choice back with the Mac's reason.
     func answer(_ form: RemoteForm, field: String, _ value: RemoteFormAnswer) async {
-        if await run({ try await self.client.answer(form: form.id, answers: [field: value]) }) != nil { await reload() }
+        PhoneHopLog.mark("phone.form.tap")
+        let before = pendingAnswers[form.id]?[field]
+        pendingAnswers[form.id, default: [:]][field] = value
+        let done = await run({ try await self.client.answer(form: form.id, answers: [field: value]) }) != nil
+        PhoneHopLog.mark(done ? "phone.form.ack" : "phone.form.failed")
+        if done { await reload() }
+        // Only this answer rolls back, and only if no later tap replaced it while the request was out.
+        if pendingAnswers[form.id]?[field] == value {
+            if done || before == nil { pendingAnswers[form.id]?[field] = nil } else { pendingAnswers[form.id]?[field] = before }
+        }
+        if pendingAnswers[form.id]?.isEmpty == true { pendingAnswers[form.id] = nil }
     }
 
     func submit(_ form: RemoteForm) async {
-        if await run({ try await self.client.submit(form: form.id) }) != nil { await reload() }
+        await finish(form, mark: "submit") { try await self.client.submit(form: form.id) }
     }
 
     func skip(_ form: RemoteForm) async {
-        if await run({ try await self.client.skip(form: form.id) }) != nil { await reload() }
+        await finish(form, mark: "skip") { try await self.client.skip(form: form.id) }
+    }
+
+    /// Submit and Skip show as pending at once. A refusal ends the pending state and leaves the answers as they were.
+    private func finish(_ form: RemoteForm, mark: String, _ call: () async throws -> some Any) async {
+        guard submittingForms.insert(form.id).inserted else { return }
+        PhoneHopLog.mark("phone.form.\(mark)")
+        let done = await run(call) != nil
+        PhoneHopLog.mark(done ? "phone.form.ack" : "phone.form.failed")
+        if done { await reload() }
+        submittingForms.remove(form.id)
+        if done { pendingAnswers[form.id] = nil }
     }
 
     // MARK: Threads

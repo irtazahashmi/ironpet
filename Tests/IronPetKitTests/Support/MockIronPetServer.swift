@@ -68,6 +68,8 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _sendFails = false
     private var _chatReadFailures = 0
     private var _sendDelay: TimeInterval = 0
+    private var _formDelay: TimeInterval = 0
+    private var _formFails = false
     private var _sendPushesFirst = false
     private var _legacyEvents = false
     private var _messageReadDelay: TimeInterval = 0
@@ -236,6 +238,10 @@ final class MockIronPetServer: @unchecked Sendable {
     var chatReadFailures: Int { get { lock.lock(); defer { lock.unlock() }; return _chatReadFailures } set { lock.lock(); _chatReadFailures = newValue; lock.unlock() } }
     /// Seconds the Mac takes to answer a send after it has recorded the message.
     var sendDelay: TimeInterval { get { lock.lock(); defer { lock.unlock() }; return _sendDelay } set { lock.lock(); _sendDelay = newValue; lock.unlock() } }
+    /// Seconds the Mac takes to answer a form answer, Submit or Skip.
+    var formDelay: TimeInterval { get { lock.lock(); defer { lock.unlock() }; return _formDelay } set { lock.lock(); _formDelay = newValue; lock.unlock() } }
+    /// The next form answers, Submits and Skips answer 409 while this is true, as a Mac whose question already closed does.
+    var formFails: Bool { get { lock.lock(); defer { lock.unlock() }; return _formFails } set { lock.lock(); _formFails = newValue; lock.unlock() } }
     /// Push the `chat.item` event before the answer to the send, as a fast socket can.
     var sendPushesFirst: Bool { get { lock.lock(); defer { lock.unlock() }; return _sendPushesFirst } set { lock.lock(); _sendPushesFirst = newValue; lock.unlock() } }
     /// Adds a user message as the Mac's chat would after a voice transcript, and pushes its `chat.item` event.
@@ -291,7 +297,7 @@ final class MockIronPetServer: @unchecked Sendable {
         listener.stateUpdateHandler = { state in if case .ready = state { ready.signal() } }
         listener.newConnectionHandler = { [weak self] connection in self?.accept(connection) }
         listener.start(queue: queue)
-        guard ready.wait(timeout: .now() + 5) == .success, let port = listener.port?.rawValue else { throw URLError(.cannotConnectToHost) }
+        guard ready.wait(timeout: .now() + 20) == .success, let port = listener.port?.rawValue else { throw URLError(.cannotConnectToHost) }
         self.port = port
         self.listener = listener
     }
@@ -410,7 +416,10 @@ final class MockIronPetServer: @unchecked Sendable {
             lock.lock(); _tokenValid = false; lock.unlock()
             respond(connection, 200, Data(#"{"revoked":true}"#.utf8))
         case ("GET", 2) where parts[1] == "events": upgrade(request, connection)
-        case ("GET", 2) where parts[1] == "tasks": respond(connection, 200, TaskListResponse(tasks: tasks))
+        case ("GET", 2) where parts[1] == "tasks":
+            // As the Mac does: done tasks only when asked for with include_done=1.
+            let includeDone = request.query.split(separator: "&").contains("include_done=1")
+            respond(connection, 200, TaskListResponse(tasks: includeDone ? tasks : tasks.filter { $0.status != .done }))
         case ("GET", 2) where parts[1] == "task-filters":
             guard taskFiltersSupported else { return fail(connection, 404, "not_found", "not found") }
             respond(connection, 200, QuickFilterListResponse(filters: taskFilters))
@@ -851,20 +860,21 @@ extension MockIronPetServer {
             lock.lock()
             let known = _chat.forms.contains { $0.id == parts[3] }
             let closes = parts.count == 5
-            if known, closes { _chat.forms.removeAll { $0.id == parts[3] } }
-            // An answer post keeps what was picked, so a reload shows it again.
-            if known, !closes, let sent = request.json["answers"] as? [String: Any], let at = _chat.forms.firstIndex(where: { $0.id == parts[3] }) {
-                for (field, value) in sent {
-                    if let flag = value as? Bool { _chat.forms[at].answers[field] = .flag(flag) }
-                    else if let list = value as? [String] { _chat.forms[at].answers[field] = .list(list) }
-                    else if let text = value as? String { _chat.forms[at].answers[field] = .text(text) }
-                }
-                _chat.forms[at].canSubmit = _chat.forms[at].firstIncompletePage() == nil
+            let delay = _formDelay, failing = _formFails
+            if known, closes, !failing { _chat.forms.removeAll { $0.id == parts[3] } }
+            // The Mac keeps what the phone chose, so the next read carries it.
+            if known, !failing, let index = _chat.forms.firstIndex(where: { $0.id == parts[3] }),
+               let sent = try? JSONDecoder().decode([String: [String: RemoteFormAnswer]].self, from: request.body)["answers"] {
+                _chat.forms[index].answers.merge(sent) { _, new in new }
             }
             lock.unlock()
             guard known else { fail(connection, 404, "not_found", "that question is no longer waiting"); return true }
-            respond(connection, 200, Data("{}".utf8))
-            publish(RemoteEvent.chatState, id: "forms")
+            let answer = { [self] in
+                if failing { fail(connection, 409, "conflict", "That question already closed on the Mac."); return }
+                respond(connection, 200, Data("{}".utf8))
+                publish(RemoteEvent.chatState, id: "forms")
+            }
+            if delay > 0 { queue.asyncAfter(deadline: .now() + delay, execute: answer) } else { answer() }
         default: return false
         }
         return true
