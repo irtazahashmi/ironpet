@@ -74,6 +74,7 @@ struct AutomationList: View {
                         }
                     }
                     Text(a.name).font(.system(size: 24, weight: .bold)).textSelection(.enabled)
+                    if let ref = api.ref(a.id) { RecordIDLine(ref: ref) }
                     HStack(spacing: 8) {
                         Button("Show logs…") { showLogs(a.id) }
                         Button("Run now") { Task { _ = try? await api.runNow(a.id) } }

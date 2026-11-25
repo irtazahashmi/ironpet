@@ -781,7 +781,8 @@ enum PreviewRenderer {
 
     private static func sampleTasks() -> TasksAPI {
         var clock = Date()
-        let store = TaskStore(database: Database.open(path: nil, migrations: TaskStore.migrations).database, now: { clock })
+        // The app's migrations, not only the task store's, so each sample task gets its public id as in the app.
+        let store = TaskStore(database: Database.open(path: nil, migrations: AppMigrations.all).database, now: { clock })
         let day: TimeInterval = 86_400
         func add(_ title: String, _ status: TaskStatus, _ source: TaskSource, ago: TimeInterval, due: Date? = nil,
                  notes: String = "", links: [TaskLink] = [], waitingOn: String? = nil) {

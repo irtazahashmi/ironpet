@@ -24,6 +24,7 @@ struct TaskDetailView: View {
                     LabeledContent("Status", value: current.waitingOn.map { "Waiting on \($0)" } ?? current.status.title)
                     if let due = current.due { LabeledContent("Due", value: due.formatted(date: .abbreviated, time: .omitted)) }
                     LabeledContent("From", value: current.source)
+                    if let ref = current.ref { RecordIDLine(ref: ref) }
                 }
                 if !current.notes.isEmpty { Section("Notes") { Text(current.notes) } }
                 if !current.links.isEmpty {

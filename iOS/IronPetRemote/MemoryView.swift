@@ -175,6 +175,7 @@ struct MemoryPageView: View {
             if !page.aliases.isEmpty { Text("Also known as \(page.aliases.joined(separator: ", "))").font(.subheadline) }
             ForEach(page.identifiers, id: \.self) { Text($0).font(.caption.monospaced()).foregroundStyle(.secondary) }
             Text(meta(page)).font(.caption).foregroundStyle(.secondary)
+            RecordIDLine(ref: page.id)
         }
         .accessibilityIdentifier("memory-header")
         Section("Facts \(page.facts.count)") {
@@ -238,7 +239,6 @@ struct MemoryPageView: View {
         let pinned = page.facts.filter(\.pinned).count
         if pinned > 0 { parts[0] += ", \(pinned) pinned" }
         if let updated = page.updated { parts.append("updated \(MemoryDay.label(updated).lowercased())") }
-        parts.append(page.id)
         return parts.joined(separator: " · ")
     }
 }

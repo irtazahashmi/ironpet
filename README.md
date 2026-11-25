@@ -84,6 +84,7 @@ macOS will ask for these permissions as you use the features:
 | Allow an action | **Allow** or <kbd>⌘↩</kbd> on the approval card |
 | Move Ghost | Drag him; he stays where you leave him |
 | Open a record named in chat | Click its id, such as `task_9f3c1e`, `meeting_…` or `notif_…`. The id is a link that opens that record in its section |
+| Copy a record's id | A task, meeting, automation, capture, notification or memory page shows its id under the date. Click the copy button next to it, then paste the id in a chat or a note |
 | Switch section | <kbd>⌘1</kbd> to <kbd>⌘9</kbd> in the ironpet window select the Nth sidebar row (Chat, Agents, Alerts, Notifications, Tasks, Transcripts, Screen, Actions, Automations; Today, listed last, has no number), also while the chat field has focus |
 | Morning brief and recap | Turn on **Morning brief** or **End-of-day recap** in ironpet window → Automations and pick the time there. The bubble's Open, or the Today row, shows each item; click one to open its task, session, alert link or meeting |
 | Collapse the sidebar | <kbd>⌃⌘S</kbd> shrinks the sidebar to a 78 pt rail of section icons (a label with name and ⌘N after a short hover, count badge on the icon) and back. Dragging the sidebar's edge does the same: narrower than about 117 pt collapses it, and dragging the rail's edge wider expands it. The expanded width (156 to 300 pt) and the collapsed state are remembered |
