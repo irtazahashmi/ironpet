@@ -14,9 +14,6 @@ struct AutomationsView: View {
     var body: some View {
         List {
             Group {
-                if let message = model.errorMessage {
-                    Label(message, systemImage: SharedSymbols.warning).foregroundStyle(.orange).accessibilityIdentifier("automations-error")
-                }
                 if let notice = model.notice {
                     Label(notice, systemImage: "info.circle").accessibilityIdentifier("automations-notice")
                 }
@@ -41,6 +38,7 @@ struct AutomationsView: View {
         .navigationTitle("Automations")
         .navigationBarTitleDisplayMode(.inline)
         .themedScreen()
+        .fullPageLoadError(model)
         .refreshable { await model.refresh() }
         .toolbar {
             ToolbarItem(placement: .primaryAction) {

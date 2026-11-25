@@ -29,7 +29,8 @@ public enum ClientError: Error, Equatable, LocalizedError {
         case .pairingDenied: return "The Mac denied this device."
         case .pairingExpired: return "The pairing code expired. Make a new one on the Mac."
         case .invalidResponse: return "The Mac sent an answer this app does not understand."
-        case .transport(let message): return message
+        // URLSession's own wording ("The request timed out.") is for the log, never for the person.
+        case .transport: return "Can't reach your Mac."
         }
     }
 }

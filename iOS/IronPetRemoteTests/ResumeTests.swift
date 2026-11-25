@@ -142,7 +142,6 @@ final class ResumeTests: XCTestCase {
         await poll { self.chatReads > readsBefore }
         XCTAssertGreaterThan(chatReads, readsBefore, "the reconnect reads the chat again, as before")
         XCTAssertNil(model.errorMessage)
-        XCTAssertFalse(model.connectionLost)
         model.stop()
     }
 

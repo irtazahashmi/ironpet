@@ -13,6 +13,8 @@ final class AppModel {
     private(set) var phase: Phase
     /// A line for the pairing screen, such as why the app is back there.
     var notice: String?
+    /// Set when the Mac stopped accepting this phone. The pairing screen shows it once as a sheet with the one action that fixes it.
+    var problem: NetworkHealth.Problem?
     @ObservationIgnored let store: CredentialStore
     /// Where the event socket keeps the last event it applied. Pairing or unpairing forgets it.
     @ObservationIgnored private let resumeDefaults: UserDefaults
@@ -47,6 +49,7 @@ final class AppModel {
         FileChatCache.clearAll()
         forgetPresence()
         notice = "The Mac no longer accepts this device. Pair it again."
+        problem = .pairingExpired
         phase = .unpaired
     }
 
