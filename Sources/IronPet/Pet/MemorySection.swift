@@ -237,22 +237,14 @@ struct MemorySection: View {
         .font(.system(size: 15, weight: .medium))
     }
 
-    /// The chips and the count. A narrow window drops the count before it lets a chip wrap.
     private var controls: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 6) { chips; count }
-            HStack(spacing: 6) { chips }
-        }
+        HStack(spacing: 6) { chips }
     }
 
     private var chips: some View {
         ForEach(MemoryFilter.allCases, id: \.self) { chip in
             MemoryChip(title: chip.title, selected: model.filter == chip) { model.select(chip) }
         }
-    }
-
-    private var count: some View {
-        Text(model.list.countLabel).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4).lineLimit(1).fixedSize()
     }
 
     // MARK: List
