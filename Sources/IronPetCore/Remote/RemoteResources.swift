@@ -76,6 +76,11 @@ package struct RemoteResources {
     /// Sessions that are not idle, the ones that need the user first.
     package func agents() -> [String: Any] { RemoteWire.object(AgentListResponse(agents: api.agents.list().map { dto($0, detail: false) })) }
 
+    /// The sessions one agent owns. Nil is agent 1.
+    package func agents(agentId: String?) throws -> [String: Any] {
+        RemoteWire.object(AgentListResponse(agents: try api.agents.list(agentId: agentId).map { dto($0, detail: false) }))
+    }
+
     package func agent(_ id: String) throws -> [String: Any] { RemoteWire.object(dto(try api.agents.get(id), detail: true)) }
 
     /// The agents as records. The sessions above are what the agents are doing; these are the agents themselves.

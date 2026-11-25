@@ -267,7 +267,7 @@ package final class RPCDispatcher {
 
     private func registerAgents() {
         let agents = api.agents
-        add("agents.list", "GET /v1/agents", result: "[AgentSession]") { agents.list() }
+        add("agents.list", "GET /v1/agents", params: "AgentScopeRequest", result: "[AgentSession]") { (p: AgentScopeRequest) in try agents.list(agentId: p.agentId) }
         add("agents.get", "GET /v1/agents/:id", params: "ID", result: "AgentSession") { (p: ID) in try agents.get(p.id) }
         addVoid("agents.acknowledge", "POST /v1/agents/:id/acknowledge", params: "ID") { (p: ID) in try agents.acknowledge(p.id) }
         addVoid("agents.acknowledgeAll", "none") { agents.acknowledgeAll() }
@@ -289,7 +289,7 @@ package final class RPCDispatcher {
 
     private func registerAutomations() {
         let automations = api.automations
-        add("automations.list", "GET /v1/automations", result: "[Automation]") { automations.list() }
+        add("automations.list", "GET /v1/automations", params: "AgentScopeRequest", result: "[Automation]") { (p: AgentScopeRequest) in try automations.list(agentId: p.agentId) }
         add("automations.get", "GET /v1/automations/:id", params: "ID", result: "Automation") { (p: ID) in try automations.get(p.id) }
         add("automations.status", "none", params: "ID", result: "AutomationStatus") { (p: ID) in try automations.status(p.id) }
         add("automations.history", "GET /v1/automations/:id/history", params: "AutomationHistoryRequest", result: "[AutomationRunInfo]") { (p: AutomationHistoryRequest) in try automations.history(p) }
@@ -309,7 +309,7 @@ package final class RPCDispatcher {
         add("chat.snapshot", "GET /v1/chat/current", result: "ChatSnapshot") { chat.snapshot() }
         add("chat.status", "none", result: "ChatStatus") { await chat.status() }
         add("chat.messages", "none", result: "[ChatItem]") { await chat.messages() }
-        add("chat.threads", "GET /v1/chat/threads", result: "[ChatThreadInfo]") { await chat.threads() }
+        add("chat.threads", "GET /v1/chat/threads", params: "AgentScopeRequest", result: "[ChatThreadInfo]") { (p: AgentScopeRequest) in try await chat.threads(agentId: p.agentId) }
         add("chat.send", "POST /v1/chat/current/messages", params: "SendChatRequest", result: "ChatSendResult") { (p: SendChatRequest) in try await chat.send(p) }
         add("chat.stop", "POST /v1/chat/current/stop", result: "ChatStopResult") { await chat.stop() }
         addVoid("chat.newChat", "POST /v1/chat/new") { await chat.newChat() }

@@ -208,9 +208,11 @@ package struct ChatThreadInfo: Codable, Equatable, Identifiable {
         automation: String? = nil,
         automationName: String? = nil,
         voice: Bool? = nil,
-        ref: String? = nil
+        ref: String? = nil,
+        agentId: String? = nil
     ) {
         self.ref = ref
+        self.agentId = agentId
         self.id = id
         self.title = title
         self.workspace = workspace
@@ -233,6 +235,8 @@ package struct ChatThreadInfo: Codable, Equatable, Identifiable {
     package var voice: Bool?
     /// The thread's public id (`chat_…`).
     package var ref: String?
+    /// The agent that owns the thread. Nil for a thread saved before agents owned threads, which is agent 1's.
+    package var agentId: String?
 
     package var isAutomationRun: Bool { automation != nil }
 }
@@ -516,6 +520,15 @@ package final class ChatAPI {
     package func forms() async -> [ChatFormInfo] { currentForms }
     package func queue() async -> [ChatQueuedInfo] { currentQueue }
     package func threads() async -> [ChatThreadInfo] { currentThreads }
+
+    /// The threads this agent owns, newest first. Nil is agent 1, which is what the Mac's window shows. An id no agent has is `notFound`.
+    package func threads(agentId: String?) async throws -> [ChatThreadInfo] {
+        let agent = try AgentOwner.resolve(agentId, registry: registry)
+        if agent == session.ownerAgentID { return currentThreads }
+        let history = ThreadStore.recent(agent: agent)
+        let refs = records?.refs(.chat, history.map(\.id)) ?? [:]
+        return history.map { Self.info($0, ref: refs[$0.id]) }
+    }
     package func options() async -> ChatOptions { currentOptions }
 
     /// The slash commands for an agent, in the agent's order. The list is data: nothing here depends on what the user has typed. The
@@ -552,7 +565,8 @@ package final class ChatAPI {
 
     private static func info(_ thread: ChatThread, ref: String? = nil) -> ChatThreadInfo {
         ChatThreadInfo(id: thread.id, title: thread.title, workspace: thread.workspace, updatedAt: thread.updatedAt, agent: thread.agent,
-                       automation: thread.automation, automationName: thread.automationName, voice: thread.voice, ref: ref)
+                       automation: thread.automation, automationName: thread.automationName, voice: thread.voice, ref: ref,
+                       agentId: thread.agentId)
     }
 
     /// The public id of a message in a thread (`msg_…`), created on first use. Nil when the chat database is not attached.
@@ -562,6 +576,9 @@ package final class ChatAPI {
 
     /// The public ids of the chat threads and messages, set by the API owner once the database is open.
     package var records: RecordRefs?
+
+    /// The agents on this install, for checking an agent id a call names. Set by the API owner when there is a database.
+    package var registry: AgentRegistry?
 
     private var currentOptions: ChatOptions {
         ChatOptions(agent: Self.info(session.agent), agents: session.agents.map(Self.info), model: session.model,
@@ -648,7 +665,9 @@ package final class ChatAPI {
 
     /// Opens a saved thread in the chat, stopping the running turn.
     package func openThread(_ id: String) async throws {
-        guard let thread = ThreadStore.load(id) else { throw APIError.notFound("no thread with id \"\(id)\"") }
+        guard let thread = ThreadStore.load(id), thread.ownerAgentID == session.ownerAgentID else {
+            throw APIError.notFound("no thread with id \"\(id)\"")
+        }
         session.open(thread)
     }
 

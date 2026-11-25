@@ -97,7 +97,8 @@ final class EventServer {
         origin.t3ThreadID = AppIDs.clean(request.header("x-ironpet-t3-thread"))
         origin.herdrTerminalID = AppIDs.clean(request.header("x-ironpet-herdr-terminal"))
         origin.orcaTerminalHandle = AppIDs.clean(request.header("x-ironpet-orca-terminal"))
-        onEvent(HookEvent(source: source, name: name, payload: payload, origin: origin))
+        // The agent that launched the session, when the caller says so. No header is agent 1.
+        onEvent(HookEvent(source: source, name: name, payload: payload, origin: origin, agentId: AppIDs.clean(request.header("x-ironpet-agent"))))
         respond(connection, status: "204 No Content")
     }
 

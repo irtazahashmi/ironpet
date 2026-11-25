@@ -238,6 +238,7 @@ package enum AutomationSchema {
             "enabled": { "type": "boolean", "default": true },
             "createdBy": { "type": "string", "description": "\"user\" or the name of the agent that wrote it. Anything else needs approval before a shell command or prompt runs." },
             "note": { "type": "string" },
+            "agentId": { "type": "string", "description": "The agent that owns the automation. Its runs use that agent's CLI, model and permissions and report to its chat. Missing means agent 1 (agent_default)." },
             "until": { "enum": ["success", "once"], "description": "Deletes the automation after a run. success: after the first run whose action succeeded (a shell command that exits 0), once: after the first completed run. Not for script triggers, which return done: true." },
             "trigger": { "$ref": "#/definitions/trigger" },
             "action": { "$ref": "#/definitions/action" },

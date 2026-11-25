@@ -35,7 +35,8 @@ package struct AgentRecord: Codable, Equatable, Sendable {
     package var cliModels: [String: String]
     /// Standing instructions for this agent. Empty today: no setting writes them before the agents UI exists.
     package var instructions: String
-    /// Tool permissions this agent has been given, by tool name. Empty today: the chat still asks for each permission.
+    /// Tool permissions this agent has been given, by tool rule such as `Bash` or `Bash(git status:*)`, each `allow` or `deny`. An
+    /// automation run this agent owns follows them. Empty today: the chat still asks for each permission.
     package var permissions: [String: String]
     package var created: Date
     package var updated: Date
