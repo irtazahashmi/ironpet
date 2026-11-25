@@ -872,6 +872,8 @@ struct MockPhaseFour {
     var summaries: [String: String] = ["2026-11-14-1400": "## Summary\nPlanned the launch.\n"]
     var transcripts: [String: String] = ["2026-11-14-1400": "# Meeting\n[14:00:00] Me: hello secret-word\n", "2026-11-15-1000": "# Meeting\n[10:00:00] Me: second\n"]
     var meetingState = RemoteMeetingState()
+    /// Invented pages, like the design mockups: no real memory goes into a fixture.
+    var memoryPages: [RemoteMemoryPage] = MockIronPetServer.sampleMemoryPages
     var config = RemoteConfig(pet: .init(name: "Ghost"), speech: .init(enabled: false, voice: "am_puck"), meetings: .init(enabled: true))
     var pets = [RemotePetChoice(id: "p-ghost", name: "Ghost", builtIn: true, selected: true), RemotePetChoice(id: "p-fox", name: "Fox", builtIn: false)]
     /// The screen scope. False answers every screen route with 403, like a Mac that has not granted it.
@@ -910,6 +912,32 @@ extension MockIronPetServer {
     var screenStatus: RemoteScreenStatus { get { lock.lock(); defer { lock.unlock() }; return _p4.screenStatus } set { lock.lock(); _p4.screenStatus = newValue; lock.unlock() } }
     var screenWindows: [RemoteScreenWindow] { get { lock.lock(); defer { lock.unlock() }; return _p4.screenWindows } set { lock.lock(); _p4.screenWindows = newValue; lock.unlock() } }
 
+    var memoryPages: [RemoteMemoryPage] { get { lock.lock(); defer { lock.unlock() }; return _p4.memoryPages } set { lock.lock(); _p4.memoryPages = newValue; lock.unlock() } }
+
+    static let sampleMemoryPages: [RemoteMemoryPage] = {
+        let day = Date(timeIntervalSince1970: 1_795_000_000)
+        func link(_ id: String, _ name: String, _ type: String, _ label: String, _ mentions: Int) -> RemoteMemoryLink {
+            RemoteMemoryLink(id: id, name: name, type: type, typeLabel: label, mentions: mentions, lastSeen: day)
+        }
+        return [
+            RemoteMemoryPage(id: "page_4e91b0", type: "project", typeLabel: "Project", title: "Lighthouse", aliases: ["lighthouse", "LH"],
+                             identifiers: ["git.northwind.example/lighthouse"],
+                             facts: [RemoteMemoryFact(id: "claim_a1", text: "Database migrations are one-way.", date: "2026-11-20", pinned: true, sources: ["chat:abc"]),
+                                     RemoteMemoryFact(id: "claim_a2", text: "The CI size limit for the app bundle is 64 MB.", date: "2026-11-21", pinned: false, sources: ["screen"])],
+                             earlier: [RemoteMemoryFact(id: "claim_a0", text: "The CI size limit for the app bundle is 60 MB.", date: "2026-11-10", pinned: false, sources: ["tasks"], replaced: day)],
+                             linkGroups: [RemoteMemoryLinkGroup(title: "Worked on by", links: [link("page_9594cc", "Maya Chen", "person", "Person", 24)]),
+                                          RemoteMemoryLinkGroup(title: "Uses", links: [link("page_7c11d2", "Linear", "tool", "Tool", 9)])],
+                             updated: day, firstSeen: day),
+            RemoteMemoryPage(id: "page_9594cc", type: "person", typeLabel: "Person", title: "Maya Chen", aliases: ["Maya"],
+                             facts: [RemoteMemoryFact(id: "claim_b1", text: "Owns the Lighthouse repository and reviews every release build.", date: "2026-11-25", pinned: false, sources: ["tasks"])],
+                             linkGroups: [RemoteMemoryLinkGroup(title: "Works on", links: [link("page_4e91b0", "Lighthouse", "project", "Project", 24)])],
+                             updated: day, firstSeen: day),
+            RemoteMemoryPage(id: "page_7c11d2", type: "tool", typeLabel: "Tool", title: "Linear",
+                             facts: [RemoteMemoryFact(id: "claim_c1", text: "The Lighthouse team tracks bugs in the LH project.", date: "2026-11-24", pinned: false, sources: ["chat:def"])],
+                             updated: day, firstSeen: day),
+        ]
+    }()
+
     var automations: [RemoteAutomation] { get { lock.lock(); defer { lock.unlock() }; return _p4.automations } set { lock.lock(); _p4.automations = newValue; lock.unlock() } }
     var meetings: [RemoteMeeting] { get { lock.lock(); defer { lock.unlock() }; return _p4.meetings } set { lock.lock(); _p4.meetings = newValue; lock.unlock() } }
     var meetingState: RemoteMeetingState { get { lock.lock(); defer { lock.unlock() }; return _p4.meetingState } set { lock.lock(); _p4.meetingState = newValue; lock.unlock() } }
@@ -920,6 +948,7 @@ extension MockIronPetServer {
         switch parts[1] {
         case "automations": routeAutomations(request, parts, connection)
         case "meetings": routeMeetings(request, parts, connection)
+        case "memory": routeMemory(request, parts, connection)
         case "settings": routeSettings(request, parts, connection)
         case "screen": routeScreen(request, parts, connection)
         case "usage": lock.lock(); let usage = _p4.usage; lock.unlock(); respond(connection, 200, usage)
@@ -1017,6 +1046,58 @@ extension MockIronPetServer {
             respond(connection, 200, RemoteMeetingText(id: id, text: text))
         case ("POST", "regenerate"): respond(connection, 202, Data(#"{"started":"\#(id)"}"#.utf8))
         case ("POST", "ask"): respond(connection, 200, Data(#"{"asked":"\#(id)"}"#.utf8))
+        default: fail(connection, 404, "not_found", "not found")
+        }
+    }
+
+    /// The Memory routes over `memoryPages`: filter and search by name or fact, a page, pin, and forget.
+    private func routeMemory(_ request: Recorded, _ parts: [String], _ connection: NWConnection) {
+        let method = request.method
+        func query(_ name: String) -> String? {
+            request.query.split(separator: "&").compactMap { pair -> String? in
+                let kv = pair.split(separator: "=", maxSplits: 1).map(String.init)
+                guard kv.count == 2, kv[0] == name else { return nil }
+                return kv[1].removingPercentEncoding
+            }.first
+        }
+        lock.lock(); let pages = _p4.memoryPages; lock.unlock()
+        if parts.count == 2, method == "GET" {
+            let types = ["people": "person", "projects": "project", "organizations": "org", "topics": "topic", "tools": "tool"]
+            let filter = query("filter") ?? "all", needle = (query("q") ?? "").lowercased()
+            let inFilter = pages.filter { filter == "all" || $0.type == types[filter] }
+            let rows = inFilter.filter { needle.isEmpty || $0.title.lowercased().contains(needle) || $0.facts.contains { $0.text.lowercased().contains(needle) } }.map {
+                RemoteMemoryRow(id: $0.id, type: $0.type, typeLabel: $0.typeLabel, name: $0.title, summary: ($0.facts.first { $0.pinned } ?? $0.facts.first)?.text ?? "",
+                                factCount: $0.facts.count, updated: $0.updated)
+            }
+            let label = needle.isEmpty ? "\(inFilter.count) pages" : "\(rows.count) of \(inFilter.count) \(filter == "all" ? "pages" : filter)"
+            return respond(connection, 200, RemoteMemoryList(pages: rows, total: inFilter.count, countLabel: label))
+        }
+        guard parts.count >= 4 else { return fail(connection, 404, "not_found", "not found") }
+        let id = parts[3]
+        switch (method, parts[2], parts.count) {
+        case ("GET", "pages", 4):
+            guard let page = pages.first(where: { $0.id == id }) else { return fail(connection, 404, "not_found", "no page with that id") }
+            respond(connection, 200, page)
+        case ("DELETE", "pages", 4):
+            guard pages.contains(where: { $0.id == id }) else { return fail(connection, 404, "not_found", "no page with that id") }
+            lock.lock(); _p4.memoryPages.removeAll { $0.id == id }; lock.unlock()
+            respond(connection, 200, Data(#"{"forgotten":"\#(id)"}"#.utf8))
+        case ("DELETE", "facts", 4):
+            guard pages.contains(where: { $0.facts.contains { $0.id == id } }) else { return fail(connection, 404, "not_found", "no fact with that id") }
+            lock.lock()
+            for index in _p4.memoryPages.indices { _p4.memoryPages[index].facts.removeAll { $0.id == id } }
+            lock.unlock()
+            respond(connection, 200, Data(#"{"forgotten":"\#(id)"}"#.utf8))
+        case ("POST", "facts", 5) where parts[4] == "pin":
+            let pinned = ((try? JSONSerialization.jsonObject(with: request.body)) as? [String: Any])?["pinned"] as? Bool ?? true
+            guard pages.contains(where: { $0.facts.contains { $0.id == id } }) else { return fail(connection, 404, "not_found", "no fact with that id") }
+            lock.lock()
+            for page in _p4.memoryPages.indices {
+                for fact in _p4.memoryPages[page].facts.indices where _p4.memoryPages[page].facts[fact].id == id { _p4.memoryPages[page].facts[fact].pinned = pinned }
+                _p4.memoryPages[page].facts.sort { $0.pinned && !$1.pinned }
+            }
+            lock.unlock()
+            respond(connection, 200, Data(#"{"id":"\#(id)","pinned":\#(pinned)}"#.utf8))
         default: fail(connection, 404, "not_found", "not found")
         }
     }

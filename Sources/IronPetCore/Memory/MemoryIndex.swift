@@ -1,6 +1,6 @@
 import Foundation
 
-/// A change to Ghost's memory, for Settings → Memory → Recently learned and its Undo.
+/// A change to Ghost's memory, for `EntityMemoryStore.undo`. No screen offers Undo.
 package struct MemoryChange: Identifiable, Equatable, Codable {
     package init(
         id: Int64,

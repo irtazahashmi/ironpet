@@ -63,6 +63,7 @@ struct MainTabs: View {
     @State private var alerts: AlertsModel
     @State private var automations: AutomationsModel
     @State private var meetings: MeetingsModel
+    @State private var memory: MemoryModel
     @State private var screen: ScreenModel
     @State private var phoneSettings: PhoneSettingsModel
     @State private var voice: VoiceModel
@@ -99,6 +100,7 @@ struct MainTabs: View {
         _chat = State(initialValue: chatModel)
         _today = State(initialValue: TodayModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
         _agents = State(initialValue: AgentsModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
+        _memory = State(initialValue: MemoryModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
         _alerts = State(initialValue: AlertsModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
         _automations = State(initialValue: AutomationsModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
         _meetings = State(initialValue: MeetingsModel(client: client, events: events, gate: TranscriptGate(authenticator: Self.authenticator), network: network, onUnauthorized: unauthorized))
@@ -157,7 +159,7 @@ struct MainTabs: View {
                 .tabItem { Label("Tasks", systemImage: AppTab.tasks.symbol) }.tag(AppTab.tasks)
             AgentsView(model: agents)
                 .tabItem { Label("Agents", systemImage: AppTab.agents.symbol) }.tag(AppTab.agents)
-            MoreView(alerts: alerts, automations: automations, meetings: meetings, screen: screen, settings: phoneSettings, path: $morePath)
+            MoreView(alerts: alerts, automations: automations, meetings: meetings, memory: memory, screen: screen, settings: phoneSettings, path: $morePath)
                 .tabItem { Label("More", systemImage: AppTab.more.symbol) }.badge(alerts.alerts.count + automations.automations.filter(\.waitsForApproval).count)
                 .tag(AppTab.more)
         }
@@ -184,10 +186,10 @@ struct MainTabs: View {
         // A background changed on the Mac shows when the Chat tab opens.
         .onChange(of: tab) { _, next in if next == .chat { Task { await pet.reloadPet(applyMood: false) } } }
         // Leaving the tabs (unpair or a 401) must close the socket, which otherwise keeps reconnecting with the old token.
-        .onDisappear { [network, tasks, pet, chat, today, agents, alerts, automations, meetings, screen, phoneSettings, voice] in
+        .onDisappear { [network, tasks, pet, chat, today, agents, alerts, automations, meetings, memory, screen, phoneSettings, voice] in
             voice.stop()
             network.stopPathMonitor()
-            tasks.stop(); pet.stop(); chat.stop(); today.stop(); agents.stop(); alerts.stop(); automations.stop(); meetings.stop(); screen.stop(); phoneSettings.stop()
+            tasks.stop(); pet.stop(); chat.stop(); today.stop(); agents.stop(); alerts.stop(); automations.stop(); meetings.stop(); memory.stop(); screen.stop(); phoneSettings.stop()
             meetings.gate.lock()
             screen.gate.lock()
         }

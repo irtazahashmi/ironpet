@@ -74,14 +74,15 @@ final class IronPetWindowTests: XCTestCase {
         let all = IronPetSection.shown(chat: true, transcripts: true, automations: true)
         XCTAssertFalse(IronPetSection.allCases.map(\.rawValue).contains("voice"))
         XCTAssertEqual(IronPetSection.forShortcut("2", in: all), .agents)
-        // Nine rows with Chat, Notifications and Today hidden: ⌘9 is Automations.
+        // Ten rows with Today hidden: ⌘9 is Automations, and Memory, the tenth, has no number.
         XCTAssertEqual(IronPetSection.forShortcut("9", in: all), .automations)
+        XCTAssertNil(IronPetSection.memory.shortcutLabel(in: all))
     }
 
     func testHiddenRowsDoNotTakeANumber() {
         let noChat = IronPetSection.shown(chat: false, transcripts: true, automations: true)
         XCTAssertEqual(IronPetSection.forShortcut("1", in: noChat), .agents)
-        XCTAssertNil(IronPetSection.forShortcut("9", in: noChat))
+        XCTAssertEqual(IronPetSection.forShortcut("9", in: noChat), .memory)
     }
 
     private func keyEvent(_ characters: String, flags: NSEvent.ModifierFlags = .command) -> NSEvent {
@@ -411,7 +412,7 @@ final class IronPetWindowTests: XCTestCase {
     func testRailTooltipsNameTheSectionAndItsShortcut() {
         let all = IronPetSection.shown(chat: true, transcripts: true, automations: true)
         XCTAssertEqual(all.map { $0.hint(in: all) },
-                       ["Chat (⌘1)", "Agents (⌘2)", "Alerts (⌘3)", "Notifications (⌘4)", "Tasks (⌘5)", "Transcripts (⌘6)", "Screen (⌘7)", "Actions (⌘8)", "Automations (⌘9)"])
+                       ["Chat (⌘1)", "Agents (⌘2)", "Alerts (⌘3)", "Notifications (⌘4)", "Tasks (⌘5)", "Transcripts (⌘6)", "Screen (⌘7)", "Actions (⌘8)", "Automations (⌘9)", "Memory"])
         let noChat = IronPetSection.shown(chat: false, transcripts: true, automations: true)
         XCTAssertEqual(IronPetSection.agents.hint(in: noChat), "Agents (⌘1)")
     }
