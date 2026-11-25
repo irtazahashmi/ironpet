@@ -27,13 +27,85 @@ struct MarkdownBody: View {
     var find: RemoteChatFind.RowHighlight?
     @Environment(\.openFilePath) private var openFilePath
     private var links: Bool { openFilePath != nil }
+    @Environment(\.macAccent) private var macAccent
+    @Environment(\.selectingText) private var selecting
     @ChatScale(.body) private var scale
 
     var body: some View {
+        // The reply is SwiftUI text, which a long press leaves to the message menu. "Select text" in that menu swaps in text views that select.
+        if selecting?.wrappedValue == true { selectableBody } else { plainBody }
+    }
+
+    private var selectableBody: some View {
+        let blocks = ChatMarkdown.parse(text)
+        let starts = find == nil ? [] : blocks.reduce(into: [0]) { $0.append($0.last! + ChatMarkdown.segments(of: $1).count) }
+        let allChunks = chunks(of: blocks, starts: starts)
+        let firstText = allChunks.firstIndex { if case .block = $0 { return false } else { return true } }
+        return VStack(alignment: .leading, spacing: 8) {
+            ForEach(Array(allChunks.enumerated()), id: \.offset) { index, chunk in
+                switch chunk {
+                case .run(let pieces):
+                    // Consecutive headings, paragraphs and list items are one text view, so a selection can span them.
+                    SelectableText(pieces: pieces, size: ChatMetrics.macBody * scale, accent: macAccent, takesSelection: index == firstText)
+                        .padding(.top, pieces.first.map { if case .heading = $0.style { return 2 } else { return 0 } } ?? 0)
+                        .padding(.bottom, -SelectableTextBuilder.lineSpacing)
+                case .quote(let piece):
+                    SelectableText(pieces: [piece], size: ChatMetrics.macBody * scale, accent: macAccent, takesSelection: index == firstText)
+                        .padding(.bottom, -SelectableTextBuilder.lineSpacing)
+                        .padding(.leading, 11)
+                        .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 1.5).fill(Color.secondary.opacity(0.4)).frame(width: 3) }
+                case .block(let block, let segment):
+                    view(for: block, segment: segment)
+                }
+            }
+        }
+    }
+
+    private enum Chunk {
+        case run([SelectablePiece])
+        case quote(SelectablePiece)
+        case block(ChatMarkdown.Block, segment: Int)
+    }
+
+    private func chunks(of blocks: [ChatMarkdown.Block], starts: [Int]) -> [Chunk] {
+        var result: [Chunk] = []
+        var run: [SelectablePiece] = []
+        func flush() { if !run.isEmpty { result.append(.run(run)); run = [] } }
+        func styled(_ text: String, segment: Int) -> AttributedString {
+            ChatMarkdown.inline(text).linkingFilePaths(links).findHighlighted(segment: segment, find: find)
+        }
+        for (index, block) in blocks.enumerated() {
+            let segment = starts.isEmpty ? 0 : starts[index]
+            switch block {
+            case .heading(let level, let text):
+                let size: CGFloat = (level == 1 ? 17 : level == 2 ? 15.5 : 14) * scale
+                run.append(SelectablePiece(text: styled(text, segment: segment), style: .heading(size: size, bold: level <= 2)))
+            case .paragraph(let text):
+                run.append(SelectablePiece(text: styled(text, segment: segment), style: .body))
+            case .list(_, let items):
+                for (offset, item) in items.enumerated() {
+                    let task = item.task
+                    let marker: SelectablePiece.Marker = task.map { .task(done: $0.done) }
+                        ?? (item.marker.first?.isNumber == true ? .number(item.marker) : .bullet(item.indent == 0 ? "•" : "◦"))
+                    run.append(SelectablePiece(text: styled(task?.text ?? item.text, segment: segment + offset), style: .listItem(indent: item.indent, marker: marker)))
+                }
+            case .quote(let text):
+                flush()
+                result.append(.quote(SelectablePiece(text: styled(text, segment: segment), style: .quote)))
+            case .code, .table, .rule:
+                flush()
+                result.append(.block(block, segment: segment))
+            }
+        }
+        flush()
+        return result
+    }
+
+    private var plainBody: some View {
         let blocks = ChatMarkdown.parse(text)
         // Each block draws as many pieces of text as `ChatMarkdown.segments` lists, and a match names its piece by that numbering.
         let starts = find == nil ? [] : blocks.reduce(into: [0]) { $0.append($0.last! + ChatMarkdown.segments(of: $1).count) }
-        VStack(alignment: .leading, spacing: 8) {
+        return VStack(alignment: .leading, spacing: 8) {
             ForEach(Array(blocks.enumerated()), id: \.offset) { index, block in
                 view(for: block, segment: starts.isEmpty ? 0 : starts[index])
             }
