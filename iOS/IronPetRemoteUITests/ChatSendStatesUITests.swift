@@ -69,9 +69,16 @@ final class ChatSendStatesUITests: XCTestCase {
             XCTAssertFalse(app.staticTexts["Sending…"].exists, "no text row")
             let before = sending.frame
             attach("message-sending", dark: dark)
-            // The check under the message shows once the Mac has confirmed it.
-            XCTAssertTrue(any("outgoing-delivered").waitForExistence(timeout: 30), "the message is confirmed")
-            XCTAssertTrue(bubble("sending state \(dark)").waitForExistence(timeout: 5))
+            // The Mac's copy replaces the pending bubble. Look it up again until it is there and no longer reads "Sending". A failed
+            // snapshot counts as "not yet", since the element can vanish for a moment while the row is replaced.
+            let rows = { self.app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'bubble-' OR identifier BEGINSWITH 'queued-' OR identifier == 'outgoing-delivered'")).allElementsBoundByIndex.map { "\($0.identifier)|\($0.label)|\($0.value ?? "nil")" } }
+            let deadline = Date().addingTimeInterval(45)
+            var settled = false
+            while Date() < deadline, !settled {
+                if let snapshot = try? bubble("sending state \(dark)").snapshot() { settled = (snapshot.value as? String ?? "") != "Sending" }
+                if !settled { Thread.sleep(forTimeInterval: 0.3) }
+            }
+            XCTAssertTrue(settled, "the message is confirmed. Rows: \(rows())")
             // The mock starts a turn when it confirms, and the transcript follows the new working row, so only the height is stable here.
             XCTAssertEqual(before.height, bubble("sending state \(dark)").frame.height, accuracy: 0.5, "the bubble does not resize when it is confirmed")
             XCTAssertEqual(before.minX, bubble("sending state \(dark)").frame.minX, accuracy: 0.5)
