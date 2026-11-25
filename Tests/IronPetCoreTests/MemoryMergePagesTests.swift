@@ -30,7 +30,7 @@ final class MemoryMergePagesTests: XCTestCase {
 
     // MARK: S1, S3
 
-    func testMergeMovesFactsAndLinksKeepsTheAliasAndRemovesThePage() throws {
+    func testMergeMovesFactsAndLinksKeepsTheAliasAndRemovesThePage() async throws {
         for type in [EntityType.person, .project, .org, .topic, .tool] {
             store = EntityMemoryStore(database: try Database(path: nil, migrations: AppMigrations.all))
             let short = "Irtaza", long = "Irtaza Hashimi"
@@ -61,7 +61,7 @@ final class MemoryMergePagesTests: XCTestCase {
         }
     }
 
-    func testMergedFactsKeepTheirRefDateSourcesPinAndProvenance() throws {
+    func testMergedFactsKeepTheirRefDateSourcesPinAndProvenance() async throws {
         fill(.person, "Irtaza", facts: 2)
         remember(.person, "Irtaza Hashimi", "Lives in Berlin")
         let old = try page("Irtaza"), kept = try page("Irtaza Hashimi")
@@ -83,7 +83,7 @@ final class MemoryMergePagesTests: XCTestCase {
         XCTAssertEqual(columns.first?[1] as? String, "agent-a")
     }
 
-    func testEarlierFactsFollowAndTheSearchIndexUsesTheKeptPage() throws {
+    func testEarlierFactsFollowAndTheSearchIndexUsesTheKeptPage() async throws {
         remember(.person, "Irtaza", "Works at Acme")
         _ = store.forget("Acme", source: "chat:a")
         remember(.person, "Irtaza", "Prefers dark mode")
@@ -96,7 +96,7 @@ final class MemoryMergePagesTests: XCTestCase {
         XCTAssertEqual(store.index.search("dark mode", limit: 5).first?.title, "Person · Irtaza Hashimi")
     }
 
-    func testSeveralPagesMergeAtOnceAndNamesRefsAndIDsAllWork() throws {
+    func testSeveralPagesMergeAtOnceAndNamesRefsAndIDsAllWork() async throws {
         fill(.person, "Ana", facts: 1)
         fill(.person, "Ana Silva", facts: 2)
         fill(.person, "Ana S", facts: 3)
@@ -111,7 +111,7 @@ final class MemoryMergePagesTests: XCTestCase {
 
     // MARK: Refusals leave both pages as they were
 
-    func testRefusalsChangeNothing() throws {
+    func testRefusalsChangeNothing() async throws {
         fill(.person, "Maya", facts: 2)
         fill(.project, "Maya", facts: 2)
         fill(.person, "Maya Chen", facts: 1)
@@ -130,7 +130,7 @@ final class MemoryMergePagesTests: XCTestCase {
         XCTAssertEqual(before.map { store.claims(of: $0.id).map(\.id) }, claims)
     }
 
-    func testPagesOfDifferentTypesDoNotMerge() throws {
+    func testPagesOfDifferentTypesDoNotMerge() async throws {
         fill(.person, "Maya", facts: 1)
         fill(.project, "Maya", facts: 1)
         let person = try XCTUnwrap(store.entities().first { $0.type == .person && $0.name == "Maya" })
@@ -141,7 +141,7 @@ final class MemoryMergePagesTests: XCTestCase {
         XCTAssertEqual(store.claims(of: project.id).count, 1)
     }
 
-    func testAFailureInTheMiddleRollsEverythingBack() throws {
+    func testAFailureInTheMiddleRollsEverythingBack() async throws {
         fill(.person, "Irtaza", facts: 3)
         fill(.person, "Irtaza Hashimi", facts: 2)
         let old = try page("Irtaza"), kept = try page("Irtaza Hashimi")
