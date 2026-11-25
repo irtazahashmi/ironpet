@@ -1387,7 +1387,8 @@ final class AutomationScriptEngineTests: AutomationTestCase {
         let file = dir.appendingPathComponent("up.db")
         var db: Database? = try Database(path: file, migrations: [AutomationState.migrations[0]])
         var state: AutomationState? = AutomationState(database: db)
-        state?.record("a", .init(date: Date(), outcome: "ok", output: "kept"))
+        // Raw SQL: the provenance columns come with a later migration, which this database does not have yet.
+        try db?.write { try $0.execute("INSERT INTO automation_runs(automation, at, outcome, output) VALUES('a', 1, 'ok', 'kept')") }
         XCTAssertEqual(db?.schemaVersion, 1)
         state = nil
         db = nil
@@ -1653,7 +1654,7 @@ final class AutomationLogTests: AutomationTestCase {
         XCTAssertEqual(db?.schemaVersion, 3)
         db = nil
         let upgraded = try Database(path: file, migrations: AutomationState.migrations)
-        XCTAssertEqual(upgraded.schemaVersion, 410)
+        XCTAssertEqual(upgraded.schemaVersion, AutomationState.migrations.last?.version)
         let state = AutomationState(database: upgraded)
         state.addLog("a", date: Date(), duration: 0, outcome: "ok", summary: "x", detail: "")
         XCTAssertEqual(state.logs().count, 1)
@@ -1882,7 +1883,7 @@ final class AlertRestoreTests: XCTestCase {
         old = nil
         let upgraded = try Database(path: file, migrations: AutomationState.migrations)
         let state = AutomationState(database: upgraded)
-        XCTAssertEqual(upgraded.schemaVersion, 410)
+        XCTAssertEqual(upgraded.schemaVersion, AutomationState.migrations.last?.version)
         XCTAssertTrue(state.openAlerts().isEmpty)
         XCTAssertEqual(state.alertHash("ci", "1"), "", "the next run re-adds it, without a bubble")
     }

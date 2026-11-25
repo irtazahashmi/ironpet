@@ -22,9 +22,10 @@ package struct HelloRequest: Codable, Equatable {
 }
 
 package struct HelloResult: Codable, Equatable {
-    package init(protocolVersion: Int, server: ClientInfo, session: String, capabilities: [String], seq: Int, gap: Bool) {
+    package init(protocolVersion: Int, server: ClientInfo, node: NodeInfo? = nil, session: String, capabilities: [String], seq: Int, gap: Bool) {
         self.protocolVersion = protocolVersion
         self.server = server
+        self.node = node
         self.session = session
         self.capabilities = capabilities
         self.seq = seq
@@ -33,6 +34,8 @@ package struct HelloResult: Codable, Equatable {
 
     package var protocolVersion: Int
     package var server: ClientInfo
+    /// Which install answered and the agent its changes are attributed to. Absent when the host has no node id.
+    package var node: NodeInfo?
     /// The id of this connection's `ClientSession`.
     package var session: String
     /// The facades this host serves, not what the client can do for the host.
@@ -44,7 +47,7 @@ package struct HelloResult: Codable, Equatable {
 
     private enum CodingKeys: String, CodingKey {
         case protocolVersion = "protocol"
-        case server, session, capabilities, seq, gap
+        case server, node, session, capabilities, seq, gap
     }
 }
 
@@ -79,11 +82,13 @@ package final class SessionAPI {
     private let events: APIEventBus
     private let facades: () -> [String]
     package var serverVersion: String
+    private let node: NodeInfo?
 
-    package init(clients: ClientRegistry, events: APIEventBus, serverVersion: String = "0", facades: @escaping () -> [String]) {
+    package init(clients: ClientRegistry, events: APIEventBus, serverVersion: String = "0", node: NodeInfo? = nil, facades: @escaping () -> [String]) {
         self.clients = clients
         self.events = events
         self.serverVersion = serverVersion
+        self.node = node
         self.facades = facades
     }
 
@@ -107,6 +112,6 @@ package final class SessionAPI {
         }
         let gap = request.lastSeq.map { events.replay(after: $0).gap } ?? false
         return HelloResult(protocolVersion: Self.supportedProtocols.last ?? 1, server: ClientInfo(name: Self.serverName, version: serverVersion),
-                           session: session.id, capabilities: facades(), seq: events.lastSeq, gap: gap)
+                           node: node, session: session.id, capabilities: facades(), seq: events.lastSeq, gap: gap)
     }
 }

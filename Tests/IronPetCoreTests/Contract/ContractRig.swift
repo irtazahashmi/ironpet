@@ -9,6 +9,8 @@ import IronPetKit
 final class ContractRig {
     /// Fixed so a golden file never holds a wall-clock time.
     static let epoch = Date(timeIntervalSince1970: 1_794_000_000)
+    /// Fixed so `session.hello` in a golden file never holds a random id.
+    static let nodeID = "node_0123456789abcdef"
 
     let api: IronPetAPI
     let dispatcher: RPCDispatcher
@@ -39,7 +41,7 @@ final class ContractRig {
             notifications: NotificationStore(database: Self.memoryDatabase(), now: now), sessions: sessions, chat: chat,
             meeting: UnsupportedMeetingRecorder(), meetingLibrary: MeetingLibrary(root: directory.appendingPathComponent("meetings")),
             config: ConfigStore(memory: Config()), speech: chat.speech,
-            files: FolderFileIntake(directory: directory.appendingPathComponent("attachments"))))
+            files: FolderFileIntake(directory: directory.appendingPathComponent("attachments")), nodeID: ContractRig.nodeID))
         api.today.now = now
         api.today.calendar = Self.calendar
         dispatcher = RPCDispatcher(api: api)

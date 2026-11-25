@@ -131,3 +131,61 @@ final class ChatModelsTests: XCTestCase {
         XCTAssertTrue(RemoteChatOptionsChange().json.isEmpty)
     }
 }
+
+final class RemoteFormPagingTests: XCTestCase {
+    private func questions(_ count: Int, required: Bool = true) -> RemoteForm {
+        var fields: [RemoteFormField] = []
+        for n in 0..<count {
+            fields.append(RemoteFormField(id: "question_\(n)", title: "Which colour \(n)?", required: required, type: "single",
+                                          options: [RemoteFormOption(value: "red", title: "Red"), RemoteFormOption(value: "blue", title: "Blue")]))
+            fields.append(RemoteFormField(id: "question_\(n)_custom", title: "Other", type: "text"))
+        }
+        return RemoteForm(id: "f", message: "m", fields: fields)
+    }
+
+    func testEachQuestionIsOnePageWithItsOtherField() {
+        let pages = questions(3).pages
+        XCTAssertEqual(pages.count, 3)
+        XCTAssertEqual(pages[1].map(\.id), ["question_1", "question_1_custom"])
+    }
+
+    func testFormsThatAreNotQuestionsStayOnOnePage() {
+        let form = RemoteForm(id: "f", message: "m", fields: [RemoteFormField(id: "name", type: "text"), RemoteFormField(id: "question_1", type: "text")])
+        XCTAssertEqual(form.pages.count, 1)
+        XCTAssertFalse(ElicitationPager(pageCount: form.pages.count).isPaged)
+    }
+
+    func testSingleQuestionIsNotPaged() {
+        XCTAssertFalse(ElicitationPager(pageCount: questions(1).pages.count).isPaged)
+    }
+
+    func testSubmitJumpsToTheFirstUnansweredRequiredQuestion() {
+        var form = questions(3)
+        XCTAssertEqual(form.firstIncompletePage(), 0)
+        form.answers = ["question_0": .text("red"), "question_2": .text("blue")]
+        XCTAssertEqual(form.firstIncompletePage(), 1)
+        XCTAssertNil(form.firstIncompletePage(typed: ["question_1": "green"]))
+        form.answers["question_1"] = .text("red")
+        XCTAssertNil(form.firstIncompletePage())
+    }
+
+    func testTypedTextThatIsEmptyStaysIncomplete() {
+        var form = questions(2)
+        form.fields[0].type = "text"
+        form.answers = ["question_0": .text("kept"), "question_1": .text("red")]
+        XCTAssertEqual(form.firstIncompletePage(typed: ["question_0": "  "]), 0)
+    }
+
+    func testPagerWalksForwardAndBackAndStopsAtTheEnds() {
+        var pager = ElicitationPager(pageCount: 3)
+        XCTAssertEqual(pager.label, "1 of 3")
+        XCTAssertFalse(pager.canGoBack)
+        pager.back()
+        XCTAssertEqual(pager.index, 0)
+        pager.forward(); pager.forward(); pager.forward()
+        XCTAssertEqual(pager.label, "3 of 3")
+        XCTAssertTrue(pager.isLast)
+        pager.show(1)
+        XCTAssertEqual(pager.label, "2 of 3")
+    }
+}

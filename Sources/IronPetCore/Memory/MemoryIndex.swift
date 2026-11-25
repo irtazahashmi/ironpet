@@ -101,6 +101,13 @@ package final class MemoryIndex: @unchecked Sendable { // `database` serializes 
             CREATE UNIQUE INDEX memory_entities_by_ref ON memory_entities(ref);
             CREATE UNIQUE INDEX memory_claims_by_ref ON memory_claims(ref);
             """),
+        // Which install and which agent wrote a claim or logged a change. Old rows keep both columns empty.
+        .init(553, "memory: node and agent on claims and changes", sql: """
+            ALTER TABLE memory_claims ADD COLUMN node_id TEXT;
+            ALTER TABLE memory_claims ADD COLUMN agent_id TEXT;
+            ALTER TABLE memory_changes ADD COLUMN node_id TEXT;
+            ALTER TABLE memory_changes ADD COLUMN agent_id TEXT;
+            """),
     ]
 
     package enum Kind: String, CaseIterable, Codable {
@@ -347,8 +354,8 @@ package final class MemoryIndex: @unchecked Sendable { // `database` serializes 
     package func record(at: Date, file: String, section: String?, action: MemoryChange.Action, note: String, previous: String?, source: String,
                         claim: Int64? = nil) -> Int64? {
         try? database.write { db in
-            try db.execute("INSERT INTO memory_changes(at, file, section, action, note, previous, source, claim) VALUES(?, ?, ?, ?, ?, ?, ?, ?)",
-                           [at.timeIntervalSince1970, file, section, action.rawValue, note, previous, source, claim])
+            try db.execute("INSERT INTO memory_changes(at, file, section, action, note, previous, source, claim, node_id, agent_id) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                           [at.timeIntervalSince1970, file, section, action.rawValue, note, previous, source, claim] + Provenance.current(db).columns)
             return try db.rows("SELECT last_insert_rowid()").first?.first as? Int64
         }
     }

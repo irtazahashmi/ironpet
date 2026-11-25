@@ -30,7 +30,8 @@ package final class IronPetAPI {
             petAssets: PetAssets = UnsupportedPetAssets(),
             files: FileIntake = FolderFileIntake(directory: Paths.attachments),
             usage: UsageStore? = nil,
-            permissions: BackgroundPermissions? = nil
+            permissions: BackgroundPermissions? = nil,
+            nodeID: String? = nil
         ) {
             self.tasks = tasks
             self.automations = automations
@@ -47,6 +48,7 @@ package final class IronPetAPI {
             self.files = files
             self.usage = usage
             self.permissions = permissions
+            self.nodeID = nodeID
         }
 
         package var tasks: TaskStore
@@ -68,9 +70,13 @@ package final class IronPetAPI {
         package var usage: UsageStore?
         /// Where permission requests from jobs and automation sessions wait for an answer.
         package var permissions: BackgroundPermissions?
+        /// This install's node id (`NodeIdentity`), read from the app database. Nil where there is no database to keep one.
+        package var nodeID: String?
     }
 
     package let events: APIEventBus
+    /// Which install this is, and the agent its changes are attributed to.
+    package let node: NodeAPI
     package let tasks: TasksAPI
     package let automations: AutomationsAPI
     package let alerts: AlertsAPI
@@ -100,7 +106,8 @@ package final class IronPetAPI {
         self.events = events
         let registry = clients ?? ClientRegistry()
         var served: () -> [String] = { [] }
-        session = SessionAPI(clients: registry, events: events) { served() }
+        node = NodeAPI(nodeID: stores.nodeID)
+        session = SessionAPI(clients: registry, events: events, node: node.info()) { served() }
         stores.tasks.events = events
         stores.automations.store.events = events
         tasks = TasksAPI(store: stores.tasks, config: stores.config)
@@ -139,7 +146,7 @@ package final class IronPetAPI {
 
     /// The facades `session.hello` reports: the ones a client can call now. `memory` and `screen` join once they are attached.
     private var servedFacades: [String] {
-        var names = ["agents", "alerts", "automations", "bubbles", "chat", "meetings", "notifications", "session", "settings", "tasks", "today"]
+        var names = ["agents", "alerts", "automations", "bubbles", "chat", "meetings", "node", "notifications", "session", "settings", "tasks", "today"]
         if memory != nil { names.append("memory") }
         if screen != nil { names.append("screen") }
         return names.sorted()

@@ -118,6 +118,16 @@ package final class TaskStore {
                 CREATE TABLE IF NOT EXISTS task_scan_cursors(key TEXT PRIMARY KEY, item TEXT NOT NULL, at REAL NOT NULL) WITHOUT ROWID;
                 """)
         },
+        // Which install and which agent made a change. Old rows keep both columns empty. On `task_items` the columns name the last writer;
+        // `task_events` names the writer of each event, so the creator is the node and agent of the `created` event.
+        .init(552, "tasks: node and agent on every change") { db in
+            for table in ["task_items", "task_events"] {
+                let existing = try TaskStore.columns(db, table)
+                for column in ["node_id", "agent_id"] where !existing.contains(column) {
+                    try db.execute("ALTER TABLE \(table) ADD COLUMN \(column) TEXT")
+                }
+            }
+        },
     ]
 
     /// A source reference as stored: a JSON object, keys sorted.
@@ -688,11 +698,12 @@ package final class TaskStore {
 
     private static func save(_ item: TaskItem, _ db: Database.Connection) throws {
         try db.execute("""
-            INSERT OR REPLACE INTO task_items(id, title, notes, status, source, due, created, updated, closed, waiting_on, source_ref)
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT OR REPLACE INTO task_items(id, title, notes, status, source, due, created, updated, closed, waiting_on, source_ref,
+                                              node_id, agent_id)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [item.id, item.title, item.notes, item.status.rawValue, item.source.rawValue, item.due?.timeIntervalSince1970,
                   item.created.timeIntervalSince1970, item.updated.timeIntervalSince1970, item.closed?.timeIntervalSince1970,
-                  item.waitingOn, item.sourceRef])
+                  item.waitingOn, item.sourceRef] + Provenance.current(db).columns)
         try db.execute("DELETE FROM task_links WHERE task = ?", [item.id])
         for (position, link) in item.links.enumerated() {
             try db.execute("INSERT INTO task_links(task, position, kind, ref, label) VALUES(?, ?, ?, ?, ?)",
@@ -705,8 +716,8 @@ package final class TaskStore {
     }
 
     private static func log(_ db: Database.Connection, _ task: String, _ at: Date, _ by: String, _ kind: TaskEvent.Kind, _ detail: String) throws {
-        try db.execute("INSERT INTO task_events(task, at, by, kind, detail) VALUES(?, ?, ?, ?, ?)",
-                       [task, at.timeIntervalSince1970, by, kind.rawValue, detail])
+        try db.execute("INSERT INTO task_events(task, at, by, kind, detail, node_id, agent_id) VALUES(?, ?, ?, ?, ?, ?, ?)",
+                       [task, at.timeIntervalSince1970, by, kind.rawValue, detail] + Provenance.current(db).columns)
     }
 }
 
