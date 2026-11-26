@@ -334,7 +334,7 @@ Call `tasks_list` first so you update an existing task instead of adding a dupli
 
 ## Waiting for
 
-A task that waits on someone (`waiting_on`) records when the user asked them (`asked_at`, set when `waiting_on` is set; pass `asked_at` when the user says they asked earlier, such as "I mailed Ana on Monday"). After five working days the task has `follow_up_due: true`. Then propose a follow-up with `tasks_suggest`: title "Follow up with <name>: <task title>", a short message the user could send in `notes`, and the id `follow-up-<task id>-<asked_at day>` so the same follow-up is not proposed twice. Never send the message yourself. When the user says they followed up, set `asked_at` to that time.
+A task that waits on someone (`waiting_on`) records when the user asked them (`asked_at`, set when `waiting_on` is set; pass `asked_at` when the user says they asked earlier, such as "I mailed Ana on Monday"). After five working days the task has `follow_up_due: true`. Then propose a follow-up with `tasks_suggest`: title "Follow up with <name> (asked <asked_at day>): <task title>" (the date keeps each follow-up distinct), a short message the user could send in `notes`, and the id `follow-up-<task id>-<asked_at day>` so the same follow-up is not proposed twice. Never send the message yourself. When the user says they followed up, or a follow-up task is done, set `asked_at` on the waiting task to that time, so the clock starts again.
 
 ## Projects
 

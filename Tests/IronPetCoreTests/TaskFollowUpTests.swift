@@ -66,4 +66,33 @@ final class TaskFollowUpTests: XCTestCase {
                                                     by: "agent:mcp").get() as? [String: Any])
         XCTAssertNil(fresh["follow_up_due"], "the user just followed up")
     }
+
+    func testParkedOrDeferredWaitingTasksGetNoFollowUp() throws {
+        let someday = try store.create(title: "Maybe hear from the agency", status: .someday, source: .user, waitingOn: "Agency", by: "test")
+        XCTAssertFalse(someday.followUpDue(now: day(30), calendar: calendar))
+        let deferred = try store.create(title: "Quote from the builder", source: .user, waitingOn: "Builder", deferUntil: day(60), by: "test")
+        XCTAssertFalse(deferred.followUpDue(now: day(30), calendar: calendar))
+    }
+
+    func testAskedAtOnlyAppliesWhileTheTaskWaits() throws {
+        let own = try store.create(title: "Write the report", source: .user, askedAt: day(-10), by: "test")
+        XCTAssertNil(own.askedAt, "nobody to follow up with")
+        XCTAssertNil(try store.update(own.id, askedAt: day(-5), by: "test").askedAt)
+    }
+
+    func testMigration573StartsTheClockOfTasksAlreadyWaiting() throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-573-\(UUID().uuidString).db")
+        defer { try? FileManager.default.removeItem(at: file) }
+        let before = Database.open(path: file, migrations: AppMigrations.all.filter { $0.version < 573 }).database
+        try before.write { db in
+            try db.execute("""
+                INSERT INTO task_items(id, title, notes, status, source, created, updated, waiting_on)
+                VALUES('a', 'Contract', '', 'backlog', 'user', 1, 1700000000, 'Ana'), ('b', 'Report', '', 'backlog', 'user', 1, 1700000000, NULL)
+                """)
+        }
+        let migrated = Database.open(path: file, migrations: AppMigrations.all).database
+        let older = TaskStore(database: migrated, keepDoneDays: { 30 })
+        XCTAssertEqual(older.task("a")?.askedAt, Date(timeIntervalSince1970: 1_700_000_000))
+        XCTAssertNil(older.task("b")?.askedAt)
+    }
 }

@@ -439,7 +439,7 @@ private struct TaskRow: View {
                     Label("Follow up", systemImage: "arrowshape.turn.up.right")
                         .labelStyle(DueLabelStyle())
                         .foregroundStyle(.orange)
-                        .help("Asked \(TaskTime.relative(task.askedAt ?? task.updated, now: now)); five working days have passed")
+                        .help("Asked \(TaskTime.relative(task.askedAt ?? task.updated, now: now)); \(TaskFollowUp.workingDays) working days have passed")
                 }
             }
             if let due = task.dueLabel(now: now) {

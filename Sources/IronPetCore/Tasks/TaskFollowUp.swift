@@ -21,7 +21,8 @@ package enum TaskFollowUp {
 extension TaskItem {
     /// Waiting on someone for at least `TaskFollowUp.workingDays` working days since the user asked.
     package func followUpDue(now: Date, calendar: Calendar = .current) -> Bool {
-        guard status != .done, waitingOn != nil, let askedAt else { return false }
+        // Parked or deferred work waits for its day, not for a reply.
+        guard status != .done, status != .someday, !isDeferred(now: now), waitingOn != nil, let askedAt else { return false }
         return TaskFollowUp.workingDays(from: askedAt, to: now, calendar: calendar) >= TaskFollowUp.workingDays
     }
 }
