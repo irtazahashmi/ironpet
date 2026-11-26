@@ -168,7 +168,7 @@ private struct RemoteSettingsBody: View {
                 }
             }
             if remote.devices.contains(where: { $0.has(RemoteScope.screen) }) {
-                Text("A device with Screen text on can read what screen capture stored, with secrets redacted as agents see it, and can pause capture. It makes at most 200 requests an hour.")
+                Text("A device with Screen text on can read what screen capture stored, with secrets redacted as pets see it, and can pause capture. It makes at most 200 requests an hour.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if !remote.devices.isEmpty {

@@ -122,6 +122,99 @@ final class PetLibraryTests: XCTestCase {
         try await waitFor { gallery.entries.map(\.name).contains("Fox") }
     }
 
+    // MARK: One pet's image
+
+    private func makeRecords(file: URL? = nil) throws -> AgentRecordsAPI {
+        AgentRecordsAPI(registry: AgentRegistry(database: try Database(path: file, migrations: AppMigrations.all)))
+    }
+
+    func testPickingAnImageChangesOnlyThatPetAndSurvivesARestart() async throws {
+        try writeBundledSix()
+        let file = root.appendingPathComponent("pets.db")
+        let records = try makeRecords(file: file)
+        let first = try XCTUnwrap(records.chatAgent)
+        let bunny = try records.create(CreateAgentRequest(name: "Bunny", agentCli: "claude"))
+        let cat = try records.create(CreateAgentRequest(name: "Cat", agentCli: "claude", pet: "~/cat.png"))
+
+        let gallery = PetGalleryModel(library: library, bundled: bundled, sprite: { nil })
+        gallery.reload()
+        try await waitFor { gallery.entries.count == 6 }
+        let panda = try XCTUnwrap(gallery.entries.first { $0.name == "Panda" })
+        gallery.select(panda, petID: bunny.id, records: records)
+
+        XCTAssertEqual(try records.get(bunny.id).pet, PetLibrary.tildePath(panda.url))
+        XCTAssertEqual(try records.get(cat.id).pet, "~/cat.png", "another pet keeps its image")
+        XCTAssertEqual(try records.get(first.id).pet, first.pet, "the first pet keeps its image")
+
+        gallery.reset(petID: bunny.id, records: records)
+        XCTAssertNil(try records.get(bunny.id).pet)
+        gallery.select(panda, petID: bunny.id, records: records)
+
+        let reopened = try makeRecords(file: file)
+        XCTAssertEqual(try reopened.get(bunny.id).pet, PetLibrary.tildePath(panda.url))
+        XCTAssertEqual(try reopened.get(cat.id).pet, "~/cat.png")
+    }
+
+    func testAddingAFileAssignsItToThePetAndCopiesItIntoTheLibrary() async throws {
+        try writeBundledSix()
+        let records = try makeRecords()
+        let bunny = try records.create(CreateAgentRequest(name: "Bunny", agentCli: "claude"))
+        let source = try writeSheet("mine.png", in: root)
+        let gallery = PetGalleryModel(library: library, bundled: bundled, sprite: { nil })
+        gallery.add(source, petID: bunny.id, records: records)
+        XCTAssertNil(gallery.importError)
+        XCTAssertEqual(try records.get(bunny.id).pet, PetLibrary.tildePath(library.appendingPathComponent("mine.png")))
+        XCTAssertTrue(FileManager.default.fileExists(atPath: library.appendingPathComponent("mine.png").path))
+    }
+
+    func testABuiltSheetGoesToThePetThatAskedForIt() async throws {
+        try writeBundledSix()
+        let records = try makeRecords()
+        let bunny = try records.create(CreateAgentRequest(name: "Bunny", agentCli: "claude"))
+        let cat = try records.create(CreateAgentRequest(name: "Cat", agentCli: "claude"))
+        let gallery = PetGalleryModel(library: library, bundled: bundled, sprite: { nil })
+        gallery.reload()
+        try await waitFor { gallery.entries.count == 6 }
+        gallery.buildStarted(petID: bunny.id, records: records)
+
+        let built = try writeSheet("red-fox.png", in: library)
+        gallery.reloadIfChanged()
+        try await waitFor { (try? records.get(bunny.id).pet) != nil }
+        XCTAssertEqual(PetLibrary.standardized(try XCTUnwrap(records.get(bunny.id).pet)), PetLibrary.standardized(built.path))
+        XCTAssertNil(try records.get(cat.id).pet)
+
+        try writeSheet("blue-owl.png", in: library)
+        gallery.reloadIfChanged()
+        try await waitFor { gallery.entries.map(\.name).contains("Blue owl") }
+        XCTAssertEqual(PetLibrary.standardized(try XCTUnwrap(records.get(bunny.id).pet)), PetLibrary.standardized(built.path), "one build assigns one sheet")
+    }
+
+    func testTheFirstPetAlwaysStaysAndTheLastPetCannotBeRemoved() throws {
+        let records = try makeRecords()
+        let first = try XCTUnwrap(records.chatAgent)
+        XCTAssertFalse(records.canRemove(first.id), "the only pet stays")
+        let second = try records.create(CreateAgentRequest(name: "Pet 2", agentCli: "claude"))
+        XCTAssertFalse(records.canRemove(first.id), "the first pet stays even with others")
+        XCTAssertTrue(records.canRemove(second.id))
+        try records.delete(second.id)
+        XCTAssertEqual(records.list().map(\.id), [first.id])
+        XCTAssertFalse(records.canRemove(first.id))
+        XCTAssertThrowsError(try records.delete(first.id))
+    }
+
+    func testEditingAPetChangesOnlyThatPet() throws {
+        let file = root.appendingPathComponent("edit.db")
+        let records = try makeRecords(file: file)
+        let a = try records.create(CreateAgentRequest(name: "A", agentCli: "claude", model: "opus", instructions: "Be brief."))
+        let b = try records.create(CreateAgentRequest(name: "B", agentCli: "claude"))
+        try records.update(UpdateAgentRequest(id: b.id, name: "Bee", agentCli: "codex", model: "gpt", instructions: "Rhyme."))
+        let reopened = try makeRecords(file: file)
+        let after = try reopened.get(b.id)
+        XCTAssertEqual([after.name, after.agentCli, after.model, after.instructions], ["Bee", "codex", "gpt", "Rhyme."])
+        XCTAssertEqual(try reopened.get(a.id), try records.get(a.id))
+        XCTAssertEqual(try reopened.get(a.id).instructions, "Be brief.")
+    }
+
     func testAnimationRunsOnlyWhileTheViewAndWindowAreShown() throws {
         let gallery = PetGalleryModel(library: library, bundled: bundled, sprite: { nil })
         gallery.reduceMotionOverride = false

@@ -48,7 +48,7 @@ private struct ScreenSettingsBody: View {
         Section {
             Toggle("Screen capture", isOn: Binding(get: { capture.enabled }, set: { on in update { $0.enabled = on } }))
         } footer: {
-            Text("Off by default. When on, ironpet reads the text of the window you are using through Accessibility, with no rules for particular apps, and keeps what changed in ~/.ironpet/ironpet.db on this Mac. Keys, tokens and passwords are replaced by [redacted:…] before the text is stored, and password fields are never read. Agents you run in ironpet can search it with the screen_search and screen_window tools. Nothing leaves this Mac otherwise. Password managers and private browser windows are never captured. When off, nothing is read and macOS shows no permission prompt.")
+            Text("Off by default. When on, ironpet reads the text of the window you are using through Accessibility, with no rules for particular apps, and keeps what changed in ~/.ironpet/ironpet.db on this Mac. Keys, tokens and passwords are replaced by [redacted:…] before the text is stored, and password fields are never read. Your pets can search it with the screen_search and screen_window tools. Nothing leaves this Mac otherwise. Password managers and private browser windows are never captured. When off, nothing is read and macOS shows no permission prompt.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -213,7 +213,7 @@ struct DesktopControlSections: View {
                     if on { _ = AXIsProcessTrustedWithOptions(["AXTrustedCheckOptionPrompt": true] as CFDictionary) }
                 }))
             } footer: {
-                Text("Off by default. When on, agents you run in ironpet can read and operate other apps through Accessibility with the desktop_* tools, using the Accessibility access ironpet has. They press buttons, set text, pick options, tick boxes, expand rows and focus elements, open web addresses, and can press keys in one app. They send no mouse events. Password fields, password managers, the apps you excluded from screen capture and private browser windows are never read or operated, and nothing works while capture is paused. An action on an element or window that says send, pay, delete, submit or buy waits for your Approve. So does a key press of Cmd+Return, Cmd+Q or Cmd+W, or of Return or a Cmd combo in such a window. A window picture needs Screen Recording access.")
+                Text("Off by default. When on, your pets can read and operate other apps through Accessibility with the desktop_* tools, using the Accessibility access ironpet has. They press buttons, set text, pick options, tick boxes, expand rows and focus elements, open web addresses, and can press keys in one app. They send no mouse events. Password fields, password managers, the apps you excluded from screen capture and private browser windows are never read or operated, and nothing works while capture is paused. An action on an element or window that says send, pay, delete, submit or buy waits for your Approve. So does a key press of Cmd+Return, Cmd+Q or Cmd+W, or of Return or a Cmd combo in such a window. A window picture needs Screen Recording access.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             if store.config.desktopControl.enabled {

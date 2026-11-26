@@ -116,6 +116,9 @@ package final class AgentRecordsAPI {
         try registry.delete(record.id)
     }
 
+    /// Whether the pet can be removed. The first pet always stays, so the last one left is never removable.
+    package func canRemove(_ id: String) -> Bool { id != AgentRegistry.chatAgentID && list().count > 1 && registry.get(id) != nil }
+
     /// Copies the pet's name and sprite from the settings onto agent 1 when they differ.
     package func mirror(pet: Config.Pet) {
         guard let agent = chatAgent, agent.name != pet.name || agent.pet != pet.sprite else { return }

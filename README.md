@@ -449,7 +449,7 @@ All in `~/.ironpet/`:
 | `config.json` | Your settings |
 | `automations.json` | Reminder, watcher and scheduled job definitions |
 | `ironpet.db` | Tasks, automation state and logs, notifications, usage, background jobs, memory's search index over chats, meetings and notes with the memory change log (`memory_*` tables), screen captures when that feature is on, remote devices, and the activity log behind the welcome back summary (`activity_events`, 30 days, kept whether or not the summary is on): what ironpet announced, with an agent's one-line summary or waiting request but never your prompt. See [SECURITY.md](SECURITY.md) for the exact fields |
-| `pets/` | Your pet library: every valid sprite sheet here shows in Settings → Pet |
+| `pets/` | Your pet library: every valid sprite sheet here shows in Settings → General → Pets |
 | `pet/spritesheet.png` | Optional custom pet art (overrides the bundled Ghost) |
 | `bin/ironpet-hook`, `port`, `token` | Hook bridge |
 
@@ -482,7 +482,7 @@ Ghost is drawn in code, not from image files; `scripts/bundle.sh` generates the 
 | `bunny` | Lilac bunny with long ears and a cotton tail |
 | `cat` | Grey tabby with green eyes and a curly tail |
 
-Open Settings → Pet to see every pet as an animated tile and click one to switch. The gallery lists the six bundled pets, every valid PNG or WebP sheet in `~/.ironpet/pets/`, and the current `pet.sprite` if it lives elsewhere. A sheet in `~/.ironpet/pets/` replaces the bundled pet of the same name, and files that are not valid sheets are skipped. New files appear within a couple of seconds while Settings is open. With Reduce Motion on, tiles show one still frame.
+Open Settings → General → Pets, click a pet and pick its image from the animated tiles. The gallery lists the six bundled pets, every valid PNG or WebP sheet in `~/.ironpet/pets/`, and the current `pet.sprite` if it lives elsewhere. A sheet in `~/.ironpet/pets/` replaces the bundled pet of the same name, and files that are not valid sheets are skipped. New files appear within a couple of seconds while Settings is open. With Reduce Motion on, tiles show one still frame.
 
 Picking a pet also renames it, but only while the name is still a default one (a built-in pet's name or the previous pet's name). A name you typed stays.
 
