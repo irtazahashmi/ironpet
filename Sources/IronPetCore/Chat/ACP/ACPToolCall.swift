@@ -125,7 +125,7 @@ package enum ApprovalRules {
 
     /// ironpet's own task tools only read and write rows in `ironpet.db` and run nothing. Delete still asks. The `screen_*` tools only
     /// read the stored, redacted captures. The `memory_*` tools write claims in `ironpet.db`, and `memory_forget` only moves them to a
-    /// page's history, so none of them can lose anything. Of the assistant tools, those that start, steer or stop a job still ask.
+    /// page's history, so none of them can lose anything. `task_projects_upsert` keeps no history, but it only rewrites the agent-kept project metadata. Of the assistant tools, those that start, steer or stop a job still ask.
     package static let ownTaskTools: Set<String> = Set(["tasks_list", "tasks_get", "tasks_create", "tasks_update", "tasks_close", "tasks_suggest",
                                          "tasks_suggestions_list", "tasks_suggestion_accept", "tasks_suggestion_reject",
                                          "task_filters_list", "task_filters_upsert", "task_filters_reorder", "task_projects_list", "task_projects_upsert",

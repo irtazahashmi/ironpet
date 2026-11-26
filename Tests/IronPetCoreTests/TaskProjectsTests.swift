@@ -95,4 +95,27 @@ final class TaskProjectsTests: XCTestCase {
         store.reload()
         XCTAssertEqual(api.project(site.id), site)
     }
+
+    func testAcceptingAProposedNextStepUnstallsTheProject() throws {
+        let site = try api.upsertProject(id: nil, title: "Launch the new site")
+        let proposal = try call("suggest", ["id": "next-1", "title": "Draft the homepage copy", "project": site.id,
+                                            "origin": ["kind": "agent", "ref": "review", "reason": "stalled project"]])
+        let suggestion = try XCTUnwrap(proposal["suggestion"] as? [String: Any])
+        XCTAssertEqual(suggestion["project"] as? String, site.id)
+        let task = try store.accept(try XCTUnwrap(suggestion["id"] as? String))
+        XCTAssertEqual(task.project, site.id)
+        XCTAssertTrue(api.stalledProjects(now: clock).isEmpty)
+    }
+
+    func testASuggestionCannotNameAProjectThatDoesNotExist() {
+        let args: [String: Any] = ["id": "x", "title": "Y", "project": "nope", "origin": ["kind": "agent", "ref": "r", "reason": "r"]]
+        XCTAssertThrowsError(try TaskJSON.call(api, "suggest", args, by: "agent:mcp").get())
+    }
+
+    func testAnUnknownProjectIdIsRefusedInsteadOfCreatingADuplicate() throws {
+        _ = try api.upsertProject(id: nil, title: "Launch the new site")
+        XCTAssertThrowsError(try TaskJSON.call(api, "projects_upsert", ["id": "lanch-the-new-site", "title": "Launch"], by: "agent:mcp").get())
+        XCTAssertThrowsError(try TaskJSON.call(api, "projects_upsert", ["id": 7, "title": "Launch"], by: "agent:mcp").get())
+        XCTAssertEqual(api.projects.count, 1)
+    }
 }

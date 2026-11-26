@@ -164,8 +164,10 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
         waitingOn: String? = nil,
         sourceRef: String? = nil,
         update: Update? = nil,
-        clarify: Clarify? = nil
+        clarify: Clarify? = nil,
+        project: String? = nil
     ) {
+        self.project = project
         self.clarify = clarify
         self.id = id
         self.title = title
@@ -279,6 +281,8 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
         package var sourceRef: String?
         /// The scan's proposal for filing it. Meetings and watchers leave it nil.
         package var clarify: Clarify?
+        /// The GTD project the new task would be a step of, when an agent proposes a next step for it.
+        package var project: String?
     }
 
     package let id: String
@@ -297,6 +301,8 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
     package var update: Update? = nil
     /// How to file it, when the task scan proposed one. Nil for meetings, watchers and updates.
     package var clarify: Clarify? = nil
+    /// The project the task joins when it is added: a next step proposed for a stalled project.
+    package var project: String? = nil
 
     /// What the inbox shows as the headline: the title, or `Update: <task title>` for an update.
     package var headline: String { update?.remote.headline ?? title }

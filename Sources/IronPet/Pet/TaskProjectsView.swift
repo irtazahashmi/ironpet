@@ -5,15 +5,20 @@ import SwiftUI
 /// project needs a next step. The agent creates and changes projects; clicking a row opens its next action.
 struct TaskProjectsView: View {
     @ObservedObject var tasks: TasksAPI
+    /// The page's search text, matched against the title, outcome and area.
+    let search: String
     let onOpenTask: (String) -> Void
 
     var body: some View {
         let now = Date()
-        let active = tasks.projects.filter { $0.status == .active }
-        let someday = tasks.projects.filter { $0.status == .someday }
-        if active.isEmpty && someday.isEmpty {
+        let shown = tasks.projects.filter { ListSearch.matches(search, in: [$0.title, $0.outcome, $0.area ?? ""]) }
+        let active = shown.filter { $0.status == .active }
+        let someday = shown.filter { $0.status == .someday }
+        if tasks.projects.allSatisfy({ $0.status == .done }) {
             EmptyState(symbol: "folder", title: "No projects yet",
                        detail: "Ask \(SettingsAPI.live.config.pet.name) to start a project, such as \"Launch the new site\".")
+        } else if active.isEmpty && someday.isEmpty {
+            NoMatches()
         } else {
             ListScroll {
                 if !active.isEmpty {
@@ -32,7 +37,7 @@ struct TaskProjectsView: View {
         let next = tasks.nextActions(of: project.id, now: now)
         let stalled = project.status == .active && next.isEmpty
         return ListRow(title: project.title, description: project.outcome.isEmpty ? nil : project.outcome,
-                       onOpen: { if let first = next.first { onOpenTask(first.id) } },
+                       onOpen: next.first.map { first in { onOpenTask(first.id) } },
                        leading: { ListRowIcon(symbol: stalled ? "exclamationmark.triangle" : "folder") },
                        extra: {
                            VStack(alignment: .leading, spacing: 2) {
@@ -49,6 +54,6 @@ struct TaskProjectsView: View {
                            .foregroundStyle(.secondary)
                        },
                        trailing: { _ in EmptyView() })
-            .accessibilityHint(stalled ? "This project has no next action" : "Opens the next action")
+            .accessibilityHint(next.isEmpty ? (stalled ? "This project has no next action" : "") : "Opens the next action")
     }
 }

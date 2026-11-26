@@ -103,8 +103,8 @@ extension TaskStore {
                                                          status TEXT NOT NULL, review_days INTEGER, reviewed REAL,
                                                          created REAL NOT NULL, updated REAL NOT NULL) WITHOUT ROWID
                 """)
-            if !(try TaskStore.columns(db, "task_items")).contains("project") {
-                try db.execute("ALTER TABLE task_items ADD COLUMN project TEXT")
+            for table in ["task_items", "task_suggestions"] where !(try TaskStore.columns(db, table)).contains("project") {
+                try db.execute("ALTER TABLE \(table) ADD COLUMN project TEXT")
             }
         },
     ]
@@ -130,15 +130,14 @@ extension TaskStore {
                                reviewDays: Int??, markReviewed: Bool = false) throws -> TaskProject {
         let time = now()
         var project: TaskProject
-        if let id, let existing = self.project(id) {
+        if let id {
+            guard let existing = self.project(id) else { throw TaskError(message: "no project with id \"\(id)\"; task_projects_list shows them") }
             project = existing
             if let title { project.title = try TaskProjectValidator.title(title) }
         } else {
             guard let title else { throw TaskError(message: "title is required for a new project") }
             let clean = try TaskProjectValidator.title(title)
-            let newID = id ?? AutomationValidator.slug(clean, taken: Set(projects.map(\.id)))
-            guard id.map({ !$0.isEmpty && $0.count <= 60 && !$0.contains(" ") }) ?? true else { throw TaskError(message: "id must be a slug") }
-            project = TaskProject(id: newID, title: clean, created: time, updated: time)
+            project = TaskProject(id: AutomationValidator.slug(clean, taken: Set(projects.map(\.id))), title: clean, created: time, updated: time)
         }
         if let outcome { project.outcome = try TaskProjectValidator.outcome(outcome) }
         if let area { project.area = try TaskProjectValidator.line(area, field: "area") }
@@ -156,6 +155,7 @@ extension TaskStore {
                       saved.reviewed?.timeIntervalSince1970, saved.created.timeIntervalSince1970, saved.updated.timeIntervalSince1970])
         }
         reload()
+        // Projects have no event of their own yet; `nil` makes clients read the task list again, which carries them.
         didChange(nil)
         return self.project(saved.id) ?? saved
     }

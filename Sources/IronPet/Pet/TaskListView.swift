@@ -172,7 +172,9 @@ struct TaskListView: View {
             if content == .unavailable {
                 Spacer()
             } else if mode == .projects {
-                TaskProjectsView(tasks: tasks, onOpenTask: { nav.open($0) })
+                TaskProjectsView(tasks: tasks, search: search, onOpenTask: { nav.open($0) })
+                    .onAppear { reveal(focus.wrappedValue, nil) }
+                    .onChange(of: focus.wrappedValue) { reveal(focus.wrappedValue, nil) }
             } else if content == .empty {
                 EmptyState(symbol: SharedSymbols.tasks, title: "No tasks yet",
                            detail: "Ask \(petName) to keep track of something, or finish a meeting.")
@@ -332,6 +334,8 @@ struct TaskListView: View {
         guard let id, let task = tasks.task(id) else { return }
         focus.wrappedValue = nil
         nav.close()
+        // The Projects view lists projects, not tasks, so the task's page is where it shows.
+        if mode == .projects { nav.open(id); return }
         if task.status == .done { showDone = true }
         if task.status == .someday {
             showSomeday = true

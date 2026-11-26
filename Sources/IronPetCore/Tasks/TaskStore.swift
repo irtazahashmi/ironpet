@@ -457,7 +457,7 @@ package final class TaskStore {
             added.append((draft.key, TaskSuggestion(id: id, title: title, due: draft.due, notes: draft.notes, url: draft.url,
                                                     origin: origin, created: time, waitingOn: waitingOn,
                                                     sourceRef: sourceRef ?? draft.sourceRef ?? Self.refText(ref),
-                                                    clarify: draft.clarify?.isEmpty == false ? draft.clarify : nil)))
+                                                    clarify: draft.clarify?.isEmpty == false ? draft.clarify : nil, project: draft.project)))
         }
         guard !added.isEmpty else { return [] }
         do {
@@ -497,12 +497,12 @@ package final class TaskStore {
         try db.execute("""
             INSERT INTO task_suggestions(id, title, due, notes, url, meeting, automation, automation_name, created, waiting_on, source_ref,
                                          scan, update_task, update_title, update_note, update_done, update_waiting,
-                                         clarify_context, clarify_area, clarify_two_minute, clarify_someday)
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                         clarify_context, clarify_area, clarify_two_minute, clarify_someday, project)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [s.id, s.title, s.due, s.notes, s.url?.absoluteString, meeting, automation, name, s.created.timeIntervalSince1970,
                   s.waitingOn, s.sourceRef, s.origin == .taskScan ? 1 : 0, s.update?.target, s.update?.targetTitle, s.update?.note,
                   (s.update?.markDone ?? false) ? 1 : 0, s.update?.waitingOn,
-                  s.clarify?.context?.rawValue, s.clarify?.area, s.clarify.map { $0.twoMinute ? 1 : 0 }, s.clarify.map { $0.someday ? 1 : 0 }])
+                  s.clarify?.context?.rawValue, s.clarify?.area, s.clarify.map { $0.twoMinute ? 1 : 0 }, s.clarify.map { $0.someday ? 1 : 0 }, s.project])
     }
 
     private func suggestedKeys(_ automation: String) -> Set<String> {
@@ -545,7 +545,8 @@ package final class TaskStore {
         let status = try overrides.status.map { try TaskValidator.status($0) } ?? (s.clarify?.someday == true ? .someday : .backlog)
         let labels = (try? TaskValidator.labels(s.clarify?.labels ?? [:])) ?? [:]
         var item = try create(title: overrides.title ?? s.title, notes: notes, status: status, source: s.source, due: due, links: links,
-                              waitingOn: s.waitingOn, sourceRef: s.sourceRef, labels: labels, by: by)
+                              waitingOn: s.waitingOn, sourceRef: s.sourceRef, labels: labels,
+                              project: s.project.flatMap { self.project($0)?.id }, by: by)
         if let note, !note.isEmpty { item = try update(item.id, note: note, by: by) }
         removeSuggestion(suggestionID)
         return item
@@ -702,7 +703,7 @@ package final class TaskStore {
                 let suggested = try db.rows("""
                     SELECT id, title, due, notes, url, meeting, automation, automation_name, created, waiting_on, source_ref,
                            scan, update_task, update_title, update_note, update_done, update_waiting,
-                           clarify_context, clarify_area, clarify_two_minute, clarify_someday
+                           clarify_context, clarify_area, clarify_two_minute, clarify_someday, project
                     FROM task_suggestions ORDER BY created, id
                     """).compactMap { row -> TaskSuggestion? in
                     guard let id = row[0] as? String, let title = row[1] as? String, let created = row[8] as? Double else { return nil }
@@ -726,7 +727,8 @@ package final class TaskStore {
                                           created: Date(timeIntervalSince1970: created), waitingOn: row[9] as? String,
                                           sourceRef: row[10] as? String, update: change,
                                           clarify: Self.clarify(context: row[17] as? String, area: row[18] as? String,
-                                                                twoMinute: row[19] as? Int64, someday: row[20] as? Int64))
+                                                                twoMinute: row[19] as? Int64, someday: row[20] as? Int64),
+                                          project: row[21] as? String)
                 }
                 return (items, suggested)
             }
