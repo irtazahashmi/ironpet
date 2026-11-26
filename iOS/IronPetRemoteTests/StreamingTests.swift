@@ -55,6 +55,24 @@ final class StreamingTests: XCTestCase {
         model.stop()
     }
 
+    // S9: with older history above the newest page, a new streaming reply still grows on each event and costs no full read.
+    func testANewReplyStreamsEvenWhenOlderHistoryIsLoadedAbove() async {
+        let past = Date().addingTimeInterval(-3600)
+        server.chat.items = (1...120).map { RemoteChatItem(id: "old\($0)", kind: "user", date: past.addingTimeInterval(Double($0)), text: "m\($0)") }
+        let model = await started()
+        await poll { model.items.count == 50 }
+        XCTAssertTrue(model.hasOlderHistory, "the phone holds only the newest page")
+        // Let the socket's own connect read finish, so only reads the streaming causes are counted.
+        try? await Task.sleep(nanoseconds: 600_000_000)
+        let reads = server.count("GET /v1/chat/current")
+        let result = await stream(into: model, chunks: 30, gap: 0.03)
+        await poll { self.text(model) == result.full }
+        XCTAssertEqual(text(model), result.full)
+        XCTAssertGreaterThanOrEqual(result.seen.count, 10, "the reply grew in many steps, not once after the debounce")
+        XCTAssertEqual(server.count("GET /v1/chat/current"), reads, "no full read while the reply streamed")
+        model.stop()
+    }
+
     // S2
     func testBurstsOfEventsKeepOneReadPerMessageInFlightAndTheLastTextWins() async {
         let model = await started()

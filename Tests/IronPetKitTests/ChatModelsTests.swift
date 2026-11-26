@@ -188,4 +188,18 @@ final class RemoteFormPagingTests: XCTestCase {
         pager.show(1)
         XCTAssertEqual(pager.label, "2 of 3")
     }
+
+    func testAUserItemDecodesItsSelectionAndAnOlderOneHasNone() throws {
+        let json = """
+        {"title":"t","state":"idle","running":false,"folder_label":"demo","agent":{"id":"claude","name":"Claude Code"},
+         "items":[{"id":"1","kind":"user","text":"hi","selection":{"app_name":"Chrome","window_title":"Issue 190","text":"left?","trimmed":true}},
+                  {"id":"2","kind":"user","text":"old"}],
+         "approvals":[],"forms":[],"queue":[]}
+        """
+        let snapshot = try WireJSON.makeDecoder().decode(RemoteChatSnapshot.self, from: Data(json.utf8))
+        XCTAssertEqual(snapshot.items[0].selection?.sourceLabel, "Chrome — Issue 190")
+        XCTAssertEqual(snapshot.items[0].selection?.text, "left?")
+        XCTAssertEqual(snapshot.items[0].selection?.trimmed, true)
+        XCTAssertNil(snapshot.items[1].selection)
+    }
 }

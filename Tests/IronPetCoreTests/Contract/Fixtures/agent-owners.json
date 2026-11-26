@@ -1,0 +1,270 @@
+{
+  "cases" : [
+    {
+      "name" : "threads as the UI, with no agent id",
+      "request" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "method" : "chat.threads"
+      },
+      "response" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "result" : [
+          {
+            "agent" : "cursor",
+            "id" : "thread-one",
+            "title" : "Agent one's chat",
+            "updatedAt" : "<date>",
+            "workspace" : "/tmp"
+          }
+        ]
+      }
+    },
+    {
+      "name" : "threads as agent 2",
+      "request" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "method" : "chat.threads",
+        "params" : {
+          "agentId" : "agent_two"
+        }
+      },
+      "response" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "result" : [
+          {
+            "agent" : "claude",
+            "agentId" : "agent_two",
+            "id" : "thread-two",
+            "title" : "Agent two's chat",
+            "updatedAt" : "<date>",
+            "workspace" : "/tmp"
+          }
+        ]
+      }
+    },
+    {
+      "name" : "threads as an agent that does not exist",
+      "request" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "method" : "chat.threads",
+        "params" : {
+          "agentId" : "agent_nine"
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32001,
+          "data" : {
+            "code" : "not_found"
+          },
+          "message" : "no agent with id \"agent_nine\""
+        },
+        "id" : 3,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "sessions as the UI, with no agent id",
+      "request" : {
+        "id" : 4,
+        "jsonrpc" : "2.0",
+        "method" : "agents.list"
+      },
+      "response" : {
+        "id" : 4,
+        "jsonrpc" : "2.0",
+        "result" : [
+          {
+            "editedFiles" : [
+
+            ],
+            "ended" : false,
+            "id" : "session-1",
+            "origin" : {
+
+            },
+            "prompt" : "Agent one's session",
+            "source" : "claude",
+            "status" : 4,
+            "turnStartedAt" : "<date>",
+            "updatedAt" : "<date>"
+          }
+        ]
+      }
+    },
+    {
+      "name" : "sessions as agent 2",
+      "request" : {
+        "id" : 5,
+        "jsonrpc" : "2.0",
+        "method" : "agents.list",
+        "params" : {
+          "agentId" : "agent_two"
+        }
+      },
+      "response" : {
+        "id" : 5,
+        "jsonrpc" : "2.0",
+        "result" : [
+          {
+            "agentId" : "agent_two",
+            "editedFiles" : [
+
+            ],
+            "ended" : false,
+            "id" : "session-2",
+            "origin" : {
+
+            },
+            "prompt" : "Agent two's session",
+            "source" : "codex",
+            "status" : 1,
+            "turnStartedAt" : "<date>",
+            "updatedAt" : "<date>"
+          }
+        ]
+      }
+    },
+    {
+      "name" : "sessions as an agent that does not exist",
+      "request" : {
+        "id" : 6,
+        "jsonrpc" : "2.0",
+        "method" : "agents.list",
+        "params" : {
+          "agentId" : "agent_nine"
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32001,
+          "data" : {
+            "code" : "not_found"
+          },
+          "message" : "no agent with id \"agent_nine\""
+        },
+        "id" : 6,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "create for agent 2",
+      "request" : {
+        "id" : 7,
+        "jsonrpc" : "2.0",
+        "method" : "automations.create",
+        "params" : {
+          "agentId" : "agent_two",
+          "by" : "user",
+          "definition" : "{\"name\": \"Two's reminder\", \"trigger\": {\"type\": \"interval\", \"minutes\": 30, \"clock\": \"wall\"}, \"action\": {\"type\": \"bubble\", \"title\": \"Hi\"}}"
+        }
+      },
+      "response" : {
+        "id" : 7,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "action" : {
+            "title" : "Hi",
+            "type" : "bubble"
+          },
+          "agentId" : "agent_two",
+          "createdBy" : "user",
+          "enabled" : true,
+          "id" : "two-s-reminder",
+          "name" : "Two's reminder",
+          "presentation" : {
+
+          },
+          "trigger" : {
+            "clock" : "wall",
+            "minutes" : 30,
+            "type" : "interval"
+          }
+        }
+      }
+    },
+    {
+      "name" : "create for an agent that does not exist",
+      "request" : {
+        "id" : 8,
+        "jsonrpc" : "2.0",
+        "method" : "automations.create",
+        "params" : {
+          "agentId" : "agent_nine",
+          "by" : "user",
+          "definition" : "{\"name\": \"Two's reminder\", \"trigger\": {\"type\": \"interval\", \"minutes\": 30, \"clock\": \"wall\"}, \"action\": {\"type\": \"bubble\", \"title\": \"Hi\"}}"
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32001,
+          "data" : {
+            "code" : "not_found"
+          },
+          "message" : "no agent with id \"agent_nine\""
+        },
+        "id" : 8,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "automations as agent 2",
+      "request" : {
+        "id" : 9,
+        "jsonrpc" : "2.0",
+        "method" : "automations.list",
+        "params" : {
+          "agentId" : "agent_two"
+        }
+      },
+      "response" : {
+        "id" : 9,
+        "jsonrpc" : "2.0",
+        "result" : [
+          {
+            "action" : {
+              "title" : "Hi",
+              "type" : "bubble"
+            },
+            "agentId" : "agent_two",
+            "createdBy" : "user",
+            "enabled" : true,
+            "id" : "two-s-reminder",
+            "name" : "Two's reminder",
+            "presentation" : {
+
+            },
+            "trigger" : {
+              "clock" : "wall",
+              "minutes" : 30,
+              "type" : "interval"
+            }
+          }
+        ]
+      }
+    },
+    {
+      "name" : "automations as the UI, with no agent id",
+      "request" : {
+        "id" : 10,
+        "jsonrpc" : "2.0",
+        "method" : "automations.list"
+      },
+      "response" : {
+        "id" : 10,
+        "jsonrpc" : "2.0",
+        "result" : [
+
+        ]
+      }
+    }
+  ],
+  "seed" : [
+    "agentTwo"
+  ]
+}

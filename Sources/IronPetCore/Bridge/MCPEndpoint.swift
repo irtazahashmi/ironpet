@@ -5,12 +5,17 @@ import Foundation
 /// `TaskJSON.call`, `ScreenAPI`, `MemoryAPI` and the other namespaces, which validate.
 @MainActor
 package enum MCPEndpoint {
-    package static var tools: [[String: Any]] { AutomationMCP.tools + TaskMCP.tools + NotificationMCP.tools + ScreenMCP.tools + DesktopMCP.tools + MemoryMCP.tools + AssistantMCP.tools + RecordMCP.tools }
+    package static var tools: [[String: Any]] { AutomationMCP.tools + TaskMCP.tools + NotificationMCP.tools + ScreenMCP.tools + DesktopMCP.tools + MemoryMCP.tools + AssistantMCP.tools + RecordMCP.tools + AgentMCP.tools + ChatMCP.tools }
 
     /// Who started the `IronPet mcp` bridge when it is not the user's chat, as `automation:<id>` or `job:<id>`. The bridge reads the
     /// variable and sends the header.
     package nonisolated static let callerVariable = "IRONPET_MCP_CALLER"
     package nonisolated static let callerHeader = "x-ironpet-caller"
+
+    /// The agent a bridge speaks for, when it is not agent 1: the variable the bridge reads and the header it sends. Without one, a call
+    /// is agent 1's, or the owner's when the caller is an automation.
+    package nonisolated static let agentVariable = "IRONPET_AGENT_ID"
+    package nonisolated static let agentHeader = "x-ironpet-agent"
 
     /// The endpoint a background job's session uses. It has every tool except those that start, steer or open jobs.
     package nonisolated static let jobPath = "/mcp/job"
@@ -58,12 +63,16 @@ package enum MCPEndpoint {
     package static func handle(_ body: Data, automations: AutomationsAPI?, tasks: TasksAPI?, screen: ScreenAPI? = nil,
                        desktop: DesktopAPI? = nil, memory: MemoryAPI? = nil, assistant: AssistantAPI? = nil,
                        caller: String? = nil, jobScope: Bool = false, voiceScope: Bool = false,
-                       notifications: NotificationsAPI? = nil, records: RecordResolver? = nil) async -> (status: String, body: Data) {
+                       notifications: NotificationsAPI? = nil, records: RecordResolver? = nil,
+                       agentRecords: AgentRecordsAPI? = nil, agent: String? = nil, chat: ChatAPI? = nil) async -> (status: String, body: Data) {
         guard let message = (try? JSONSerialization.jsonObject(with: body)) as? [String: Any], let method = message["method"] as? String else {
             return ("400 Bad Request", encode(["jsonrpc": "2.0", "id": NSNull(), "error": ["code": -32700, "message": "parse error"]]))
         }
         let id = message["id"]
         guard let id else { return ("202 Accepted", Data()) } // a notification
+        // The agent the call comes from: the bridge's own agent, else the owner of the automation whose session this is, else nobody (agent 1).
+        let callingAgent = agent.flatMap { $0.isEmpty ? nil : $0 }
+            ?? caller.flatMap { $0.hasPrefix("automation:") ? automations?.owner(of: String($0.dropFirst("automation:".count))) : nil }
         func reply(_ result: [String: Any]) -> (String, Data) { ("200 OK", encode(["jsonrpc": "2.0", "id": id, "result": result])) }
         func toolResult(_ text: String, isError: Bool) -> (String, Data) { reply(["content": [["type": "text", "text": text]], "isError": isError]) }
         func imageResult(_ data: Data, caption: String) -> (String, Data) {
@@ -121,14 +130,14 @@ package enum MCPEndpoint {
             }
             if AssistantMCP.handles(name) {
                 guard let assistant else { return toolResult("ironpet's assistant tools are not available right now", isError: true) }
-                switch assistant.callTool(name, arguments, fromVoice: voiceScope) {
+                switch assistant.callTool(name, arguments, fromVoice: voiceScope, agent: callingAgent) {
                 case .success(let value): return toolResult(text(value), isError: false)
                 case .failure(let error): return toolResult(error.message, isError: true)
                 }
             }
             if name.hasPrefix("automations_") {
                 guard let automations else { return toolResult("ironpet's automations are not available right now", isError: true) }
-                switch await automations.callJSON(String(name.dropFirst("automations_".count)), arguments, by: "agent:mcp") {
+                switch await automations.callJSON(String(name.dropFirst("automations_".count)), arguments, by: "agent:mcp", agent: callingAgent) {
                 case .success(let value): return toolResult(text(value), isError: false)
                 case .failure(let error): return toolResult(error.message, isError: true)
                 }
@@ -150,6 +159,20 @@ package enum MCPEndpoint {
             if NotificationMCP.names.contains(name) {
                 guard let notifications else { return toolResult("ironpet's notifications are not available right now", isError: true) }
                 switch NotificationMCP.call(name, arguments, api: notifications) {
+                case .success(let value): return toolResult(text(value), isError: false)
+                case .failure(let error): return toolResult(error.message, isError: true)
+                }
+            }
+            if AgentMCP.names.contains(name) {
+                guard let agentRecords else { return toolResult("ironpet's agents are not available right now", isError: true) }
+                switch AgentMCP.call(name, arguments, api: agentRecords) {
+                case .success(let value): return toolResult(text(value), isError: false)
+                case .failure(let error): return toolResult(error.message, isError: true)
+                }
+            }
+            if ChatMCP.names.contains(name) {
+                guard let chat else { return toolResult("ironpet's chat is not available right now", isError: true) }
+                switch await ChatMCP.call(name, arguments, api: chat, agent: callingAgent) {
                 case .success(let value): return toolResult(text(value), isError: false)
                 case .failure(let error): return toolResult(error.message, isError: true)
                 }
@@ -190,18 +213,24 @@ package enum MCPEndpoint {
                                   assistant: @escaping @MainActor () -> AssistantAPI? = { nil },
                                   notifications: @escaping @MainActor () -> NotificationsAPI? = { nil },
                                   records: @escaping @MainActor () -> RecordResolver? = { nil },
+                                  agentRecords: @escaping @MainActor () -> AgentRecordsAPI? = { nil },
+                                  chat: @escaping @MainActor () -> ChatAPI? = { nil },
                                   respond: @escaping (String, Data) -> Void) {
-        let path = request.path, body = request.body, caller = request.header(callerHeader)
+        let path = request.path, body = request.body, caller = request.header(callerHeader), agent = request.header(agentHeader)
         Task { @MainActor in
             let result: (status: String, body: Data)
             switch path {
             case "/mcp", jobPath, voicePath:
                 result = await handle(body, automations: automations(), tasks: tasks(), screen: screen(), desktop: desktop(),
                                       memory: memory(), assistant: assistant(), caller: caller, jobScope: path == jobPath,
-                                      voiceScope: path == voicePath, notifications: notifications(), records: records())
+                                      voiceScope: path == voicePath, notifications: notifications(), records: records(), agentRecords: agentRecords(),
+                                      agent: agent, chat: chat())
             case "/notifications":
                 guard let api = notifications() else { return respond("503 Service Unavailable", Data()) }
                 result = NotificationMCP.handleCLI(body, api: api)
+            case "/memory":
+                guard let api = memory() else { return respond("503 Service Unavailable", Data()) }
+                result = MemoryMCP.handleCLI(body, api: api)
             case "/tasks":
                 guard let tasks = tasks() else { return respond("503 Service Unavailable", Data()) }
                 result = TaskMCP.handleCLI(body, tasks: tasks)

@@ -1,4 +1,5 @@
 import XCTest
+import IronPetKit
 @testable import IronPetCore
 
 /// The public ids of captures, meetings, notifications, chats and messages: how they are minted, kept, and read by `get`.
@@ -6,6 +7,11 @@ import XCTest
 final class RecordKindRefsTests: XCTestCase {
     private func freshRefs() -> RecordRefs {
         RecordRefs(database: Database.open(path: nil, migrations: AppMigrations.all).database)
+    }
+
+    /// The Kit's link prefixes are the kinds of record: a new kind must be added to both.
+    func testTheLinkPrefixesAreTheRecordKinds() {
+        XCTAssertEqual(RecordLinks.prefixes, RecordKind.allCases.map(\.rawValue))
     }
 
     func testAdoptKeepsTheFirstRefForAKey() async throws {

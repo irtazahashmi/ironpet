@@ -23,6 +23,7 @@
         "jsonrpc" : "2.0",
         "result" : {
           "capabilities" : [
+            "agentrecords",
             "agents",
             "alerts",
             "automations",
@@ -71,6 +72,7 @@
         "jsonrpc" : "2.0",
         "result" : {
           "capabilities" : [
+            "agentrecords",
             "agents",
             "alerts",
             "automations",
@@ -120,6 +122,7 @@
         "jsonrpc" : "2.0",
         "result" : {
           "capabilities" : [
+            "agentrecords",
             "agents",
             "alerts",
             "automations",

@@ -66,7 +66,7 @@ final class EventServer {
         if request.method == "GET", request.path == "/status" {
             return respond(connection, status: "200 OK", body: status())
         }
-        if ["/mcp", MCPEndpoint.jobPath, MCPEndpoint.voicePath, "/automations", "/tasks", "/notifications"].contains(request.path) {
+        if ["/mcp", MCPEndpoint.jobPath, MCPEndpoint.voicePath, "/automations", "/tasks", "/notifications", "/memory"].contains(request.path) {
             guard request.method == "POST", let onAgentAPI else { return respond(connection, status: "405 Method Not Allowed") }
             onAgentAPI(request) { [queue] status, body in
                 queue.async { self.respond(connection, status: status, body: body) }
@@ -97,7 +97,8 @@ final class EventServer {
         origin.t3ThreadID = AppIDs.clean(request.header("x-ironpet-t3-thread"))
         origin.herdrTerminalID = AppIDs.clean(request.header("x-ironpet-herdr-terminal"))
         origin.orcaTerminalHandle = AppIDs.clean(request.header("x-ironpet-orca-terminal"))
-        onEvent(HookEvent(source: source, name: name, payload: payload, origin: origin))
+        // The agent that launched the session, when the caller says so. No header is agent 1.
+        onEvent(HookEvent(source: source, name: name, payload: payload, origin: origin, agentId: AppIDs.clean(request.header("x-ironpet-agent"))))
         respond(connection, status: "204 No Content")
     }
 

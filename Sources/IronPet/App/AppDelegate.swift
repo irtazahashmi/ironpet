@@ -1,6 +1,7 @@
 import AppKit
 import enum IronPetKit.SharedSymbols
 import IronPetCore
+import IronPetKit
 import SwiftUI
 import Carbon
 import Combine
@@ -8,7 +9,7 @@ import Combine
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The one set of platform adapters, built here and handed to everything that spawns a process or reads a secret.
-    private lazy var platform = Platform.mac(meetings: meeting, speech: chat.speech,
+    lazy var platform = Platform.mac(meetings: meeting, speech: chat.speech,
                                              presence: MacPresenceSource(ignoredMicApps: { ConfigStore.shared.config.meetings.ignoredMicApps }))
     /// The presence source the away checks read. Test mode moves its idle time with `/test/idle`; the automation clock keeps the real one.
     private lazy var awayPresence = MacPresenceSource(ignoredMicApps: { ConfigStore.shared.config.meetings.ignoredMicApps })
@@ -17,13 +18,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var voiceKey = VoiceKey(store: platform.secrets)
     /// The bot token's store. Memory in `--test-mode`, where a Keychain approval dialog would block an automated run.
     private lazy var telegramTokens: TelegramTokenStore = TelegramAPI.testMode ? MemoryTokenStore() : TelegramToken(secrets: platform.secrets)
-    private let store = SessionStore()
-    private let signals = SignalStore()
+    let store = SessionStore()
+    let signals = SignalStore()
     /// Permission requests from background jobs and automation sessions.
     private lazy var backgroundPermissions = BackgroundPermissions(signals: signals, timeout: {
         TimeInterval(ConfigStore.shared.config.jobs.permissionTimeoutMinutes * 60)
     })
-    private let chat = ChatSession(speech: SpeechPlayer())
+    let chat = ChatSession(speech: SpeechPlayer())
     private lazy var recordingKeys = RecordingKeys(voice: chatModel.voice, heldModifiers: {
         Shortcut(ConfigStore.shared.config.hotkeys.voice)?.modifiers ?? 0
     })
@@ -38,9 +39,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return controller
     }()
     private lazy var dictationKeys = RecordingKeys(voice: dictation.voice)
+    /// Fn hold-to-talk for dictation. Installs its event tap only while the dictation shortcut is "fn".
+    private lazy var dictationFn = FnDictationTrigger(
+        access: SystemInputMonitoringAccess(), source: FnEventTap(),
+        detector: FnKeyDetector(isRecording: { [weak self] in self?.dictation.voice.isBusy ?? false })
+    ) { [weak self] action in
+        // Safe: FnEventTap adds its run loop source to the main run loop, so this closure runs on the main thread.
+        MainActor.assumeIsolated {
+            switch action {
+            case .start, .stop: self?.dictation.shortcutPressed()
+            case .cancel: self?.dictation.cancel()
+            }
+        }
+    }
     private let notifier = Notifier()
     private let installer = HookInstaller()
-    private var automations: AutomationService!
+    var automations: AutomationService!
+    /// Runs one chat process for each enabled agent. See `AppDelegate+Agents.swift`.
+    var supervisor: AgentSupervisor?
+    var agentPets: AgentPets?
+    var agentSessionTokens: [String: ChangeToken] = [:]
     private var capture: CaptureService?
     private var desktop: DesktopService?
     private var desktopApprovals: DesktopApprovals?
@@ -62,15 +80,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The task store, for the meeting suggestions and the test endpoints. Everything else uses `api.tasks`.
     private var taskStore: TaskStore?
     /// The Mac chat window's state, on top of `ChatAPI`. Built with the API.
-    private var chatModel: ChatViewModel!
+    var chatModel: ChatViewModel!
     private lazy var logWindow = AutomationLogWindow(api: { [weak self] in self?.api?.automations })
     /// Moves the automation clock in test mode (`POST /test/automations/advance`). Zero otherwise.
     private var testClockOffset: TimeInterval = 0
-    private lazy var announcer = Announcer(notifier: notifier)
+    lazy var announcer = Announcer(notifier: notifier)
     private let updates = UpdateController()
     private var bubblePanel: BubblePanel!
     private var server: EventServer?
-    private var pet: PetController!
+    var pet: PetController!
     private let dockIcon = DockIconController()
     private let meetings = MeetingLibrary()
     private let meeting = MeetingController()
@@ -99,9 +117,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var appliedConfig = Config()
     private let config = ConfigStore.shared
     /// Stores publish their changes here. It exists before the API, which needs the database.
-    private let events = APIEventBus()
+    let events = APIEventBus()
     /// The in-process API, built once the database is open.
-    private var api: IronPetAPI!
+    var api: IronPetAPI!
     private var setupWindow: SetupWindow?
     private lazy var telegram = TelegramBridge(
         client: TelegramAPI(token: { [telegramTokens] in telegramTokens.load() }), host: api.chat, tokens: telegramTokens,
@@ -118,7 +136,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         },
         petName: { ConfigStore.shared.config.pet.name })
     private lazy var settingsWindow = SettingsWindow(model: settingsModel)
-    private lazy var settingsModel = SettingsModel(actions: .init(
+    lazy var settingsModel = SettingsModel(actions: .init(
         suspendHotKeys: { [weak self] suspended in suspended ? self?.unregisterHotKeys() : self?.registerHotKeys() },
         buildPet: { [weak self] description in self?.requestPet(description) }
     ), announcer: announcer, telegram: telegram)
@@ -168,7 +186,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         announcer.ask = { [weak self] prompt in self?.ask(prompt) }
         announcer.decide = { [weak self] id, allow in
             guard let self else { return }
-            if backgroundPermissions.has(id) { backgroundPermissions.answer(id, allow: allow) } else { chat.decide(id: id, allow: allow) }
+            if backgroundPermissions.has(id) { backgroundPermissions.answer(id, allow: allow) } else if !(api?.chats.decide(id: id, allow: allow) ?? false) { chat.decide(id: id, allow: allow) }
         }
         _ = backgroundPermissions.observe(raised: { [weak self] request in
             self?.announcer.backgroundPermission(request) { option in self?.backgroundPermissions.answer(request.id, optionID: option) }
@@ -284,6 +302,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         registerHotKeys()
         _ = recordingKeys // Starts following the recording phase.
         _ = dictationKeys
+        setUpAgents()
         // These read `api`, which `setUpAutomations()` builds.
         settingsModel.voice = api.voice
         telegram.onPairingRequest = { [weak self] request in
@@ -353,7 +372,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         taskStore = tasks
         let service = AutomationService(store: store, engine: engine, database: database)
         let notificationStore = NotificationStore(database: database)
-        api = IronPetAPI(stores: .init(tasks: tasks, automations: service, signals: signals, bubbles: announcer.bubbles, notifications: notificationStore, sessions: self.store, chat: chat, meeting: platform.meetings, meetingLibrary: meetings, config: config, speech: platform.speech, petAssets: platform.pets, files: platform.files, usage: UsageStore.shared, permissions: backgroundPermissions, nodeID: NodeIdentity.nodeID(in: database)), events: events, clients: clients)
+        // Agent 1 takes over the chat settings an older build kept in UserDefaults and config.json, once, before anything reads them.
+        let agentRegistry = AgentRegistry(database: database)
+        agentRegistry.adoptLegacySettings(pet: config.config.pet)
+        chat.attach(registry: agentRegistry)
+        api = IronPetAPI(stores: .init(tasks: tasks, automations: service, signals: signals, bubbles: announcer.bubbles, notifications: notificationStore, sessions: self.store, chat: chat, meeting: platform.meetings, meetingLibrary: meetings, config: config, speech: platform.speech, petAssets: platform.pets, files: platform.files, usage: UsageStore.shared, permissions: backgroundPermissions, nodeID: NodeIdentity.nodeID(in: database), agents: agentRegistry), events: events, clients: clients)
         // After `api`: it reads `settingsModel`, whose Telegram bridge needs `api.chat`.
         startUpdates(database: database)
         pet.tasks = api.tasks
@@ -464,6 +487,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         chat.onAutomation = { [weak service] id, event in service?.chatOutcome(id, event) }
         automations = service
         settingsModel.automations = api.automations
+        settingsModel.agentRecords = api.agentRecords
         settingsModel.prompts = api.prompts
         settingsModel.showLogs = { [weak self] id in
             // The log is a normal window, so it would open behind the floating ironpet window.
@@ -571,6 +595,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let context = AssistantContext()
         context.jobs = { [weak self] in self?.jobs }
         context.sessions = { [weak self] in self?.store.ordered.filter { $0.source != .job } ?? [] }
+        context.resolveAgent = { [weak self] id in try AgentOwner.resolve(id, registry: self?.api?.agentRecords?.registry) }
         context.tasks = { [weak self] in self?.api?.tasks }
         context.alerts = { [weak self] in self?.signals.signals ?? [] }
         context.brief = { [weak self] kind in self?.brief?.brief(BriefRequest(kind: kind)) }
@@ -605,7 +630,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Opens a job's thread in the chat, and shows its waiting approvals again. A job with no thread yet opens the Agents section.
-    private func openJob(_ id: String) {
+    func openJob(_ id: String) {
         guard let jobs, let job = jobs.job(id) else { return pet.showWindow(.agents) }
         jobs.showApprovals(id)
         guard let thread = job.thread.flatMap(ThreadStore.load) else { return pet.showWindow(.agents) }
@@ -931,7 +956,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             failed.insert(config.config.hotkeys.voice)
         }
         // Dictation into the focused field of any app. Only registered with voice notes on; a press while recording stops.
-        if let text = DictationController.hotkey(in: config.config) {
+        let dictationText = DictationController.hotkey(in: config.config)
+        dictationFn.update(shortcut: dictationText)
+        if let text = dictationText, text.lowercased() != FnDictationTrigger.configValue {
             if let shortcut = Shortcut(text) {
                 let hotKey = HotKey(keyCode: shortcut.keyCode, modifiers: shortcut.modifiers, id: 13) { [weak self] in
                     MainActor.assumeIsolated { self?.dictation.shortcutPressed() }
@@ -967,6 +994,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func unregisterHotKeys() {
+        dictationFn.update(shortcut: nil)
         hotKeys = []
     }
 
@@ -1030,7 +1058,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// Opens the Settings window, on `tab` when given, else on the last tab shown.
-    private func showSettings(tab: String?) {
+    func showSettings(tab: String?) {
         if let tab { settingsModel.tab = tab }
         if !pet.isChatVisible { pet.closeWindow() }
         settingsWindow.show()
@@ -1046,6 +1074,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         voiceMode.conversation.end()
         voiceMode.frontDesk.shutdown()
         meeting.prepareForQuit()
+        agentPets?.stop()
+        supervisor?.stopAll()
         chat.persistForRelaunch()
         chat.shutdown()
         jobs?.shutdownAll()
@@ -1056,6 +1086,49 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         pet.show()
         return false
+    }
+
+    /// `ironpet://<id>` opens the record the id names. Other links, such as the pairing link for the phone, are not for the Mac.
+    func application(_ application: NSApplication, open urls: [URL]) {
+        for url in urls {
+            guard let id = RecordLinks.id(from: url) else { continue }
+            guard let records = api.records else { return }
+            switch records.resolve(id) {
+            case .success(let found):
+                openRecord(found)
+            case .failure(let error):
+                showError("Could not open \(id)", error)
+            }
+        }
+    }
+
+    /// Shows a record in the section that owns it. A record with no page of its own opens the nearest one.
+    private func openRecord(_ found: RecordResolver.Found) {
+        switch found.kind {
+        case .task:
+            pet.windowModel.focusTask = found.key
+            pet.showWindow(.tasks)
+        case .filter:
+            pet.showWindow(.tasks)
+        case .job:
+            openJob(found.key)
+        case .auto, .run:
+            pet.showWindow(.automations)
+        case .notif:
+            pet.openNotification(found.key)
+        case .meeting:
+            pet.windowModel.focusMeeting = found.key
+            pet.showWindow(.transcripts)
+        case .chat:
+            pet.onOpenThread?(found.key)
+        case .msg:
+            // A message opens its thread; the message itself is not scrolled to yet.
+            pet.onOpenThread?(String(found.key.prefix { $0 != "/" }))
+        case .screen:
+            pet.showWindow(.screen)
+        case .page, .claim:
+            pet.showWindow(.memory)
+        }
     }
 
     func applicationDockMenu(_ sender: NSApplication) -> NSMenu? {
@@ -1227,7 +1300,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         server.onAgentAPI = { [weak self] request, respond in
             MCPEndpoint.route(request, automations: { self?.api?.automations }, tasks: { self?.api?.tasks }, screen: { self?.api?.screen },
                               desktop: { self?.api?.desktop }, memory: { self?.api?.memory }, assistant: { self?.api?.assistant },
-                              notifications: { self?.api?.notifications }, records: { self?.api?.records }, respond: respond)
+                              notifications: { self?.api?.notifications }, records: { self?.api?.records }, agentRecords: { self?.api?.agentRecords },
+                              chat: { self?.api?.chat }, respond: respond)
         }
         try server.start()
         self.server = server
@@ -1259,7 +1333,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Opening the chat never changes its session or folder. Only the user does, with New Chat, the folder picker,
     /// a saved thread or the agent switch.
-    private func showChat() {
+    func showChat() {
         let front = NSWorkspace.shared.frontmostApplication
         if front?.processIdentifier != ProcessInfo.processInfo.processIdentifier {
             previousApp = front
@@ -1319,14 +1393,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         previousApp = nil
     }
 
-    private func openSession(_ id: String) {
+    func openSession(_ id: String) {
         guard let session = store.sessions[id] else { return }
         pet.jump(to: session)
     }
 
     /// Sends `prompt` to the agent in the current chat and folder. Without `show`, the chat stays hidden and Ghost says when the agent
     /// needs something. When the chat is busy with a turn or an approval, nothing is replaced: a bubble offers to send it.
-    private func sendToChat(_ prompt: String, show: Bool, title: String, busyBody: String) {
+    func sendToChat(_ prompt: String, show: Bool, title: String, busyBody: String) {
         if chat.isRunning || !chat.approvals.isEmpty {
             announcer.automation(AutomationNotice(
                 id: "automation-chat:\(title)", symbol: "wrench.and.screwdriver.fill", tint: .warn, title: title, body: busyBody,
@@ -1345,7 +1419,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// "Ask Ghost": opens the chat in the current session and folder with the prompt ready to send. A draft the user
     /// was typing stays below the prompt, separated by a blank line.
-    private func ask(_ prompt: String) {
+    func ask(_ prompt: String) {
         showChat()
         let draft = chatModel.input.trimmingCharacters(in: .whitespacesAndNewlines)
         // A second press on the same Ask leaves the input as it is.
@@ -1639,7 +1713,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         showChat()
     }
 
-    private func hookMenuItems() -> [NSMenuItem] {
+    func hookMenuItems() -> [NSMenuItem] {
         let system = NSMenuItem(title: "Also show macOS notifications", action: #selector(toggleSystemNotifications), keyEquivalent: "")
         system.state = announcer.alsoSystemNotifications ? .on : .off
         let login = NSMenuItem(title: "Launch at login", action: #selector(toggleLoginItem), keyEquivalent: "")

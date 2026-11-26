@@ -406,7 +406,10 @@ final class RemoteServer {
 
     /// Automations (phase 4). The device is the author of what it creates or changes, so risky automations wait for Approve on the Mac.
     private func addAutomationRoutes(to router: Router<RemoteContext>) {
-        router.get("/v1/automations") { [self] _, context in await self.phoneFour(context) { RemoteAutomations(api: $0, device: $1).list() } }
+        router.get("/v1/automations") { [self] request, context in
+            let agent = Self.query(request)["agentId"]?.first
+            return await self.phoneFour(context) { try RemoteAutomations(api: $0, device: $1).list(agentId: agent) }
+        }
         router.post("/v1/automations") { [self] request, context in
             let body = try await Self.object(request, context)
             return await self.phoneFour(context, status: 201) { try RemoteAutomations(api: $0, device: $1).create(body) }
@@ -542,14 +545,17 @@ final class RemoteServer {
             let query = Self.query(request)
             let limit = query["limit"]?.first.flatMap { Int($0) }.map { min(max($0, 1), 200) }
             let before = query["before"]?.first
-            return await self.chatCurrent(request, context, limit: limit, before: before)
+            // `after` is the `seq` of an earlier answer and `epoch` the launch it came from: only what changed since comes back.
+            let after = query["after"]?.first.flatMap { Int($0) }
+            let epoch = query["epoch"]?.first
+            return await self.chatCurrent(request, context, limit: limit, before: before, after: after, epoch: epoch)
         }
-        router.get("/v1/chat/messages/:id") { [self] _, context in
+        router.get("/v1/chat/messages/:id") { [self] request, context in
             let id = Self.parameter(context, "id")
-            return await self.chat(context) { try await $0.message(id) }
+            return await self.chat(context, request) { try await $0.message(id) }
         }
         // The image of an attachment message, as raw bytes. Per device like every other chat route: no device, no bytes.
-        router.get("/v1/chat/messages/:id/file") { [self] _, context in
+        router.get("/v1/chat/messages/:id/file") { [self] request, context in
             let id = Self.parameter(context, "id")
             return await self.chatFile(id, context)
         }
@@ -558,51 +564,54 @@ final class RemoteServer {
             let path = Self.query(request)["path"]?.first ?? ""
             return await self.filePreview(path, context)
         }
-        router.get("/v1/chat/threads") { [self] _, context in await self.chat(context) { await $0.threads() } }
-        router.get("/v1/chat/threads/:id") { [self] _, context in
+        router.get("/v1/chat/threads") { [self] request, context in
+            let agent = Self.query(request)["agentId"]?.first
+            return await self.chat(context, request) { try await $0.threads(agentId: agent) }
+        }
+        router.get("/v1/chat/threads/:id") { [self] request, context in
             let id = Self.parameter(context, "id")
-            return await self.chat(context) { try await $0.thread(id) }
+            return await self.chat(context, request) { try await $0.thread(id) }
         }
         router.post("/v1/chat/current/messages") { [self] request, context in
             HopLog.mark("mac.receive")
             let body = try await Self.object(request, context)
             let sends = self.sends
             // A phone that sends a client id gets the same dedupe as on the socket, so a retry over HTTPS after a lost ack creates nothing.
-            let response = await self.chat(context) {
+            let response = await self.chat(context, request) {
                 guard let clientID = body["client_id"] as? String else { return try await $0.send(body) }
                 return ["outcome": try await $0.send(clientID: clientID, body, ledger: sends).outcome]
             }
             HopLog.mark("mac.transcript")
             return response
         }
-        router.post("/v1/chat/current/stop") { [self] _, context in await self.chat(context) { await $0.stop() } }
-        router.post("/v1/chat/open/:id") { [self] _, context in
+        router.post("/v1/chat/current/stop") { [self] request, context in await self.chat(context, request) { await $0.stop() } }
+        router.post("/v1/chat/open/:id") { [self] request, context in
             let id = Self.parameter(context, "id")
-            return await self.chat(context) { try await $0.open(id) }
+            return await self.chat(context, request) { try await $0.open(id) }
         }
         router.patch("/v1/chat/options") { [self] request, context in
             let body = try await Self.object(request, context)
-            return await self.chat(context) { try await $0.setOptions(body) }
+            return await self.chat(context, request) { try await $0.setOptions(body) }
         }
-        router.post("/v1/chat/new") { [self] _, context in await self.chat(context) { try await $0.newChat() } }
+        router.post("/v1/chat/new") { [self] request, context in await self.chat(context, request) { try await $0.newChat() } }
         router.post("/v1/chat/approvals/:id") { [self] request, context in
             let id = Self.parameter(context, "id")
             let body = try await Self.object(request, context)
-            return await self.chat(context) { try await $0.decide(id, body) }
+            return await self.chat(context, request) { try await $0.decide(id, body) }
         }
         router.post("/v1/chat/forms/:id") { [self] request, context in
             let id = Self.parameter(context, "id")
             let body = try await Self.object(request, context)
-            return await self.chat(context) { try await $0.answer(id, body) }
+            return await self.chat(context, request) { try await $0.answer(id, body) }
         }
         router.post("/v1/chat/forms/:id/submit") { [self] request, context in
             let id = Self.parameter(context, "id")
             let body = try await Self.object(request, context)
-            return await self.chat(context) { try await $0.submit(id, body) }
+            return await self.chat(context, request) { try await $0.submit(id, body) }
         }
-        router.post("/v1/chat/forms/:id/skip") { [self] _, context in
+        router.post("/v1/chat/forms/:id/skip") { [self] request, context in
             let id = Self.parameter(context, "id")
-            return await self.chat(context) { try await $0.skip(id) }
+            return await self.chat(context, request) { try await $0.skip(id) }
         }
         // One photo or file as the raw body. `X-File-Name` is its name, percent encoded. Only this route may carry 20 MiB.
         router.post("/v1/uploads") { [self] request, context in
@@ -621,23 +630,33 @@ final class RemoteServer {
         }
     }
 
-    /// The chat as JSON, with an ETag over the exact bytes sent. A phone that sends the ETag it saved gets 304 and no body when the chat
-    /// has not changed, so a launch with a saved chat costs a few hundred bytes. `no-cache` makes every client check again.
-    private func chatCurrent(_ request: Request, _ context: RemoteContext, limit: Int?, before: String?) async -> Response {
+    /// The chat as JSON. The ETag names the chat event count and the page asked for, so a phone that sends the ETag it saved gets 304 and
+    /// no body when the chat has not changed, and the Mac builds nothing for it. A changed chat is copied on the main actor, which is cheap,
+    /// then paged, serialised and sent from a background task, so a long chat does not hold up the other routes. `no-cache` makes every
+    /// client check again.
+    private func chatCurrent(_ request: Request, _ context: RemoteContext, limit: Int?, before: String?, after: Int?, epoch: String?) async -> Response {
         guard let device = context.device else { return Self.error(401, "unauthorized", "unauthorized") }
-        let object = await RemoteChat(api: api, device: device.id, uploads: uploads).current(limit: limit, before: before)
-        let bytes = Self.data(object)
-        let digest = SHA256.hash(data: bytes).prefix(16).map { String(format: "%02x", $0) }.joined()
-        let etag = "\"\(digest)\""
+        let chat: RemoteChat
+        do { chat = try RemoteChat(api: api, device: device.id, uploads: uploads, agentId: Self.query(request)["agentId"]?.first) } catch {
+            return Self.errorResponse(RemoteFailure(error))
+        }
+        let etag = "\"\(chat.version(limit: limit, before: before))\""
         var headers: HTTPFields = [.cacheControl: "no-cache", .eTag: etag]
         if request.headers[.ifNoneMatch] == etag { return Response(status: .notModified, headers: headers) }
+        let snapshot = chat.snapshot()
+        let sync = chat.sync(after: after, epoch: epoch)
+        let bytes = await Task.detached(priority: .userInitiated) { RemoteChat.body(snapshot, limit: limit, before: before, sync: sync) }.value
         headers[.contentType] = "application/json; charset=utf-8"
         return Response(status: .ok, headers: headers, body: .init(byteBuffer: ByteBuffer(bytes: bytes)))
     }
 
-    private func chat(_ context: RemoteContext, status: Int = 200, _ body: @MainActor (RemoteChat) async throws -> [String: Any]) async -> Response {
+    /// A chat call. The query parameter `agentId` names the agent whose chat it is about, and agent 1 when it is left out.
+    private func chat(_ context: RemoteContext, _ request: Request, status: Int = 200, _ body: @MainActor (RemoteChat) async throws -> [String: Any]) async -> Response {
         guard let device = context.device else { return Self.error(401, "unauthorized", "unauthorized") }
-        do { return Self.json(status, try await body(RemoteChat(api: api, device: device.id, uploads: uploads))) } catch {
+        do {
+            let chat = try RemoteChat(api: api, device: device.id, uploads: uploads, agentId: Self.query(request)["agentId"]?.first)
+            return Self.json(status, try await body(chat))
+        } catch {
             return Self.errorResponse(RemoteFailure(error))
         }
     }
@@ -654,7 +673,10 @@ final class RemoteServer {
             let id = Self.parameter(context, "id"), action = Self.parameter(context, "action")
             return await self.resources(context) { try $0.press(bubble: id, action: action) }
         }
-        router.get("/v1/agents") { [self] _, context in await self.resources(context) { $0.agents() } }
+        router.get("/v1/agents") { [self] request, context in
+            let agent = Self.query(request)["agentId"]?.first
+            return await self.resources(context) { try $0.agents(agentId: agent) }
+        }
         router.get("/v1/agents/:id") { [self] _, context in
             let id = Self.parameter(context, "id")
             return await self.resources(context) { try $0.agent(id) }
@@ -666,6 +688,28 @@ final class RemoteServer {
         router.post("/v1/agents/:id/ask") { [self] _, context in
             let id = Self.parameter(context, "id")
             return await self.resources(context) { try await $0.askAboutAgent(id) }
+        }
+        router.get("/v1/agent-records") { [self] _, context in await self.resources(context) { try $0.agentRecords() } }
+        router.get("/v1/agent-records/:id") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.resources(context) { try $0.agentRecord(id) }
+        }
+        router.get("/v1/records/:id") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.resources(context) { try await $0.record(id) }
+        }
+        router.post("/v1/agent-records") { [self] request, context in
+            let body = try await Self.object(request, context)
+            return await self.resources(context) { try $0.createAgentRecord(body) }
+        }
+        router.patch("/v1/agent-records/:id") { [self] request, context in
+            let id = Self.parameter(context, "id")
+            let body = try await Self.object(request, context)
+            return await self.resources(context) { try $0.updateAgentRecord(id, body) }
+        }
+        router.delete("/v1/agent-records/:id") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.resources(context) { try $0.deleteAgentRecord(id) }
         }
         router.get("/v1/alerts") { [self] _, context in await self.resources(context) { $0.alerts() } }
         router.post("/v1/alerts/dismiss-all") { [self] _, context in await self.resources(context) { $0.dismissAllAlerts() } }
@@ -790,7 +834,7 @@ final class RemoteServer {
                     if $0.kind == .chatItem { HopLog.mark("mac.push") }
                     var frame = Self.describe($0)
                     // The changed message rides along, so the phone does not read it again. An older phone ignores the key.
-                    if $0.kind == .chatItem, let id = $0.id.flatMap(UUID.init(uuidString:)), let item = api.chat.currentItem(id),
+                    if $0.kind == .chatItem, let id = $0.id.flatMap(UUID.init(uuidString:)), let item = (try? api.chat(for: $0.agentId))?.currentItem(id),
                        let inline = RemoteChat.inlineJSON(item) { frame["item"] = inline }
                     send.yield(Self.text(frame))
                 }
@@ -932,6 +976,7 @@ final class RemoteServer {
     private nonisolated static func describe(_ event: APIEvent) -> [String: Any] {
         var object: [String: Any] = ["seq": event.seq, "at": ISO8601DateFormatter().string(from: event.at), "kind": event.kind.rawValue]
         if let id = event.id { object["id"] = id }
+        if let agent = event.agentId { object["agentId"] = agent }
         return object
     }
 

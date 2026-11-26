@@ -64,8 +64,8 @@ final class VoiceModel {
         case discarded(id: String)
     }
     @ObservationIgnored var onSend: (SendEvent) -> Void = { _ in }
-    /// True when the composer holds attachments. A voice message sent at once then carries them, so the phone sends it itself.
-    @ObservationIgnored var hasAttachments: () -> Bool = { false }
+    /// True when the composer holds typed text, attachments or a reply quote. A voice message sent at once then carries them, so the phone sends it itself.
+    @ObservationIgnored var hasComposerContent: () -> Bool = { false }
     /// True when an earlier message waits to be sent. A voice message recorded now goes behind it, so the Mac sees them in order.
     @ObservationIgnored var hasEarlierMessages: () -> Bool = { false }
     /// The recording as raw PCM, kept to save it when the Mac cannot be reached.
@@ -192,8 +192,8 @@ final class VoiceModel {
         mic = source
         streamID = id
         streamMode = sendAtOnce ? .send : .draft
-        // With attachments in the composer the phone sends the message itself, so the Mac only turns the audio into text.
-        carry = streamMode == .send && hasAttachments()
+        // With content in the composer the phone sends the message itself, so the Mac only turns the audio into text.
+        carry = streamMode == .send && hasComposerContent()
         offline = false
         recorded = []
         recordedPCM = Data()
