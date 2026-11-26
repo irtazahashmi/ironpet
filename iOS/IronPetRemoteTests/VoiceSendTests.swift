@@ -157,6 +157,9 @@ final class VoiceSendTests: XCTestCase {
         server.pushUserItem(text: "marked", origin: "ios")
         await poll { self.server.maxMessageReadsInFlight > 0 }
         XCTAssertGreaterThan(server.maxMessageReadsInFlight, 0, "the single read is in flight before the full read runs")
+        // The phone reads the chat with If-None-Match. When the connect-time read already held the pushed item, the next read answers
+        // 304 and takes nothing, so no full read would end during the single read. A changed body makes the next read a 200.
+        server.chat.running.toggle()
         await chat.reload()
         await poll { chat.outbox.isEmpty }
         let diag = "hops=\(hops) items=\(chat.items.count) reads=\(server.messageReads) sockets=\(server.openSocketCount) err=\(String(describing: chat.errorMessage)) outbox=\(chat.outbox.map(\.state)) loaded=\(chat.loaded)"
