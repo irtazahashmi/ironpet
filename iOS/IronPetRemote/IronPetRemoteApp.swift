@@ -65,6 +65,7 @@ struct MainTabs: View {
     @State private var memory: MemoryModel
     @State private var screen: ScreenModel
     @State private var phoneSettings: PhoneSettingsModel
+    @State private var phoneAgent: PhoneAgentModel
     @State private var voice: VoiceModel
     @State private var morePath: [MoreDestination] = []
     private let client: IronPetClient
@@ -109,6 +110,7 @@ struct MainTabs: View {
         _screen = State(initialValue: ScreenModel(client: client, events: events, gate: TranscriptGate(authenticator: Self.authenticator, reason: "Show screen text"),
                                                   network: network, onUnauthorized: unauthorized))
         _phoneSettings = State(initialValue: PhoneSettingsModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
+        _phoneAgent = State(initialValue: PhoneAgentModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
         _voice = State(initialValue: Self.makeVoice(client: client))
     }
 
@@ -161,7 +163,7 @@ struct MainTabs: View {
                 .tabItem { Label("Inbox", systemImage: AppTab.tasks.symbol) }.tag(AppTab.tasks)
             AgentsView(model: agents)
                 .tabItem { Label("Agents", systemImage: AppTab.agents.symbol) }.tag(AppTab.agents)
-            MoreView(alerts: alerts, automations: automations, meetings: meetings, memory: memory, screen: screen, settings: phoneSettings, path: $morePath)
+            MoreView(alerts: alerts, automations: automations, meetings: meetings, memory: memory, screen: screen, settings: phoneSettings, phoneAgent: phoneAgent, path: $morePath)
                 .tabItem { Label("More", systemImage: AppTab.more.symbol) }.badge(alerts.alerts.count + automations.automations.filter(\.waitsForApproval).count)
                 .tag(AppTab.more)
         }
@@ -176,7 +178,7 @@ struct MainTabs: View {
         .tint(pet.accent)
         .environment(\.macAccent, pet.accent ?? .accentColor)
         // The alert count and the waiting approvals are on their tabs before the user opens it.
-        .task { network.startPathMonitor(); alerts.start(); chat.start(); chats.start(); pet.start(); automations.start(); voice.onTranscript = { [chat] text, mode in if mode == .draft { chat.insertDictation(text) } }; voice.onSend = { [chat] in chat.voiceEvent($0) }; chat.resendVoice = { [voice] in await voice.resend($0) }; chat.transcribeSaved = { [voice] in await voice.transcribeSaved($0, $1) }; voice.hasComposerContent = { [chat] in chat.hasComposerContent }; voice.hasEarlierMessages = { [chat] in chat.hasEarlierMessages }; voice.start() }
+        .task { network.startPathMonitor(); alerts.start(); chat.start(); chats.start(); pet.start(); automations.start(); phoneAgent.start(); voice.onTranscript = { [chat] text, mode in if mode == .draft { chat.insertDictation(text) } }; voice.onSend = { [chat] in chat.voiceEvent($0) }; chat.resendVoice = { [voice] in await voice.resend($0) }; chat.transcribeSaved = { [voice] in await voice.transcribeSaved($0, $1) }; voice.hasComposerContent = { [chat] in chat.hasComposerContent }; voice.hasEarlierMessages = { [chat] in chat.hasEarlierMessages }; voice.start() }
         // The five minutes count from the app going to the background, whichever screen is open. Watching only inside the Meetings
         // screen would leave the text unlocked after the person left it and then left the app.
         .onChange(of: scenePhase) { _, phase in
@@ -188,10 +190,10 @@ struct MainTabs: View {
         // A background changed on the Mac shows when the Chat tab opens.
         .onChange(of: tab) { _, next in if next == .chat { Task { await pet.reloadPet(applyMood: false); await chats.refresh() } } }
         // Leaving the tabs (unpair or a 401) must close the socket, which otherwise keeps reconnecting with the old token.
-        .onDisappear { [network, inbox, pet, chat, chats, today, agents, alerts, automations, meetings, memory, screen, phoneSettings, voice] in
+        .onDisappear { [network, inbox, pet, chat, chats, today, agents, alerts, automations, meetings, memory, screen, phoneSettings, phoneAgent, voice] in
             voice.stop()
             network.stopPathMonitor()
-            inbox.stop(); pet.stop(); chat.stop(); chats.stop(); today.stop(); agents.stop(); alerts.stop(); automations.stop(); meetings.stop(); memory.stop(); screen.stop(); phoneSettings.stop()
+            inbox.stop(); pet.stop(); chat.stop(); chats.stop(); today.stop(); agents.stop(); alerts.stop(); automations.stop(); meetings.stop(); memory.stop(); screen.stop(); phoneSettings.stop(); phoneAgent.stop()
             meetings.gate.lock()
             screen.gate.lock()
         }

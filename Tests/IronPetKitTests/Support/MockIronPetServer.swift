@@ -51,6 +51,9 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _chat = MockIronPetServer.sampleChat
     private var _chatThreads = MockIronPetServer.sampleThreads
     private var _agentRecords: [RemoteAgentRecord]?
+    private var _addedByPhone: [[String: Any]] = []
+    private var _phoneAgentRegistrations: [[String: Any]] = []
+    private var _addRefusal: (status: Int, message: String)?
     private var _agentChats: [String: RemoteChatSnapshot] = [:]
     private var _agentThreads: [String: [RemoteChatThread]] = [:]
     private var _threadItems: [String: [RemoteChatItem]] = ["th-1": [RemoteChatItem(id: "th-1-u", kind: "user", text: "Old question"), RemoteChatItem(id: "th-1-a", kind: "assistant", text: "Old answer")]]
@@ -404,6 +407,8 @@ final class MockIronPetServer: @unchecked Sendable {
             lock.lock(); _tokenValid = false; lock.unlock()
             respond(connection, 200, Data(#"{"revoked":true}"#.utf8))
         case ("GET", 2) where parts[1] == "events": upgrade(request, connection)
+        case ("POST", 2) where parts[1] == "suggestions": addSuggestion(request, connection)
+        case ("PUT", 4) where request.path == APIPath.deviceAgent: registerPhoneAgent(request, connection)
         case ("GET", 2) where parts[1] == "suggestions": respond(connection, 200, SuggestionListResponse(suggestions: suggestions))
         case ("POST", 4) where parts[1] == "suggestions" && parts[3] == "accept": accept(parts[2], connection)
         case ("POST", 4) where parts[1] == "suggestions" && parts[3] == "reject": reject(parts[2], connection)
@@ -495,6 +500,36 @@ final class MockIronPetServer: @unchecked Sendable {
     }
 
     // MARK: Inbox routes
+
+    /// What the phone's agent sent with `POST /v1/suggestions`, by the stable id it made. A second send of an id adds nothing.
+    var addedByPhone: [[String: Any]] { lock.lock(); defer { lock.unlock() }; return _addedByPhone }
+    /// What `PUT /v1/devices/me/agent` last received.
+    var phoneAgentRegistrations: [[String: Any]] { lock.lock(); defer { lock.unlock() }; return _phoneAgentRegistrations }
+    /// The answer to `POST /v1/suggestions`: 200 by default. Set a status to make the Mac refuse the item.
+    var addRefusal: (status: Int, message: String)? { get { lock.lock(); defer { lock.unlock() }; return _addRefusal } set { lock.lock(); _addRefusal = newValue; lock.unlock() } }
+
+    private func addSuggestion(_ request: Recorded, _ connection: NWConnection) {
+        lock.lock()
+        if let refusal = _addRefusal { lock.unlock(); return fail(connection, refusal.status, "invalid", refusal.message) }
+        let body = request.json
+        let id = body["id"] as? String ?? ""
+        let isNew = !_addedByPhone.contains { $0["id"] as? String == id }
+        if isNew {
+            _addedByPhone.append(body)
+            _suggestions.append(RemoteSuggestion(id: "item-\(id)", title: body["title"] as? String ?? "", origin: "automation", originDetail: "agent agent (agent:agent)",
+                                                 due: body["due"] as? String, notes: body["notes"] as? String ?? ""))
+        }
+        lock.unlock()
+        respond(connection, 200, Data(#"{"added":\#(isNew),"id":"item-\#(id)"}"#.utf8))
+        if isNew { publish(RemoteEvent.suggestionsChanged) }
+    }
+
+    private func registerPhoneAgent(_ request: Recorded, _ connection: NWConnection) {
+        lock.lock(); _phoneAgentRegistrations.append(request.json); lock.unlock()
+        let body = request.json
+        respond(connection, 200, RemoteAgentRecord(id: "agent_phone", number: 2, name: body["name"] as? String ?? "", agentCli: body["provider"] as? String ?? "",
+                                                   model: body["model"] as? String, deviceID: deviceID))
+    }
 
     private func accept(_ id: String, _ connection: NWConnection) {
         lock.lock()

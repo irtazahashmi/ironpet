@@ -9,6 +9,7 @@ struct MoreView: View {
     let memory: MemoryModel
     let screen: ScreenModel
     let settings: PhoneSettingsModel
+    let phoneAgent: PhoneAgentModel
     @Binding var path: [MoreDestination]
 
     var body: some View {
@@ -38,6 +39,14 @@ struct MoreView: View {
                         .accessibilityIdentifier("more-memory")
                     NavigationLink(value: MoreDestination.screen) { Label("Screen", systemImage: SharedSymbols.screen) }
                         .accessibilityIdentifier("more-screen")
+                    NavigationLink(value: MoreDestination.phoneAgent) {
+                        HStack {
+                            Label("Phone agent", systemImage: SharedSymbols.agents)
+                            Spacer()
+                            if !phoneAgent.waiting.isEmpty { Text("\(phoneAgent.waiting.count) waiting").foregroundStyle(.orange) }
+                        }
+                    }
+                    .accessibilityIdentifier("more-phone-agent")
                     NavigationLink(value: MoreDestination.settings) { Label("Settings", systemImage: SharedSymbols.settings) }
                         .accessibilityIdentifier("more-settings")
             
@@ -55,6 +64,7 @@ struct MoreView: View {
                 case .memoryPage(let id): MemoryPageView(model: memory, id: id)
                 case .screen: ScreenView(model: screen)
                 case .settings: PhoneSettingsView(model: settings)
+                case .phoneAgent: PhoneAgentView(model: phoneAgent)
                 }
             }
         }

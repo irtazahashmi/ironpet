@@ -190,7 +190,7 @@ final class TaskStoreTests: XCTestCase {
         let versions = AppMigrations.all.map(\.version)
         XCTAssertEqual(versions.count, Set(versions).count)
         XCTAssertEqual(TaskStore.migrations.map(\.version).max(), 591)
-        XCTAssertEqual(AppMigrations.latestVersion, 591)
+        XCTAssertEqual(AppMigrations.latestVersion, 600)
     }
 
     // MARK: Migration 590 (S1)

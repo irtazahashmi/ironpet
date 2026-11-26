@@ -20,7 +20,7 @@ package enum AgentPetSet {
     package static let spacing: Double = 120
 
     package static func slots(for records: [AgentRecord]) -> [PetSlot] {
-        records.filter(\.enabled).sorted { $0.number < $1.number }.enumerated().map { index, record in
+        records.filter { $0.enabled && !$0.isRemote }.sorted { $0.number < $1.number }.enumerated().map { index, record in
             PetSlot(agentID: record.id, name: record.name, sprite: record.pet, index: index)
         }
     }
@@ -49,7 +49,7 @@ package struct AgentSwitcher: Equatable, Sendable {
     package let choices: [Choice]
 
     package init(records: [AgentRecord], current: String) {
-        choices = records.filter(\.enabled).sorted { $0.number < $1.number }.map { Choice(id: $0.id, name: $0.name, isCurrent: $0.id == current) }
+        choices = records.filter { $0.enabled && !$0.isRemote }.sorted { $0.number < $1.number }.map { Choice(id: $0.id, name: $0.name, isCurrent: $0.id == current) }
     }
 
     /// The switcher only shows when there is more than one agent to switch between.
