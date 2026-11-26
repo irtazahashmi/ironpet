@@ -8,7 +8,11 @@ import SwiftUI
 final class PetController: NSObject {
     static let scale: CGFloat = 0.6
     static let sleepAfter: TimeInterval = 10 * 60
-    private static let originKey = "petOrigin"
+    /// The agent this pet belongs to. Agent 1 keeps the saved position and sprite it always had.
+    let agentID: String
+    private var originKey: String { agentID == AgentOwner.defaultID ? "petOrigin" : "petOrigin.\(agentID)" }
+    /// The sprite sheet of a pet other than agent 1's. Agent 1's comes from `config.json`.
+    private var spritePath: String?
 
     let panel: NSPanel
     private(set) var view: PetView
@@ -39,6 +43,8 @@ final class PetController: NSObject {
     private var cancellables: Set<AnyCancellable> = []
     private var changeTokens: [ChangeToken] = []
 
+    /// This pet's agent's name, for the menu. Nil for agent 1, whose name is the pet's name in the settings.
+    var agentName: String?
     var extraMenuItems: () -> [NSMenuItem] = { [] }
     var onRefresh: ((PetMood) -> Void)?
     var chatMood: () -> PetMood? = { nil }
@@ -94,12 +100,18 @@ final class PetController: NSObject {
         view.recording = state
     }
 
-    init(store: SessionStore, signals: SignalStore) {
+    /// `agentID` and `sprite` make the pet of another agent: it has its own sprite and its own saved place, and without one it stands
+    /// `offsetX` points left of the default place so it does not cover agent 1's pet.
+    init(store: SessionStore, signals: SignalStore, agentID: String = AgentOwner.defaultID, sprite: String? = nil, offsetX: Double = 0) {
         self.store = store
         self.signals = signals
+        self.agentID = agentID
+        self.spritePath = sprite
         let size = CGSize(width: Atlas.cell.width * Self.scale, height: Atlas.cell.height * Self.scale)
-        let view = PetView(atlas: Atlas.loadDefault(), size: size)
-        let panel = NSPanel(contentRect: CGRect(origin: Self.savedOrigin(size: size), size: size),
+        let isDefault = agentID == AgentOwner.defaultID
+        let key = isDefault ? "petOrigin" : "petOrigin.\(agentID)"
+        let view = PetView(atlas: isDefault ? Atlas.loadDefault() : Atlas.loadDefault(sprite: sprite), size: size)
+        let panel = NSPanel(contentRect: CGRect(origin: Self.savedOrigin(size: size, key: key, offsetX: offsetX), size: size),
                             styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isOpaque = false
         panel.backgroundColor = .clear
@@ -403,8 +415,13 @@ final class PetController: NSObject {
     private static let noTasks = TasksAPI(store: TaskStore(database: Database.open(path: nil, migrations: TaskStore.migrations).database))
 
     /// Reloads the sprite sheet after `pet.sprite` changes.
-    func reloadAtlas() {
-        view.setAtlas(Atlas.loadDefault())
+    func reloadAtlas(sprite: String? = nil) {
+        if agentID == AgentOwner.defaultID {
+            view.setAtlas(Atlas.loadDefault())
+        } else {
+            spritePath = sprite ?? spritePath
+            view.setAtlas(Atlas.loadDefault(sprite: spritePath))
+        }
     }
 
     @objc private func showAgents(_ sender: Any?) { showWindow(.agents) }
@@ -415,10 +432,12 @@ final class PetController: NSObject {
     private func makeMenu() -> NSMenu {
         let menu = NSMenu()
         let config = SettingsAPI.live.config
-        for (title, shortcut, action) in [("Chat with \(config.pet.name)", config.hotkeys.chat, #selector(showChat(_:))),
+        let name = agentName ?? config.pet.name
+        for (title, shortcut, action) in [("Chat with \(name)", config.hotkeys.chat, #selector(showChat(_:))),
                                           ("Ask about front window", config.hotkeys.captureWindow, #selector(captureWindow(_:))),
                                           ("Ask about a region", config.hotkeys.captureRegion, #selector(captureRegion(_:)))] {
-            let label = Shortcut.display(shortcut).map { "\(title)  \($0)" } ?? title
+            // The hotkeys go to agent 1 until agents own devices, so another agent's pet does not show them.
+            let label = (agentID == AgentOwner.defaultID ? Shortcut.display(shortcut) : nil).map { "\(title)  \($0)" } ?? title
             let item = NSMenuItem(title: label, action: action, keyEquivalent: "")
             item.target = self
             menu.addItem(item)
@@ -552,17 +571,17 @@ final class PetController: NSObject {
     }
 
     private func saveOrigin() {
-        UserDefaults.standard.set(NSStringFromPoint(panel.frame.origin), forKey: Self.originKey)
+        UserDefaults.standard.set(NSStringFromPoint(panel.frame.origin), forKey: originKey)
     }
 
-    private static func savedOrigin(size: CGSize) -> CGPoint {
-        if let saved = UserDefaults.standard.string(forKey: originKey) {
+    private static func savedOrigin(size: CGSize, key: String, offsetX: Double) -> CGPoint {
+        if let saved = UserDefaults.standard.string(forKey: key) {
             let point = NSPointFromString(saved)
             if NSScreen.screens.contains(where: { $0.visibleFrame.insetBy(dx: -size.width / 2, dy: -size.height / 2).contains(point) }) {
                 return point
             }
         }
         let screen = NSScreen.main?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
-        return CGPoint(x: screen.maxX - size.width - 40, y: screen.minY + 40)
+        return CGPoint(x: screen.maxX - size.width - 40 - offsetX, y: screen.minY + 40)
     }
 }

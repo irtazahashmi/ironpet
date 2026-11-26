@@ -12,7 +12,7 @@ struct ElicitationCard: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Label(pending.form.message.isEmpty ? "The agent has a question" : pending.form.message, systemImage: SharedSymbols.question)
+            Label(session.formHeading(pending), systemImage: SharedSymbols.question)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.orange)
                 .fixedSize(horizontal: false, vertical: true)

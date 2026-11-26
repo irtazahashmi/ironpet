@@ -303,17 +303,21 @@ The open chat with Ghost.
 |---|---|---|---|
 | `chat.answerForm` | `AnswerFormRequest` | `null` | `POST /v1/chat/forms/:id` |
 | `chat.decide` | `DecideApprovalRequest` | `null` | `POST /v1/chat/approvals/:id` |
-| `chat.messages` | none | `[ChatItem]` | none |
-| `chat.newChat` | none | `null` | `POST /v1/chat/new` |
-| `chat.openThread` | `ID` | `null` | `POST /v1/chat/open/:id` |
+| `chat.messages` | `AgentScopeRequest` | `[ChatItem]` | none |
+| `chat.newChat` | `AgentScopeRequest` | `null` | `POST /v1/chat/new` |
+| `chat.openThread` | `ChatOpenRequest` | `null` | `POST /v1/chat/open/:id` |
 | `chat.send` | `SendChatRequest` | `ChatSendResult` | `POST /v1/chat/current/messages` |
 | `chat.setMode` | `SetMode` | `null` | none |
-| `chat.skipForm` | `UUIDParam` | `null` | `POST /v1/chat/forms/:id/skip` |
-| `chat.snapshot` | none | `ChatSnapshot` | `GET /v1/chat/current` |
-| `chat.status` | none | `ChatStatus` | none |
-| `chat.stop` | none | `ChatStopResult` | `POST /v1/chat/current/stop` |
-| `chat.submitForm` | `UUIDParam` | `null` | `POST /v1/chat/forms/:id/submit` |
+| `chat.skipForm` | `ChatFormTarget` | `null` | `POST /v1/chat/forms/:id/skip` |
+| `chat.snapshot` | `AgentScopeRequest` | `ChatSnapshot` | `GET /v1/chat/current` |
+| `chat.status` | `AgentScopeRequest` | `ChatStatus` | none |
+| `chat.stop` | `AgentScopeRequest` | `ChatStopResult` | `POST /v1/chat/current/stop` |
+| `chat.submitForm` | `ChatFormTarget` | `null` | `POST /v1/chat/forms/:id/submit` |
 | `chat.threads` | `AgentScopeRequest` | `[ChatThreadInfo]` | `GET /v1/chat/threads` |
+
+Every `chat.*` call takes an optional `agentId` and acts on that agent's chat, or on agent 1's when it is left out (see "Several agents").
+`ChatOpenRequest` is `{"id","agentId"?}`, `ChatFormTarget` is `{"id","agentId"?}`, and `SendChatRequest`, `DecideApprovalRequest`,
+`AnswerFormRequest` and `SetMode` carry `agentId` too.
 
 `origin` is `{"client", "ref", "device"}`. `client` is the kind of sender such as `ios` or `telegram`, `ref` is its own id for the conversation, and `device` is the paired device's id when there is one. "My screen" in the turn means that device's screen (see "Clients and capabilities"). `chat.send` with an empty text and no `origin` returns `{"outcome": "ignored"}`. With an `origin` it fails with `invalid`. `chat.thread` returns a tuple in Swift, so it is not on the wire yet.
 
@@ -372,15 +376,45 @@ the coding-agent sessions ironpet watches, and keeps its own methods and routes.
 
 | Method | Params | Result | REST route |
 |---|---|---|---|
+| `agent.create` | `CreateAgentRequest` | `AgentRecord` | `POST /v1/agent-records` |
+| `agent.delete` | `ID` | `null` | `DELETE /v1/agent-records/:id` |
 | `agent.get` | `ID` | `AgentRecord` | `GET /v1/agent-records/:id` |
 | `agent.list` | none | `[AgentRecord]` | `GET /v1/agent-records` |
+| `agent.update` | `UpdateAgentRequest` | `AgentRecord` | `PATCH /v1/agent-records/:id` |
 
-`AgentRecord` is `{"id","number","name","pet","agentCli","model","cliModels","instructions","permissions","created","updated"}`. `pet` and `model`
+`AgentRecord` is `{"id","number","name","pet","agentCli","model","cliModels","instructions","permissions","enabled","created","updated"}`. `pet` and `model`
 are left out when unset (the bundled Ghost, and the CLI's own default model). `cliModels` maps each agent CLI to the model last picked for it.
 Today there is one agent, agent 1, with `number` 1 and the id `agent_default`, the id every change was attributed to before agents existed.
 An empty id also finds agent 1. `agent.get` with any other unknown id fails with `notFound`. Both methods fail with `unavailable` on a host
 with no database. `GET /v1/agent-records` answers `{"agents":[AgentRecord]}`. The MCP tools `agents_list` and `agents_get` return the same
-objects (`{"agents":[...]}` and one object). No method writes an agent yet; Settings write agent 1 in Swift.
+objects (`{"agents":[...]}` and one object), and the tools `agents_create`, `agents_update` and `agents_delete` write them.
+
+`agent.create` takes `{"name","agentCli","pet"?,"model"?,"instructions"?}` and returns the new record, enabled, with the next `number` (a number is
+never reused) and an id such as `agent_3f9a1c0b27d4`. `agent.update` takes `{"id"}` and any of `name`, `agentCli`, `pet`, `model`, `instructions`
+and `enabled`. A field left out stays, and an empty `pet` or `model` clears it. `agent.delete` takes `{"id"}`. `agentCli` must be a catalog id.
+`enabled` is left out by a node from before several agents, and a reader treats a missing value as `true`. Agent 1 cannot be disabled or deleted
+(`invalid`), an unknown id is `notFound`, and deleting an agent that owns an enabled automation is `conflict`.
+
+### Several agents
+
+Each enabled agent runs its own chat process, and the node's supervisor starts, restarts and stops them. A new agent starts at once. A process
+that ends during a turn is started again after 1 s, then 2, 4, 8 and so on up to 60 s, and the count starts over once a process has stayed up for
+30 s. One agent's crash does not touch another's process or chat. Disabling an agent stops its process and removes its pet; its threads, sessions
+and automations stay on disk, and enabling it starts a new process that lists them again. Deleting an agent removes its record only: its threads
+and automations stay on disk under an id that no longer resolves, so nothing lists them, and agent 1's data is never touched. The scheduler,
+screen capture, the memory pass and the task scan stay single on the node.
+
+A `chat.*` call, `GET /v1/chat/*` route or MCP chat tool names the agent with `agentId` (the query parameter `agentId` on a route), and agent 1
+without it. An id no agent has is `notFound`. An agent that exists but is disabled has no process, so a call to its chat other than
+`chat.threads` fails with `unavailable`. Events about an agent's chat (`chat.item`, `chat.state`) carry `agentId` in the event, left out for agent 1,
+and only that agent's chat changed. The `chat.item` frames on the phone's socket carry it the same way.
+
+An approval or a question names who is asking: `ChatApprovalInfo` and `ChatFormInfo` have optional `agentId` and `agentName`, the agent of the chat
+that raised them. The Mac shows the name on the card and in the bubble. A request from a job or an automation has neither, since it belongs to no chat.
+The phone's chat JSON carries them as `agent_id` and `agent_name` on each entry of `approvals` and `forms`, and leaves them out when they are unset.
+
+The hotkeys, dictation and speech stay with agent 1 until agents own devices. Each pet has its own chat window, and a menu in that window's header
+opens another agent's.
 
 ### Agent owners
 
@@ -600,6 +634,9 @@ audio, or an area that is not on the wire yet.
 | `POST /v1/bubbles/:id/actions/:action` | none |
 | `GET /v1/agent-records` | `agent.list` |
 | `GET /v1/agent-records/:id` | `agent.get` |
+| `POST /v1/agent-records` | `agent.create` |
+| `PATCH /v1/agent-records/:id` | `agent.update` |
+| `DELETE /v1/agent-records/:id` | `agent.delete` |
 | `GET /v1/agents` | `agents.list` |
 | `GET /v1/agents/:id` | `agents.get` |
 | `POST /v1/agents/:id/acknowledge` | `agents.acknowledge` |

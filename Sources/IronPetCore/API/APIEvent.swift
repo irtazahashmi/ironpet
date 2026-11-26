@@ -22,11 +22,12 @@ package enum APIEventKind: String, Codable, CaseIterable {
 }
 
 package struct APIEvent: Codable, Equatable {
-    package init(seq: Int, at: Date, kind: APIEventKind, id: String?) {
+    package init(seq: Int, at: Date, kind: APIEventKind, id: String?, agentId: String? = nil) {
         self.seq = seq
         self.at = at
         self.kind = kind
         self.id = id
+        self.agentId = agentId
     }
 
     /// Counts up from 1 for the life of the app. A client that reconnects passes the last `seq` it saw.
@@ -35,6 +36,8 @@ package struct APIEvent: Codable, Equatable {
     package let kind: APIEventKind
     /// The thing that changed, when it is one thing.
     package let id: String?
+    /// The agent a chat event is about. Nil for agent 1 and for every event that is not about one agent's chat.
+    package let agentId: String?
 }
 
 /// The one event stream. Stores publish into it, and clients subscribe to it. It keeps the last `capacity` events so a client
@@ -86,15 +89,15 @@ package final class APIEventBus {
         self.now = now
     }
 
-    package func publish(_ kind: APIEventKind, id: String? = nil) {
+    package func publish(_ kind: APIEventKind, id: String? = nil, agentId: String? = nil) {
         lastSeq += 1
         if kind == .chatItem || kind == .chatState { chatVersion += 1 }
-        let event = APIEvent(seq: lastSeq, at: now(), kind: kind, id: id)
+        let event = APIEvent(seq: lastSeq, at: now(), kind: kind, id: id, agentId: agentId)
         // Streamed text changes one message hundreds of times. A client only needs to know that it changed since it last looked, so
         // the buffer keeps the newest event for each message (and for each part of the chat state) instead of every one.
         // Live subscribers still get every event. Without this a few seconds of streaming would push every other event out.
         if Self.coalesces.contains(kind), let id,
-           let earlier = buffer[max(0, buffer.count - Self.coalesceWindow)...].lastIndex(where: { $0.kind == kind && $0.id == id }) {
+           let earlier = buffer[max(0, buffer.count - Self.coalesceWindow)...].lastIndex(where: { $0.kind == kind && $0.id == id && $0.agentId == agentId }) {
             buffer.remove(at: earlier)
         }
         buffer.append(event)

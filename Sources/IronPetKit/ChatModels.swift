@@ -134,7 +134,19 @@ public struct RemoteApproval: Codable, Equatable, Hashable, Identifiable, Sendab
     public var id: String
     public var title: String
     public var detail: String
-    public init(id: String, title: String, detail: String = "") { self.id = id; self.title = title; self.detail = detail }
+    /// The agent that is asking, and its name. Nil from a Mac from before several agents, and for a request that belongs to no chat.
+    public var agentId: String?
+    public var agentName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, detail
+        case agentId = "agent_id"
+        case agentName = "agent_name"
+    }
+
+    public init(id: String, title: String, detail: String = "", agentId: String? = nil, agentName: String? = nil) {
+        self.id = id; self.title = title; self.detail = detail; self.agentId = agentId; self.agentName = agentName
+    }
 }
 
 public struct RemoteFormOption: Codable, Equatable, Hashable, Sendable {
@@ -188,14 +200,21 @@ public struct RemoteForm: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var fields: [RemoteFormField]
     public var answers: [String: RemoteFormAnswer]
     public var canSubmit: Bool
+    /// The agent that is asking, and its name. Nil from a Mac from before several agents.
+    public var agentId: String?
+    public var agentName: String?
 
     enum CodingKeys: String, CodingKey {
         case id, message, fields, answers
         case canSubmit = "can_submit"
+        case agentId = "agent_id"
+        case agentName = "agent_name"
     }
 
-    public init(id: String, message: String, fields: [RemoteFormField], answers: [String: RemoteFormAnswer] = [:], canSubmit: Bool = false) {
+    public init(id: String, message: String, fields: [RemoteFormField], answers: [String: RemoteFormAnswer] = [:], canSubmit: Bool = false,
+                agentId: String? = nil, agentName: String? = nil) {
         self.id = id; self.message = message; self.fields = fields; self.answers = answers; self.canSubmit = canSubmit
+        self.agentId = agentId; self.agentName = agentName
     }
 
     public init(from decoder: Decoder) throws {
@@ -205,6 +224,8 @@ public struct RemoteForm: Codable, Equatable, Hashable, Identifiable, Sendable {
         fields = try c.decodeIfPresent([RemoteFormField].self, forKey: .fields) ?? []
         answers = try c.decodeIfPresent([String: RemoteFormAnswer].self, forKey: .answers) ?? [:]
         canSubmit = try c.decodeIfPresent(Bool.self, forKey: .canSubmit) ?? false
+        agentId = try c.decodeIfPresent(String.self, forKey: .agentId)
+        agentName = try c.decodeIfPresent(String.self, forKey: .agentName)
     }
 
     /// The fields grouped into pages, one page per question, the same way the Mac groups them.

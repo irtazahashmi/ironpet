@@ -57,7 +57,8 @@ package struct ChatUpload: Codable, Equatable {
 /// A message for the open chat.
 package struct SendChatRequest: Codable, Equatable {
     package init(text: String, origin: ChatOrigin? = nil, files: [URL] = [], uploads: [ChatUpload] = [], reply: ChatReply? = nil,
-                 selection: FrontSelection? = nil) {
+                 selection: FrontSelection? = nil, agentId: String? = nil) {
+        self.agentId = agentId
         self.text = text
         self.origin = origin
         self.files = files
@@ -77,6 +78,8 @@ package struct SendChatRequest: Codable, Equatable {
     package var reply: ChatReply?
     /// Text selected in another app when the Mac chat opened. Ignored for remote origins.
     package var selection: FrontSelection?
+    /// The agent whose chat gets the message. Nil is agent 1.
+    package var agentId: String?
 }
 
 package enum ChatSendOutcome: String, Codable {
@@ -125,11 +128,13 @@ package struct ChatStopResult: Codable, Equatable {
 
 /// An approval card as a client that cannot draw the Mac's sees it.
 package struct ChatApprovalInfo: Codable, Equatable, Identifiable {
-    package init(id: UUID, title: String, detail: String, options: [PermissionOption]? = nil) {
+    package init(id: UUID, title: String, detail: String, options: [PermissionOption]? = nil, agentId: String? = nil, agentName: String? = nil) {
         self.id = id
         self.title = title
         self.detail = detail
         self.options = options
+        self.agentId = agentId
+        self.agentName = agentName
     }
 
     package var id: UUID
@@ -137,10 +142,15 @@ package struct ChatApprovalInfo: Codable, Equatable, Identifiable {
     package var detail: String
     /// The answers the agent offered, in its order. Nil from a build that predates them.
     package var options: [PermissionOption]?
+    /// The agent that is asking, and its name, so a client with several agents can say who wants what. Nil from a build that predates
+    /// them, and for a background request, which belongs to a job or an automation and not to one agent's chat.
+    package var agentId: String?
+    package var agentName: String?
 }
 
 package struct DecideApprovalRequest: Codable, Equatable {
-    package init(id: UUID, allow: Bool, option: String? = nil) {
+    package init(id: UUID, allow: Bool, option: String? = nil, agentId: String? = nil) {
+        self.agentId = agentId
         self.id = id
         self.allow = allow
         self.option = option
@@ -150,23 +160,31 @@ package struct DecideApprovalRequest: Codable, Equatable {
     package var allow: Bool
     /// The `optionId` the user chose. When set it wins over `allow`.
     package var option: String?
+    /// The agent whose chat holds the approval. Nil is agent 1.
+    package var agentId: String?
 }
 
 /// A question the agent asked, with what has been entered so far.
 package struct ChatFormInfo: Codable, Equatable, Identifiable {
-    package init(id: UUID, form: ElicitationForm, answers: [String: ElicitationValue]) {
+    package init(id: UUID, form: ElicitationForm, answers: [String: ElicitationValue], agentId: String? = nil, agentName: String? = nil) {
         self.id = id
         self.form = form
         self.answers = answers
+        self.agentId = agentId
+        self.agentName = agentName
     }
 
     package var id: UUID
     package var form: ElicitationForm
     package var answers: [String: ElicitationValue]
+    /// The agent that is asking, and its name. Nil from a build that predates them.
+    package var agentId: String?
+    package var agentName: String?
 }
 
 package struct AnswerFormRequest: Codable, Equatable {
-    package init(id: UUID, field: String, value: ElicitationValue? = nil) {
+    package init(id: UUID, field: String, value: ElicitationValue? = nil, agentId: String? = nil) {
+        self.agentId = agentId
         self.id = id
         self.field = field
         self.value = value
@@ -176,6 +194,30 @@ package struct AnswerFormRequest: Codable, Equatable {
     package var field: String
     /// Nil clears the answer.
     package var value: ElicitationValue?
+    /// The agent whose chat holds the form. Nil is agent 1.
+    package var agentId: String?
+}
+
+/// `chat.openThread`: a thread, and the agent whose chat opens it.
+package struct ChatOpenRequest: Codable, Equatable {
+    package init(id: String, agentId: String? = nil) {
+        self.id = id
+        self.agentId = agentId
+    }
+
+    package var id: String
+    package var agentId: String?
+}
+
+/// `chat.submitForm` and `chat.skipForm`: a form, and the agent whose chat holds it.
+package struct ChatFormTarget: Codable, Equatable {
+    package init(id: UUID, agentId: String? = nil) {
+        self.id = id
+        self.agentId = agentId
+    }
+
+    package var id: UUID
+    package var agentId: String?
 }
 
 package struct ChatQueuedInfo: Codable, Equatable, Identifiable {
@@ -417,6 +459,11 @@ package struct ChatSnapshot: Codable, Equatable {
 package final class ChatAPI {
     private let session: ChatSession
     private let files: FileIntake
+    /// The chat this API serves, for the host that owns it. Clients never read it.
+    package var chatSession: ChatSession { session }
+    package var fileIntake: FileIntake { files }
+    /// The agent whose chat this is. Agent 1 unless `AgentChats` made the API for another agent.
+    package var agentID: String { session.ownerAgentID }
     private var listeners: [UUID: (ChatOrigin, ChatTurnEvent) -> Void] = [:]
     private var formListeners: [UUID: () -> Void] = [:]
     private var backgroundListeners: [UUID: (BackgroundPermissions.Request?, UUID?, BackgroundPermissions.Outcome?) -> Void] = [:]
@@ -429,11 +476,11 @@ package final class ChatAPI {
             stopBackground?()
             stopBackground = background?.observe(raised: { [weak self] request in
                 guard let self else { return }
-                session.events?.publish(.chatState, id: "approvals")
+                session.events?.publish(.chatState, id: "approvals", agentId: session.ownerAgentID == AgentOwner.defaultID ? nil : session.ownerAgentID)
                 for listener in Array(backgroundListeners.values) { listener(request, nil, nil) }
             }, resolved: { [weak self] id, outcome in
                 guard let self else { return }
-                session.events?.publish(.chatState, id: "approvals")
+                session.events?.publish(.chatState, id: "approvals", agentId: session.ownerAgentID == AgentOwner.defaultID ? nil : session.ownerAgentID)
                 for listener in Array(backgroundListeners.values) { listener(nil, id, outcome) }
             })
         }
@@ -545,10 +592,15 @@ package final class ChatAPI {
     }
 
     private var currentApprovals: [ChatApprovalInfo] {
-        session.approvals.map { ChatApprovalInfo(id: $0.id, title: $0.title, detail: $0.detail, options: $0.options) }
+        session.approvals.map { ChatApprovalInfo(id: $0.id, title: $0.title, detail: $0.detail, options: $0.options, agentId: agentID, agentName: agentName) }
             + (background?.pending ?? []).map { ChatApprovalInfo(id: $0.id, title: $0.heading, detail: $0.detail, options: $0.options) }
     }
-    private var currentForms: [ChatFormInfo] { session.forms.map { ChatFormInfo(id: $0.id, form: $0.form, answers: $0.answers) } }
+    private var currentForms: [ChatFormInfo] {
+        session.forms.map { ChatFormInfo(id: $0.id, form: $0.form, answers: $0.answers, agentId: agentID, agentName: agentName) }
+    }
+
+    /// The name of the agent whose chat this is, from its record.
+    package var agentName: String? { registry?.get(session.ownerAgentID)?.name }
 
     private var currentQueue: [ChatQueuedInfo] {
         session.queue.filter { $0.automation == nil && !$0.notice }.map {

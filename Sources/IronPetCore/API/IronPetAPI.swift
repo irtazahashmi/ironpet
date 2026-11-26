@@ -91,7 +91,10 @@ package final class IronPetAPI {
     package let agents: AgentsAPI
     /// The agents as records, with agent 1 the chat agent. Nil where there is no database to keep them.
     package let agentRecords: AgentRecordsAPI?
+    /// Agent 1's chat, the one the Mac window and Telegram always used. `chats` finds any other agent's.
     package let chat: ChatAPI
+    /// The chat of every running agent, by agent id.
+    package let chats: AgentChats
     package let meetings: MeetingsAPI
     package let settings: SettingsAPI
     /// The prompts ironpet sends on its own, for Settings → Prompts. Mac app only for now: not in `session.hello`.
@@ -131,9 +134,14 @@ package final class IronPetAPI {
         agents = AgentsAPI(store: stores.sessions)
         agents.registry = stores.agents
         agentRecords = stores.agents.map { AgentRecordsAPI(registry: $0) }
+        agentRecords?.ownedEnabledAutomations = { [automations] id in
+            automations.list().filter { $0.enabled && $0.ownerAgentID == id }.count
+        }
         stores.chat.events = events
         chat = ChatAPI(session: stores.chat, files: stores.files)
         chat.registry = stores.agents
+        chats = AgentChats(defaultChat: chat, registry: stores.agents)
+        chats.events = events
         chat.background = stores.permissions
         alerts.permissions = stores.permissions
         stores.meeting.events = events
@@ -174,6 +182,9 @@ package final class IronPetAPI {
         return names.sorted()
     }
 
+    /// The chat of an agent: agent 1 for nil or empty. An id no agent has is `notFound`, and an agent that is not running is `unavailable`.
+    package func chat(for agentId: String?) throws -> ChatAPI { try chats.api(for: agentId) }
+
     package func attach(capture control: CaptureControl) { screen = ScreenAPI(control: control) }
 
     package func attach(desktop service: DesktopService) { desktop = DesktopAPI(service: service, settings: settings) }
@@ -188,6 +199,7 @@ package final class IronPetAPI {
     package func attach(records refs: RecordRefs) {
         meetings.records = refs
         chat.records = refs
+        chats.setRecords(refs)
         records = RecordResolver(refs: refs, readers: RecordReaders.make(
             screen: { [weak self] in self?.screen },
             notifications: { [weak self] in self?.notifications },
