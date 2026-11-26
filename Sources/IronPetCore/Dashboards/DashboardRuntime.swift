@@ -160,8 +160,10 @@ package enum DashboardRuntime {
     }
 
     package static func clickBlocking(script: String, data: [String: Any], allowed: Set<String>, host: Host, handler: String, deadline: TimeInterval) throws -> Clicked {
-        let sandbox = try Sandbox(script: script, data: data, allowed: allowed, host: host, deadline: deadline, effectsEnabled: true)
+        // The view runs first, as it does for a render, with no effects and no inbox changes. Only the handler may act.
+        let sandbox = try Sandbox(script: script, data: data, allowed: allowed, host: host, deadline: deadline, effectsEnabled: false)
         _ = try sandbox.evaluate("__render()")
+        sandbox.enableEffects()
         _ = try sandbox.evaluate("(__effects.length = 0, __patch = {}, 'ok')")
         let text = try sandbox.evaluate("__click(\(jsonStringLiteral(handler)))")
         guard let object = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: Any] else { throw Failure(message: "the handler returned nothing") }
@@ -234,8 +236,10 @@ package enum DashboardRuntime {
         if let body { request.httpBody = Data(body.utf8) }
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = timeout
-        let session = URLSession(configuration: configuration)
+        // A redirect to another host would get around the approved host list, so only same-host redirects are followed.
+        let session = URLSession(configuration: configuration, delegate: SameHostRedirects(), delegateQueue: nil)
         let done = DispatchSemaphore(value: 0)
+        // Written by the completion handler, read only after `done` is signalled or the wait times out, and then the session is cancelled.
         nonisolated(unsafe) var result = FetchResult(error: "no answer")
         session.dataTask(with: request) { data, response, error in
             if let error { result = FetchResult(error: error.localizedDescription) } else {
@@ -250,6 +254,14 @@ package enum DashboardRuntime {
         return result
     }
 
+    private final class SameHostRedirects: NSObject, URLSessionTaskDelegate, @unchecked Sendable { // No state: safe to share.
+        func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
+                        newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) {
+            let from = task.originalRequest?.url?.host?.lowercased()
+            completionHandler(from != nil && request.url?.host?.lowercased() == from ? request : nil)
+        }
+    }
+
     // MARK: Sandbox
 
     private final class Sandbox {
@@ -260,7 +272,7 @@ package enum DashboardRuntime {
         private var calls = 0
         private let allowed: Set<String>
         private let host: Host
-        private let effectsEnabled: Bool
+        private var effectsEnabled: Bool
         private(set) var logs: [String] = []
 
         init(script: String, data: [String: Any], allowed: Set<String>, host: Host, deadline: TimeInterval, effectsEnabled: Bool) throws {
@@ -288,6 +300,8 @@ package enum DashboardRuntime {
             let kind = try evaluate("__shape()")
             if kind != "ok" { throw Failure(message: kind) }
         }
+
+        func enableEffects() { effectsEnabled = true }
 
         private var remaining: TimeInterval { max(1, limit - Date().timeIntervalSince(started)) }
 

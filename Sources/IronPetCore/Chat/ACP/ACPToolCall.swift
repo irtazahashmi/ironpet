@@ -128,7 +128,9 @@ package enum ApprovalRules {
     /// page's history, so none of them can lose anything, except `memory_merge`, which deletes the merged pages for good and so still asks.
     /// Of the assistant tools, those that start, steer or stop a job still ask.
     package static let ownTaskTools: Set<String> = Set(["inbox_list", "inbox_get", "inbox_note", "inbox_add", "inbox_done", "inbox_remove", "inbox_resolve",
-                                         "screen_search", "screen_window", RecordMCP.name]).union(plainNamedTools)
+                                         "screen_search", "screen_window", RecordMCP.name,
+                                         // The dashboard tools that only read. Creating, editing, deleting and posting still ask.
+                                         "dashboards_list", "dashboards_get", "dashboards_data"]).union(plainNamedTools)
 
     /// Tools whose names are plain enough (`memory_forget`, `status_overview`) to belong to another server.
     package static let plainNamedTools: Set<String> = AssistantMCP.ownTools.union(MemoryMCP.names.subtracting(["memory_merge"])).union([RecordMCP.name])

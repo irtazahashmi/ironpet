@@ -63,6 +63,15 @@ final class ApprovalRulesTests: XCTestCase {
         }
     }
 
+    func testOnlyTheDashboardToolsThatReadAreAllowed() {
+        for tool in ["dashboards_list", "dashboards_get", "dashboards_data"] {
+            XCTAssertEqual(policy(ACPToolCall(id: "1", title: "mcp__ironpet__\(tool)", kind: "other")), .allow, tool)
+        }
+        for tool in ["dashboards_create", "dashboards_update", "dashboards_delete", "dashboards_post"] {
+            if case .allow = policy(ACPToolCall(id: "1", title: "mcp__ironpet__\(tool)", kind: "other")) { XCTFail("\(tool) writes, so it asks") }
+        }
+    }
+
     func testTheRetiredTaskToolsAskAgain() {
         for tool in ["tasks_create", "tasks_close", "task_filters_upsert", "task_goals_upsert"] {
             if case .allow = policy(ACPToolCall(id: "1", title: "mcp__ironpet__\(tool)", kind: "other")) { XCTFail("\(tool) is no longer an ironpet tool") }

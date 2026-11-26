@@ -171,6 +171,20 @@ final class DashboardTests: XCTestCase {
         XCTAssertNil(bad, "only http and https links open")
     }
 
+    func testAViewCannotChangeTheInboxWhileAClickReRendersIt() async throws {
+        let script = """
+            export default { view() {
+              ironpet.inboxDone("a");
+              return Column([Button({ label: "Go", onClick: () => ironpet.setData({ clicked: true }) })]);
+            } };
+            """
+        nonisolated(unsafe) var writes: [String] = []
+        let host = DashboardRuntime.Host(write: { op, id in writes.append("\(op):\(id)"); return nil })
+        let outcome = try? await DashboardRuntime.click(script: script, data: [:], allowed: ["write:inbox"], host: host, handler: "h0")
+        XCTAssertNil(outcome, "the view's call is refused, so the click fails")
+        XCTAssertEqual(writes, [], "nothing reached the inbox")
+    }
+
     // MARK: Store, approval and storage
 
     func testStoreWritesFilesAndReloadsAnEdit() throws {
@@ -219,6 +233,16 @@ final class DashboardTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("work/approvals.json").path))
         let again = makeStore()
         XCTAssertEqual(again.allowed("work"), ["prompt"])
+    }
+
+    func testAFolderRemovedByHandTakesItsApprovalsWithIt() throws {
+        let store = makeStore()
+        try store.create(id: "work", manifest: DashboardManifest(title: "Work", capabilities: .init(prompt: true)), script: countScript)
+        try store.approve("work")
+        try FileManager.default.removeItem(at: root.appendingPathComponent("work"))
+        store.reload()
+        try store.create(id: "work", manifest: DashboardManifest(title: "Work", capabilities: .init(prompt: true)), script: countScript)
+        XCTAssertEqual(store.undecided("work"), ["prompt"], "a new dashboard with a reused id starts unapproved")
     }
 
     func testStorageMergesAndRemovesKeys() throws {

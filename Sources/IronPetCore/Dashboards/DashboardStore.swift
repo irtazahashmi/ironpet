@@ -49,6 +49,7 @@ package final class DashboardStore {
         reload(force: true)
         if watch {
             timer = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
+                // The timer is scheduled on the main run loop, so this runs on the main thread.
                 MainActor.assumeIsolated { self?.reload() }
             }
         }
@@ -68,6 +69,11 @@ package final class DashboardStore {
             list.removeAll { $0.id == gone }
             stamps[gone] = nil
             problems[gone] = nil
+            // A folder removed by hand must not leave approvals for a later dashboard that reuses the id.
+            if approvals[gone] != nil {
+                approvals[gone] = nil
+                try? writeApprovals()
+            }
             changed.append(gone)
         }
         for id in names {
