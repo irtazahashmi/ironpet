@@ -135,8 +135,9 @@ public struct DateTimeTool: AgentTool {
         calendar.timeZone = timeZone
         let c = calendar.dateComponents([.year, .month, .day, .hour, .minute, .weekday], from: date)
         let weekdays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
-        return String(format: "%04d-%02d-%02d %02d:%02d (%@), time zone %@", c.year ?? 0, c.month ?? 0, c.day ?? 0, c.hour ?? 0, c.minute ?? 0,
-                      weekdays[max(0, min(6, (c.weekday ?? 1) - 1))], timeZone.identifier)
+        func two(_ value: Int?) -> String { String(format: "%02d", value ?? 0) }
+        let weekday = weekdays[max(0, min(6, (c.weekday ?? 1) - 1))]
+        return "\(String(format: "%04d", c.year ?? 0))-\(two(c.month))-\(two(c.day)) \(two(c.hour)):\(two(c.minute)) (\(weekday)), time zone \(timeZone.identifier)"
     }
 }
 
