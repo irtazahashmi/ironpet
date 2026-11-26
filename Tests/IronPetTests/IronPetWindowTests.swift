@@ -40,7 +40,7 @@ final class IronPetWindowTests: XCTestCase {
 
     func testTheInboxOpensWhenItHasItemsAndNothingElseNeedsYou() throws {
         let list = tasks()
-        list.suggest([("Share the results", nil, "Priya")], meeting: URL(fileURLWithPath: "/tmp/meeting"))
+        list.suggest([("Share the results", nil, nil)], meeting: URL(fileURLWithPath: "/tmp/meeting"))
         XCTAssertEqual(IronPetSection.needingAttention(agents: AgentsAPI(store: sessions()), alerts: AlertsAPI(store: signals(0)), tasks: TasksAPI(store: list)), .inbox)
         XCTAssertEqual(IronPetSection.needingAttention(agents: AgentsAPI(store: sessions()), alerts: AlertsAPI(store: signals(0)), tasks: TasksAPI(store: tasks())), .agents)
     }

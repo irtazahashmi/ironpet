@@ -46,17 +46,14 @@ final class ActionItemsTests: XCTestCase {
         XCTAssertEqual(mine.map(\.due), ["2026-11-20", nil, "tomorrow", "Monday", "Nov 20, 2026"])
     }
 
-    func testOthersItemsAreSuggestedOnlyWhenTheUserWaitsOnThem() {
+    func testOnlyMyItemsAreSuggestedWhateverWaitingSays() {
         let text = """
         ## Action items
         - [ ] Send the budget (owner: Me)
         - [ ] Deliver the contract (owner: Ana, waiting: yes)
         - [ ] Refactor the parser (owner: Joonas)
-        - [ ] Book the venue (owner: Priya, waiting: no)
         """
-        let suggested = ActionItems.suggestions(text)
-        XCTAssertEqual(suggested.map(\.title), ["Send the budget", "Deliver the contract"])
-        XCTAssertEqual(suggested.map(\.waitingOn), [nil, "Ana"])
+        XCTAssertEqual(ActionItems.suggestions(text).map(\.title), ["Send the budget"])
     }
 
     func testASummaryWithoutWaitingSuggestsOnlyMyItems() {
@@ -85,10 +82,9 @@ final class ActionItemsTests: XCTestCase {
         XCTAssertEqual(ActionItems.openItems(text).map(\.title), ["Mine", "Nobody's"])
     }
 
-    func testPromptTextAsksForWaitingOnlyOnOthersItems() async {
+    func testPromptTextNoLongerAsksForWaiting() async {
         let prompt = await MeetingController.summaryPrompt(transcript: "x")
-        XCTAssertTrue(prompt.contains("waiting: yes"))
-        XCTAssertTrue(prompt.contains("never add it to an item owned by Me"))
+        XCTAssertFalse(prompt.contains("waiting"))
     }
 
     func testNoneAndMissingSectionGiveNothing() {

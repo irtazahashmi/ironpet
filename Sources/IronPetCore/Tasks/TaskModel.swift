@@ -187,14 +187,6 @@ extension TaskSuggestion.Draft {
     }
 }
 
-extension TaskSuggestion {
-    package var waitingLabel: String? { waitingOn.map(describeWaiting) }
-}
-
-private func describeWaiting(_ owner: String) -> String {
-    "Waiting on \(owner.caseInsensitiveCompare("them") == .orderedSame ? "them" : owner)"
-}
-
 package struct TaskError: Error, LocalizedError, Equatable {
     package init(message: String) {
         self.message = message

@@ -48,12 +48,11 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertEqual(makeStore().suggestions, store.suggestions, "items survive a restart")
     }
 
-    func testAMeetingItemKeepsWhenItArrivedAndWhoHoldsIt() throws {
+    func testAMeetingItemKeepsWhenItArrived() throws {
         clock = Date(timeIntervalSince1970: 1_800_000_500)
-        let added = store.suggest([("Send the deck", nil, "Ana")], meeting: meeting)
+        let added = store.suggest([("Send the deck", nil, nil)], meeting: meeting)
         XCTAssertEqual(added.first?.created, clock)
-        XCTAssertEqual(added.first?.waitingOn, "Ana")
-        XCTAssertEqual(makeStore().suggestions.first?.waitingLabel, "Waiting on Ana")
+        XCTAssertEqual(makeStore().suggestions.first?.created, clock)
     }
 
     // MARK: Done and remove
@@ -209,6 +208,7 @@ final class TaskStoreTests: XCTestCase {
             try db.execute("INSERT INTO task_events(task, at, by, kind, detail) VALUES('old-task', 1, 'chat', 'created', 'backlog: Old')")
             try db.execute("INSERT INTO task_suggestions(id, title, meeting, created) VALUES('from-meeting', 'Send the deck', '/m/2026-11-16 1000', 5)")
             try db.execute("INSERT INTO task_suggestions(id, title, automation, automation_name, created) VALUES('from-watcher', 'Reply to Sam', 'gmail', 'Gmail', 6)")
+            try db.execute("INSERT INTO task_suggestions(id, title, meeting, created, waiting_on) VALUES('waits', 'Ana sends the contract', '/m/2026-11-16 1000', 8, 'Ana')")
             try db.execute("INSERT INTO task_suggestions(id, title, automation, automation_name, created, update_task) VALUES('change', 'Close the old one', 'task-scan', 'Task scan', 7, 'old-task')")
             try db.execute("INSERT INTO record_refs(ref, kind, key) VALUES('task_9f3c1e', 'task', 'old-task'), ('filter_1a2b3c', 'filter', 'mine'), ('job_aaaaaa', 'job', 'fix')")
         }
@@ -223,7 +223,7 @@ final class TaskStoreTests: XCTestCase {
         XCTAssertEqual(refs, ["job"], "the ids of tasks and filters are gone")
 
         let reopened = TaskStore(database: after)
-        XCTAssertEqual(reopened.suggestions.map(\.id), ["from-meeting", "from-watcher"], "a proposed change to a task goes with the tasks")
+        XCTAssertEqual(reopened.suggestions.map(\.id), ["from-meeting", "from-watcher"], "a proposed change to a task and an item waiting on someone go with the tasks")
         XCTAssertEqual(reopened.suggestions.first?.meeting, URL(fileURLWithPath: "/m/2026-11-16 1000"))
         XCTAssertEqual(reopened.suggestions.last?.origin, .automation(id: "gmail", name: "Gmail"))
         try reopened.done("from-meeting")

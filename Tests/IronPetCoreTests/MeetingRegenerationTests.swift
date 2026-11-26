@@ -247,11 +247,10 @@ final class MeetingRegenerationTests: XCTestCase {
     }
 
     func testOnlyNewItemsAreOfferedAsTasksAgain() async {
-        let new = "## Action items\n- [ ] Send the deck (owner: Me)\n- [ ] Book the room (owner: Me)\n- [ ] Ask Sam (owner: Sam, waiting: yes)\n- [ ] Fix the build (owner: Joonas)\n"
+        let new = "## Action items\n- [ ] Send the deck (owner: Me)\n- [ ] Book the room (owner: Me)\n- [ ] Ask Sam (owner: Sam)\n- [ ] Fix the build (owner: Joonas)\n"
         let offered = ActionItems.newSuggestions(old: oldSummary, new: new)
-        XCTAssertEqual(offered.map(\.title), ["Book the room", "Ask Sam"])
-        XCTAssertEqual(offered.map(\.waitingOn), [nil, "Sam"])
-        XCTAssertEqual(ActionItems.newSuggestions(old: nil, new: new).map(\.title), ["Send the deck", "Book the room", "Ask Sam"])
+        XCTAssertEqual(offered.map(\.title), ["Book the room"])
+        XCTAssertEqual(ActionItems.newSuggestions(old: nil, new: new).map(\.title), ["Send the deck", "Book the room"])
     }
 
     func testASuggestionThatComesBackIsNotAddedTwice() async {

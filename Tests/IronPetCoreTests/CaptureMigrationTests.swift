@@ -44,7 +44,7 @@ final class CaptureMigrationTests: XCTestCase {
                 try db.execute("INSERT INTO task_suggestions(id, title, due, meeting, created) VALUES('send-deck', 'Send the deck', 'Friday', ?, 1)", [meeting])
                 try db.execute("""
                     INSERT INTO task_suggestions(id, title, notes, url, automation, automation_name, created, waiting_on, source_ref)
-                    VALUES('review-pr', 'Review PR 12', 'From the watcher', 'https://example.com/pr/12', 'prs', 'PRs', 2, 'Ana', '{"ref":"prs"}')
+                    VALUES('review-pr', 'Review PR 12', 'From the watcher', 'https://example.com/pr/12', 'prs', 'PRs', 2, NULL, '{"ref":"prs"}')
                     """)
                 try db.execute("INSERT INTO task_suggestions(id, title, capture, kind, quote, evidence, created) VALUES('from-screen', 'From the screen', 'fp', 'new_task', 'q', '[1]', 3)")
                 try db.execute("INSERT INTO task_suggestion_outcomes(send_log, suggestion, kind, title, outcome, at) VALUES(1, 'x', 'new_task', 'X', 'accepted', 0)")
@@ -62,7 +62,7 @@ final class CaptureMigrationTests: XCTestCase {
         let tasks = TaskStore(database: migrated, now: { Date(timeIntervalSince1970: 10) })
         XCTAssertFalse(names.contains("task_items"), "the task list is gone")
         XCTAssertEqual(tasks.suggestions.map(\.id).sorted(), ["review-pr", "send-deck"], "meeting and automation suggestions stay, the screen one goes")
-        XCTAssertEqual(tasks.suggestions.first { $0.id == "review-pr" }?.waitingOn, "Ana")
+        XCTAssertNil(tasks.suggestions.first { $0.id == "review-pr" }?.waitingOn)
         XCTAssertEqual(tasks.suggestions.first { $0.id == "review-pr" }?.sourceRef, #"{"ref":"prs"}"#)
         let columns = try migrated.read { try $0.rows("PRAGMA table_info(task_suggestions)") }.compactMap { $0[1] as? String }
         for dropped in ["capture", "kind", "target", "changes", "diff", "quote", "evidence"] { XCTAssertFalse(columns.contains(dropped), dropped) }

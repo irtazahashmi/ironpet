@@ -801,7 +801,7 @@ enum PreviewRenderer {
         var clock = Date()
         let store = TaskStore(database: Database.open(path: nil, migrations: AppMigrations.all).database, now: { clock })
         clock = Date().addingTimeInterval(-900)
-        store.suggest([("Send the design review notes to the team", "Friday", nil), ("Share the load test results", nil, "Priya")],
+        store.suggest([("Send the design review notes to the team", "Friday", nil), ("Share the load test results", nil, nil)],
                       meeting: URL(fileURLWithPath: "/Users/you/.ironpet/meetings/2026-11-16-1500"))
         clock = Date().addingTimeInterval(-300)
         store.suggest([TaskSuggestion.Draft(key: "msg-1", title: "Reply to Sam about the Q4 budget", due: nil,

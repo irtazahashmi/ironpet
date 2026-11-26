@@ -147,7 +147,7 @@ package final class TaskStore {
             }
         },
         // The task list, the board and the GTD views are gone, and every task with them. Nothing is exported. Inbox items from
-        // meetings and automations keep their rows. The ones the task scan filed, and its proposed changes to tasks, go. A table's CHECK
+        // meetings and automations keep their rows. The ones the task scan filed, its proposed changes to tasks, and the items waiting on someone else go. A table's CHECK
         // cannot change in place, so `task_suggestions` is rebuilt without the columns the tasks needed. Every drop is `IF EXISTS`,
         // because a database below 580 never had some of these tables.
         .init(590, "inbox: drop the tasks, keep the suggestions") { db in
@@ -167,7 +167,7 @@ package final class TaskStore {
                                                   source_ref TEXT, CHECK ((meeting IS NULL) <> (automation IS NULL))) WITHOUT ROWID;
                 INSERT INTO task_suggestions_590(id, title, due, notes, url, meeting, automation, automation_name, created, waiting_on, source_ref)
                     SELECT id, title, due, notes, url, meeting, automation, automation_name, created, waiting_on, source_ref
-                    FROM task_suggestions WHERE (meeting IS NOT NULL OR automation IS NOT NULL) AND update_task IS NULL;
+                    FROM task_suggestions WHERE (meeting IS NOT NULL OR automation IS NOT NULL) AND update_task IS NULL AND waiting_on IS NULL;
                 DROP TABLE task_suggestions;
                 ALTER TABLE task_suggestions_590 RENAME TO task_suggestions;
                 """)
