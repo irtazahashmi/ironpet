@@ -73,12 +73,12 @@ package enum TaskJSON {
     }
 
     /// A project id: a slug. Null or blank means none.
-    static func projectID(_ value: Any?) throws -> String? {
+    static func projectID(_ value: Any?, field: String = "project") throws -> String? {
         guard let value, !(value is NSNull) else { return nil }
-        guard let raw = value as? String else { throw TaskError(message: "project must be a project id") }
+        guard let raw = value as? String else { throw TaskError(message: "\(field) must be an id") }
         let id = raw.trimmingCharacters(in: .whitespaces)
         guard !id.isEmpty else { return nil }
-        guard id.count <= 60, !id.contains(where: { $0.isWhitespace }) else { throw TaskError(message: "project must be a project id") }
+        guard id.count <= 60, !id.contains(where: { $0.isWhitespace }) else { throw TaskError(message: "\(field) must be an id") }
         return id
     }
 
@@ -204,7 +204,7 @@ package enum TaskJSON {
                     },
                     title: try args["title"].map { try TaskProjectValidator.title($0) },
                     why: try TaskGoalValidator.text(args["why"], field: "why"),
-                    area: try given("area").map { try projectID($0) },
+                    area: try given("area").map { try projectID($0, field: "area") },
                     status: try TaskGoalValidator.status(args["status"]),
                     due: try given("due").map { try TaskValidator.due($0) })
                 return .success(["id": saved.id, "title": saved.title, "status": saved.status.rawValue])
@@ -224,7 +224,7 @@ package enum TaskJSON {
                         guard let id = try projectID(raw) else { throw TaskError(message: "id must be a key result id; leave it out to create") }
                         return id
                     },
-                    goal: try projectID(args["goal"]),
+                    goal: try projectID(args["goal"], field: "goal"),
                     metric: try args["metric"].map { try TaskProjectValidator.title($0) },
                     start: try TaskGoalValidator.number(args["start"], field: "start"),
                     target: try TaskGoalValidator.number(args["target"], field: "target"),
@@ -233,6 +233,10 @@ package enum TaskJSON {
                     due: try given("due").map { try TaskValidator.due($0) },
                     source: try given("source").map { try TaskGoalValidator.text($0, field: "source", limit: 500).flatMap { $0.isEmpty ? nil : $0 } })
                 return .success(["id": saved.id, "goal": saved.goal, "metric": saved.metric, "current": saved.current, "progress": saved.progress])
+            case "key_results_delete":
+                guard let id = try projectID(args["id"], field: "id") else { throw TaskError(message: "id is required") }
+                try api.deleteKeyResult(id)
+                return .success(["deleted": id])
             case "projects_upsert":
                 let given = { (key: String) -> Any?? in args.keys.contains(key) ? .some(args[key]) : nil }
                 let saved = try api.upsertProject(

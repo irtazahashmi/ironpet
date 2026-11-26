@@ -108,4 +108,22 @@ final class TaskGoalsTests: XCTestCase {
         let result = try api.upsertKeyResult(id: nil, goal: goal.id, metric: "Revenue", start: 0, target: 10)
         XCTAssertThrowsError(try api.upsertKeyResult(id: result.id, goal: other.id, current: 2))
     }
+
+    func testAreaTitlesAreUniqueWithoutRegardToCase() throws {
+        let work = try api.upsertArea(id: nil, title: "Work")
+        XCTAssertThrowsError(try api.upsertArea(id: nil, title: "work"))
+        let home = try api.upsertArea(id: nil, title: "Home")
+        XCTAssertThrowsError(try api.upsertArea(id: home.id, title: "WORK"))
+        XCTAssertEqual(try api.upsertArea(id: work.id, title: "Work").title, "Work", "renaming to its own title is fine")
+    }
+
+    func testDeletingAKeyResultLeavesTheOthers() throws {
+        let goal = try api.upsertGoal(id: nil, title: "Grow the business")
+        let wrong = try api.upsertKeyResult(id: nil, goal: goal.id, metric: "Duplicate", start: 0, target: 10)
+        _ = try api.upsertKeyResult(id: nil, goal: goal.id, metric: "Revenue", start: 0, target: 10, current: 10)
+        XCTAssertEqual(api.progress(of: goal.id), 0.5)
+        _ = try TaskJSON.call(api, "key_results_delete", ["id": wrong.id], by: "agent:mcp").get()
+        XCTAssertEqual(api.progress(of: goal.id), 1)
+        XCTAssertThrowsError(try api.deleteKeyResult(wrong.id))
+    }
 }

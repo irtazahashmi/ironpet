@@ -16,7 +16,7 @@ struct TaskGoalsView: View {
             NoMatches()
         } else {
             ListScroll {
-                ForEach(groups(active), id: \.title) { group in
+                ForEach(groups(active), id: \.id) { group in
                     ListGroupTitle(group.title)
                     ForEach(group.goals) { goal in GoalCard(goal: goal, tasks: tasks) }
                 }
@@ -25,13 +25,14 @@ struct TaskGoalsView: View {
     }
 
     /// Areas in title order, then goals with no area.
-    private func groups(_ goals: [TaskGoal]) -> [(title: String, goals: [TaskGoal])] {
-        var result = tasks.areas.compactMap { area -> (title: String, goals: [TaskGoal])? in
+    /// Keyed by area id, so two areas cannot share an identity; "" is the goals with no area.
+    private func groups(_ goals: [TaskGoal]) -> [(id: String, title: String, goals: [TaskGoal])] {
+        var result = tasks.areas.compactMap { area -> (id: String, title: String, goals: [TaskGoal])? in
             let inArea = goals.filter { $0.area == area.id }
-            return inArea.isEmpty ? nil : (area.title, inArea)
+            return inArea.isEmpty ? nil : (area.id, area.title, inArea)
         }
         let loose = goals.filter { goal in goal.area.map { id in !tasks.areas.contains { $0.id == id } } ?? true }
-        if !loose.isEmpty { result.append(("No area", loose)) }
+        if !loose.isEmpty { result.append(("", "No area", loose)) }
         return result
     }
 }
@@ -53,7 +54,9 @@ private struct GoalCard: View {
             }
             if !goal.why.isEmpty { Text(goal.why).font(.caption).foregroundStyle(.secondary).lineLimit(2) }
             if let progress = tasks.progress(of: goal.id) {
-                ProgressView(value: progress).accessibilityLabel("\(goal.title) progress")
+                Gauge(value: progress) { Text("\(goal.title) progress") }
+                    .gaugeStyle(.linearCapacity)
+                    .labelsHidden()
             }
             ForEach(results) { result in
                 HStack {

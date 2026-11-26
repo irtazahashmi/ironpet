@@ -111,10 +111,19 @@ extension TaskStore {
         if let id {
             guard let existing = self.area(id) else { throw TaskError(message: "no area with id \"\(id)\"; task_goals_list shows them") }
             area = existing
-            if let title { area.title = try TaskProjectValidator.title(title) }
+            if let title {
+                let clean = try TaskProjectValidator.title(title)
+                if let same = areas.first(where: { $0.id != existing.id && $0.title.caseInsensitiveCompare(clean) == .orderedSame }) {
+                    throw TaskError(message: "an area named \"\(same.title)\" already exists (id \(same.id))")
+                }
+                area.title = clean
+            }
         } else {
             guard let title else { throw TaskError(message: "title is required for a new area") }
             let clean = try TaskProjectValidator.title(title)
+            if let same = areas.first(where: { $0.title.caseInsensitiveCompare(clean) == .orderedSame }) {
+                throw TaskError(message: "an area named \"\(same.title)\" already exists (id \(same.id))")
+            }
             area = TaskArea(id: AutomationValidator.slug(clean, taken: Set(areas.map(\.id))), title: clean, notes: "", created: time, updated: time)
         }
         if let notes { area.notes = notes }
@@ -197,6 +206,13 @@ extension TaskStore {
         }
         reload()
         return keyResults.first { $0.id == saved.id } ?? saved
+    }
+
+    /// Removes a key result that was wrong or a duplicate. The goal's progress is the mean of the ones left.
+    package func deleteKeyResult(_ id: String) throws {
+        guard keyResults.contains(where: { $0.id == id }) else { throw TaskError(message: "no key result with id \"\(id)\"") }
+        try database.write { db in try db.execute("DELETE FROM task_key_results WHERE id = ?", [id]) }
+        reload()
     }
 
     nonisolated static func readHorizons(_ db: Database.Connection) throws -> (areas: [TaskArea], goals: [TaskGoal], keyResults: [TaskKeyResult]) {

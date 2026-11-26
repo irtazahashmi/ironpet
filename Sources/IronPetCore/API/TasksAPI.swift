@@ -402,6 +402,8 @@ extension TasksAPI {
     package func progress(of goal: String) -> Double? { store.progress(of: goal) }
     package func projects(serving goal: String) -> [TaskProject] { store.projects(serving: goal) }
 
+    package func deleteKeyResult(_ id: String) throws { try store.deleteKeyResult(id) }
+
     @discardableResult
     package func upsertArea(id: String?, title: String?, notes: String? = nil) throws -> TaskArea {
         try store.upsertArea(id: id, title: title, notes: notes)

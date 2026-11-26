@@ -145,6 +145,7 @@ package enum TaskMCP {
                  ["id": ["type": "string"], "goal": ["type": "string"], "metric": ["type": "string"], "start": ["type": "number"],
                   "target": ["type": "number"], "current": ["type": "number"], "unit": ["type": "string"], "due": due,
                   "source": ["type": "string", "description": "Where the current value comes from, such as a URL"]]),
+            tool("task_key_results_delete", "Delete a key result that was wrong or a duplicate. Asks the user first.", id, required: ["id"]),
             tool("tasks_delete", "Delete a task that should never have existed. Prefer tasks_close for finished work.", id, required: ["id"]),
         ]
     }

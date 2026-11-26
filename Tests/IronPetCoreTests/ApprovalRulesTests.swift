@@ -61,7 +61,10 @@ final class ApprovalRulesTests: XCTestCase {
         }
         if case .allow = policy(ACPToolCall(id: "1", title: "mcp__ironpet__task_filters_delete", kind: "other")) { XCTFail("deleting a filter must ask") }
         if case .allow = policy(ACPToolCall(id: "1", title: "mcp__other__task_filters_upsert", kind: "other")) { XCTFail("another server must ask") }
-        if case .allow = policy(ACPToolCall(id: "1", title: "mcp__other__task_projects_upsert", kind: "other")) { XCTFail("another server must ask") }
+        for tool in ["task_projects_upsert", "task_goals_list", "task_goals_upsert", "task_areas_upsert", "task_key_results_upsert"] {
+            if case .allow = policy(ACPToolCall(id: "1", title: "mcp__other__\(tool)", kind: "other")) { XCTFail("another server must ask: \(tool)") }
+        }
+        if case .allow = policy(ACPToolCall(id: "1", title: "mcp__ironpet__task_key_results_delete", kind: "other")) { XCTFail("deleting a key result must ask") }
     }
 
     func testOwnTaskWritesAllowedButDeleteAndOtherServersAsk() {
