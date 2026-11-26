@@ -126,4 +126,17 @@ final class TaskGoalsTests: XCTestCase {
         XCTAssertEqual(api.progress(of: goal.id), 1)
         XCTAssertThrowsError(try api.deleteKeyResult(wrong.id))
     }
+
+    func testGoalsGroupByAreaThenNoArea() throws {
+        let work = try api.upsertArea(id: nil, title: "Work")
+        let health = try api.upsertArea(id: nil, title: "Health")
+        let ship = try api.upsertGoal(id: nil, title: "Ship 2.0", area: .some(work.id))
+        let run = try api.upsertGoal(id: nil, title: "Run a half marathon", area: .some(health.id))
+        let read = try api.upsertGoal(id: nil, title: "Read more")
+        let groups = api.goalGroups(api.goals)
+        XCTAssertEqual(groups.map(\.title), ["Health", "Work", "No area"])
+        XCTAssertEqual(groups.map(\.id), [health.id, work.id, ""])
+        XCTAssertEqual(groups.map { $0.goals.map(\.id) }, [[run.id], [ship.id], [read.id]])
+        XCTAssertEqual(api.goalGroups([read]).map(\.title), ["No area"], "areas without goals are left out")
+    }
 }

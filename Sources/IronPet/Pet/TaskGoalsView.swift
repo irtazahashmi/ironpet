@@ -10,13 +10,13 @@ struct TaskGoalsView: View {
     var body: some View {
         let active = tasks.goals.filter { $0.status == .active && ListSearch.matches(search, in: [$0.title, $0.why]) }
         if tasks.goals.allSatisfy({ $0.status != .active }) {
-            EmptyState(symbol: "target", title: "No goals yet",
+            EmptyState(symbol: "target", title: tasks.goals.isEmpty ? "No goals yet" : "No active goals",
                        detail: "Tell \(SettingsAPI.live.config.pet.name) what you want to reach this year, and how you would measure it.")
         } else if active.isEmpty {
             NoMatches()
         } else {
             ListScroll {
-                ForEach(groups(active), id: \.id) { group in
+                ForEach(tasks.goalGroups(active)) { group in
                     ListGroupTitle(group.title)
                     ForEach(group.goals) { goal in GoalCard(goal: goal, tasks: tasks) }
                 }
@@ -25,16 +25,6 @@ struct TaskGoalsView: View {
     }
 
     /// Areas in title order, then goals with no area.
-    /// Keyed by area id, so two areas cannot share an identity; "" is the goals with no area.
-    private func groups(_ goals: [TaskGoal]) -> [(id: String, title: String, goals: [TaskGoal])] {
-        var result = tasks.areas.compactMap { area -> (id: String, title: String, goals: [TaskGoal])? in
-            let inArea = goals.filter { $0.area == area.id }
-            return inArea.isEmpty ? nil : (area.id, area.title, inArea)
-        }
-        let loose = goals.filter { goal in goal.area.map { id in !tasks.areas.contains { $0.id == id } } ?? true }
-        if !loose.isEmpty { result.append(("", "No area", loose)) }
-        return result
-    }
 }
 
 private struct GoalCard: View {

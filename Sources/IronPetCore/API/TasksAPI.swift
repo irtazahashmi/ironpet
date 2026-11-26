@@ -401,6 +401,7 @@ extension TasksAPI {
     package func keyResults(of goal: String) -> [TaskKeyResult] { store.keyResults(of: goal) }
     package func progress(of goal: String) -> Double? { store.progress(of: goal) }
     package func projects(serving goal: String) -> [TaskProject] { store.projects(serving: goal) }
+    package func goalGroups(_ goals: [TaskGoal]) -> [TaskGoalGroup] { store.goalGroups(goals) }
 
     package func deleteKeyResult(_ id: String) throws { try store.deleteKeyResult(id) }
 

@@ -51,6 +51,12 @@ package struct TaskKeyResult: Identifiable, Equatable, Codable {
     }
 }
 
+package struct TaskGoalGroup: Identifiable, Equatable {
+    package let id: String
+    package let title: String
+    package let goals: [TaskGoal]
+}
+
 package enum TaskGoalValidator {
     package static let maxNotes = 2000
 
@@ -82,6 +88,7 @@ extension TaskStore {
         .init(574, "tasks: areas, goals and key results", sql: """
             CREATE TABLE IF NOT EXISTS task_areas(id TEXT PRIMARY KEY, title TEXT NOT NULL, notes TEXT NOT NULL,
                                                   created REAL NOT NULL, updated REAL NOT NULL) WITHOUT ROWID;
+            CREATE UNIQUE INDEX IF NOT EXISTS task_areas_title ON task_areas(title COLLATE NOCASE);
             CREATE TABLE IF NOT EXISTS task_goals(id TEXT PRIMARY KEY, title TEXT NOT NULL, why TEXT NOT NULL, area TEXT, status TEXT NOT NULL,
                                                   due REAL, created REAL NOT NULL, updated REAL NOT NULL) WITHOUT ROWID;
             CREATE TABLE IF NOT EXISTS task_key_results(id TEXT PRIMARY KEY, goal TEXT NOT NULL, metric TEXT NOT NULL, start REAL NOT NULL,
@@ -99,6 +106,18 @@ extension TaskStore {
         let results = keyResults(of: goal)
         guard !results.isEmpty else { return nil }
         return results.map(\.progress).reduce(0, +) / Double(results.count)
+    }
+
+    /// The dashboard's groups: areas in title order, each with its goals, then the goals with no area (or an area that is
+    /// gone) under "No area". Keyed by area id ("" for no area), so two areas never share an identity.
+    package func goalGroups(_ goals: [TaskGoal]) -> [TaskGoalGroup] {
+        var groups = areas.compactMap { area -> TaskGoalGroup? in
+            let inArea = goals.filter { $0.area == area.id }
+            return inArea.isEmpty ? nil : TaskGoalGroup(id: area.id, title: area.title, goals: inArea)
+        }
+        let loose = goals.filter { goal in goal.area.map { id in !areas.contains { $0.id == id } } ?? true }
+        if !loose.isEmpty { groups.append(TaskGoalGroup(id: "", title: "No area", goals: loose)) }
+        return groups
     }
 
     /// The projects that serve the goal (`TaskProject.goal` holds its id).
