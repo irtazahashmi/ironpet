@@ -74,6 +74,7 @@ extension BriefBuilder {
 
         let dueForReview = input.projects.filter { $0.isDueForReview(now: now) && !stalled.contains($0) }
         if !dueForReview.isEmpty {
+            lines.append("\(dueForReview.count) \(dueForReview.count == 1 ? "project" : "projects") to review")
             sections.append(.init(id: "projects", title: "Get current: projects to review", items: dueForReview.map {
                 Brief.Item(id: "review:\($0.id)", symbol: "folder", title: $0.title, subtitle: "Due for review", target: .task(""))
             }))
@@ -82,6 +83,7 @@ extension BriefBuilder {
         let returning = input.tasks.filter { task in task.isDeferred(now: now) && (task.deferUntil.map { $0 <= nextWeek } ?? false) }
             .sorted { ($0.deferUntil ?? now) < ($1.deferUntil ?? now) }
         if !returning.isEmpty {
+            lines.append("\(returning.count) back next week")
             sections.append(.init(id: "returning", title: "Get current: back next week", items: returning.map {
                 Brief.Item(id: "back:\($0.id)", symbol: "moon.zzz", title: $0.title,
                            subtitle: $0.deferUntil.map { "Back \($0.formatted(date: .abbreviated, time: .omitted))" }, target: .task($0.id))
@@ -90,6 +92,7 @@ extension BriefBuilder {
 
         let someday = input.tasks.filter { $0.status == .someday }
         if !someday.isEmpty {
+            lines.append("\(someday.count) someday \(someday.count == 1 ? "idea" : "ideas")")
             sections.append(.init(id: "someday", title: "Get creative: someday", items: someday.prefix(10).map {
                 Brief.Item(id: "someday:\($0.id)", symbol: "sparkles", title: $0.title, target: .task($0.id))
             }))
@@ -98,16 +101,17 @@ extension BriefBuilder {
         let goals = input.goals.filter { $0.status == .active }
         if !goals.isEmpty {
             sections.append(.init(id: "goals", title: "Get creative: goals", items: goals.map { goal in
-                let results = input.keyResults.filter { $0.goal == goal.id }
-                let progress = results.isEmpty ? nil : results.map(\.progress).reduce(0, +) / Double(results.count)
+                let progress = TaskKeyResult.meanProgress(input.keyResults.filter { $0.goal == goal.id })
                 return Brief.Item(id: "goal:\(goal.id)", symbol: "target", title: goal.title,
                                   subtitle: progress.map { "\(Int(($0 * 100).rounded()))%" } ?? "No key results yet", target: .task(""))
             }))
         }
 
+        if !goals.isEmpty { lines.append("\(goals.count) active \(goals.count == 1 ? "goal" : "goals")") }
         let score = GoalAlignment.score(input, in: week)
         if let alignment = GoalAlignment.section(score) { sections.append(alignment) }
-        if let score { lines.append(score.title) }
-        return Brief(kind: .review, window: week, sections: sections, lines: Array(lines.prefix(4)))
+        // The score is the review's summary, so it always makes the bubble; the most pressing lines fill the rest.
+        let shown = score.map { Array(lines.prefix(3)) + [$0.title] } ?? Array(lines.prefix(4))
+        return Brief(kind: .review, window: week, sections: sections, lines: shown)
     }
 }

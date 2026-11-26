@@ -44,6 +44,11 @@ package struct TaskKeyResult: Identifiable, Equatable, Codable {
     package var source: String?
     package var updated: Date
 
+    /// The mean progress of a goal's key results, or nil without any. The one rule for the dashboard and the weekly review.
+    package static func meanProgress(_ results: [TaskKeyResult]) -> Double? {
+        results.isEmpty ? nil : results.map(\.progress).reduce(0, +) / Double(results.count)
+    }
+
     /// How far from start to target, from 0 to 1. Works for targets below the start too (fewer bugs, lower weight).
     package var progress: Double {
         guard target != start else { return current == target ? 1 : 0 }
@@ -103,9 +108,7 @@ extension TaskStore {
 
     /// The mean progress of the goal's key results, or nil when it has none.
     package func progress(of goal: String) -> Double? {
-        let results = keyResults(of: goal)
-        guard !results.isEmpty else { return nil }
-        return results.map(\.progress).reduce(0, +) / Double(results.count)
+        TaskKeyResult.meanProgress(keyResults(of: goal))
     }
 
     /// The dashboard's groups: areas in title order, each with its goals, then the goals with no area (or an area that is

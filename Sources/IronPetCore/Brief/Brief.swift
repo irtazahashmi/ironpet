@@ -284,8 +284,8 @@ package enum BriefBuilder {
         if !alerts.isEmpty { lines.append(alertLine(alerts)) }
         if !meetingItems.isEmpty { lines.append("\(count(meetingItems.count, "open action item")) from meetings") }
         if !waiting.isEmpty { lines.append("\(count(waiting.count, "agent")) waiting for you") }
-        // How much of the last week served a goal, once the user has one.
-        if let alignment = GoalAlignment.section(GoalAlignment.score(input, in: DateInterval(start: now.addingTimeInterval(-7 * 86_400), end: now))) {
+        // How much of the last week served a goal, once the user has one. Only next to other news, so a quiet brief stays empty.
+        if sections.contains(where: { !$0.items.isEmpty }), let alignment = GoalAlignment.section(GoalAlignment.score(input, in: DateInterval(start: now.addingTimeInterval(-7 * 86_400), end: now))) {
             sections.append(alignment)
         }
         return Brief(kind: .brief, window: DateInterval(start: min(since, now), end: now), sections: sections, lines: Array(lines.prefix(4)))
@@ -356,7 +356,9 @@ package enum BriefBuilder {
         // "Still open" always makes it into the bubble.
         lines = Array(lines.prefix(open.isEmpty ? 4 : 3))
         if !open.isEmpty { lines.append("Still open: " + open.joined(separator: ", ")) }
-        if let alignment = GoalAlignment.section(GoalAlignment.score(input, in: window)) { sections.append(alignment) }
+        if sections.contains(where: { !$0.items.isEmpty }), let alignment = GoalAlignment.section(GoalAlignment.score(input, in: window)) {
+            sections.append(alignment)
+        }
         return Brief(kind: .recap, window: window, sections: sections, lines: lines)
     }
 

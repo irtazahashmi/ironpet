@@ -42,7 +42,8 @@ final class WeeklyReviewTests: XCTestCase {
         XCTAssertEqual(review.sections.map(\.id), ["inbox", "stalled", "follow-ups", "projects", "returning", "someday", "goals", "alignment"])
         XCTAssertEqual(review.sections.first { $0.id == "stalled" }?.items.map(\.title), ["Project site"], "moving has a next action")
         XCTAssertEqual(review.sections.first { $0.id == "goals" }?.items.first?.subtitle, "25%")
-        XCTAssertEqual(review.lines, ["Inbox: 1 to clarify", "1 project needs a next action", "1 follow-up due", "Goal alignment: 50%"])
+        XCTAssertEqual(review.lines, ["Inbox: 1 to clarify", "1 project needs a next action", "1 follow-up due", "Goal alignment: 50%"],
+                       "the score always makes the bubble")
     }
 
     func testAnEmptyWeekHasNothingToReview() {
@@ -65,9 +66,10 @@ final class WeeklyReviewTests: XCTestCase {
 
     func testTheBriefShowsAlignmentOnlyOnceThereIsAGoal() {
         let shipped = task("shipped", .done, project: "p", closed: now.addingTimeInterval(-3600))
-        let without = BriefBuilder.build(.brief, BriefInput(now: now, calendar: calendar, tasks: [shipped], projects: [project("p")]))
+        let without = BriefBuilder.build(.brief, BriefInput(now: now, calendar: calendar, tasks: [shipped, task("ask", .needsYou)], projects: [project("p")]))
         XCTAssertFalse(without.sections.contains { $0.id == "alignment" })
-        let with = BriefBuilder.build(.brief, BriefInput(now: now, calendar: calendar, tasks: [shipped], projects: [project("p", goal: "g")],
+        let with = BriefBuilder.build(.brief, BriefInput(now: now, calendar: calendar, tasks: [shipped, task("ask", .needsYou)],
+                                                         projects: [project("p", goal: "g")],
                                                          goals: [goal("g")]))
         XCTAssertEqual(with.sections.first { $0.id == "alignment" }?.items.first?.title, "Goal alignment: 100%")
     }
@@ -78,5 +80,18 @@ final class WeeklyReviewTests: XCTestCase {
         XCTAssertEqual(review.trigger.times, ["15:00"])
         XCTAssertEqual(review.trigger.weekdays, ["fri"])
         XCTAssertEqual(review.action.digest, "review")
+    }
+
+    func testAQuietBriefStaysEmptyEvenWithAGoal() {
+        let shipped = task("shipped", .done, project: "p", closed: now.addingTimeInterval(-3600))
+        let brief = BriefBuilder.build(.brief, BriefInput(now: now, calendar: calendar, tasks: [shipped], projects: [project("p", goal: "g")],
+                                                          goals: [goal("g")]))
+        XCTAssertTrue(brief.isEmpty, "alignment alone is not news")
+    }
+
+    func testAReviewWithOnlyAGoalStillHasABubbleLine() {
+        let review = BriefBuilder.build(.review, BriefInput(now: now, calendar: calendar, goals: [goal("g")]))
+        XCTAssertFalse(review.isEmpty)
+        XCTAssertEqual(review.lines, ["1 active goal"])
     }
 }
