@@ -24,6 +24,8 @@ final class RemoteController: ObservableObject {
     /// Nil for the screenshot renderer, which shows the page without a server.
     let server: RemoteServer?
     private let settings: SettingsAPI
+    /// Where a phone's agent is dropped when its device is revoked. Nil for the screenshot renderer.
+    private weak var agentRecords: AgentRecordsAPI?
     private let bubbles: BubbleStore
     private let chime: () -> Void
     private var running: Task<Void, Never>?
@@ -55,6 +57,7 @@ final class RemoteController: ObservableObject {
          interfaces: @escaping () -> [InterfaceAddress] = RemoteNetwork.interfaces, magicDNS: @escaping () async -> String? = RemoteNetwork.readMagicDNS,
          uploads: RemoteUploads? = nil) {
         self.settings = settings
+        agentRecords = api.agentRecords
         self.interfaces = interfaces
         self.magicDNS = magicDNS
         self.bubbles = bubbles
@@ -234,7 +237,11 @@ final class RemoteController: ObservableObject {
 
     // MARK: Devices
 
-    func refreshDevices() { devices = service.devices }
+    func refreshDevices() {
+        devices = service.devices
+        // A device that was revoked takes the agent it registered with it.
+        agentRecords?.registry.prune(devices: Set(devices.map(\.id)))
+    }
 
     func revoke(_ id: String) {
         service.revoke(id)

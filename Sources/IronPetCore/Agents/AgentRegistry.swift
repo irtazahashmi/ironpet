@@ -5,9 +5,11 @@ import Foundation
 package struct AgentRecord: Codable, Equatable, Sendable {
     package init(id: String, number: Int, name: String, pet: String? = nil, agentCli: String, model: String? = nil,
                  cliModels: [String: String] = [:], instructions: String = "", permissions: [String: String] = [:],
-                 enabled: Bool = true, created: Date = Date(timeIntervalSince1970: 0), updated: Date = Date(timeIntervalSince1970: 0)) {
+                 enabled: Bool = true, deviceID: String? = nil, created: Date = Date(timeIntervalSince1970: 0),
+                 updated: Date = Date(timeIntervalSince1970: 0)) {
         self.id = id
         self.enabled = enabled
+        self.deviceID = deviceID
         self.number = number
         self.name = name
         self.pet = pet
@@ -41,11 +43,17 @@ package struct AgentRecord: Codable, Equatable, Sendable {
     package var permissions: [String: String]
     /// A disabled agent has no process and no pet. Its threads, sessions and automations stay on disk. Agent 1 is always enabled.
     package var enabled: Bool
+    /// The id of the paired device this agent runs on, for an agent that runs on a phone. Nil for an agent that runs on this Mac. The Mac
+    /// lists a phone agent but starts no process for it, shows no pet for it and offers no chat with it.
+    package var deviceID: String?
     package var created: Date
     package var updated: Date
 
+    /// True for an agent that runs on a paired phone.
+    package var isRemote: Bool { deviceID != nil }
+
     private enum CodingKeys: String, CodingKey {
-        case id, number, name, pet, agentCli, model, cliModels, instructions, permissions, enabled, created, updated
+        case id, number, name, pet, agentCli, model, cliModels, instructions, permissions, enabled, deviceID = "deviceId", created, updated
     }
 
     /// `enabled` is new on the wire, so a record from an older node, which has none, is enabled.
@@ -61,6 +69,7 @@ package struct AgentRecord: Codable, Equatable, Sendable {
         instructions = try c.decodeIfPresent(String.self, forKey: .instructions) ?? ""
         permissions = try c.decodeIfPresent([String: String].self, forKey: .permissions) ?? [:]
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        deviceID = try c.decodeIfPresent(String.self, forKey: .deviceID)
         created = try c.decodeIfPresent(Date.self, forKey: .created) ?? Date(timeIntervalSince1970: 0)
         updated = try c.decodeIfPresent(Date.self, forKey: .updated) ?? Date(timeIntervalSince1970: 0)
     }
@@ -131,9 +140,12 @@ package final class AgentRegistry {
         .init(585, "agents: the pet the user selected last, which voice and speech follow", sql: """
             CREATE TABLE agent_active(id INTEGER PRIMARY KEY CHECK (id = 1), agent_id TEXT NOT NULL) WITHOUT ROWID;
             """),
+        .init(600, "agents: the paired device an agent runs on, for the agent loop on the phone", sql: """
+            ALTER TABLE agents ADD COLUMN device_id TEXT;
+            """),
     ]
 
-    private static let columns = "id, number, name, pet, agent_cli, model, cli_models, instructions, permissions, created, updated, enabled"
+    private static let columns = "id, number, name, pet, agent_cli, model, cli_models, instructions, permissions, created, updated, enabled, device_id"
 
     package init(database: Database, now: @escaping () -> Date = Date.init) {
         self.database = database
@@ -167,7 +179,7 @@ package final class AgentRegistry {
     package var chatAgent: AgentRecord? { self.get(Self.chatAgentID) }
 
     private static func record(_ row: [Database.Value]) -> AgentRecord? {
-        guard row.count == 12, let id = row[0] as? String, let number = row[1] as? Int64, let name = row[2] as? String,
+        guard row.count == 13, let id = row[0] as? String, let number = row[1] as? Int64, let name = row[2] as? String,
               let cli = row[4] as? String else { return nil }
         func map(_ value: Database.Value) -> [String: String] {
             guard let text = value as? String, let object = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: String] else { return [:] }
@@ -175,7 +187,7 @@ package final class AgentRegistry {
         }
         return AgentRecord(id: id, number: Int(number), name: name, pet: row[3] as? String, agentCli: cli, model: row[5] as? String,
                            cliModels: map(row[6]), instructions: row[7] as? String ?? "", permissions: map(row[8]),
-                           enabled: (row[11] as? Int64 ?? 1) != 0,
+                           enabled: (row[11] as? Int64 ?? 1) != 0, deviceID: row[12] as? String,
                            created: Date(timeIntervalSince1970: row[9] as? Double ?? 0), updated: Date(timeIntervalSince1970: row[10] as? Double ?? 0))
     }
 
@@ -225,6 +237,7 @@ package final class AgentRegistry {
     package func select(active id: String) throws {
         guard let record = get(id) else { throw APIError.notFound("no agent with id \"\(id)\"") }
         guard record.enabled else { throw APIError.unavailable("agent \"\(record.id)\" is disabled") }
+        guard !record.isRemote else { throw APIError.unsupported("agent \"\(record.id)\" runs on a phone") }
         guard activeAgentID != record.id else { return }
         activeChanges.send()
         try database.write { try $0.execute("INSERT OR REPLACE INTO agent_active(id, agent_id) VALUES(1, ?)", [record.id]) }
@@ -277,7 +290,59 @@ package final class AgentRegistry {
     }
 
     /// The agents that should be running: the enabled ones, in number order.
-    package func enabledAgents() -> [AgentRecord] { list().filter(\.enabled) }
+    /// Agents that run on a phone are not among them: they run on the phone.
+    package func enabledAgents() -> [AgentRecord] { list().filter { $0.enabled && !$0.isRemote } }
+
+    // MARK: Agents on a paired phone
+
+    /// Registers the agent loop of a paired phone, or renames and re-models the one it registered before. One record belongs to one
+    /// device, so a phone that registers twice has one agent. `provider` is the API the phone calls (`anthropic` or `openai`). The record
+    /// is enabled, has no pet and starts no process on this Mac.
+    @discardableResult
+    package func registerDevice(_ deviceID: String, name: String, provider: String, model: String?) throws -> AgentRecord {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw APIError.invalid("an agent needs a name") }
+        guard !deviceID.isEmpty else { throw APIError.invalid("a device agent needs a device id") }
+        let model = model.flatMap { $0.isEmpty ? nil : $0 }
+        if var existing = list().first(where: { $0.deviceID == deviceID }) {
+            guard existing.name != name || existing.agentCli != provider || existing.model != model else { return existing }
+            changes.send()
+            existing.name = name
+            existing.agentCli = provider
+            existing.model = model
+            existing.updated = now()
+            try database.write { db in
+                try db.execute("UPDATE agents SET name = ?, agent_cli = ?, model = ?, updated = ? WHERE id = ?",
+                               [name, provider, model, existing.updated.timeIntervalSince1970, existing.id])
+            }
+            return existing
+        }
+        let created = now()
+        changes.send()
+        return try database.write { db -> AgentRecord in
+            let top = (try db.rows("SELECT MAX(number) FROM agents").first?.first as? Int64) ?? 0
+            let counter = (try db.rows("SELECT MAX(value) FROM agent_counter").first?.first as? Int64) ?? 0
+            let number = max(top, counter) + 1
+            let id = "agent_" + String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12)).lowercased()
+            let record = AgentRecord(id: id, number: Int(number), name: name, agentCli: provider, model: model, deviceID: deviceID,
+                                     created: created, updated: created)
+            try db.execute("""
+                INSERT INTO agents(id, number, name, pet, agent_cli, model, cli_models, instructions, permissions, legacy_imported, created, updated, enabled, device_id)
+                VALUES(?, ?, ?, NULL, ?, ?, '{}', '', '{}', 1, ?, ?, 1, ?)
+                """, [record.id, number, name, provider, model, created.timeIntervalSince1970, created.timeIntervalSince1970, deviceID])
+            try db.execute("UPDATE agent_counter SET value = ?", [number])
+            return record
+        }
+    }
+
+    /// Removes the agents of devices that are no longer paired. `devices` are the ids that still are.
+    package func prune(devices: Set<String>) {
+        for record in list() where record.deviceID.map({ !devices.contains($0) }) == true {
+            changes.send()
+            clearActive(if: record.id)
+            try? database.write { try $0.execute("DELETE FROM agents WHERE id = ?", [record.id]) }
+        }
+    }
 
     // MARK: Settings from before agents existed
 

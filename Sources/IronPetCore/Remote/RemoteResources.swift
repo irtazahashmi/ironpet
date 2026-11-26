@@ -110,6 +110,15 @@ package struct RemoteResources {
                                                                       instructions: body["instructions"] as? String, enabled: body["enabled"] as? Bool)))
     }
 
+    /// `PUT /v1/devices/me/agent`: `{name, provider, model?}`. Registers the agent loop of this phone as an agent of the Mac, or updates
+    /// the one it registered before. The record belongs to the calling device and is removed when the device is unpaired.
+    package func registerPhoneAgent(_ body: [String: Any]) throws -> [String: Any] {
+        guard let records = api.agentRecords else { throw APIError.unavailable("this host has no agent records") }
+        guard let name = body["name"] as? String, let provider = body["provider"] as? String else { throw RemoteFailure.invalid("name and provider are required") }
+        guard ["anthropic", "openai"].contains(provider) else { throw RemoteFailure.invalid("provider must be anthropic or openai") }
+        return RemoteWire.object(try records.registry.registerDevice(device, name: name, provider: provider, model: body["model"] as? String))
+    }
+
     package func deleteAgentRecord(_ id: String) throws -> [String: Any] {
         guard let records = api.agentRecords else { throw APIError.unavailable("this host has no agent records") }
         try records.delete(id)

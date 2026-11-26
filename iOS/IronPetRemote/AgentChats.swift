@@ -74,7 +74,9 @@ final class AgentChatsModel: SocketModel {
         // A transient failure keeps the list the phone already has.
     }
 
-    private func apply(_ list: [RemoteAgentRecord]) {
+    private func apply(_ all: [RemoteAgentRecord]) {
+        // An agent that runs on a phone has no Mac chat, so it is not one of the chats this model offers. Its own screen is under More.
+        let list = all.filter { !$0.runsOnPhone }
         records = list
         if let selectedID, !list.contains(where: { $0.id == selectedID && $0.enabled }) || enabled.count < 2 { self.selectedID = nil }
         guard enabled.count > 1 else {

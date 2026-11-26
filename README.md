@@ -336,6 +336,8 @@ The remote API is off by default. With it on, a paired iPhone reaches the same i
 
 The phone shows Pet (with Today), Chat, Inbox, Agents and More (Alerts, Automations, Meetings, Screen and Settings). Chat messages land in the chat that is open on the Mac and are marked "iPhone"; the Mac does not read them aloud. With voice notes on the Mac, the phone can stream dictation into that chat, and it can play spoken replies on the phone when you turn that on there. The phone can answer Allow / Deny and chat forms, so treat a paired unlocked phone like your Mac. Screen text on the phone needs an extra per-device toggle on the Mac (Settings → Devices → Screen text); meetings and screen capture can only be turned off from the phone, never on. Automations created or changed from the phone always wait for Approve on the Mac.
 
+**Phone agent.** More → Phone agent opens an agent that runs on the phone. It calls Claude (default, `claude-sonnet-5-5`) or OpenAI directly with an API key you enter in its settings, so it works when the Mac is asleep. It can add and read Inbox items, read memory, read your calendar, add reminders, fetch public web pages and tell the date. An item it adds while the Mac is out of reach waits on the phone and goes to the Mac's Inbox when the Mac answers. Coding, repositories and the Mac's screen need the agent on the Mac, and the phone agent says so. The key stays in the phone's Keychain. Once a key is set the agent appears in the Mac's agent list (`agents_list`) as an agent of that device, with no pet and no chat on the Mac. Details: [SPEC.md](SPEC.md#phone-agent).
+
 Details, routes and risks: [SPEC.md](SPEC.md#remote-api), [SPEC.md](SPEC.md#ios-app) and [SECURITY.md](SECURITY.md).
 
 ## Voice notes
