@@ -174,7 +174,7 @@ final class TaskCLIServerTests: XCTestCase {
     }
 
     func testValidationErrorsArePrinted() async {
-        let bad = await cli(["add", "Bad", "--status", "someday", "--origin-kind", "chat", "--origin-ref", "c", "--reason", "r"])
+        let bad = await cli(["add", "Bad", "--status", "later", "--origin-kind", "chat", "--origin-ref", "c", "--reason", "r"])
         XCTAssertEqual(bad.code, 1)
         XCTAssertTrue(bad.err.contains("status must be one of"), bad.err)
     }

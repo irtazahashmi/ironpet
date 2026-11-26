@@ -101,6 +101,15 @@ final class BriefBuilderTests: XCTestCase {
                                      "Still open: 2 tasks, 1 alert, 1 agent"])
     }
 
+    func testDeferredTasksStayOutOfTheRecapsStillOpen() {
+        var hidden = F.task("hidden", .needsYou)
+        hidden.deferUntil = F.tuesday(hour: 48)
+        var later = F.task("later", .inProgress)
+        later.deferUntil = F.tuesday(hour: 48)
+        let input = BriefInput(now: F.tuesday(hour: 18), calendar: F.calendar, tasks: [hidden, later, F.task("ask", .needsYou)])
+        XCTAssertEqual(section(BriefBuilder.recap(input), "open").map(\.id), ["open:ask"])
+    }
+
     func testARecapAfterMidnightCoversItsSlotsDay() {
         var input = BriefInput(now: F.tuesday(hour: 25), calendar: F.calendar,
                                tasks: [F.task("closed", .done, closed: F.tuesday(hour: 11))],

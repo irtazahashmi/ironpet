@@ -17,9 +17,9 @@ enum TaskViewMode: String, CaseIterable {
     func save(_ defaults: UserDefaults = .standard) { defaults.set(rawValue, forKey: Self.key) }
 }
 
-/// The five groups the list shows and the board draws as columns.
+/// The groups the list shows and the board draws as columns.
 enum TaskColumn: String, CaseIterable, Identifiable {
-    case needsYou, inProgress, backlog, waiting, done
+    case needsYou, inProgress, backlog, waiting, someday, done
 
     var id: String { rawValue }
 
@@ -29,6 +29,7 @@ enum TaskColumn: String, CaseIterable, Identifiable {
         case .inProgress: return TaskStatus.inProgress.title
         case .backlog: return TaskStatus.backlog.title
         case .waiting: return "Waiting on others"
+        case .someday: return TaskStatus.someday.title
         case .done: return TaskStatus.done.title
         }
     }
@@ -40,18 +41,21 @@ enum TaskColumn: String, CaseIterable, Identifiable {
         case .inProgress: return .inProgress
         case .backlog: return .backlog
         case .waiting: return nil
+        case .someday: return .someday
         case .done: return .done
         }
     }
 
-    /// The column a task is in. A task someone else holds is in Waiting on others whatever its status says.
+    /// The column a task is in. A task someone else holds is in Waiting on others whatever its status says, unless it is
+    /// done or put off to someday.
     static func of(_ task: TaskItem) -> TaskColumn {
         if task.status == .done { return .done }
+        if task.status == .someday { return .someday }
         if task.waitingOn != nil { return .waiting }
         switch task.status {
         case .needsYou: return .needsYou
         case .inProgress: return .inProgress
-        case .backlog, .done: return .backlog
+        case .backlog, .someday, .done: return .backlog
         }
     }
 }
@@ -75,12 +79,18 @@ enum TaskBoard {
     static func columns(_ tasks: [TaskItem], filter: QuickFilterNode?, query: String, now: Date = Date()) -> [TaskColumn: [TaskItem]] {
         let cutoff = now.addingTimeInterval(-doneWindow)
         var result: [TaskColumn: [TaskItem]] = [:]
-        for task in tasks where TaskListView.matches(task, filter: filter, query: query, now: now) {
+        for task in tasks where !task.isDeferred(now: now) && TaskListView.matches(task, filter: filter, query: query, now: now) {
             let column = TaskColumn.of(task)
             if column == .done, (task.closed ?? task.updated) < cutoff { continue }
             result[column, default: []].append(task)
         }
         return result
+    }
+
+    /// The tasks put off to a later day (the tickler), soonest first, narrowed like the columns. They are in no column until then.
+    static func deferred(_ tasks: [TaskItem], filter: QuickFilterNode?, query: String, now: Date = Date()) -> [TaskItem] {
+        tasks.filter { $0.isDeferred(now: now) && TaskListView.matches($0, filter: filter, query: query, now: now) }
+            .sorted { ($0.deferUntil ?? .distantFuture) < ($1.deferUntil ?? .distantFuture) }
     }
 
     /// Applies a card dropped on `column`.
@@ -96,7 +106,7 @@ enum TaskBoard {
         case .done:
             if task.waitingOn != nil { _ = try? tasks.update(UpdateTaskRequest(id: id, waitingOn: "")) }
             return (try? tasks.close(CloseTaskRequest(id: id))) == nil ? .unchanged : .moved
-        case .needsYou, .inProgress, .backlog:
+        case .needsYou, .inProgress, .backlog, .someday:
             var request = UpdateTaskRequest(id: id, status: column.status)
             if task.waitingOn != nil { request.waitingOn = "" }
             return (try? tasks.update(request)) == nil ? .unchanged : .moved
