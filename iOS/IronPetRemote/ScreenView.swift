@@ -201,6 +201,7 @@ struct ScreenCaptureView: View {
                 if let capture {
                     Text("\(capture.app) · \(capture.window)").font(.headline)
                     Text(capture.time.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                    if let ref = capture.ref { RecordIDLine(ref: ref) }
                     Text(capture.outline ?? capture.text ?? "").font(.system(.footnote, design: .monospaced)).textSelection(.enabled)
                         .accessibilityIdentifier("screen-capture-text")
                 } else if loading {

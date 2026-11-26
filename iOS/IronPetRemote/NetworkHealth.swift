@@ -32,6 +32,10 @@ final class NetworkHealth {
     @ObservationIgnored private var monitor: NWPathMonitor?
     @ObservationIgnored private var subscribers: [UUID: AsyncStream<Void>.Continuation] = [:]
 
+    /// Called once each time the network path comes back. The app points it at the event socket's `reconnectNow`, so the socket does not
+    /// sit out a back-off of up to 30 s while the network is already there.
+    @ObservationIgnored var onPathReturned: (() -> Void)?
+
     /// When requests started failing, or nil while they work.
     private(set) var failingSince: Date?
     /// The last time any request got an answer from the Mac.
@@ -143,6 +147,9 @@ final class NetworkHealth {
         let returned = satisfied && !pathSatisfied
         pathSatisfied = satisfied
         if !satisfied { reportUnreachable() }
-        if returned { announceReconnect() }
+        if returned {
+            onPathReturned?()
+            announceReconnect()
+        }
     }
 }

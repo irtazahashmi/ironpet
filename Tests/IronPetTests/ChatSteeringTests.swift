@@ -24,6 +24,15 @@ final class ChatSteeringTests: XCTestCase {
 
     private func settle() async { for _ in 0..<8 { await Task.yield() } }
 
+    /// Waits for a condition instead of a fixed number of yields. Each steered message hops through a task and the
+    /// steer runner, and under CPU load those hops need more turns than `settle` gives them.
+    private func waitUntil(_ what: String, timeout: TimeInterval = 10, _ check: () -> Bool,
+                           file: StaticString = #filePath, line: UInt = #line) async {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !check(), Date() < deadline { try? await Task.sleep(nanoseconds: 5_000_000) }
+        if !check() { XCTFail("timed out waiting for \(what)", file: file, line: line) }
+    }
+
     private func type(_ text: String) async {
         h.model.input = text
         await h.model.sendNow()
@@ -56,7 +65,7 @@ final class ChatSteeringTests: XCTestCase {
         XCTAssertEqual(session.queue.count, 5)
         session.removeQueued(session.queue[2].id)
         session.decide(session.approvals[0], allow: true)
-        await settle()
+        await waitUntil("all four messages delivered") { userTexts.count == 5 }
         XCTAssertEqual(steered, ["m1", "m2", "m4", "m5"])
         XCTAssertEqual(userTexts, ["start", "m1", "m2", "m4", "m5"])
         XCTAssertTrue(session.queue.isEmpty)

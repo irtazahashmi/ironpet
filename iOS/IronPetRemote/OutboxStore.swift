@@ -18,6 +18,8 @@ struct OutboxRecord: Codable, Equatable {
     /// A voice message. Its audio is in the file `audioName` until the text is known.
     var isVoice: Bool?
     var audioName: String?
+    /// Text that was in the composer when a voice message was sent. Missing in records saved by earlier builds.
+    var typedText: String?
     /// Photos and files that go with the message. Their bytes are in the store, under `name`.
     var files: [OutboxFileRef]?
 

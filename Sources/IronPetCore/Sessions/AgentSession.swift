@@ -130,7 +130,8 @@ package struct AgentSession: Identifiable, Codable {
         updatedAt: Date = Date(),
         turnStartedAt: Date = Date(),
         editedFiles: [String] = [],
-        lastResponse: String? = nil
+        lastResponse: String? = nil,
+        agentId: String? = nil
     ) {
         self.id = id
         self.source = source
@@ -143,6 +144,7 @@ package struct AgentSession: Identifiable, Codable {
         self.turnStartedAt = turnStartedAt
         self.editedFiles = editedFiles
         self.lastResponse = lastResponse
+        self.agentId = agentId
     }
 
     package let id: String
@@ -158,6 +160,11 @@ package struct AgentSession: Identifiable, Codable {
     package var editedFiles: [String] = []
     /// The agent's last reply in the current turn.
     package var lastResponse: String?
+    /// The id of the agent that launched the session. Nil when no hook said, which is agent 1.
+    package var agentId: String?
+
+    /// The owning agent's id, with a missing one read as agent 1.
+    package var ownerAgentID: String { AgentOwner.id(agentId) }
 
     package var workspaceName: String {
         guard let path = origin.workspace, !path.isEmpty else { return "Unknown workspace" }

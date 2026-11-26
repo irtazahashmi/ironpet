@@ -50,6 +50,35 @@ final class MemoryMCPTests: XCTestCase {
         XCTAssertEqual(store.claims(of: "project:" + ProjectKey.of(workspace).key).map(\.text), ["Tests run with swift test"])
     }
 
+    func testRememberFilesANoteOnTheNamedOrganizationToolOrTopicAndSearchAndTheBrowserFindThem() async throws {
+        let org = try await call("memory_remember", ["text": "Pays invoices late", "scope": "org", "entity": "Acme"])
+        XCTAssertFalse(org.isError, org.text)
+        XCTAssertEqual(org.value["page"] as? String, "Acme")
+        _ = try await call("memory_remember", ["text": "Crashes on large catalogs", "scope": "tool", "entity": "Xcode"])
+        _ = try await call("memory_remember", ["text": "Moving to monthly billing", "scope": "topic", "entity": "Invoicing"])
+        let product = try await call("memory_remember", ["text": "Ships Fridays", "scope": "project", "entity": "Lighthouse"])
+        XCTAssertFalse(product.isError, product.text)
+        XCTAssertEqual(store.claims(of: "org:acme").map(\.text), ["Pays invoices late"])
+        XCTAssertEqual(store.claims(of: "tool:xcode").map(\.text), ["Crashes on large catalogs"])
+        XCTAssertEqual(store.claims(of: "topic:invoicing").map(\.text), ["Moving to monthly billing"])
+        XCTAssertEqual(store.claims(of: "project:lighthouse").map(\.text), ["Ships Fridays"])
+        XCTAssertTrue(store.claims(of: "project:" + ProjectKey.of(workspace).key).isEmpty)
+        let page = try await call("memory_page", ["name": "Acme"])
+        XCTAssertEqual(page.value["type"] as? String, "org")
+        let search = try await call("memory_search", ["query": "catalogs", "kinds": ["note"]])
+        XCTAssertEqual(search.value["count"] as? Int, 1)
+        let rows = MemoryBrowser.rows(entities: store.entities(), claims: Dictionary(uniqueKeysWithValues: store.entities().map { ($0.id, store.claims(of: $0.id)) }))
+        let types = Set(rows.map(\.type))
+        XCTAssertTrue(types.isSuperset(of: [.org, .tool, .topic, .project]))
+        XCTAssertEqual(MemoryBrowser.list(rows, filter: .tools, query: "xcode").rows.map(\.name), ["Xcode"])
+    }
+
+    func testANamedScopeNeedsAName() async throws {
+        let missing = try await call("memory_remember", ["text": "Pays late", "scope": "org"])
+        XCTAssertTrue(missing.isError)
+        XCTAssertTrue(missing.text.contains("entity"))
+    }
+
     func testRememberRefusesSecretsAndMissingFields() async throws {
         let secret = try await call("memory_remember", ["text": "AWS key AKIAIOSFODNN7EXAMPLE", "scope": "me"])
         XCTAssertTrue(secret.isError)
@@ -73,6 +102,58 @@ final class MemoryMCPTests: XCTestCase {
         XCTAssertEqual(store.history(of: "me").map(\.text), ["Prefers pnpm over npm"], "the claim is kept for undo")
         let again = try await call("memory_forget", ["query": "pnpm"])
         XCTAssertTrue(again.isError)
+    }
+
+    func testMergeMovesTheFactsAndSaysWhatMoved() async throws {
+        for index in 1...3 { _ = try await call("memory_remember", ["text": "Irtaza fact \(index)", "scope": "people", "person": "Irtaza"]) }
+        _ = try await call("memory_remember", ["text": "Lives in Berlin", "scope": "people", "person": "Irtaza Hashimi"])
+        let merged = try await call("memory_merge", ["keep": "Irtaza Hashimi", "merge": ["Irtaza"]])
+        XCTAssertFalse(merged.isError, merged.text)
+        XCTAssertEqual(merged.value["kept"] as? String, "Irtaza Hashimi")
+        XCTAssertEqual(merged.value["facts"] as? Int, 4)
+        XCTAssertEqual(merged.value["aliases"] as? [String], ["Irtaza"])
+        XCTAssertEqual((merged.value["merged"] as? [[String: Any]])?.first?["facts"] as? Int, 3)
+        XCTAssertEqual(store.entities().filter { $0.type == .person }.map(\.name), ["Irtaza Hashimi"])
+        let later = try await call("memory_remember", ["text": "Likes tea", "scope": "people", "person": "Irtaza"])
+        XCTAssertFalse(later.isError, later.text)
+        let page = try await call("memory_page", ["name": "Irtaza"])
+        XCTAssertEqual(page.value["entity"] as? String, "Irtaza Hashimi")
+        XCTAssertEqual((page.value["claims"] as? [[String: Any]])?.count, 5)
+    }
+
+    func testMergeNeedsKeepAndMergeAndRefusesWhatCannotMerge() async throws {
+        _ = try await call("memory_remember", ["text": "Owns the repo", "scope": "project", "entity": "Maya"])
+        _ = try await call("memory_remember", ["text": "Lives in Berlin", "scope": "people", "person": "Maya"])
+        let noKeep = try await call("memory_merge", ["merge": ["Maya"]])
+        let noMerge = try await call("memory_merge", ["keep": "Maya"])
+        XCTAssertTrue(noKeep.isError)
+        XCTAssertTrue(noMerge.isError)
+        let mixed = try await call("memory_merge", ["keep": "person:maya", "merge": ["project:maya"]])
+        XCTAssertTrue(mixed.isError)
+        XCTAssertTrue(mixed.text.contains("only pages of one type merge"), mixed.text)
+        let outside = try await call("memory_merge", ["keep": "person:maya", "merge": ["project:maya"]], caller: "anything")
+        XCTAssertEqual(outside.text, "only the user's chat may merge pages")
+        XCTAssertEqual(store.entities().filter { $0.name == "Maya" }.count, 2, "nothing merged")
+    }
+
+    func testTheCLIMergesThroughTheSameTool() throws {
+        _ = store.remember("Lives in Berlin", scope: .people, person: "Irtaza Hashimi", source: "chat:a")
+        _ = store.remember("Writes Swift", scope: .people, person: "Irtaza", source: "chat:a")
+        let request = try MemoryCLI.request(["merge", "Irtaza Hashimi", "Irtaza"])
+        XCTAssertEqual(request.op, "merge")
+        XCTAssertEqual(request.args["keep"] as? String, "Irtaza Hashimi")
+        XCTAssertEqual(request.args["merge"] as? [String], ["Irtaza"])
+        XCTAssertThrowsError(try MemoryCLI.request(["merge", "Irtaza"]))
+        XCTAssertThrowsError(try MemoryCLI.request(["forget", "x"]))
+
+        let body = try JSONSerialization.data(withJSONObject: ["op": request.op, "args": request.args])
+        let reply = MemoryMCP.handleCLI(body, api: MemoryAPI(services: { [services] in services }))
+        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: reply.body) as? [String: Any])
+        XCTAssertEqual(object["ok"] as? Bool, true, "\(object)")
+        XCTAssertEqual((object["result"] as? [String: Any])?["facts"] as? Int, 2)
+        XCTAssertEqual(store.entities().filter { $0.type == .person }.map(\.name), ["Irtaza Hashimi"])
+        let failed = MemoryMCP.handleCLI(Data(#"{"op":"merge","args":{"keep":"Nobody","merge":["Irtaza"]}}"#.utf8), api: MemoryAPI(services: { [services] in services }))
+        XCTAssertEqual((try JSONSerialization.jsonObject(with: failed.body) as? [String: Any])?["ok"] as? Bool, false)
     }
 
     func testSearchFindsChatsNotesAndTheScreenButNotForgottenClaims() async throws {

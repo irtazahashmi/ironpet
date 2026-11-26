@@ -22,11 +22,12 @@ package enum APIEventKind: String, Codable, CaseIterable {
 }
 
 package struct APIEvent: Codable, Equatable {
-    package init(seq: Int, at: Date, kind: APIEventKind, id: String?) {
+    package init(seq: Int, at: Date, kind: APIEventKind, id: String?, agentId: String? = nil) {
         self.seq = seq
         self.at = at
         self.kind = kind
         self.id = id
+        self.agentId = agentId
     }
 
     /// Counts up from 1 for the life of the app. A client that reconnects passes the last `seq` it saw.
@@ -35,6 +36,8 @@ package struct APIEvent: Codable, Equatable {
     package let kind: APIEventKind
     /// The thing that changed, when it is one thing.
     package let id: String?
+    /// The agent a chat event is about. Nil for agent 1 and for every event that is not about one agent's chat.
+    package let agentId: String?
 }
 
 /// The one event stream. Stores publish into it, and clients subscribe to it. It keeps the last `capacity` events so a client
@@ -68,25 +71,33 @@ package final class APIEventBus {
     /// different value tells the host that the `seq` belongs to another numbering.
     package let epoch = UUID().uuidString
     package private(set) var lastSeq = 0
+    /// Counts the chat events published in this launch. It never drops with the buffer, so two reads that see the same value saw the
+    /// same chat. The remote API builds the chat ETag from it, so a repeat read costs no build.
+    package private(set) var chatVersion = 0
     /// The highest `seq` pushed out of a full buffer. Events merged into a newer one do not count: nothing was lost.
     private var evictedThrough = 0
     private var buffer: [APIEvent] = []
     private var handlers: [UUID: (APIEvent) -> Void] = [:]
     private let now: () -> Date
 
-    package init(capacity: Int = 500, now: @escaping () -> Date = Date.init) {
+    /// How many events a reconnecting client can miss and still replay. 4,000 covers more than an hour at the 46 events a minute a busy
+    /// chat publishes, and an event is a few dozen bytes.
+    package nonisolated static let defaultCapacity = 4000
+
+    package init(capacity: Int = APIEventBus.defaultCapacity, now: @escaping () -> Date = Date.init) {
         self.capacity = max(1, capacity)
         self.now = now
     }
 
-    package func publish(_ kind: APIEventKind, id: String? = nil) {
+    package func publish(_ kind: APIEventKind, id: String? = nil, agentId: String? = nil) {
         lastSeq += 1
-        let event = APIEvent(seq: lastSeq, at: now(), kind: kind, id: id)
+        if kind == .chatItem || kind == .chatState { chatVersion += 1 }
+        let event = APIEvent(seq: lastSeq, at: now(), kind: kind, id: id, agentId: agentId)
         // Streamed text changes one message hundreds of times. A client only needs to know that it changed since it last looked, so
         // the buffer keeps the newest event for each message (and for each part of the chat state) instead of every one.
         // Live subscribers still get every event. Without this a few seconds of streaming would push every other event out.
         if Self.coalesces.contains(kind), let id,
-           let earlier = buffer[max(0, buffer.count - Self.coalesceWindow)...].lastIndex(where: { $0.kind == kind && $0.id == id }) {
+           let earlier = buffer[max(0, buffer.count - Self.coalesceWindow)...].lastIndex(where: { $0.kind == kind && $0.id == id && $0.agentId == agentId }) {
             buffer.remove(at: earlier)
         }
         buffer.append(event)

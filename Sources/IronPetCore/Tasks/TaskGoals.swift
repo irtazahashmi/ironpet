@@ -85,7 +85,7 @@ package enum TaskGoalValidator {
 
 extension TaskStore {
     package nonisolated static let goalMigrations: [Database.Migration] = [
-        .init(574, "tasks: areas, goals and key results", sql: """
+        .init(584, "tasks: areas, goals and key results", sql: """
             CREATE TABLE IF NOT EXISTS task_areas(id TEXT PRIMARY KEY, title TEXT NOT NULL, notes TEXT NOT NULL,
                                                   created REAL NOT NULL, updated REAL NOT NULL) WITHOUT ROWID;
             CREATE UNIQUE INDEX IF NOT EXISTS task_areas_title ON task_areas(title COLLATE NOCASE);

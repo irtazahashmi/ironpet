@@ -49,12 +49,15 @@ package struct SeenSet: Equatable {
 /// Definitions are not here. `automations.json` stays the source of truth for those.
 package final class AutomationState {
     package struct Run: Equatable {
-        package init(date: Date, outcome: String, output: String) {
+        package init(date: Date, outcome: String, output: String, id: Int64? = nil) {
             self.date = date
             self.outcome = outcome
             self.output = output
+            self.id = id
         }
 
+        /// The row id once recorded, the key of the run's `run_` ref. Never reused, so a pruned run's ref names nothing.
+        package var id: Int64?
         package var date: Date
         /// `fired`, `ok`, `failed`, `baseline`, `skipped` or `waiting`.
         package var outcome: String
@@ -298,11 +301,21 @@ package final class AutomationState {
     /// Oldest first.
     package func history(_ id: String, limit: Int = historyLimit) -> [Run] {
         (read { db in
-            try db.rows("SELECT at, outcome, output FROM automation_runs WHERE automation = ? ORDER BY id DESC LIMIT ?", [id, Int64(limit)])
-        } ?? []).reversed().compactMap { row in
-            guard let at = row[0] as? Double, let outcome = row[1] as? String, let output = row[2] as? String else { return nil }
-            return Run(date: Date(timeIntervalSince1970: at), outcome: outcome, output: output)
-        }
+            try db.rows("SELECT at, outcome, output, id FROM automation_runs WHERE automation = ? ORDER BY id DESC LIMIT ?", [id, Int64(limit)])
+        } ?? []).reversed().compactMap(Self.run)
+    }
+
+    /// One run by its row id, with the automation it belongs to. Nil once it has been pruned.
+    package func run(_ rowID: Int64) -> (automation: String, run: Run)? {
+        guard let row = read({ db in
+            try db.rows("SELECT at, outcome, output, id, automation FROM automation_runs WHERE id = ?", [rowID]).first
+        }) ?? nil, let automation = row[4] as? String, let run = Self.run(row) else { return nil }
+        return (automation, run)
+    }
+
+    private static func run(_ row: [Any?]) -> Run? {
+        guard let at = row[0] as? Double, let outcome = row[1] as? String, let output = row[2] as? String else { return nil }
+        return Run(date: Date(timeIntervalSince1970: at), outcome: outcome, output: output, id: row[3] as? Int64)
     }
 
     package func record(_ id: String, _ run: Run) {

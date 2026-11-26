@@ -105,7 +105,7 @@ struct ScreenSection: View {
             ?? hit.map { "\($0.appName): \($0.window.isEmpty ? ($0.url ?? "Untitled window") : $0.window)" } ?? "Capture"
         let at = capture?.at ?? hit?.at
         ScreenCaptureDetail(title: title, app: capture?.appName ?? hit?.appName, at: at, text: openText[id] ?? capture?.text ?? hit?.snippet ?? "",
-                            onBack: { nav.close() })
+                            ref: screen?.captureRef(id), onBack: { nav.close() })
             .onExitCommand { nav.close() }
     }
 
@@ -133,6 +133,8 @@ struct ScreenCaptureDetail: View {
     let app: String?
     let at: Date?
     let text: String
+    /// The capture's public `screen_` id, shown under the time.
+    var ref: String? = nil
     let onBack: () -> Void
 
     var body: some View {
@@ -141,6 +143,7 @@ struct ScreenCaptureDetail: View {
                 if let app { Chip(text: app, tint: .purple) }
                 Text(title).font(.system(size: 20, weight: .bold)).textSelection(.enabled)
                 if let at { Text(at.formatted(date: .abbreviated, time: .shortened)).font(.system(size: 12)).foregroundStyle(.secondary) }
+                if let ref { RecordIDLine(ref: ref) }
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)

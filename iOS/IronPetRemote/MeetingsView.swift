@@ -101,6 +101,7 @@ struct MeetingDetailView: View {
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
+                if let ref = meeting.ref { RecordIDLine(ref: ref) }
                 Picker("Text", selection: $kind) {
                     Text("Summary").tag("summary")
                     Text("Transcript").tag("transcript")

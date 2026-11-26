@@ -71,8 +71,9 @@ final class RemoteKitWireTests: XCTestCase {
         XCTAssertEqual(Set(tasks.map(\.id)), [item.id, plain.id])
 
         let created = iso.string(from: item.created), updated = iso.string(from: item.updated)
+        let ref = try XCTUnwrap(h.api.tasks.task(item.id)?.ref, "a stored task has its public id")
         let golden: [String: Any] = [
-            "id": item.id, "title": "Review the contract", "notes": "Check clause 4", "status": "needs_you", "source": "agent",
+            "id": item.id, "ref": ref, "title": "Review the contract", "notes": "Check clause 4", "status": "needs_you", "source": "agent",
             "created": created, "updated": updated, "due": iso.string(from: due), "labels": ["team": "legal"],
             "links": [["kind": "url", "ref": "https://example.com/c", "label": "Contract"], ["kind": "file", "ref": "/tmp/c.pdf"]],
             "history": [["at": iso.string(from: h.api.tasks.history(item.id)[0].at), "by": "test", "kind": h.api.tasks.history(item.id)[0].kind.rawValue,
@@ -83,7 +84,7 @@ final class RemoteKitWireTests: XCTestCase {
         XCTAssertEqual(detail.json as NSDictionary, golden as NSDictionary)
 
         let bare = try await get("/v1/tasks/\(plain.id)")
-        XCTAssertEqual(Set(bare.json.keys), ["id", "title", "status", "source", "created", "updated", "history"], "empty fields stay off the wire")
+        XCTAssertEqual(Set(bare.json.keys), ["id", "ref", "title", "status", "source", "created", "updated", "history"], "empty fields stay off the wire")
 
         let made = try await post("/v1/tasks", ["title": "From the phone", "notes": "n", "status": "in_progress", "due": "2030-01-02T03:04:05Z",
                                                 "links": [["kind": "url", "ref": "https://x.test"]], "labels": ["a": "b"], "waiting_on": "Ana"])

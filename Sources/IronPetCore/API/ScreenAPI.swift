@@ -59,6 +59,9 @@ package final class ScreenAPI {
     }
 
     /// The text stored for one capture. Nil when it was deleted.
+    /// The capture's public `screen_` id, for its detail page.
+    package func captureRef(_ id: Int64) -> String? { control.captureRef(id) }
+
     package func captureText(_ id: Int64) async -> String? {
         let control = control
         return await Task.detached(priority: .userInitiated) { control.captureText(id) }.value

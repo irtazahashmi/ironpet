@@ -17,7 +17,7 @@ package struct RemoteMeetings {
     package func list() -> [String: Any] {
         ["meetings": RemoteWire.array(meetings.list().map {
             RemoteMeeting(id: $0.id, date: $0.date, preview: $0.preview, hasSummary: $0.hasSummary, hasTranscript: $0.hasTranscript,
-                          hasAudio: $0.hasAudio, active: $0.active)
+                          hasAudio: $0.hasAudio, active: $0.active, ref: $0.ref)
         })]
     }
 

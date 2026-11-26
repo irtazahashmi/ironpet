@@ -509,6 +509,7 @@ final class TestControl {
             case .tasks: job = "tasks"
             case .screen: job = "screen"
             case .merge(let entity, _): job = "merge:\(entity)"
+            case .resort: job = "resort"
             }
             outcome = ["job": job, "saved": last.saved, "dropped": last.dropped, "error": last.error ?? NSNull(), "skipped": last.skipped]
         }

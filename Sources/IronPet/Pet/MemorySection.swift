@@ -139,6 +139,22 @@ final class MemorySectionModel: ObservableObject {
         reload()
     }
 
+    /// Merges the pages into the one on top of the trail, then shows the merged page. Returns the reason when it fails; the pages stay as
+    /// they were.
+    @discardableResult
+    func merge(_ others: [String], into keep: String) -> String? {
+        guard let api = provider() else { return "Memory is not available." }
+        switch api.mergePages(others, into: keep) {
+        case .failure(let failure):
+            return failure.message
+        case .success:
+            // The merged pages are gone, so the trail drops them.
+            nav.prune { !others.contains($0) }
+            reload()
+            return nil
+        }
+    }
+
     /// Where a page's Markdown goes. Nil when the page is gone.
     func markdown(of id: String) -> (name: String, text: String)? {
         provider()?.detail(id).map { ($0.title, $0.markdown) }
@@ -221,22 +237,14 @@ struct MemorySection: View {
         .font(.system(size: 15, weight: .medium))
     }
 
-    /// The chips and the count. A narrow window drops the count before it lets a chip wrap.
     private var controls: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 6) { chips; count }
-            HStack(spacing: 6) { chips }
-        }
+        HStack(spacing: 6) { chips }
     }
 
     private var chips: some View {
         ForEach(MemoryFilter.allCases, id: \.self) { chip in
             MemoryChip(title: chip.title, selected: model.filter == chip) { model.select(chip) }
         }
-    }
-
-    private var count: some View {
-        Text(model.list.countLabel).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4).lineLimit(1).fixedSize()
     }
 
     // MARK: List
@@ -472,6 +480,18 @@ private struct MemoryRowView: View {
 
 // MARK: - Detail
 
+/// What the merge confirmation says: which pages go, how many facts move, and that it cannot be undone.
+enum MemoryDetailMergeMessage {
+    static func text(into detail: MemoryDetail) -> String {
+        let pages = detail.possibleDuplicates
+        let one = pages.count == 1
+        let list = pages.map { "\($0.name) (\($0.facts) fact\($0.facts == 1 ? "" : "s"))" }.joined(separator: ", ")
+        let total = detail.facts.count + pages.reduce(0) { $0 + $1.facts }
+        return "Moves the facts and links of \(list) onto \(detail.title), keeps \(one ? "its name as an alias" : "their names as aliases"), "
+            + "and removes \(one ? "that page" : "those pages"). \(detail.title) will have \(total) fact\(total == 1 ? "" : "s"). This cannot be undone."
+    }
+}
+
 private struct MemoryDetailView: View {
     let detail: MemoryDetail
     @ObservedObject var model: MemorySectionModel
@@ -482,6 +502,8 @@ private struct MemoryDetailView: View {
     @State private var showEarlier = false
     @State private var bannerDismissed = false
     @State private var confirmForget = false
+    @State private var confirmMerge = false
+    @State private var mergeFailure: String?
     @State private var copied = false
 
     static let collapsedFacts = 5
@@ -503,6 +525,16 @@ private struct MemoryDetailView: View {
             Button("Forget page", role: .destructive) { model.forgetPage(detail.entity.id) }
         } message: {
             Text("Forgets every fact on the page and its links. This cannot be undone.")
+        }
+        .confirmationDialog("Merge into \(detail.title)?", isPresented: $confirmMerge) {
+            Button("Merge pages", role: .destructive) { mergeFailure = model.merge(detail.possibleDuplicates.map(\.page), into: detail.entity.id) }
+        } message: {
+            Text(MemoryDetailMergeMessage.text(into: detail))
+        }
+        .alert("Could not merge the pages", isPresented: Binding(get: { mergeFailure != nil }, set: { if !$0 { mergeFailure = nil } })) {
+            Button("OK") { mergeFailure = nil }
+        } message: {
+            Text(mergeFailure ?? "")
         }
     }
 
@@ -565,14 +597,14 @@ private struct MemoryDetailView: View {
             .accessibilityLabel(label)
     }
 
-    /// Two other pages that may be the same person. Merging has no backend yet, so the button is off.
+    /// Other pages that may be the same person. The button merges them into this page after a confirmation.
     private var banner: some View {
         HStack(spacing: 8) {
             Image(systemName: "arrow.triangle.merge").foregroundStyle(Color.accentColor)
             bannerText
             Spacer(minLength: 8)
-            Button { } label: { Image(systemName: "arrow.triangle.merge").frame(width: 24, height: 22) }
-                .buttonStyle(.borderless).disabled(true).help("Merging pages is not available yet")
+            Button { confirmMerge = true } label: { Image(systemName: "arrow.triangle.merge").frame(width: 24, height: 22) }
+                .buttonStyle(.borderless).help("Merge \(detail.possibleDuplicates.count == 1 ? "that page" : "those pages") into this page")
                 .accessibilityLabel("Merge into this page")
             Button { bannerDismissed = true } label: { Image(systemName: "xmark.circle").frame(width: 24, height: 22) }
                 .buttonStyle(.borderless).help("Dismiss").accessibilityLabel("Dismiss")
