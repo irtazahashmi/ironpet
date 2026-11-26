@@ -52,14 +52,26 @@ package struct AutomationStatus: Codable, Equatable {
 }
 
 package struct CreateAutomationRequest: Codable, Equatable {
-    package init(definition: String, by: String = "user") {
+    package init(definition: String, by: String = "user", agentId: String? = nil) {
         self.definition = definition
         self.by = by
+        self.agentId = agentId
     }
 
     /// The automation as a JSON object (name, trigger, action, presentation). A missing id is made from the name.
     package var definition: String
     package var by = "user"
+    /// The agent that owns the automation. Nil keeps the `agentId` in `definition`, and without one the owner is agent 1.
+    package var agentId: String?
+}
+
+/// `params` for the calls that list one agent's things. Nil is agent 1, as the Mac's window is.
+package struct AgentScopeRequest: Codable, Equatable {
+    package init(agentId: String? = nil) {
+        self.agentId = agentId
+    }
+
+    package var agentId: String?
 }
 
 package struct UpdateAutomationRequest: Codable, Equatable {
@@ -168,7 +180,15 @@ package final class AutomationsAPI {
     /// The file the automations are saved in.
     package var file: URL { service.store.paths.file }
 
+    /// Every automation, whoever owns it.
     package func list() -> [Automation] { automations }
+
+    /// The automations this agent owns, plus the node-level ones, which belong to every agent. Nil is agent 1. An id no agent has is
+    /// `notFound`.
+    package func list(agentId: String?) throws -> [Automation] {
+        let agent = try AgentOwner.resolve(agentId, registry: service.registry)
+        return automations.filter { $0.isVisible(to: agent) }
+    }
 
     package func get(_ id: String) throws -> Automation {
         guard let automation = automations.first(where: { $0.id == id }) else { throw APIError.notFound("no automation with id \"\(id)\"") }
@@ -192,6 +212,18 @@ package final class AutomationsAPI {
         let a = try get(request.id)
         return service.engine.state.history(a.id, limit: max(1, request.limit)).reversed()
             .map { AutomationRunInfo(date: $0.date, outcome: $0.outcome, output: $0.output) }
+    }
+
+    /// The automation's public `auto_<hex>` id.
+    package func ref(_ id: String) -> String? { service.engine.state.records.ref(.auto, id) }
+
+    /// One run by its row id, as `automations_history` lists it, with the automation it belongs to. Nil once it has been pruned.
+    package func runRecord(_ key: String) -> [String: Any]? {
+        guard let rowID = Int64(key), let found = service.engine.state.run(rowID) else { return nil }
+        var out: [String: Any] = ["automation": found.automation, "time": AutomationClock.format(found.run.date),
+                                  "outcome": found.run.outcome, "output": found.run.output]
+        if let ref = service.engine.state.records.ref(.auto, found.automation) { out["automationRef"] = ref }
+        return out
     }
 
     /// The command, script or prompt the user is asked to approve.
@@ -218,7 +250,9 @@ package final class AutomationsAPI {
 
     @discardableResult
     package func create(_ request: CreateAutomationRequest) throws -> Automation {
-        try run { try service.create(try Self.object(request.definition), by: request.by) }
+        var definition = try Self.object(request.definition)
+        if let agent = request.agentId { definition["agentId"] = agent }
+        return try run { try service.create(definition, by: request.by) }
     }
 
     @discardableResult
@@ -282,9 +316,13 @@ package final class AutomationsAPI {
 
     /// The MCP tools and the `IronPet automations` CLI call this with loose JSON arguments. Their result shapes are part of the
     /// tool contract, so the dictionaries `AutomationService` builds are kept.
-    package func callJSON(_ op: String, _ args: [String: Any], by: String) async -> Result<Any, AutomationError> {
-        await service.call(op, args, by: by)
+    /// `agent` is the agent the call comes from: `list` shows its automations and `create` makes the new one its own.
+    package func callJSON(_ op: String, _ args: [String: Any], by: String, agent: String? = nil) async -> Result<Any, AutomationError> {
+        await service.call(op, args, by: by, agent: agent)
     }
+
+    /// The agent that owns this automation, for an MCP caller that is an automation's own session. Nil for a node-level or unknown one.
+    package func owner(of automation: String) -> String? { automations.first { $0.id == automation }?.ownerAgentID }
 
     // MARK: Helpers
 
@@ -299,7 +337,7 @@ package final class AutomationsAPI {
         do {
             return try body()
         } catch let error as AutomationError {
-            throw error.message.hasPrefix("no automation") ? APIError.notFound(error.message) : APIError.invalid(error.message)
+            throw error.message.hasPrefix("no automation") || error.message.hasPrefix("no agent") ? APIError.notFound(error.message) : APIError.invalid(error.message)
         } catch {
             throw APIError.wrap(error)
         }

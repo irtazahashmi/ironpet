@@ -21,6 +21,8 @@ final class SettingsModel: ObservableObject {
     var voiceKey: VoiceKey { VoiceKey(store: platform.secrets) }
     /// Set once the app has built it, before the window can open.
     var automations: AutomationsAPI?
+    /// The pets, for Settings → General → Pets. Nil without a database.
+    var agentRecords: AgentRecordsAPI?
     /// The meeting controller, for labelling the voices of the last meeting.
     var meeting: MeetingsAPI?
     /// The chat's reply reader, so Preview and a reply never talk over each other. Nil in preview renders.
@@ -262,7 +264,6 @@ struct SettingsHeader: View {
 private struct GeneralSettings: View {
     @ObservedObject var model: SettingsModel
     @ObservedObject private var store = SettingsAPI.live
-    @State private var name = SettingsAPI.live.config.pet.name
 
     private var welcomeBackFooter: String {
         let minutes = Int(store.config.reminders.idleResetMinutes)
@@ -273,12 +274,10 @@ private struct GeneralSettings: View {
 
     var body: some View {
         Form {
-            Section("Pet") {
-                TextField("Name", text: $name)
-                    .onSubmit(saveName)
-                    .onChange(of: name) { saveName() }
-                    .onChange(of: store.config.pet.name) { if store.config.pet.name != name { name = store.config.pet.name } }
-                PetGallery(gallery: model.pets, buildPet: model.actions.buildPet)
+            if let records = model.agentRecords {
+                PetsSection(api: records, gallery: model.pets, buildPet: model.actions.buildPet)
+            } else {
+                Section("Pets") { Text("Pets need the database, which is not available.").foregroundStyle(.secondary) }
             }
             ChatBackgroundSection()
             PasteLimitsSection()
@@ -330,13 +329,13 @@ private struct GeneralSettings: View {
                     get: { store.config.tasks.scanScreen }, set: { on in store.update { $0.tasks.scanScreen = on } }))
                     .disabled(!store.config.tasks.scan || !store.config.screenCapture.enabled)
             } footer: {
-                Text("Each scan sends only what is new to the agent that already had it: a chat to its own agent, a meeting to the agent that summarized it. The agent can only answer. It suggests new tasks and changes to open tasks (done, who you wait on, a note), and nothing changes until you press Add or Accept in the Tasks section. The screen needs screen capture turned on. Add your own schedule under Automations if you want a different one.")
+                Text("Each scan sends only what is new to the pet that already had it: a chat to its own pet, a meeting to the pet that summarized it. The pet can only answer. It suggests new tasks and changes to open tasks (done, who you wait on, a note), and nothing changes until you press Add or Accept in the Tasks section. The screen needs screen capture turned on. Add your own schedule under Automations if you want a different one.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
                 Picker("Open sessions in", selection: Binding(get: { store.config.openIn },
                                                               set: { value in store.update { $0.openIn = value } })) {
-                    Text("Auto (the app that started the agent)").tag(Editors.auto)
+                    Text("Auto (the app that started the session)").tag(Editors.auto)
                     ForEach(openChoices, id: \.bundleID) { Text($0.name).tag($0.bundleID) }
                 }
             } footer: {
@@ -350,9 +349,9 @@ private struct GeneralSettings: View {
                         .help(agent.watchNote ?? "Adds ironpet's hooks to \(agent.configFile.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))")
                 }
             } header: {
-                Text("Agents")
+                Text("Watch sessions")
             } footer: {
-                Text("Lists the agents found on this Mac. Watching adds ironpet's hooks to the agent's own config so \(store.config.pet.name) sees sessions you start yourself. Turning one off removes only ironpet's hooks; an existing file is backed up as *.ironpet-backup the first time. Codex asks you to trust new hooks in its /hooks screen.")
+                Text("Lists the harnesses found on this Mac. Watching adds ironpet's hooks to the harness's own config so \(store.config.pet.name) sees sessions you start yourself. Turning one off removes only ironpet's hooks; an existing file is backed up as *.ironpet-backup the first time. Codex asks you to trust new hooks in its /hooks screen.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             SkillsSettings()
@@ -374,17 +373,13 @@ private struct GeneralSettings: View {
         }
         return choices
     }
-
-    private func saveName() {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        store.update { $0.pet.name = trimmed }
-    }
 }
 
 private struct ShortcutRow: View {
     let title: String
     let path: WritableKeyPath<Config.Hotkeys, String>
+    /// Offers Fn (globe) hold-to-talk as a choice. Only the dictation shortcut has it.
+    var allowsFn = false
     @ObservedObject var model: SettingsModel
     @ObservedObject private var store = SettingsAPI.live
     @State private var recording = false
@@ -392,14 +387,19 @@ private struct ShortcutRow: View {
     @State private var message: String?
 
     private var value: String { store.config.hotkeys[keyPath: path] }
+    private var isFn: Bool { allowsFn && value.lowercased() == FnDictationTrigger.configValue }
 
     var body: some View {
         LabeledContent(title) {
             VStack(alignment: .trailing, spacing: 2) {
                 HStack {
                     Button(action: toggleRecording) {
-                        Text(recording ? "Type shortcut…" : Shortcut.display(value) ?? (value.isEmpty ? "Off" : "Invalid"))
+                        Text(recording ? "Type shortcut…" : isFn ? "Fn" : Shortcut.display(value) ?? (value.isEmpty ? "Off" : "Invalid"))
                             .frame(minWidth: 110)
+                    }
+                    if allowsFn && !isFn && !recording {
+                        Button("Use Fn") { store.update { $0.hotkeys[keyPath: path] = FnDictationTrigger.configValue } }
+                            .help("Hold Fn to talk, release to type. Needs Input Monitoring.")
                     }
                     if !value.isEmpty && !recording {
                         Button { store.update { $0.hotkeys[keyPath: path] = "" } } label: { Image(systemName: SharedSymbols.removeAttachment) }
@@ -411,7 +411,7 @@ private struct ShortcutRow: View {
                     Text(message).font(.caption).foregroundStyle(.orange)
                 } else if model.failedHotKeys.contains(value) {
                     Text("In use by another app; pick another.").font(.caption).foregroundStyle(.orange)
-                } else if !value.isEmpty, Shortcut(value) == nil {
+                } else if !value.isEmpty, !isFn, Shortcut(value) == nil {
                     Text("Can't read \"\(value)\" in config.json.").font(.caption).foregroundStyle(.orange)
                 }
             }
@@ -433,7 +433,7 @@ private struct ShortcutRow: View {
                 return nil
             }
             guard let shortcut = Shortcut(event: event) else {
-                message = "Use ⌘, ⌥ or ⌃ (Shift alone isn't enough), or a function key."
+                message = Shortcut.rejection(keyCode: Int(event.keyCode), modifierFlags: event.modifierFlags)
                 return nil
             }
             let others = [\Config.Hotkeys.chat, \.captureWindow, \.captureRegion, \.voice, \.dictation, \.meeting, \.voiceMode, \.copyVersion].filter { $0 != path }
@@ -479,7 +479,7 @@ struct VoiceSettings: View {
                                                     set: { on in store.update { $0.voice.enabled = on } }))
                 Group {
                     ShortcutRow(title: "Voice shortcut", path: \.voice, model: model)
-                    ShortcutRow(title: "Dictation shortcut", path: \.dictation, model: model)
+                    ShortcutRow(title: "Dictation shortcut", path: \.dictation, allowsFn: true, model: model)
                     Toggle("Hold to talk", isOn: Binding(get: { store.config.voice.holdToTalk },
                                                          set: { on in store.update { $0.voice.holdToTalk = on } }))
                 }
@@ -487,7 +487,7 @@ struct VoiceSettings: View {
             } header: {
                 Text("Talk to \(name)")
             } footer: {
-                Text("Hold the shortcut or the chat's microphone button, speak, and let go. The text lands in the chat box, or is sent at once when \"Send voice notes automatically\" is on in the chat's menu. With Hold to talk off, press once to start and again to stop. Esc cancels.\n\nThe dictation shortcut works in any app: press it, speak, and press it again (or Enter) to type the transcript where the cursor is. Esc cancels and types nothing. Text goes in through Accessibility, or is pasted with your clipboard put back afterwards. Password fields never get text, and when no text field has focus the transcript stays on the clipboard. It needs Accessibility and Microphone access.")
+                Text("Hold the shortcut or the chat's microphone button, speak, and let go. The text lands in the chat box, or is sent at once when \"Send voice notes automatically\" is on in the chat's menu. With Hold to talk off, press once to start and again to stop. Esc cancels.\n\nThe dictation shortcut works in any app: press it, speak, and press it again (or Enter) to type the transcript where the cursor is. Esc cancels and types nothing. Text goes in through Accessibility, or is pasted with your clipboard put back afterwards. Password fields never get text, and when no text field has focus the transcript stays on the clipboard. It needs Accessibility and Microphone access.\n\nChoose Use Fn to hold the Fn (globe) key to talk and let go to type; a quick tap starts dictation and a second tap stops it. Fn is read through Input Monitoring, which macOS asks for only when you choose Fn. ironpet only listens for Fn and never blocks it, so Fn with another key and the emoji picker keep working. Turn the Globe key's own action off in System Settings > Keyboard if it opens the emoji picker on a tap.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             SpokenReplySettings(voiceAPI: model.voice)
@@ -721,7 +721,7 @@ private struct VoiceModeSettings: View {
                 if settings.listenWith == Config.VoiceMode.wispr, !WisprBridge.isAvailable {
                     Text("Wispr Flow isn't installed, or hasn't dictated anything yet.").font(.caption).foregroundStyle(.orange)
                 }
-                TextField("Model", text: $modelName, prompt: Text("The agent's fastest"))
+                TextField("Model", text: $modelName, prompt: Text("The harness's fastest"))
                     .onSubmit(saveModel)
                     .onChange(of: modelName) { saveModel() }
                 Stepper(value: Binding(get: { settings.silenceSeconds }, set: { value in store.update { $0.voiceMode.silenceSeconds = value } }),
@@ -735,7 +735,7 @@ private struct VoiceModeSettings: View {
         } header: {
             Text("Conversation")
         } footer: {
-            Text("Press the shortcut and talk. \(name) answers out loud and keeps listening until you say bye, press Esc, or stay quiet for the time above; talking over \(name) cuts it off. The microphone is on only during a conversation. What you say goes to the voice server, then to the chat's agent, and the reply goes back to the voice server to be spoken. Longer work goes to background jobs. Anything the agent asks permission for waits for you to answer the alert, and a spoken yes never approves it. With Wispr Flow, its dictation is sent as soon as it lands and the app you were in gets focus back at the end. Voice mode doesn't listen or speak during calls and meeting recordings.")
+            Text("Press the shortcut and talk. \(name) answers out loud and keeps listening until you say bye, press Esc, or stay quiet for the time above; talking over \(name) cuts it off. The microphone is on only during a conversation. What you say goes to the voice server, then to the chat's pet, and the reply goes back to the voice server to be spoken. Longer work goes to background jobs. Anything the pet asks permission for waits for you to answer the alert, and a spoken yes never approves it. With Wispr Flow, its dictation is sent as soon as it lands and the app you were in gets focus back at the end. Voice mode doesn't listen or speak during calls and meeting recordings.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -814,7 +814,7 @@ private struct MeetingSettings: View {
             Section("Summary") {
                 Toggle("Summarize automatically when a meeting ends", isOn: Binding(
                     get: { meetings.autoSummary }, set: { on in store.update { $0.meetings.autoSummary = on } }))
-                Picker("Summary agent", selection: Binding(get: { meetings.summaryAgent }, set: setAgent)) {
+                Picker("Summary harness", selection: Binding(get: { meetings.summaryAgent }, set: setAgent)) {
                     ForEach(agents) { agent in Text(agent.name).tag(agent.id) }
                 }
                 Picker("Summary model", selection: Binding(get: { meetings.summaryModel ?? "" },
@@ -823,7 +823,7 @@ private struct MeetingSettings: View {
                     ForEach(modelChoices, id: \.id) { Text($0.name).tag($0.id) }
                 }
                 if models.isEmpty {
-                    Text("The model list fills in after this agent has run once in the chat. Default uses the agent's own choice.")
+                    Text("The model list fills in after this harness has run once in the chat. Default uses the harness's own choice.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -843,7 +843,7 @@ private struct MeetingSettings: View {
             Section {
                 EmptyView()
             } footer: {
-                Text("When a meeting ends, the transcript is sent to the summary agent, which only gets the meeting folder and has every permission request refused: it can read the transcript and answer, and it cannot change files or run commands. ironpet writes summary.md itself. The server, model and key are the ones under Voice.")
+                Text("When a meeting ends, the transcript is sent to the summary harness, which only gets the meeting folder and has every permission request refused: it can read the transcript and answer, and it cannot change files or run commands. ironpet writes summary.md itself. The server, model and key are the ones under Voice.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -992,7 +992,7 @@ struct IntegrationsSettings: View {
                         store.update { $0.integrations.shareMCPSignIns = on }
                     })
             ) {
-                Text("cursor-agent stores MCP sign-ins per folder. With this on, your MCP OAuth tokens are copied into each folder you chat in, so you sign in once. Relies on an internal Cursor file format.")
+                Text("Cursor stores MCP sign-ins per folder. With this on, your MCP OAuth tokens are copied into each folder you chat in, so you sign in once. Relies on an internal Cursor file format.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             TelegramIntegration(bridge: telegram)
@@ -1005,7 +1005,7 @@ struct IntegrationsSettings: View {
         let alert = NSAlert()
         alert.messageText = "Share MCP sign-ins across folders?"
         alert.informativeText = """
-            cursor-agent stores MCP sign-ins per folder. With this on, before each chat ironpet copies your \
+            Cursor stores MCP sign-ins per folder. With this on, before each chat ironpet copies your \
             signed-in MCP servers' OAuth tokens from ~/.cursor/projects/*/mcp-auth.json into the chat's folder, \
             so you only sign in once. The tokens stay on this Mac, but any folder you chat in gets them. This \
             relies on an internal Cursor file format.
@@ -1037,7 +1037,7 @@ private struct PasteLimitsSection: View {
         } header: {
             Text("Pasted text")
         } footer: {
-            Text("Pasting more than either limit adds the text to the chat as a pasted-text.txt attachment. The agent still reads all of it. Characters: \(Config.Chat.pasteCharsRange.lowerBound) to \(Config.Chat.pasteCharsRange.upperBound). Lines: \(Config.Chat.pasteLinesRange.lowerBound) to \(Config.Chat.pasteLinesRange.upperBound).")
+            Text("Pasting more than either limit adds the text to the chat as a pasted-text.txt attachment. The pet still reads all of it. Characters: \(Config.Chat.pasteCharsRange.lowerBound) to \(Config.Chat.pasteCharsRange.upperBound). Lines: \(Config.Chat.pasteLinesRange.lowerBound) to \(Config.Chat.pasteLinesRange.upperBound).")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

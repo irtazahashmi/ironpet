@@ -131,13 +131,13 @@ package final class TaskStore {
             }
         },
         // The tickler: a task stays out of the list until `defer_until`. Nothing to fill in for existing tasks.
-        .init(570, "tasks: defer until") { db in
+        .init(580, "tasks: defer until") { db in
             if !(try TaskStore.columns(db, "task_items")).contains("defer_until") {
                 try db.execute("ALTER TABLE task_items ADD COLUMN defer_until REAL")
             }
         },
         // The task scan's clarify proposal on a new suggestion: context, area, two-minute and someday.
-        .init(571, "tasks: clarify proposals on suggestions") { db in
+        .init(581, "tasks: clarify proposals on suggestions") { db in
             let existing = try TaskStore.columns(db, "task_suggestions")
             for (column, type) in [("clarify_context", "TEXT"), ("clarify_area", "TEXT"), ("clarify_two_minute", "INTEGER"),
                                    ("clarify_someday", "INTEGER")] where !existing.contains(column) {
@@ -145,7 +145,7 @@ package final class TaskStore {
             }
         },
         // Waiting for: when the user asked. Tasks already waiting start from their last change.
-        .init(573, "tasks: asked at") { db in
+        .init(583, "tasks: asked at") { db in
             if !(try TaskStore.columns(db, "task_items")).contains("asked_at") {
                 try db.execute("ALTER TABLE task_items ADD COLUMN asked_at REAL")
                 try db.execute("UPDATE task_items SET asked_at = updated WHERE waiting_on IS NOT NULL")

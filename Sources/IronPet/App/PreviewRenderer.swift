@@ -27,6 +27,8 @@ enum PreviewRenderer {
         let atlas = Atlas.loadDefault(sprite: sprite)
         let name = config.pet.name
 
+        let spriteB = arguments.firstIndex(of: "--sprite-b").flatMap { arguments.count > $0 + 1 ? arguments[$0 + 1] : nil }
+        renderSeveralAgents(to: dir, spriteA: sprite, spriteB: spriteB)
         for (file, preview) in [("chat", ChatSession.Preview.done), ("chat-approval", .approval), ("chat-markdown", .markdown), ("chat-form", .form), ("chat-rows", .rows)] {
             let session = ChatSession(restore: false)
             session.loadPreview(preview)
@@ -470,6 +472,45 @@ enum PreviewRenderer {
     }
 
     /// The Usage tab with a week of made-up events: cost mode, requests mode and the hourly Today range.
+    /// Two agents on one Mac: their two pets side by side, the chat of the second with the agent switcher in its header, and Settings → Pets.
+    private static func renderSeveralAgents(to dir: URL, spriteA: String?, spriteB: String?) {
+        guard let database = try? Database(path: nil, migrations: AppMigrations.all) else { return }
+        let registry = AgentRegistry(database: database)
+        guard let bunny = try? registry.create(name: "Bunny", pet: spriteB, agentCli: "claude", model: "opus", instructions: "Keep answers short."),
+              let cat = try? registry.create(name: "Cat", agentCli: "codex") else { return }
+        _ = try? registry.update(cat.id, AgentRecordPatch(enabled: false))
+        let records = AgentRecordsAPI(registry: registry)
+
+        func pet(_ name: String, sprite: String?, row: AtlasRow) -> some View {
+            VStack(spacing: 4) {
+                PetScene(atlas: Atlas.loadDefault(sprite: sprite), row: row, frame: 0, bubbles: [], solid: true)
+                Text(name).font(.system(size: 12, weight: .medium)).foregroundStyle(.secondary)
+            }
+        }
+        render(HStack(alignment: .bottom, spacing: -40) {
+            pet("Ghost", sprite: spriteA, row: .running)
+            pet("Bunny", sprite: spriteB, row: .waiting)
+        }.padding(20).background(Color(white: 0.1)), to: dir, "agents-two-pets")
+
+        // Bunny's chat. The header shows the agent switcher because two agents are enabled.
+        let session = ChatSession(restore: false, agentID: bunny.id)
+        session.loadPreview(.done)
+        let model = chatModel(session)
+        model.agentName = "Bunny"
+        model.avatar = AvatarSprite(path: spriteB)
+        model.agentRecords = { registry.list() }
+        render(ChatView(session: model).frame(width: 520, height: 640).panel(), to: dir, "chat-agent-switcher")
+
+        let gallery = PetGalleryModel(sprite: { spriteB })
+        render(Form { PetsSection(api: records, gallery: gallery, buildPet: { _ in }) }.formStyle(.grouped).frame(width: 540, height: 360).panel(), to: dir, "settings-pets")
+        // The gallery decodes the sheets off the main thread, so let it finish before the picture is taken.
+        gallery.setWindowShown(true)
+        gallery.setViewShown(true)
+        RunLoop.main.run(until: Date().addingTimeInterval(2))
+        render(PetDetails(api: records, gallery: gallery, petID: bunny.id, buildPet: { _ in }, close: {}).panel(), to: dir, "settings-pet-details")
+        gallery.setViewShown(false)
+    }
+
     private static func renderUsage(to dir: URL) {
         guard let database = try? Database(path: nil, migrations: AppMigrations.all) else { return }
         let store = UsageStore(database: database)
@@ -793,7 +834,8 @@ enum PreviewRenderer {
 
     private static func sampleTasks() -> TasksAPI {
         var clock = Date()
-        let store = TaskStore(database: Database.open(path: nil, migrations: TaskStore.migrations).database, now: { clock })
+        // The app's migrations, not only the task store's, so each sample task gets its public id as in the app.
+        let store = TaskStore(database: Database.open(path: nil, migrations: AppMigrations.all).database, now: { clock })
         let day: TimeInterval = 86_400
         func add(_ title: String, _ status: TaskStatus, _ source: TaskSource, ago: TimeInterval, due: Date? = nil,
                  notes: String = "", links: [TaskLink] = [], waitingOn: String? = nil) {

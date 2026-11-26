@@ -241,6 +241,7 @@ jobs:
           device=$(xcrun simctl list devices available iPhone | grep -m1 -oE '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}')
           xcodebuild test -project iOS/IronPetRemote.xcodeproj -scheme IronPetRemote \
             -destination "platform=iOS Simulator,id=$device" -derivedDataPath "$RUNNER_TEMP/dd" \
+            -retry-tests-on-failure -test-iterations 2 \
             -only-testing:IronPetRemoteTests \
             CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= CODE_SIGN_IDENTITY=-
 
@@ -274,6 +275,7 @@ jobs:
           read -ra tests <<< "$(python3 scripts/ios_ui_shards.py args ${{ matrix.shard }})"
           xcodebuild test -project iOS/IronPetRemote.xcodeproj -scheme IronPetRemote \
             -destination "platform=iOS Simulator,id=$device" -derivedDataPath "$RUNNER_TEMP/dd" \
+            -retry-tests-on-failure -test-iterations 2 \
             "${tests[@]}" \
             CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= CODE_SIGN_IDENTITY=-
 

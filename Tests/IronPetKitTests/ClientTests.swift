@@ -13,6 +13,19 @@ final class ClientTests: XCTestCase {
 
     func paired() -> IronPetClient { IronPetClient(endpoint: ServerEndpoint(baseURL: server.baseURL), token: server.token) }
 
+    // S8 (client): the cursor of the last answer goes out as `after` and `epoch`, and the answer's cursor and delta flag decode.
+    func testAChatReadSendsTheCursorAndDecodesTheDelta() async throws {
+        server.chat.items = [RemoteChatItem(id: "a", kind: "user", text: "one")]
+        _ = try await paired().chatIfChanged(etag: nil, limit: 50, after: 41, epoch: "launch-1")
+        let request = try XCTUnwrap(server.requests.last { $0.path == "/v1/chat/current" })
+        XCTAssertTrue(request.query.contains("after=41"))
+        XCTAssertTrue(request.query.contains("epoch=launch-1"))
+        let page = try JSONDecoder().decode(RemoteChatSnapshot.self, from: Data(#"{"title":"t","state":"idle","running":false,"folder_label":"f","agent":{"id":"claude","name":"Claude"},"items":[],"approvals":[],"forms":[],"queue":[],"options":{},"epoch":"e","seq":9,"delta":true}"#.utf8))
+        XCTAssertEqual(page.seq, 9)
+        XCTAssertEqual(page.epoch, "e")
+        XCTAssertEqual(page.delta, true)
+    }
+
     // MARK: Pairing
 
     func testPairsAfterAllow() async throws {

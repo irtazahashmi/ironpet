@@ -35,6 +35,8 @@ extension CaptureService: CaptureControl {
 
     func captureText(_ id: Int64) -> String? { store.capture(id: id)?.text }
 
+    func captureRef(_ id: Int64) -> String? { store.records.ref(.screen, String(id)) }
+
     func seenApps() -> [(bundleId: String, name: String, captures: Int)] { store.seenApps() }
 
     func callTool(_ name: String, _ args: [String: Any]) -> Result<Any, ScreenMCP.Failure> {

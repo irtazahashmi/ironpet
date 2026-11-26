@@ -124,17 +124,18 @@ class SocketModel {
     func didFail(_ error: Error) {}
 
     /// Reads a resource through the shared retry policy. A failure is not shown here: the screen keeps what it has and the strip speaks.
+    /// `retriesTimeouts: false` is for a big read: a timeout there means the Mac is slow, and a second try only queues the same work again.
     @discardableResult
-    func read<T>(_ call: () async throws -> T) async -> T? { await perform(retrying: true, call) }
+    func read<T>(retriesTimeouts: Bool = true, _ call: () async throws -> T) async -> T? { await perform(retrying: true, retriesTimeouts: retriesTimeouts, call) }
 
     /// Runs one request that changes something on the Mac, once. A retry could send it twice.
     @discardableResult
     func run<T>(_ call: () async throws -> T) async -> T? { await perform(retrying: false, call) }
 
-    private func perform<T>(retrying: Bool, _ call: () async throws -> T) async -> T? {
+    private func perform<T>(retrying: Bool, retriesTimeouts: Bool = true, _ call: () async throws -> T) async -> T? {
         do {
             let value = retrying
-                ? try await RequestRetry.perform(network.retryPolicy, sleep: network.sleep, call)
+                ? try await RequestRetry.perform(network.retryPolicy, sleep: network.sleep, retriesTimeouts: retriesTimeouts, call)
                 : try await call()
             readsWorked += 1
             if !retrying { errorMessage = nil }

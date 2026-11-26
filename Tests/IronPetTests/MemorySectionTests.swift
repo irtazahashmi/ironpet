@@ -103,4 +103,31 @@ final class MemorySectionTests: XCTestCase {
         XCTAssertFalse(none.available)
         XCTAssertTrue(none.rows.isEmpty)
     }
+
+    func testMergingTheBannerPagesMovesTheirFactsAndDropsThemFromTheTrail() throws {
+        _ = store.remember("Lives in Berlin", scope: .people, person: "Maya Chen", source: "chat:a")
+        let keep = try id("Maya Chen"), other = try id("Maya Cheng")
+        model.open(keep)
+        let detail = try XCTUnwrap(model.detail)
+        XCTAssertEqual(detail.possibleDuplicates.map(\.name), ["Maya Cheng"])
+        let message = MemoryDetailMergeMessage.text(into: detail)
+        XCTAssertTrue(message.contains("Maya Cheng (1 fact)"), message)
+        XCTAssertTrue(message.contains("Maya Chen will have 3 facts"), message)
+        XCTAssertTrue(message.contains("cannot be undone"), message)
+
+        XCTAssertNil(model.merge([other], into: keep))
+
+        XCTAssertEqual(model.detail?.facts.count, 3)
+        XCTAssertEqual(model.detail?.entity.aliases, ["Maya Cheng"])
+        XCTAssertTrue(model.detail?.possibleDuplicates.isEmpty ?? false, "the banner goes")
+        XCTAssertNil(model.rows.first { $0.name == "Maya Cheng" }, "the page leaves the browser")
+        XCTAssertEqual(model.trail.map(\.title), ["Maya Chen"])
+    }
+
+    func testAFailedMergeSaysWhyAndChangesNothing() throws {
+        let keep = try id("Maya Chen")
+        let reason = model.merge([try id("Lighthouse")], into: keep)
+        XCTAssertNotNil(reason)
+        XCTAssertEqual(store.entities().count, 4)
+    }
 }

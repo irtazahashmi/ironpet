@@ -144,10 +144,10 @@ public enum ChatMarkdown {
         return blocks
     }
 
-    /// The inline markdown of one block: bold, italic, code spans, strikethrough and links.
+    /// The inline markdown of one block: bold, italic, code spans, strikethrough and links. Record ids in the text become record links.
     public static func inline(_ text: String) -> AttributedString {
         #if canImport(Darwin)
-        (try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text)
+        RecordLinks.link((try? AttributedString(markdown: text, options: .init(interpretedSyntax: .inlineOnlyPreservingWhitespace))) ?? AttributedString(text))
         #else
         // swift-foundation on Linux cannot parse Markdown, so the common inline markers are stripped and the text carries no styling.
         AttributedString(stripInlineMarkers(text))

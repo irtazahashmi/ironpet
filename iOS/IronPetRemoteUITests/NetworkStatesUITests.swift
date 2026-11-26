@@ -19,14 +19,13 @@ final class NetworkStatesUITests: XCTestCase {
     private func launch(dark: Bool = false, extra: [String] = []) {
         app.launchArguments = ["--reset-credentials", "--auto-unlock", "--network-strip-delay", "3", "--network-retry-ms", "100"] + (dark ? ["--force-dark"] : []) + extra
         app.launch()
-        let field = app.textFields["pairing-link-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.tap()
-        field.typeText(server.pairingLink)
+        app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         XCTAssertTrue(app.tabBars.buttons["Agents"].waitForExistence(timeout: 20))
     }
 
+    /// The bubble of a message that waits for the connection. Its accessibility value says so, and the clock glyph is hidden from VoiceOver.
+    private func waitingBubble() -> XCUIElement { app.descendants(matching: .any).matching(NSPredicate(format: "value == 'Waiting to send'")).firstMatch }
     private func any(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
 
     private func openTab(_ name: String) {
@@ -138,14 +137,13 @@ final class NetworkStatesUITests: XCTestCase {
         input.tap()
         input.typeText("hello there")
         app.buttons["send-button"].tap()
-        XCTAssertTrue(any("outgoing-failed").waitForExistence(timeout: 20), "the failed mark sits on the message")
-        XCTAssertTrue(app.buttons["outgoing-retry"].exists)
+        XCTAssertTrue(app.buttons["outgoing-retry"].waitForExistence(timeout: 20), "the retry button sits on the message")
         XCTAssertFalse(any("chat-error").exists, "no row above the transcript")
 
         server.brokenRoutes = [:]
         app.buttons["outgoing-retry"].tap()
         XCTAssertTrue(any("outgoing-delivered").waitForExistence(timeout: 20), "the check shows once the Mac has the message")
-        waitUntilGone(any("outgoing-failed"), "the failed mark goes")
+        waitUntilGone(any("outgoing-retry"), "the retry button goes")
     }
 
     // S5
@@ -158,11 +156,11 @@ final class NetworkStatesUITests: XCTestCase {
         input.tap()
         input.typeText("written offline")
         app.buttons["send-button"].tap()
-        XCTAssertTrue(any("outgoing-waiting").waitForExistence(timeout: 20), "the clock shows while it waits")
+        XCTAssertTrue(waitingBubble().waitForExistence(timeout: 20), "the clock shows while it waits")
         XCTAssertTrue(any("network-strip").waitForExistence(timeout: 20))
         try server.start()
         XCTAssertTrue(any("outgoing-delivered").waitForExistence(timeout: 30), "it goes out and shows the check")
-        waitUntilGone(any("outgoing-waiting"), "the clock goes")
+        waitUntilGone(waitingBubble(), "the clock goes")
     }
 
     // S5
@@ -210,7 +208,7 @@ final class NetworkStatesUITests: XCTestCase {
             input.tap()
             input.typeText("hello there")
             app.buttons["send-button"].tap()
-            XCTAssertTrue(any("outgoing-failed").waitForExistence(timeout: 20))
+            XCTAssertTrue(any("outgoing-retry").waitForExistence(timeout: 20))
             attach("message-failed", dark: dark)
             server.brokenRoutes = [:]
             app.buttons["outgoing-retry"].tap()

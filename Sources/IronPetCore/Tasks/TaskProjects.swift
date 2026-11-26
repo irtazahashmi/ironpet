@@ -97,7 +97,7 @@ package enum TaskProjectValidator {
 extension TaskStore {
     package nonisolated static let projectMigrations: [Database.Migration] = [
         // GTD projects, and the link from a task to its project. Separate from the memory's projects.
-        .init(572, "tasks: projects") { db in
+        .init(582, "tasks: projects") { db in
             try db.execute("""
                 CREATE TABLE IF NOT EXISTS task_projects(id TEXT PRIMARY KEY, title TEXT NOT NULL, outcome TEXT NOT NULL, area TEXT, goal TEXT,
                                                          status TEXT NOT NULL, review_days INTEGER, reviewed REAL,

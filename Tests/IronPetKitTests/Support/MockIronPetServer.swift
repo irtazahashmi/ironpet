@@ -55,6 +55,9 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _assets: [RemoteAsset] = []
     private var _chat = MockIronPetServer.sampleChat
     private var _chatThreads = MockIronPetServer.sampleThreads
+    private var _agentRecords: [RemoteAgentRecord]?
+    private var _agentChats: [String: RemoteChatSnapshot] = [:]
+    private var _agentThreads: [String: [RemoteChatThread]] = [:]
     private var _threadItems: [String: [RemoteChatItem]] = ["th-1": [RemoteChatItem(id: "th-1-u", kind: "user", text: "Old question"), RemoteChatItem(id: "th-1-a", kind: "assistant", text: "Old answer")]]
     private var _openConflict: String?
     private var _uploadFails = false
@@ -67,6 +70,7 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _uploadDelay: TimeInterval = 0
     private var _sendFails = false
     private var _chatReadFailures = 0
+    private var _chatCursor: (epoch: String, seq: Int, changed: Set<String>)?
     private var _sendDelay: TimeInterval = 0
     private var _formDelay: TimeInterval = 0
     private var _formFails = false
@@ -235,6 +239,9 @@ final class MockIronPetServer: @unchecked Sendable {
     var sendFails: Bool { get { lock.lock(); defer { lock.unlock() }; return _sendFails } set { lock.lock(); _sendFails = newValue; lock.unlock() } }
     /// How many of the next chat reads (the whole chat or one message) answer 503, as a Mac that is busy or out of reach does through a proxy. `Int.max` is an outage, and 0 ends it. A dropped
     /// connection is not used because URLSession sends a dropped GET again by itself.
+    /// When set, chat answers carry this `epoch` and `seq`, and a read with a matching `after` and `epoch` gets only the items in `changed`
+    /// with `delta: true`, as a Mac that supports incremental sync does. Nil answers as an older Mac does.
+    var chatCursor: (epoch: String, seq: Int, changed: Set<String>)? { get { lock.lock(); defer { lock.unlock() }; return _chatCursor } set { lock.lock(); _chatCursor = newValue; lock.unlock() } }
     var chatReadFailures: Int { get { lock.lock(); defer { lock.unlock() }; return _chatReadFailures } set { lock.lock(); _chatReadFailures = newValue; lock.unlock() } }
     /// Seconds the Mac takes to answer a send after it has recorded the message.
     var sendDelay: TimeInterval { get { lock.lock(); defer { lock.unlock() }; return _sendDelay } set { lock.lock(); _sendDelay = newValue; lock.unlock() } }
@@ -311,10 +318,10 @@ final class MockIronPetServer: @unchecked Sendable {
 
     /// Sends an event to every open socket and keeps it for replay.
     @discardableResult
-    func publish(_ kind: String, id: String? = nil, item: RemoteChatItem? = nil) -> Int {
+    func publish(_ kind: String, id: String? = nil, item: RemoteChatItem? = nil, agentId: String? = nil) -> Int {
         lock.lock()
         _seq += 1
-        let event = RemoteEvent(seq: _seq, kind: kind, at: Date(), id: id, item: item)
+        let event = RemoteEvent(seq: _seq, kind: kind, at: Date(), id: id, item: item, agentId: agentId)
         buffer.append(event)
         let open = sockets
         lock.unlock()
@@ -407,6 +414,7 @@ final class MockIronPetServer: @unchecked Sendable {
             return status == 200 ? respond(connection, 200, Data(#"{"unexpected":true}"#.utf8)) : fail(connection, status, "failed", "the Mac could not answer")
         }
         let parts = request.path.split(separator: "/").map(String.init)
+        if request.method == "GET", request.path == APIPath.agentRecords { return routeAgentRecords(request, connection) }
         if routeResources(request, parts, connection) || routeChat(request, parts, connection) || routePhaseFour(request, parts, connection) { return }
         switch (request.method, parts.count) {
         case ("POST", 2) where request.path == APIPath.pair: pair(request, connection)
@@ -772,6 +780,7 @@ extension MockIronPetServer {
             return true
         }
         guard parts[1] == "chat" else { return false }
+        if let agentId = Self.queryValue("agentId", in: request.query) { return routeAgentChat(agentId, request, parts, connection) }
         if get, (parts.count == 3 && parts[2] == "current") || (parts.count == 4 && parts[2] == "messages") {
             lock.lock()
             let drop = _chatReadFailures > 0
@@ -782,7 +791,18 @@ extension MockIronPetServer {
         switch (parts.count, parts.dropFirst(2).first ?? "") {
         case (3, "current") where get:
             // The ETag is a hash of the body, as the Mac sends it. The phone's `If-None-Match` gets 304 with no body.
-            let body = (try? encoder.encode(Self.page(of: chat, query: request.query))) ?? Data("{}".utf8)
+            var answer = Self.page(of: chat, query: request.query)
+            if let cursor = chatCursor {
+                answer.epoch = cursor.epoch
+                answer.seq = cursor.seq
+                let query = request.query
+                if query.contains("epoch=\(cursor.epoch)"), query.contains("after=") {
+                    answer.items = chat.items.filter { cursor.changed.contains($0.id) }
+                    answer.delta = true
+                    answer.hasMore = nil
+                }
+            }
+            let body = (try? encoder.encode(answer)) ?? Data("{}".utf8)
             let etag = "\"" + String(body.reduce(0) { ($0 &* 31) &+ Int($1) }) + "\""
             if request.headers["if-none-match"] == etag {
                 respond(connection, 304, Data(), contentType: "application/json; charset=utf-8", headers: ["ETag": etag])
@@ -1202,5 +1222,64 @@ extension MockIronPetServer {
             return respond(connection, 200, Data(#"{"selected":true}"#.utf8))
         }
         fail(connection, 404, "not_found", "not found")
+    }
+}
+
+// MARK: Several agents
+
+extension MockIronPetServer {
+    /// What `GET /v1/agent-records` answers. Nil is a Mac from before several agents: the route is 404.
+    var agentRecords: [RemoteAgentRecord]? { get { lock.lock(); defer { lock.unlock() }; return _agentRecords } set { lock.lock(); _agentRecords = newValue; lock.unlock() } }
+
+    /// The chat of an agent other than agent 1, and its saved threads. A chat call for an id without one answers 404, as an unknown agent does.
+    func setAgentChat(_ id: String, chat: RemoteChatSnapshot, threads: [RemoteChatThread] = []) {
+        lock.lock(); _agentChats[id] = chat; _agentThreads[id] = threads; lock.unlock()
+    }
+
+    func agentChat(_ id: String) -> RemoteChatSnapshot? { lock.lock(); defer { lock.unlock() }; return _agentChats[id] }
+
+    /// Adds a message to an agent's chat and sends the `chat.item` event with the agent's id, as the Mac does for an agent other than agent 1.
+    func postAgentMessage(_ agentId: String, id: String, text: String) {
+        lock.lock()
+        let item = RemoteChatItem(id: id, kind: "assistant", date: Date(), text: text)
+        _agentChats[agentId]?.items.append(item)
+        lock.unlock()
+        _ = publish(RemoteEvent.chatItem, id: id, item: item, agentId: agentId)
+    }
+
+    static func queryValue(_ key: String, in query: String) -> String? {
+        for pair in query.split(separator: "&") {
+            let kv = pair.split(separator: "=", maxSplits: 1).map(String.init)
+            if kv.count == 2, kv[0] == key { return kv[1].removingPercentEncoding ?? kv[1] }
+        }
+        return nil
+    }
+
+    fileprivate func routeAgentRecords(_ request: Recorded, _ connection: NWConnection) {
+        guard let records = agentRecords else { return fail(connection, 404, "not_found", "not found") }
+        respond(connection, 200, AgentRecordListResponse(agents: records))
+    }
+
+    /// The chat routes with `agentId`: read the agent's chat, its threads and one message, send a message, and accept the rest.
+    fileprivate func routeAgentChat(_ agentId: String, _ request: Recorded, _ parts: [String], _ connection: NWConnection) -> Bool {
+        lock.lock(); let chat = _agentChats[agentId]; let threads = _agentThreads[agentId] ?? []; lock.unlock()
+        guard let chat else { fail(connection, 404, "not_found", "no agent \(agentId)"); return true }
+        let get = request.method == "GET", post = request.method == "POST"
+        switch (parts.count, parts.dropFirst(2).first ?? "") {
+        case (3, "current") where get: respond(connection, 200, Self.page(of: chat, query: request.query))
+        case (3, "threads") where get: respond(connection, 200, ChatThreadListResponse(threads: threads))
+        case (4, "messages") where get:
+            guard let item = chat.items.first(where: { $0.id == parts[3] }) else { fail(connection, 404, "not_found", "no message"); return true }
+            respond(connection, 200, item)
+        case (4, "current") where post && parts[3] == "messages":
+            guard let text = request.json["text"] as? String, !text.isEmpty else { fail(connection, 400, "invalid", "the message is empty"); return true }
+            let id = "\(agentId)-m-\(chat.items.count + 1)"
+            let item = RemoteChatItem(id: id, kind: "user", date: Date(), origin: "ios", text: text)
+            lock.lock(); _agentChats[agentId]?.items.append(item); lock.unlock()
+            respond(connection, 200, RemoteSendResult(outcome: "sent"))
+            _ = publish(RemoteEvent.chatItem, id: id, item: item, agentId: agentId)
+        default: respond(connection, 200, Data("{}".utf8))
+        }
+        return true
     }
 }

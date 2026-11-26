@@ -21,6 +21,10 @@ package struct RecordResolver {
     private let refs: RecordRefs
     private let readers: [RecordKind: Reader]
 
+    /// Kinds whose owner keeps the ref beside the record (memory pages and claims), so it is not in `record_refs` and is its own key.
+    /// Their reader says when nothing has that ref.
+    private static let ownRefs: Set<RecordKind> = [.page, .claim]
+
     package init(refs: RecordRefs, readers: [RecordKind: Reader] = [:]) {
         self.refs = refs
         self.readers = readers
@@ -41,8 +45,9 @@ package struct RecordResolver {
 
     /// The record an id names. An old id must be the key of exactly one record: when two kinds share it, the caller must use a ref.
     package func resolve(_ id: String) -> Result<Found, RecordError> {
-        if RecordID.parse(id) != nil, let found = refs.lookup(id) {
-            return .success(Found(kind: found.kind, key: found.key, ref: id))
+        if let parsed = RecordID.parse(id) {
+            if let found = refs.lookup(id) { return .success(Found(kind: found.kind, key: found.key, ref: id)) }
+            if Self.ownRefs.contains(parsed.kind) { return .success(Found(kind: parsed.kind, key: id, ref: id)) }
         }
         let matches = refs.lookup(key: id)
         switch matches.count {

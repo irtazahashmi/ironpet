@@ -30,10 +30,7 @@ final class ChatCacheUITests: XCTestCase {
 
         app.launchArguments = ["--reset-credentials"]
         app.launch()
-        let field = app.textFields["pairing-link-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.tap()
-        field.typeText(server.pairingLink)
+        app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         openChat()
         XCTAssertTrue(any("bubble-k-3").waitForExistence(timeout: 20), "the chat loads from the Mac once")

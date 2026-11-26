@@ -34,10 +34,7 @@ final class ChatFormPagesUITests: XCTestCase {
         server.chat.forms = [RemoteForm(id: "form-1", message: "A few dinner questions", fields: (0..<questions).flatMap { question($0) })]
         app.launchArguments = ["--reset-credentials"]
         app.launch()
-        let field = app.textFields["pairing-link-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.tap()
-        field.typeText(server.pairingLink)
+        app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         let tab = app.tabBars.buttons["Chat"]
         XCTAssertTrue(tab.waitForExistence(timeout: 20))
