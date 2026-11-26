@@ -128,16 +128,36 @@ final class IronPetWindowModel: ObservableObject {
     @Published var sidebarWidth: CGFloat {
         didSet { defaults.set(Double(sidebarWidth), forKey: Self.sidebarWidthKey) }
     }
+    /// The order of the sidebar's sections and the ones the user hid. Saved on this Mac.
+    @Published private(set) var layout: SidebarLayout {
+        didSet { layout.save(to: defaults) }
+    }
     private let defaults: UserDefaults
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        layout = SidebarLayout(defaults: defaults)
         sidebarCollapsed = defaults.bool(forKey: Self.sidebarCollapsedKey)
         let saved = defaults.double(forKey: Self.sidebarWidthKey)
         sidebarWidth = saved == 0 ? Self.minSidebarWidth : min(max(CGFloat(saved), Self.minSidebarWidth), Self.maxSidebarWidth)
     }
 
     func toggleSidebar() { sidebarCollapsed.toggle() }
+
+    // MARK: Sidebar arrangement
+
+    /// The rows the sidebar draws, in the user's order, from the sections that can be listed. ⌘1 to ⌘9 index into this.
+    func sidebarRows(_ available: [IronPetSection]) -> [IronPetSection] { layout.visible(available) }
+
+    func setSectionHidden(_ section: IronPetSection, _ hidden: Bool) { layout.setHidden(section, hidden) }
+
+    func moveRows(from offsets: IndexSet, to destination: Int, in available: [IronPetSection]) {
+        layout.moveVisible(from: offsets, to: destination, in: available)
+    }
+
+    func moveRow(_ section: IronPetSection, before target: IronPetSection?, in available: [IronPetSection]) {
+        layout.move(section, before: target, in: available)
+    }
 
     /// A bubble was clicked: show the Notifications page with this entry open.
     func openNotification(_ id: String) {
@@ -185,6 +205,29 @@ final class IronPetWindowModel: ObservableObject {
     func clearRailTip() {
         railTipTask?.cancel()
         railTip = nil
+    }
+}
+
+/// Reorders the rail while an icon is dragged over another: the dragged icon takes the place of the one under it.
+private struct RailDrop: DropDelegate {
+    let target: IronPetSection
+    let model: IronPetWindowModel
+    let available: [IronPetSection]
+    @Binding var dragged: IronPetSection?
+
+    func dropEntered(info: DropInfo) {
+        guard let dragged, dragged != target else { return }
+        let rows = model.sidebarRows(available)
+        guard let from = rows.firstIndex(of: dragged), let to = rows.firstIndex(of: target) else { return }
+        // Dragging down puts it after the target, dragging up before it.
+        let before = from < to ? rows.indices.contains(to + 1) ? rows[to + 1] : nil : target
+        model.moveRow(dragged, before: before, in: available)
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? { DropProposal(operation: .move) }
+    func performDrop(info: DropInfo) -> Bool {
+        dragged = nil
+        return true
     }
 }
 
@@ -268,9 +311,23 @@ struct IronPetWindowView: View {
         .onChange(of: model.section) { _, section in if section != .memory { memoryModel.showList() } }
     }
 
-    private var shown: [IronPetSection] {
+    /// The sections that can be listed, whether or not the user hid them.
+    private var available: [IronPetSection] {
         IronPetSection.shown(chat: chat != nil, transcripts: meetings != nil, automations: settings != nil,
                              today: model.todayShown, notifications: notifications !== NotificationsModel.empty)
+    }
+
+    /// The rows drawn, in the user's order without the hidden sections.
+    private var shown: [IronPetSection] { model.sidebarRows(available) }
+
+    /// Right-click on the sidebar: every section with a check, in the order of the sidebar.
+    @ViewBuilder private var sectionMenu: some View {
+        ForEach(model.layout.arranged(available)) { section in
+            Toggle(section.title, isOn: Binding(
+                get: { !model.layout.isHidden(section) },
+                set: { model.setSectionHidden(section, !$0) }))
+                .disabled(section == SidebarLayout.pinned)
+        }
     }
 
     private var collapsed: Bool { model.sidebarCollapsed }
@@ -302,7 +359,9 @@ struct IronPetWindowView: View {
     private var sidebar: some View {
         List(selection: Binding(get: { model.section }, set: { if let section = $0 { model.section = section } })) {
             ForEach(shown) { row($0) }
+                .onMove { model.moveRows(from: $0, to: $1, in: available) }
         }
+        .contextMenu { sectionMenu }
         .listStyle(.sidebar)
         .scrollContentBackground(.hidden)
         .safeAreaInset(edge: .top, spacing: 0) {
@@ -344,6 +403,12 @@ struct IronPetWindowView: View {
                 .foregroundStyle(model.section == section ? Color.accentColor : Color.primary)
                 .railHover(model, name: section.title, shortcut: section.shortcutLabel(in: shown))
                 .accessibilityLabel(section.title)
+                .onDrag {
+                    draggedRail = section
+                    return NSItemProvider(object: section.rawValue as NSString)
+                }
+                .onDrop(of: [.text], delegate: RailDrop(target: section, model: model, available: available,
+                                                        dragged: $draggedRail))
             }
             Spacer(minLength: 0)
             Button(action: { model.clearRailTip(); actions.onSettings() }) {
@@ -356,7 +421,12 @@ struct IronPetWindowView: View {
             .padding(.bottom, 10)
         }
         .padding(.top, PageHeaderMetrics.height + 4)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .contentShape(Rectangle())
+        .contextMenu { sectionMenu }
     }
+
+    @State private var draggedRail: IronPetSection?
 
     @ViewBuilder private func railBadge(_ count: Int) -> some View {
         if count > 0 {
