@@ -129,7 +129,8 @@ final class IronPetPanel: NSPanel {
 
     /// The rows the sidebar shows; ⌘1 to ⌘9 index into this list.
     private var sidebarSections: [IronPetSection] {
-        IronPetSection.shown(chat: session != nil, transcripts: true, automations: true, today: model.todayShown)
+        model.sidebarRows(IronPetSection.shown(chat: session != nil, transcripts: true, automations: true,
+                                               today: model.todayShown))
     }
 
     private var onChat: Bool { session != nil && model.section == .chat }
