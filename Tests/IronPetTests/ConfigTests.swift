@@ -242,6 +242,31 @@ final class ConfigTests: XCTestCase {
         XCTAssertTrue(tasks.meetingSuggestions, "the work stays on")
     }
 
+    func testTheInboxScanIsOffByDefaultAndTheRetiredScanKeysDoNotTurnItOn() throws {
+        let tasks = Config().tasks
+        XCTAssertFalse(tasks.inboxScan)
+        XCTAssertFalse(tasks.inboxScanScreen)
+        XCTAssertTrue(tasks.inboxScanBubbles)
+        XCTAssertEqual(tasks.inboxScanMinutes, 30)
+        try write(#"{"tasks":{"scan":true,"scanMinutes":5}}"#)
+        let old = Config.load(from: file).config.tasks
+        XCTAssertFalse(old.inboxScan, "the old task scan's keys mean nothing now")
+        XCTAssertEqual(old.inboxScanMinutes, 30)
+        try write(#"{"tasks":{"inboxScan":true,"inboxScanMinutes":60,"inboxScanScreen":true,"inboxScanBubbles":false}}"#)
+        let set = Config.load(from: file).config.tasks
+        XCTAssertTrue(set.inboxScan)
+        XCTAssertEqual(set.inboxScanMinutes, 60)
+        XCTAssertTrue(set.inboxScanScreen)
+        XCTAssertFalse(set.inboxScanBubbles)
+    }
+
+    func testTheInboxScanIntervalIsClamped() throws {
+        try write(#"{"tasks":{"inboxScanMinutes":0}}"#)
+        XCTAssertEqual(Config.load(from: file).config.tasks.inboxScanMinutes, 5)
+        try write(#"{"tasks":{"inboxScanMinutes":99999}}"#)
+        XCTAssertEqual(Config.load(from: file).config.tasks.inboxScanMinutes, 1_440)
+    }
+
     func testRetiredTaskKeysInAnOldFileAreIgnored() throws {
         try write(#"{"tasks":{"dueReminders":false,"keepDoneDays":9,"scan":false,"scanMinutes":60,"meetingSuggestions":false}}"#)
         let (config, error) = Config.load(from: file)

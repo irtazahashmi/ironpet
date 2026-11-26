@@ -201,7 +201,28 @@ package final class TaskStore {
                 try db.execute("ALTER TABLE task_suggestion_keys ADD COLUMN item TEXT")
             }
         },
+        // Where the inbox scan stopped reading: the last chat message and the last screen capture it has read. They live here and not
+        // in memory, so Forget Everything does not make the scan read old text again.
+        .init(593, "inbox: scan cursors", sql: """
+            CREATE TABLE IF NOT EXISTS inbox_scan_cursors(key TEXT PRIMARY KEY, item TEXT NOT NULL, at REAL NOT NULL) WITHOUT ROWID;
+            """),
     ]
+
+    /// Where the inbox scan stopped in `key` (a chat's id, or `screen`), or nil when it has not read it.
+    package func scanCursor(_ key: String) -> (item: String, at: Date)? {
+        guard let row = (try? database.read { try $0.rows("SELECT item, at FROM inbox_scan_cursors WHERE key = ?", [key]) })?.first,
+              let item = row[0] as? String else { return nil }
+        return (item, Date(timeIntervalSince1970: row[1] as? Double ?? 0))
+    }
+
+    package func setScanCursor(_ key: String, item: String) {
+        try? database.write {
+            try $0.execute("""
+                INSERT INTO inbox_scan_cursors(key, item, at) VALUES(?, ?, ?)
+                ON CONFLICT(key) DO UPDATE SET item = excluded.item, at = excluded.at
+                """, [key, item, now().timeIntervalSince1970])
+        }
+    }
 
     /// A source reference as stored: a JSON object, keys sorted.
     package nonisolated static func refText(_ object: [String: Any]) -> String? { TaskRef.text(object) }

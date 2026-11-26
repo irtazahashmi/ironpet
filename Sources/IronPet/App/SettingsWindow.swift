@@ -158,6 +158,7 @@ struct SettingsView: View {
     static let pages = [
         Page(tag: "general", title: "General", symbol: SharedSymbols.settings),
         Page(tag: "memory", title: "Memory", symbol: SharedSymbols.memory),
+        Page(tag: "inbox", title: "Inbox", symbol: "tray"),
         Page(tag: "prompts", title: "Prompts", symbol: "text.bubble"),
         Page(tag: "automations", title: "Automations", symbol: "clock.arrow.2.circlepath"),
         Page(tag: "integrations", title: "Integrations", symbol: "puzzlepiece.extension"),
@@ -214,6 +215,7 @@ struct SettingsView: View {
     @ViewBuilder private var content: some View {
         switch model.tab {
         case "memory": MemorySettings(model: model)
+        case "inbox": InboxSettings(model: model)
         case "prompts": PromptsSettings(model: model)
         case "automations": AutomationSettingsPage(model: model)
         case "integrations": IntegrationsSettings(telegram: model.telegram)

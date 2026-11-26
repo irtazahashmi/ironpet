@@ -129,6 +129,10 @@
             "voice" : "am_puck"
           },
           "tasks" : {
+            "inboxScan" : false,
+            "inboxScanBubbles" : true,
+            "inboxScanMinutes" : 30,
+            "inboxScanScreen" : false,
             "meetingSuggestionBubbles" : true,
             "meetingSuggestions" : true
           },
@@ -305,6 +309,10 @@
             "voice" : "am_puck"
           },
           "tasks" : {
+            "inboxScan" : false,
+            "inboxScanBubbles" : true,
+            "inboxScanMinutes" : 30,
+            "inboxScanScreen" : false,
             "meetingSuggestionBubbles" : true,
             "meetingSuggestions" : true
           },
@@ -478,6 +486,10 @@
             "voice" : "am_puck"
           },
           "tasks" : {
+            "inboxScan" : false,
+            "inboxScanBubbles" : true,
+            "inboxScanMinutes" : 30,
+            "inboxScanScreen" : false,
             "meetingSuggestionBubbles" : true,
             "meetingSuggestions" : true
           },

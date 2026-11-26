@@ -244,6 +244,16 @@ enum PreviewRenderer {
         for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
             render(ScreenSettings(model: settingsModel).frame(width: 560, height: 900).panel(), to: dir, "settings-screen" + suffix, scheme: scheme)
         }
+        // Settings → Inbox: the scan on, with screen text on and with the scan off.
+        for (name, scanOn) in [("settings-inbox", true), ("settings-inbox-off", false)] {
+            var inbox = screenOn
+            inbox.tasks.inboxScan = scanOn
+            inbox.tasks.inboxScanScreen = scanOn
+            ConfigStore.shared.usePreview(inbox)
+            for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
+                render(InboxSettings(model: settingsModel).frame(width: 560, height: 360).panel(), to: dir, name + suffix, scheme: scheme)
+            }
+        }
         // Settings → Devices with a QR code on screen and two paired devices.
         if let database = try? Database(path: nil, migrations: AppMigrations.all) {
             var remoteOn = patterned
