@@ -40,7 +40,7 @@ final class PhoneAgentRouteTests: XCTestCase {
         let registry = AgentRegistry(database: APITestSupport.memoryDatabase())
         let api = APITestSupport.makeAPI(agents: registry)
         let answer = try RemoteResources(api: api, device: "dev_1").registerPhoneAgent(["name": "Ghost on iPhone", "provider": "anthropic", "model": "claude-sonnet-5-5"])
-        XCTAssertEqual(answer["device_id"] as? String, "dev_1")
+        XCTAssertEqual(answer["deviceId"] as? String, "dev_1")
         XCTAssertEqual(registry.list().filter(\.isRemote).map(\.name), ["Ghost on iPhone"])
         let listed = try RemoteResources(api: api, device: "dev_1").agentRecords()
         XCTAssertEqual((listed["agents"] as? [[String: Any]])?.count, 2, "the agents list the phone reads has agent 1 and the phone's agent")

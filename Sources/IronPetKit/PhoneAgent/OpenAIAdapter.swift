@@ -45,8 +45,10 @@ public struct OpenAIAdapter: AgentProviderAdapter {
                 guard let item = object["item"] as? [String: Any], item["type"] as? String == "function_call" else { return [] }
                 let id = (item["call_id"] as? String) ?? (item["id"] as? String) ?? ""
                 return [.toolCall(AgentToolCall(id: id, name: item["name"] as? String ?? "", arguments: item["arguments"] as? String ?? ""))]
-            case "response.completed", "response.incomplete":
+            case "response.completed":
                 return [.finished]
+            case "response.incomplete":
+                throw AgentError("The answer was cut off before it was finished.")
             case "response.failed", "error":
                 let error = (object["error"] as? [String: Any]) ?? ((object["response"] as? [String: Any])?["error"] as? [String: Any])
                 throw AgentError((error?["message"] as? String) ?? (object["message"] as? String) ?? "OpenAI returned an error")

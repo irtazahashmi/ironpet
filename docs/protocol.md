@@ -683,7 +683,7 @@ its reference names the device, as `iphone:<device id>`. The phone keeps a queue
 can take it over.
 
 `PUT /v1/devices/me/agent` registers the phone's agent as an agent of the Mac, or updates the one this device registered. The body is
-`{name, provider, model?}` with `provider` `anthropic` or `openai`. The answer is the agent record, with `device_id` set to the calling
+`{name, provider, model?}` with `provider` `anthropic` or `openai`. The answer is the agent record, with `deviceId` set to the calling
 device. `GET /v1/agent-records` lists it and `agents_list` returns it. The Mac starts no process for it, shows no pet for it, offers no
 chat with it and does not let it become the active agent. The record goes when the device is unpaired or revoked.
 

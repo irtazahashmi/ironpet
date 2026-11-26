@@ -38,6 +38,7 @@ public protocol InboxQueueStoring: AnyObject, Sendable {
     func save(_ items: [QueuedInboxItem])
 }
 
+// @unchecked Sendable: every access to `items` holds `lock`.
 public final class MemoryInboxQueueStore: InboxQueueStoring, @unchecked Sendable {
     private let lock = NSLock()
     private var items: [QueuedInboxItem]

@@ -2,7 +2,7 @@ import Foundation
 
 /// The agent loop: ask the model, run the tools it calls, send the results back, and repeat until it answers without a call. It depends
 /// on Foundation only. The app supplies the transport, the key and the tools.
-public final class AgentLoop: @unchecked Sendable {
+public final class AgentLoop: Sendable {
     /// The most rounds of model and tools in one request, so a model that keeps calling tools cannot run forever.
     public static let maxRounds = 8
 

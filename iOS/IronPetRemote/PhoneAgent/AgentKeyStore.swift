@@ -11,6 +11,7 @@ protocol AgentKeyStoring: AgentKeyProviding {
 
 /// One Keychain item for each provider, readable after the first unlock and never moved to another device by a backup or iCloud Keychain.
 /// The key is in no file, no `UserDefaults` and no record that syncs.
+// @unchecked Sendable: `service` is a constant and the Keychain serializes access.
 final class KeychainAgentKeyStore: AgentKeyStoring, @unchecked Sendable {
     let service: String
 
@@ -52,6 +53,7 @@ final class KeychainAgentKeyStore: AgentKeyStoring, @unchecked Sendable {
 }
 
 /// A key store for tests that must not touch the Keychain.
+// @unchecked Sendable: every access to `keys` holds `lock`.
 final class MemoryAgentKeyStore: AgentKeyStoring, @unchecked Sendable {
     private let lock = NSLock()
     private var keys: [AgentProvider: String] = [:]

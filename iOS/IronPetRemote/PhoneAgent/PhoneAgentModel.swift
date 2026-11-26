@@ -120,8 +120,11 @@ final class PhoneAgentModel: SocketModel {
                 let added = try await loop.run(message, history: history, config: config) { event in
                     Task { @MainActor [weak self] in self?.apply(event) }
                 }
-                self.history = history + added
+                // Events were queued on the main actor in order. This hop runs behind them, so none arrives after the cleanup below.
+                await MainActor.run {}
+                if !Task.isCancelled { self.history = history + added }
             } catch is CancellationError {
+            } catch let error as URLError where error.code == .cancelled {
             } catch {
                 self.messages.append(Message(role: .error, text: error.localizedDescription))
             }

@@ -64,6 +64,11 @@ public struct AnthropicAdapter: AgentProviderAdapter {
             case "content_block_stop":
                 guard let index = object["index"] as? Int, let call = calls.removeValue(forKey: index) else { return [] }
                 return [.toolCall(AgentToolCall(id: call.id, name: call.name, arguments: call.json))]
+            case "message_delta":
+                if (object["delta"] as? [String: Any])?["stop_reason"] as? String == "max_tokens" {
+                    throw AgentError("The answer was cut off because it reached the length limit.")
+                }
+                return []
             case "message_stop":
                 return [.finished]
             case "error":

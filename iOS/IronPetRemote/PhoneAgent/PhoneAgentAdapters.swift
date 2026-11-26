@@ -64,6 +64,7 @@ struct URLSessionAgentTransport: AgentTransport {
 }
 
 /// Fetches a page as text. A redirect to an address `WebFetchTool` would refuse is not followed.
+// @unchecked Sendable: the lazy session is created once and URLSession is thread safe.
 final class URLSessionWebFetcher: NSObject, WebFetching, URLSessionTaskDelegate, @unchecked Sendable {
     private lazy var session: URLSession = {
         let configuration = URLSessionConfiguration.ephemeral
@@ -98,6 +99,7 @@ final class URLSessionWebFetcher: NSObject, WebFetching, URLSessionTaskDelegate,
 
 /// The phone's calendar and reminders through EventKit. The permission prompt appears the first time a tool needs the access, and a refusal
 /// is the tool's answer, so the model can tell the user where to turn it on.
+// @unchecked Sendable: EKEventStore is documented as usable from any thread and the class holds nothing else.
 final class EventKitCalendar: DeviceCalendarHost, @unchecked Sendable {
     private let store = EKEventStore()
 
@@ -120,6 +122,7 @@ final class EventKitCalendar: DeviceCalendarHost, @unchecked Sendable {
 }
 
 /// The queue of items the agent added, in one JSON file in the app's own storage and out of backups.
+// @unchecked Sendable: every read and write of the file holds `lock`.
 final class FileInboxQueueStore: InboxQueueStoring, @unchecked Sendable {
     private let url: URL
     private let lock = NSLock()
