@@ -133,6 +133,18 @@ package enum TaskMCP {
                   "status": ["type": "string", "enum": TaskProject.Status.allCases.map(\.rawValue)],
                   "review_days": ["type": "integer", "minimum": 1, "maximum": TaskProjectValidator.maxReviewDays],
                   "reviewed": ["type": "boolean"]]),
+            tool("task_goals_list", "List the user's areas of focus and active goals (include_closed adds achieved and dropped ones). Each goal has its key_results (start, target, current, progress 0 to 1), its overall progress and the ids of the projects that serve it. Vision and purpose are not here: they are memory notes.",
+                 ["include_closed": ["type": "boolean"]]),
+            tool("task_goals_upsert", "Create a goal (leave out id) or change one. A goal is what the user wants to reach in the next year or two; link projects to it by setting their goal to its id with task_projects_upsert.",
+                 ["id": ["type": "string"], "title": ["type": "string", "maxLength": TaskProjectValidator.maxTitle], "why": ["type": "string"],
+                  "area": ["type": "string", "description": "An area id; null clears it."],
+                  "status": ["type": "string", "enum": TaskGoal.Status.allCases.map(\.rawValue)], "due": due]),
+            tool("task_areas_upsert", "Create an area of focus (leave out id), such as Health or Sales, or change one.",
+                 ["id": ["type": "string"], "title": ["type": "string", "maxLength": TaskProjectValidator.maxTitle], "notes": ["type": "string"]]),
+            tool("task_key_results_upsert", "Add a key result to a goal (goal, metric, start, target; current starts at start) or change one by id, most often its current value. Ask the user for numbers you cannot read from a source.",
+                 ["id": ["type": "string"], "goal": ["type": "string"], "metric": ["type": "string"], "start": ["type": "number"],
+                  "target": ["type": "number"], "current": ["type": "number"], "unit": ["type": "string"], "due": due,
+                  "source": ["type": "string", "description": "Where the current value comes from, such as a URL"]]),
             tool("tasks_delete", "Delete a task that should never have existed. Prefer tasks_close for finished work.", id, required: ["id"]),
         ]
     }

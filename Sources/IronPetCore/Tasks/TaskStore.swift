@@ -15,6 +15,10 @@ package final class TaskStore {
     package private(set) var suggestions: [TaskSuggestion] = [] { willSet { changes.send() } }
     /// GTD projects (`TaskProjects.swift`), title order.
     package internal(set) var projects: [TaskProject] = [] { willSet { changes.send() } }
+    /// GTD's horizons 2 and 3 (`TaskGoals.swift`).
+    package internal(set) var areas: [TaskArea] = [] { willSet { changes.send() } }
+    package internal(set) var goals: [TaskGoal] = [] { willSet { changes.send() } }
+    package internal(set) var keyResults: [TaskKeyResult] = [] { willSet { changes.send() } }
 
     package nonisolated static let migrations: [Database.Migration] = [
         .init(200, "tasks: items, links, events, suggestions", sql: """
@@ -151,7 +155,7 @@ package final class TaskStore {
                 try db.execute("UPDATE task_items SET asked_at = updated WHERE waiting_on IS NOT NULL")
             }
         },
-    ] + projectMigrations
+    ] + projectMigrations + goalMigrations
 
     /// A source reference as stored: a JSON object, keys sorted.
     package nonisolated static func refText(_ object: [String: Any]) -> String? { TaskRef.text(object) }
@@ -760,6 +764,10 @@ package final class TaskStore {
             if suggested != suggestions { suggestions = suggested }
             let loaded = try database.read { try Self.readProjects($0) }
             if loaded != projects { projects = loaded }
+            let horizons = try database.read { try Self.readHorizons($0) }
+            if horizons.areas != areas { areas = horizons.areas }
+            if horizons.goals != goals { goals = horizons.goals }
+            if horizons.keyResults != keyResults { keyResults = horizons.keyResults }
         } catch {
             NSLog("ironpet: could not read tasks: \(error.localizedDescription)")
         }

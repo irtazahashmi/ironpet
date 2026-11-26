@@ -4,7 +4,7 @@ import enum IronPetKit.QuickFilterNode
 
 /// How the Tasks page shows its tasks. Saved in UserDefaults, so the choice survives a relaunch.
 enum TaskViewMode: String, CaseIterable {
-    case list, board, projects
+    case list, board, projects, goals
 
     static let key = "tasksViewMode"
 

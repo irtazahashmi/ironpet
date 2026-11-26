@@ -159,7 +159,7 @@ struct TaskListView: View {
             let content = Self.content(unavailable: tasks.unavailable != nil, isEmpty: tasks.suggestions.isEmpty && tasks.all.isEmpty)
             let columns = Self.columns(tasks.all, filter: activeFilter, query: search)
             // Quick filters narrow tasks, not projects, so the Projects view has no chips.
-            if mode != .projects, content == .list || !tasks.quickFilters.isEmpty {
+            if mode != .projects, mode != .goals, content == .list || !tasks.quickFilters.isEmpty {
                 QuickFilterBar(filters: QuickFilter.chips(tasks.quickFilters), builtIn: tasks.builtInQuickFilters, selection: shownFilter,
                                onAdd: { filterRequest = .add },
                                onEdit: { filterRequest = .edit($0) },
@@ -171,6 +171,10 @@ struct TaskListView: View {
                 && (mode == .board || isNextActions || TaskBoard.deferred(tasks.all, filter: activeFilter, query: search).isEmpty)
             if content == .unavailable {
                 Spacer()
+            } else if mode == .goals {
+                TaskGoalsView(tasks: tasks, search: search)
+                    .onAppear { reveal(focus.wrappedValue, nil) }
+                    .onChange(of: focus.wrappedValue) { reveal(focus.wrappedValue, nil) }
             } else if mode == .projects {
                 TaskProjectsView(tasks: tasks, search: search, onOpenTask: { nav.open($0) })
                     .onAppear { reveal(focus.wrappedValue, nil) }
@@ -257,7 +261,7 @@ struct TaskListView: View {
         .pickerStyle(.segmented)
         .labelsHidden()
         .fixedSize()
-        .accessibilityLabel("Show tasks as a list, a board or by project")
+        .accessibilityLabel("Show tasks as a list, a board, by project, or the goals")
         .help("Show the tasks as a list, as a board of columns, or grouped by project")
     }
 
@@ -335,7 +339,7 @@ struct TaskListView: View {
         focus.wrappedValue = nil
         nav.close()
         // The Projects view lists projects, not tasks, so the task's page is where it shows.
-        if mode == .projects { nav.open(id); return }
+        if mode == .projects || mode == .goals { nav.open(id); return }
         if task.status == .done { showDone = true }
         if task.status == .someday {
             showSomeday = true
