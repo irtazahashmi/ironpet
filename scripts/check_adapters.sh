@@ -23,6 +23,7 @@ check pi PI_ACP_PI_COMMAND=/usr/bin/true
 # Size guard: the bundle holds three adapters and no agent, runtime or model. The main executable is exempt from the
 # 20 MB limit because it links FluidAudio (speaker recognition), whose text-processing library alone is about 57 MB
 # before dead-stripping. It has its own, higher limit. The diarization models are downloaded on first use, never bundled.
+# The executable grows with features and links FluidAudio, so the limit was raised from 70 MB to 80 MB on 2026-11-26.
 if [ -n "$(find "$APP" -size +20M ! -path "$APP/Contents/MacOS/IronPet")" ]; then echo "FAIL: a resource over 20 MB is in the app bundle"; status=1; else echo "ok: no resource over 20 MB in the bundle"; fi
-if [ -n "$(find "$APP/Contents/MacOS" -size +70M)" ]; then echo "FAIL: the executable is over 70 MB"; status=1; else echo "ok: the executable is under 70 MB"; fi
+if [ -n "$(find "$APP/Contents/MacOS" -size +80M)" ]; then echo "FAIL: the executable is over 80 MB"; status=1; else echo "ok: the executable is under 80 MB"; fi
 exit $status
