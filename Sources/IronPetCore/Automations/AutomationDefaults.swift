@@ -10,7 +10,7 @@ package enum AutomationDefaults {
     package static let dayRecapID = "day-recap"
     /// The automations that belong to this install, not to an agent: they are listed for every agent and run as they always have.
     /// The memory pass is not an automation, so it needs no entry.
-    package static let nodeLevelIDs: Set<String> = [morningBriefID, dayRecapID, taskReviewID, taskScanID, mailCalendarID]
+    package static let nodeLevelIDs: Set<String> = [morningBriefID, dayRecapID, mailCalendarID]
     package static let weekdays = ["mon", "tue", "wed", "thu", "fri"]
 
     /// The built-in morning brief: what needs the user today, at 09:00 on weekdays. Off until the user turns it on. A brief
@@ -19,7 +19,7 @@ package enum AutomationDefaults {
         Automation(id: morningBriefID, name: "Morning brief", enabled: enabled,
                    trigger: .init(type: "daily", times: ["09:00"], weekdays: weekdays, catchUpMinutes: 180),
                    action: .init(type: "digest", digest: "brief"), presentation: .init(symbol: "sun.max.fill"), createdBy: "user",
-                   note: "Tasks due, tasks that need you, open alerts, meeting action items and waiting agents. Built from data on this Mac; no agent runs.")
+                   note: "Open alerts, meeting action items, inbox items and waiting agents. Built from data on this Mac; no agent runs.")
     }
 
     /// The built-in end-of-day recap: what happened today, at 18:00 on weekdays. Off until the user turns it on.
@@ -27,66 +27,41 @@ package enum AutomationDefaults {
         Automation(id: dayRecapID, name: "End-of-day recap", enabled: enabled,
                    trigger: .init(type: "daily", times: ["18:00"], weekdays: weekdays, catchUpMinutes: 120),
                    action: .init(type: "digest", digest: "recap"), presentation: .init(symbol: "moon.stars.fill"), createdBy: "user",
-                   note: "What agents finished, tasks closed, alerts resolved, meetings held and what is still open. Built from data on this Mac; no agent runs.")
-    }
-
-    package static let weeklyReviewID = "weekly-review"
-
-    /// The built-in weekly review: GTD's review prepared from data on this Mac, Fridays at 15:00. Off until the user turns it on.
-    package static func weeklyReview(enabled: Bool = false) -> Automation {
-        Automation(id: weeklyReviewID, name: "Weekly review", enabled: enabled,
-                   trigger: .init(type: "daily", times: ["15:00"], weekdays: ["fri"], catchUpMinutes: 240),
-                   action: .init(type: "digest", digest: "review"), presentation: .init(symbol: "checklist"), createdBy: "user",
-                   note: "The inbox to clarify, projects without a next action, follow-ups, what comes back next week, someday ideas, goals and how much of the week served them. Built from data on this Mac; no agent runs.")
-    }
-
-    package static let taskReviewID = "task-review"
-
-    /// The built-in task review: every 20 minutes of clock time, in its own agent session that reports to the chat. Its prompt is
-    /// `prompts/task-review.md`, read on each run. A reply of NOTHING posts nothing. On by default, as the issue asks.
-    package static func taskReview(enabled: Bool = true) -> Automation {
-        Automation(id: taskReviewID, name: "Task review", enabled: enabled,
-                   trigger: .init(type: "interval", minutes: 20, clock: "wall"),
-                   action: .init(type: "prompt", prompt: "{{prompt.\(taskReviewID)}}", session: "own", report: "chat"),
-                   presentation: .init(symbol: "checklist"), createdBy: "user",
-                   note: "Looks at open tasks and suggestions every 20 minutes and posts only what changed. Its prompt is in Settings → Prompts.")
-    }
-
-    package static let taskScanID = "task-scan"
-
-    /// The task scan: a system automation that reads what is new in chats, meetings and the screen and files task suggestions. App
-    /// code defines it on every launch, so a new version can change it. It is never written to `automations.json`, and the Automations
-    /// list and the automation tools do not show it. Settings → Tasks turns it off and sets the interval.
-    package static func taskScan(minutes: Int) -> Automation {
-        Automation(id: taskScanID, name: "Task scan", enabled: true,
-                   trigger: .init(type: "interval", minutes: Double(max(1, minutes)), clock: "wall"),
-                   action: .init(type: taskScanAction), presentation: .init(symbol: "text.magnifyingglass"), createdBy: "user",
-                   note: "Reads new chats, meeting summaries and screen captures and suggests tasks. Its prompt is in Settings → Prompts.")
-    }
-
-    /// The `action.type` of the task scan. It is not one of `AutomationValidator.actionTypes`, so a file cannot ask for it.
-    package static let taskScanAction = "task-scan"
-
-    /// The system automations that run for these settings. None when the task scan is switched off.
-    package static func system(for tasks: Config.Tasks) -> [Automation] {
-        tasks.scan ? [taskScan(minutes: tasks.scanMinutes)] : []
+                   note: "What agents finished, alerts resolved, meetings held and what is still open. Built from data on this Mac; no agent runs.")
     }
 
     package static let mailCalendarID = "mail-calendar"
 
-    /// The built-in mail and calendar checks: every hour, in its own agent session that reports to the chat. It proposes tasks
-    /// from new mail and upcoming events, using whatever mail and calendar tools the agent has. Its prompt is
+    /// The built-in mail and calendar checks: every hour, in its own agent session that reports to the chat. It adds inbox items
+    /// for new mail and upcoming events, using whatever mail and calendar tools the agent has. Its prompt is
     /// `prompts/mail-calendar.md`. Off until the user turns it on.
     package static func mailCalendar(enabled: Bool = false) -> Automation {
         Automation(id: mailCalendarID, name: "Mail and calendar checks", enabled: enabled,
                    trigger: .init(type: "interval", minutes: 60, clock: "wall"),
                    action: .init(type: "prompt", prompt: "{{prompt.\(mailCalendarID)}}", session: "own", report: "chat"),
                    presentation: .init(symbol: "envelope.badge"), createdBy: "user",
-                   note: "Checks new mail and the next 48 hours of events each hour and suggests tasks. Needs a mail or calendar tool the agent can use. Its prompt is in Settings → Prompts.")
+                   note: "Checks new mail and the next 48 hours of events each hour and adds items to the inbox. Needs a mail or calendar tool the agent can use. Its prompt is in Settings → Prompts.")
     }
 
     /// Every built-in, added to the file when its id is missing.
-    package static var builtIns: [Automation] { [morningBrief(), dayRecap(), weeklyReview(), taskReview(), mailCalendar()] }
+    package static var builtIns: [Automation] { [morningBrief(), dayRecap(), mailCalendar()] }
+
+    /// Built-ins of an earlier build that no longer exist. The task list is gone, and so are the automations that worked on it.
+    package static let retiredIDs: Set<String> = ["weekly-review", "task-review", "task-scan", "screen-review"]
+
+    /// Takes the retired built-ins out of an automations file, so an upgrade never meets a `review` digest it cannot validate. An
+    /// automation is retired by its id, or by a `review` digest. Returns nil when there is nothing to remove.
+    package static func removingRetired(in data: Data) -> Data? {
+        guard var root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], let list = root["automations"] as? [[String: Any]] else { return nil }
+        let kept = list.filter { entry in
+            if let id = entry["id"] as? String, retiredIDs.contains(id) { return false }
+            if (entry["action"] as? [String: Any])?["digest"] as? String == "review" { return false }
+            return true
+        }
+        guard kept.count != list.count else { return nil }
+        root["automations"] = kept
+        return try? JSONSerialization.data(withJSONObject: root, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
+    }
 
     /// The `gh` binary, which the GitHub script runs.
     package static var ghExecutable: URL? {
