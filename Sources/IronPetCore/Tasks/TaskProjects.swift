@@ -155,7 +155,8 @@ extension TaskStore {
                       saved.reviewed?.timeIntervalSince1970, saved.created.timeIntervalSince1970, saved.updated.timeIntervalSince1970])
         }
         reload()
-        // Projects have no event of their own yet; `nil` makes clients read the task list again, which carries them.
+        // Projects have no event of their own yet. The Mac redraws from `projects`; this only nudges clients that listen for
+        // suggestions, which is harmless until the phone shows projects.
         didChange(nil)
         return self.project(saved.id) ?? saved
     }

@@ -116,6 +116,7 @@ final class TaskProjectsTests: XCTestCase {
         _ = try api.upsertProject(id: nil, title: "Launch the new site")
         XCTAssertThrowsError(try TaskJSON.call(api, "projects_upsert", ["id": "lanch-the-new-site", "title": "Launch"], by: "agent:mcp").get())
         XCTAssertThrowsError(try TaskJSON.call(api, "projects_upsert", ["id": 7, "title": "Launch"], by: "agent:mcp").get())
+        XCTAssertThrowsError(try TaskJSON.call(api, "projects_upsert", ["id": " ", "title": "Launch"], by: "agent:mcp").get())
         XCTAssertEqual(api.projects.count, 1)
     }
 }

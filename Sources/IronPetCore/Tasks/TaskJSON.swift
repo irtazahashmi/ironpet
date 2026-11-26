@@ -168,8 +168,8 @@ package enum TaskJSON {
                 let given = { (key: String) -> Any?? in args.keys.contains(key) ? .some(args[key]) : nil }
                 let saved = try api.upsertProject(
                     id: try args["id"].flatMap { raw -> String? in
-                        guard raw is String else { throw TaskError(message: "id must be a project id") }
-                        return try projectID(raw)
+                        guard raw is String, let id = try projectID(raw) else { throw TaskError(message: "id must be a project id; leave it out to create") }
+                        return id
                     },
                     title: try args["title"].map { try TaskProjectValidator.title($0) },
                     outcome: try args["outcome"].map { try TaskProjectValidator.outcome($0) },

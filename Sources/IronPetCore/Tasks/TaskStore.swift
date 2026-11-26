@@ -741,7 +741,7 @@ package final class TaskStore {
             }
             if withRefs != tasks { tasks = withRefs }
             if suggested != suggestions { suggestions = suggested }
-            let loaded = (try? database.read { try Self.readProjects($0) }) ?? []
+            let loaded = try database.read { try Self.readProjects($0) }
             if loaded != projects { projects = loaded }
         } catch {
             NSLog("ironpet: could not read tasks: \(error.localizedDescription)")
