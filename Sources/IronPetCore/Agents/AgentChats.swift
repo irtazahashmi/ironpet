@@ -63,6 +63,27 @@ package final class AgentChats: AgentProcessLauncher {
         throw APIError.unavailable("agent \"\(id)\" is not running")
     }
 
+    /// The agent voice goes to and the only one that speaks its replies aloud: the one the user selected last, or agent 1 when that agent
+    /// is disabled, deleted or has no running chat. Without a registry it is agent 1.
+    package var activeAgentID: String {
+        guard let registry else { return AgentOwner.defaultID }
+        let id = registry.activeAgentID
+        return runningAgents.contains(id) ? id : AgentOwner.defaultID
+    }
+
+    /// Makes an agent the active one. The agent must exist and be enabled.
+    package func select(active agentID: String) throws {
+        let id = AgentOwner.id(agentID)
+        guard let registry else {
+            if id == AgentOwner.defaultID { return }
+            throw APIError.notFound("no agent with id \"\(id)\"")
+        }
+        try registry.select(active: id)
+    }
+
+    /// Whether this agent's replies are read aloud as they finish. Only the active agent's are; the others show as text.
+    package func speaksReplies(_ agentID: String?) -> Bool { AgentOwner.id(agentID) == activeAgentID }
+
     package func session(for agentID: String?) -> ChatSession? {
         let id = AgentOwner.id(agentID)
         return id == AgentOwner.defaultID ? defaultSession : others[id]?.session

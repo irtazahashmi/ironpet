@@ -28,6 +28,16 @@ final class PetView: NSView {
         return hypot(point.x - rect.midX, point.y - rect.midY) <= rect.width / 2 + badgeSlop
     }
 
+    /// Set on the pet of the active agent while more than one pet is on screen: an accent ellipse under its feet.
+    var isHighlighted = false {
+        didSet { if isHighlighted != oldValue { needsDisplay = true } }
+    }
+
+    /// The highlight ellipse, centred under the pet in a view with these bounds.
+    static func highlightRect(in bounds: CGRect) -> CGRect {
+        CGRect(x: bounds.midX - bounds.width * 0.3, y: 1, width: bounds.width * 0.6, height: 9)
+    }
+
     enum Recording { case none, shown, hidden }
     /// `.hidden` means a meeting is recording and its bubble is closed, so the pet shows a Recording button.
     var recording: Recording = .none {
@@ -151,6 +161,7 @@ final class PetView: NSView {
     override func draw(_ dirtyRect: NSRect) {
         guard let ctx = NSGraphicsContext.current?.cgContext else { return }
         ctx.interpolationQuality = .high
+        if isHighlighted { drawHighlight() }
         ctx.saveGState()
         ctx.setAlpha(mood == .sleeping ? 0.55 : 1)
         if let atlas {
@@ -163,6 +174,16 @@ final class PetView: NSView {
         if badgeShown { drawBadge() }
         if updateReady { drawUpdateBadge() }
         if recording == .hidden { drawRecordingButton() }
+    }
+
+    private func drawHighlight() {
+        let rect = Self.highlightRect(in: bounds)
+        NSColor.controlAccentColor.withAlphaComponent(0.35).setFill()
+        NSBezierPath(ovalIn: rect).fill()
+        NSColor.controlAccentColor.setStroke()
+        let ring = NSBezierPath(ovalIn: rect.insetBy(dx: 0.75, dy: 0.75))
+        ring.lineWidth = 1.5
+        ring.stroke()
     }
 
     private func drawRecordingButton() {
