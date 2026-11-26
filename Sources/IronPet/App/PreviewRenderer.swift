@@ -368,7 +368,7 @@ enum PreviewRenderer {
                               subtitle: "Your agent is still working, good moment for it.", body: water.body,
                               actions: [.init("done", "Done", style: .primary) {}, .init("snooze", "Snooze 10 min") {}])
         render(PetScene(atlas: atlas, row: .drinking, frame: 3, bubbles: [reminder]), to: dir, "reminder")
-        for (kind, automation) in [(Brief.Kind.brief, AutomationDefaults.morningBrief()), (.recap, AutomationDefaults.dayRecap())] {
+        for (kind, automation) in [(Brief.Kind.brief, RetiredBuiltIns.morningBrief()), (.recap, RetiredBuiltIns.dayRecap())] {
             let bubble = Announcer.briefBubble(briefSource.build(kind, weekdays: AutomationDefaults.weekdays), automation: automation,
                                                now: Date(), open: {})
             render(PetScene(atlas: atlas, row: .waiting, frame: 0, bubbles: [bubble]), to: dir, "bubble-\(kind.rawValue)")
@@ -600,8 +600,8 @@ enum PreviewRenderer {
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let paths = AutomationPaths(file: folder.appendingPathComponent("automations.json"),
                                     directory: folder.appendingPathComponent("automations"))
-        let store = AutomationStore(paths: paths, defaults: { AutomationMigration.defaults(from: config, sentryConfigured: false) },
-                                    builtIns: AutomationDefaults.builtIns, watch: false)
+        let store = AutomationStore(paths: paths, defaults: { AutomationMigration.reminderAutomations() + [AutomationDefaults.github(enabled: true)] },
+                                    watch: false)
         let telegram = TelegramBridge(
             client: TelegramAPI(token: { nil }), host: ChatAPI(session: chat), tokens: MemoryTokenStore(),
             storage: .init(users: { [] }, add: { _ in }, remove: { _ in }, offset: { 0 }, setOffset: { _ in }))

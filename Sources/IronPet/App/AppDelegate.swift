@@ -341,9 +341,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setUpAutomations() {
         // Before the engine and the away checks: they read the idle time from this client's session.
         registerLocalClient()
-        let store = AutomationStore(defaults: { [config] in
-            AutomationMigration.defaults(from: config.config, sentryConfigured: AutomationDefaults.sentryConfigured)
-        }, builtIns: AutomationDefaults.builtIns)
+        let store = AutomationStore()
         HeartbeatRemoval.runOnce(store: store)
         let engine = AutomationEngine(env: .init(
             now: { [weak self] in Date().addingTimeInterval(self?.testClockOffset ?? 0) },
@@ -1010,15 +1008,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             for agent in HookInstaller.Agent.allCases { $0.integrations.setWatches(choices.agents.contains(agent), agent) }
             $0.integrations.githubAlerts = choices.githubAlerts
         }
-        // The welcome choices now switch automations, which hold the reminders and the GitHub watcher.
-        for reminder in AutomationMigration.reminders {
-            try? automations.store.update(reminder.id) { $0.enabled = choices.reminders }
+        // The welcome choices add the reminders and the GitHub watcher the user ticked. ironpet adds no automation on its own.
+        var added: [Automation] = []
+        if choices.reminders {
+            let items = ["water": config.config.reminders.water, "stretch": config.config.reminders.stretch, "eyes": config.config.reminders.eyes]
+            added += AutomationMigration.reminderAutomations(minutes: items.mapValues { Double($0.minutes) })
+                .filter { new in !automations.store.automations.contains { $0.id == new.id } }
+        } else {
+            for reminder in AutomationMigration.reminders {
+                try? automations.store.update(reminder.id) { $0.enabled = false }
+            }
         }
         if automations.store.automations.contains(where: { $0.id == AutomationMigration.githubID }) {
             try? automations.store.update(AutomationMigration.githubID) { $0.enabled = choices.githubAlerts }
         } else if choices.githubAlerts {
-            try? automations.store.replace(automations.store.automations + [AutomationDefaults.github(enabled: true)])
+            added.append(AutomationDefaults.github(enabled: true))
         }
+        if !added.isEmpty { try? automations.store.replace(automations.store.automations + added) }
         if !FileManager.default.fileExists(atPath: Config.file.path) { try? config.config.save() }
         // Hooks left by an older version that the user unticked.
         setHooks(removed: HookInstaller.Agent.allCases.filter { !choices.agents.contains($0) && installer.isInstalled($0) })

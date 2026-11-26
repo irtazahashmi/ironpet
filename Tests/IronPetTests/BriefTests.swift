@@ -384,53 +384,41 @@ final class DigestAutomationTests: AutomationTestCase {
         rig.service.history(id, limit: 20).map { "\($0["outcome"] ?? ""): \($0["output"] ?? "")" }
     }
 
-    func testFreshAndExistingFilesGetBothOff() {
-        let fresh = AutomationStore(paths: paths, defaults: { [] }, builtIns: AutomationDefaults.builtIns, watch: false)
-        for id in [AutomationDefaults.morningBriefID, AutomationDefaults.dayRecapID] {
-            guard let a = fresh.automations.first(where: { $0.id == id }) else { return XCTFail("\(id) missing") }
+    func testTheShippedBriefAndRecapAreValidAndNeedNoApproval() {
+        let store = AutomationStore(paths: paths, defaults: { [] }, watch: false)
+        for a in [RetiredBuiltIns.morningBrief(), RetiredBuiltIns.dayRecap()] {
             XCTAssertFalse(a.enabled)
             XCTAssertEqual(a.action.type, "digest")
             XCTAssertEqual(a.trigger.weekdays, AutomationDefaults.weekdays)
             XCTAssertEqual(AutomationValidator.validate(a), [])
-            XCTAssertFalse(AutomationService(store: fresh, engine: AutomationEngine(env: clock.environment)).needsApproval(a))
+            XCTAssertFalse(AutomationService(store: store, engine: AutomationEngine(env: clock.environment)).needsApproval(a))
         }
-        XCTAssertEqual(fresh.automations.first { $0.id == AutomationDefaults.morningBriefID }?.trigger.times, ["09:00"])
-        XCTAssertEqual(fresh.automations.first { $0.id == AutomationDefaults.dayRecapID }?.trigger.times, ["18:00"])
-    }
-
-    func testTurningOnPersistsAndADeletedOneComesBackOff() throws {
-        let store = AutomationStore(paths: paths, defaults: { [] }, builtIns: AutomationDefaults.builtIns, watch: false)
-        try store.update(AutomationDefaults.morningBriefID) { $0.enabled = true; $0.trigger.times = ["08:30"] }
-        try store.replace(store.automations.filter { $0.id != AutomationDefaults.dayRecapID })
-        let restarted = AutomationStore(paths: paths, defaults: { [] }, builtIns: AutomationDefaults.builtIns, watch: false)
-        let brief = restarted.automations.first { $0.id == AutomationDefaults.morningBriefID }
-        XCTAssertEqual(brief?.enabled, true)
-        XCTAssertEqual(brief?.trigger.times, ["08:30"])
-        XCTAssertEqual(restarted.automations.first { $0.id == AutomationDefaults.dayRecapID }?.enabled, false)
+        XCTAssertEqual(RetiredBuiltIns.morningBrief().trigger.times, ["09:00"])
+        XCTAssertEqual(RetiredBuiltIns.dayRecap().trigger.times, ["18:00"])
     }
 
     func testAScheduledBriefShowsAndRecords() {
         next = nonEmpty
-        let rig = wired([AutomationDefaults.morningBrief(enabled: true)])
+        let rig = wired([RetiredBuiltIns.morningBrief(enabled: true)])
         run(rig, minutes: 61)
         XCTAssertEqual(shown.map(\.kind), [.brief])
         XCTAssertEqual(shown.first?.manual, false)
-        XCTAssertTrue(history(rig, AutomationDefaults.morningBriefID).contains("fired: 1 open action item from meetings"))
+        XCTAssertTrue(history(rig, RetiredBuiltIns.morningBriefID).contains("fired: 1 open action item from meetings"))
     }
 
     func testAnEmptyScheduledBriefStaysQuietButRunNowShowsIt() async {
-        let rig = wired([AutomationDefaults.morningBrief(enabled: true)])
+        let rig = wired([RetiredBuiltIns.morningBrief(enabled: true)])
         run(rig, minutes: 61)
         XCTAssertTrue(shown.isEmpty)
-        XCTAssertTrue(history(rig, AutomationDefaults.morningBriefID).contains("ok: nothing to report"))
-        _ = await rig.service.call("run_now", ["id": AutomationDefaults.morningBriefID], by: "user")
+        XCTAssertTrue(history(rig, RetiredBuiltIns.morningBriefID).contains("ok: nothing to report"))
+        _ = await rig.service.call("run_now", ["id": RetiredBuiltIns.morningBriefID], by: "user")
         XCTAssertEqual(shown.map(\.manual), [true])
     }
 
     func testTheRecapAsksForTheRecap() {
         next = nonEmpty
         clock.now = AutomationTestClock.monday(hour: 17, minute: 30)
-        let rig = wired([AutomationDefaults.dayRecap(enabled: true)])
+        let rig = wired([RetiredBuiltIns.dayRecap(enabled: true)])
         run(rig, minutes: 31)
         XCTAssertEqual(shown.map(\.kind), [.recap])
     }
@@ -438,18 +426,18 @@ final class DigestAutomationTests: AutomationTestCase {
     func testARecapCaughtUpAfterMidnightIsBuiltForItsSlot() async {
         next = nonEmpty
         clock.now = AutomationTestClock.monday(hour: 17)
-        var recap = AutomationDefaults.dayRecap(enabled: true)
+        var recap = RetiredBuiltIns.dayRecap(enabled: true)
         recap.trigger.catchUpMinutes = 720
         let rig = wired([recap])
         clock.now = AutomationTestClock.monday(plus: 1, hour: 1)
         rig.engine.tick()
         XCTAssertEqual(slots, [AutomationTestClock.monday(hour: 18)])
-        _ = await rig.service.call("run_now", ["id": AutomationDefaults.dayRecapID], by: "user")
+        _ = await rig.service.call("run_now", ["id": RetiredBuiltIns.dayRecapID], by: "user")
         XCTAssertEqual(slots.last, .some(nil), "Run now has no slot, so it recaps today")
     }
 
     func testValidation() {
-        var a = AutomationDefaults.morningBrief()
+        var a = RetiredBuiltIns.morningBrief()
         a.action.digest = "weekly"
         XCTAssertTrue(AutomationValidator.validate(a).contains("action.digest must be one of brief, recap"))
         let (parsed, errors) = AutomationValidator.parseOne([
@@ -541,7 +529,7 @@ final class BriefBubbleTests: XCTestCase {
                           sections: [.init(id: "meetings", title: "Meetings", items: [.init(id: "d", symbol: "person.2", title: "X", target: .meeting("x"))])],
                           lines: ["a", "b", "c", "d", "e"])
         var opened = 0
-        let bubble = Announcer.briefBubble(brief, automation: AutomationDefaults.morningBrief(), now: now, calendar: F.calendar) { opened += 1 }
+        let bubble = Announcer.briefBubble(brief, automation: RetiredBuiltIns.morningBrief(), now: now, calendar: F.calendar) { opened += 1 }
         XCTAssertEqual(bubble.id, "digest:brief")
         XCTAssertEqual(bubble.title, "Morning brief")
         XCTAssertEqual(bubble.body, "a\nb\nc\nd")
@@ -554,7 +542,7 @@ final class BriefBubbleTests: XCTestCase {
 
     func testAnEmptyRecapSaysSoBriefly() {
         let now = F.tuesday(hour: 18)
-        var automation = AutomationDefaults.dayRecap()
+        var automation = RetiredBuiltIns.dayRecap()
         automation.action.title = "Wrap-up"
         let bubble = Announcer.briefBubble(Brief(kind: .recap, window: DateInterval(start: now, end: now), sections: [], lines: []),
                                            automation: automation, now: now, calendar: F.calendar) {}
