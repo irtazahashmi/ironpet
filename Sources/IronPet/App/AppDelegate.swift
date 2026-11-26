@@ -341,9 +341,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func setUpAutomations() {
         // Before the engine and the away checks: they read the idle time from this client's session.
         registerLocalClient()
-        let store = AutomationStore(defaults: { [config] in
-            AutomationMigration.defaults(from: config.config, sentryConfigured: AutomationDefaults.sentryConfigured)
-        }, builtIns: AutomationDefaults.builtIns)
+        let store = AutomationStore()
         HeartbeatRemoval.runOnce(store: store)
         let engine = AutomationEngine(env: .init(
             now: { [weak self] in Date().addingTimeInterval(self?.testClockOffset ?? 0) },
@@ -359,7 +357,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             spawner: platform.processes))
         engine.timing = { [config] in
             let r = config.config.reminders
-            return .init(paused: r.paused, idleResetMinutes: r.idleResetMinutes, snoozeMinutes: r.snoozeMinutes)
+            return .init(idleResetMinutes: r.idleResetMinutes, snoozeMinutes: r.snoozeMinutes)
         }
         // The app's one database. Features add their migrations to this list, in version order.
         let database = Database.open(path: Paths.root.appendingPathComponent("ironpet.db"), migrations: AppMigrations.all).database
@@ -369,6 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let tasks = TaskStore(database: database)
         taskStore = tasks
         let service = AutomationService(store: store, engine: engine, database: database)
+        tasks.onAdded = { [weak service] items in service?.inboxItemsAdded(items) }
         let notificationStore = NotificationStore(database: database)
         // Agent 1 takes over the chat settings an older build kept in UserDefaults and config.json, once, before anything reads them.
         let agentRegistry = AgentRegistry(database: database)
@@ -1010,15 +1009,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             for agent in HookInstaller.Agent.allCases { $0.integrations.setWatches(choices.agents.contains(agent), agent) }
             $0.integrations.githubAlerts = choices.githubAlerts
         }
-        // The welcome choices now switch automations, which hold the reminders and the GitHub watcher.
-        for reminder in AutomationMigration.reminders {
-            try? automations.store.update(reminder.id) { $0.enabled = choices.reminders }
+        // The welcome choices add the reminders and the GitHub watcher the user ticked. ironpet adds no automation on its own.
+        var added: [Automation] = []
+        if choices.reminders {
+            let items = ["water": config.config.reminders.water, "stretch": config.config.reminders.stretch, "eyes": config.config.reminders.eyes]
+            added += AutomationMigration.reminderAutomations(minutes: items.mapValues { Double($0.minutes) })
+                .filter { new in !automations.store.automations.contains { $0.id == new.id } }
+        } else {
+            for reminder in AutomationMigration.reminders {
+                try? automations.store.update(reminder.id) { $0.enabled = false }
+            }
         }
         if automations.store.automations.contains(where: { $0.id == AutomationMigration.githubID }) {
             try? automations.store.update(AutomationMigration.githubID) { $0.enabled = choices.githubAlerts }
         } else if choices.githubAlerts {
-            try? automations.store.replace(automations.store.automations + [AutomationDefaults.github(enabled: true)])
+            added.append(AutomationDefaults.github(enabled: true))
         }
+        if !added.isEmpty { try? automations.store.replace(automations.store.automations + added) }
         if !FileManager.default.fileExists(atPath: Config.file.path) { try? config.config.save() }
         // Hooks left by an older version that the user unticked.
         setHooks(removed: HookInstaller.Agent.allCases.filter { !choices.agents.contains($0) && installer.isInstalled($0) })
@@ -1720,7 +1727,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return item
     }
 
-    /// Every automation with a switch, plus the pause for all reminders.
+    /// Every automation with a switch.
     private func automationsMenuItem() -> NSMenuItem {
         let submenu = NSMenu()
         for a in automations.store.automations {
@@ -1731,10 +1738,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             submenu.addItem(item)
         }
         submenu.addItem(.separator())
-        let pause = NSMenuItem(title: "Pause reminders", action: #selector(toggleReminderPause), keyEquivalent: "")
-        pause.state = config.config.reminders.paused ? .on : .off
-        pause.target = self
-        submenu.addItem(pause)
         let logs = NSMenuItem(title: "Show logs…", action: #selector(showAutomationLogs), keyEquivalent: "")
         logs.target = self
         submenu.addItem(logs)
@@ -1754,10 +1757,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleAutomation(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
         try? automations.store.update(id) { $0.enabled.toggle() }
-    }
-
-    @objc private func toggleReminderPause() {
-        config.update { $0.reminders.paused.toggle() }
     }
 
     @objc private func toggleMCPSharing() {

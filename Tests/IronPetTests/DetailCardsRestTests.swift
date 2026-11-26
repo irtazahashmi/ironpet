@@ -88,11 +88,12 @@ final class DetailCardsRestTests: XCTestCase {
                                action: .init(type: "bubble", title: "Water", body: "Drink"), createdBy: "user")
         let api = APITestSupport.makeAPI(automations: [water]).automations
         func list(open: String? = nil) -> AutomationList {
-            AutomationList(api: api, config: SettingsAPI.live, showLogs: { _ in }, createWithAgent: { _ in }, open: open)
+            AutomationList(api: api, showLogs: { _ in }, createWithAgent: { _ in }, open: open)
         }
         let settings = try snapshot(list(), height: 1200)
         let detail = try snapshot(list(open: "water"))
-        XCTAssertGreaterThan(lastPaintedRow(settings), 700, "five sections stack down the page")
+        XCTAssertGreaterThan(lastPaintedRow(settings), 150, "the list card is drawn; the settings sections are on the Settings page")
+        XCTAssertLessThan(lastPaintedRow(settings), 500, "no settings sections stack below the list")
         XCTAssertGreaterThan(paintedRows(detail), 200, "the open automation draws its header and summary cards")
     }
 

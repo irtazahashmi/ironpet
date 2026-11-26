@@ -55,20 +55,19 @@ package final class AutomationStore {
     private var lastReported: String?
     private var timer: Timer?
 
-    /// `builtIns` are added when the list has no automation with that id, for a new file and an existing one. One that
-    /// is there stays as the user left it, including switched off.
-    package init(paths: AutomationPaths = .standard, defaults: () -> [Automation], builtIns: [Automation] = [], watch: Bool = true) {
+    /// A new file starts with `defaults()`, which is empty in the app. ironpet adds no automation to an existing file.
+    /// An existing file loses the shipped copies of automations that earlier builds added (`RetiredBuiltIns`) when the user
+    /// never switched them on or edited them. One that was turned on or changed stays as the user's own.
+    package init(paths: AutomationPaths = .standard, defaults: () -> [Automation] = { [] }, watch: Bool = true) {
         self.paths = paths
         if FileManager.default.fileExists(atPath: paths.file.path) {
             reload(force: true)
             // An invalid file keeps the list empty and is left alone.
-            if error == nil {
-                let missing = builtIns.filter { built in !automations.contains { $0.id == built.id } }
-                if !missing.isEmpty { try? replace(automations + missing) }
+            if error == nil, automations.contains(where: RetiredBuiltIns.isUntouched) {
+                try? replace(automations.filter { !RetiredBuiltIns.isUntouched($0) })
             }
         } else {
-            let base = defaults()
-            automations = base + builtIns.filter { built in !base.contains { $0.id == built.id } }
+            automations = defaults()
             try? write(automations)
         }
         writeSchema()
@@ -205,20 +204,15 @@ package enum AutomationMigration {
     package static let githubID = AutomationDefaults.githubID
     package static let sentryID = AutomationDefaults.sentryID
 
-    /// The three reminders, from the old settings. GitHub and Sentry alerts are added only for someone who already had them on
-    /// (`integrations.githubAlerts`, or a `sentry.json`), so a fresh install starts with the reminders only.
-    package static func defaults(from config: Config, sentryConfigured: Bool) -> [Automation] {
-        let items: [String: Config.Reminders.Item] = ["water": config.reminders.water, "stretch": config.reminders.stretch, "eyes": config.reminders.eyes]
-        var list = reminders.map { r in
-            Automation(id: r.id, name: r.name, enabled: items[r.id]?.enabled ?? true,
-                       trigger: .init(type: "interval", minutes: items[r.id]?.minutes ?? 45, clock: "active"),
+    /// The three reminders as automations, for the welcome window to add when the user ticks them.
+    package static func reminderAutomations(minutes: [String: Double] = [:]) -> [Automation] {
+        reminders.map { r in
+            Automation(id: r.id, name: r.name, enabled: true,
+                       trigger: .init(type: "interval", minutes: minutes[r.id] ?? 45, clock: "active"),
                        action: .init(type: "bubble", title: r.title, body: r.body),
                        presentation: .init(mood: r.mood.rawValue, symbol: r.symbol, buttons: ["done", "snooze"]),
                        createdBy: "user")
         }
-        if config.integrations.githubAlerts { list.append(AutomationDefaults.github(enabled: true)) }
-        if sentryConfigured { list.append(AutomationDefaults.sentry(enabled: true)) }
-        return list
     }
 }
 
@@ -256,7 +250,7 @@ package enum AutomationSchema {
           "required": ["type"],
           "additionalProperties": false,
           "properties": {
-            "type": { "enum": ["interval", "daily", "once", "poll", "script", "stream"] },
+            "type": { "enum": ["interval", "daily", "once", "poll", "script", "stream", "inbox"] },
             "minutes": { "type": "number", "minimum": 1, "description": "interval: minutes between runs. poll: minutes between polls." },
             "clock": { "enum": ["active", "wall"], "description": "active counts keyboard time only. wall counts clock time." },
             "times": { "type": "array", "items": { "type": "string", "pattern": "^[0-2]?[0-9]:[0-5][0-9]$" } },

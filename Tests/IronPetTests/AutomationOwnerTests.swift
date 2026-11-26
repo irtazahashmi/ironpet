@@ -156,7 +156,7 @@ final class AutomationOwnerTests: AutomationTestCase {
     // S5: node-level automations run as before
 
     func testANodeLevelAutomationStillReportsToAgentOnesChat() async {
-        var review = AutomationDefaults.morningBrief()
+        var review = RetiredBuiltIns.morningBrief()
         review.action = .init(type: "prompt", prompt: "Review", session: "new", report: "chat")
         let rig = makeRig([review])
         var chatOne: [String] = []

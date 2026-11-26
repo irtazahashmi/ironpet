@@ -102,21 +102,12 @@ class AutomationTestCase: XCTestCase {
 
 @MainActor
 final class AutomationMigrationTests: AutomationTestCase {
-    private func todaysConfig() -> Config {
-        var config = Config()
-        config.reminders.water = .init(enabled: false, minutes: 45)
-        config.reminders.stretch = .init(enabled: true, minutes: 60)
-        config.reminders.eyes = .init(enabled: false, minutes: 20)
-        config.integrations.githubAlerts = true
-        return config
-    }
-
-    func testFirstLaunchWritesTheOldSettingsAsAutomations() throws {
-        let defaults = AutomationMigration.defaults(from: todaysConfig(), sentryConfigured: true)
+    func testANewFileStartsWithTheGivenListAndTheWelcomeRemindersAreOrdinaryAutomations() throws {
+        let defaults = AutomationMigration.reminderAutomations(minutes: ["water": 45, "stretch": 60, "eyes": 20]) + [AutomationDefaults.github(enabled: true), AutomationDefaults.sentry(enabled: true)]
         let store = AutomationStore(paths: paths, defaults: { defaults }, watch: false)
         XCTAssertEqual(store.automations.map(\.id), ["water", "stretch", "eyes", "github-alerts", "sentry-alerts"])
         let byID = Dictionary(uniqueKeysWithValues: store.automations.map { ($0.id, $0) })
-        XCTAssertEqual(byID["water"]?.enabled, false)
+        XCTAssertEqual(byID["water"]?.enabled, true)
         XCTAssertEqual(byID["stretch"]?.enabled, true)
         XCTAssertEqual(byID["stretch"]?.trigger.minutes, 60)
         XCTAssertEqual(byID["eyes"]?.trigger.minutes, 20)
@@ -138,17 +129,12 @@ final class AutomationMigrationTests: AutomationTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: paths.schema.path))
     }
 
-    func testAFreshInstallStartsWithTheRemindersOnly() {
-        let defaults = AutomationMigration.defaults(from: Config(), sentryConfigured: false)
-        XCTAssertEqual(defaults.map(\.id), ["water", "stretch", "eyes"], "no GitHub or Sentry alerts unless they were on before")
-    }
-
-    func testSomeoneWhoHadGitHubOrSentryOnKeepsThem() {
-        var config = Config()
-        config.integrations.githubAlerts = true
-        XCTAssertEqual(AutomationMigration.defaults(from: config, sentryConfigured: false).map(\.id), ["water", "stretch", "eyes", "github-alerts"])
-        XCTAssertEqual(AutomationMigration.defaults(from: Config(), sentryConfigured: true).map(\.id), ["water", "stretch", "eyes", "sentry-alerts"])
-        XCTAssertEqual(AutomationMigration.defaults(from: config, sentryConfigured: true).last?.enabled, true)
+    func testAFreshInstallListIsEmpty() {
+        let store = AutomationStore(paths: paths, defaults: { [] }, watch: false)
+        XCTAssertEqual(store.automations, [])
+        let (parsed, errors) = AutomationValidator.parse((try? Data(contentsOf: paths.file)) ?? Data())
+        XCTAssertEqual(errors, [])
+        XCTAssertEqual(parsed, [])
     }
 
     func testAnExistingFileIsNotMigratedAgain() throws {
@@ -158,7 +144,9 @@ final class AutomationMigrationTests: AutomationTestCase {
     }
 
     func testStretchFiresAfterSixtyKeyboardMinutes() {
-        let rig = makeRig(AutomationMigration.defaults(from: todaysConfig(), sentryConfigured: false))
+        var list = AutomationMigration.reminderAutomations(minutes: ["water": 45, "stretch": 60, "eyes": 20])
+        for index in list.indices where list[index].id != "stretch" { list[index].enabled = false }
+        let rig = makeRig(list)
         var fired: [[String]] = []
         rig.engine.onFire = { fired.append($0.automations.map(\.id)) }
         run(rig, minutes: 59.5)
@@ -220,12 +208,17 @@ final class AutomationMigrationTests: AutomationTestCase {
         XCTAssertEqual(fired, 2)
     }
 
-    func testPauseHoldsTimeBasedAutomations() {
-        let rig = makeRig([bubble("water", minutes: 5)], timing: .init(paused: true))
+    func testSnoozeUsesTheSnoozeMinutesTheSettingsPageWrites() {
+        let rig = makeRig([bubble("water", minutes: 60)], timing: .init(snoozeMinutes: 20))
         var fired = 0
         rig.engine.onFire = { _ in fired += 1 }
-        run(rig, minutes: 20)
-        XCTAssertEqual(fired, 0)
+        run(rig, minutes: 60)
+        XCTAssertEqual(fired, 1)
+        rig.engine.snooze(["water"])
+        run(rig, minutes: 19)
+        XCTAssertEqual(fired, 1, "still snoozed")
+        run(rig, minutes: 1.5)
+        XCTAssertEqual(fired, 2, "back after the 20 minutes")
     }
 }
 
@@ -1510,12 +1503,12 @@ final class AutomationDefaultsTests: AutomationTestCase {
     }
 
     func testAnEarlierBuildsBuiltinSourcesBecomeScriptsAndKeepTheirSwitch() throws {
-        let old = #"{"automations":[{"id":"github-alerts","name":"GitHub","enabled":false,"trigger":{"type":"poll","minutes":2,"source":{"type":"builtin","name":"github"}},"action":{"type":"bubble","title":"x"}},{"id":"sentry-alerts","name":"Sentry","enabled":true,"trigger":{"type":"poll","minutes":2,"source":{"type":"builtin","name":"sentry"}},"action":{"type":"bubble","title":"x"}}]}"#
+        let old = #"{"automations":[{"id":"github-alerts","name":"GitHub","enabled":true,"trigger":{"type":"poll","minutes":2,"source":{"type":"builtin","name":"github"}},"action":{"type":"bubble","title":"x"}},{"id":"sentry-alerts","name":"Sentry","enabled":true,"trigger":{"type":"poll","minutes":2,"source":{"type":"builtin","name":"sentry"}},"action":{"type":"bubble","title":"x"}}]}"#
         try old.write(to: paths.file, atomically: true, encoding: .utf8)
         let store = AutomationStore(paths: paths, defaults: { XCTFail("must not migrate"); return [] }, watch: false)
         XCTAssertNil(store.error)
         XCTAssertEqual(store.automations.map(\.trigger.type), ["script", "script"])
-        XCTAssertEqual(store.automations.map(\.enabled), [false, true])
+        XCTAssertEqual(store.automations.map(\.enabled), [true, true])
         XCTAssertEqual(store.automations[0].trigger.script, AutomationDefaults.githubScript)
         XCTAssertEqual(store.automations[1].trigger.script, AutomationDefaults.sentryScript)
         XCTAssertFalse(try String(contentsOf: paths.file, encoding: .utf8).contains("builtin"), "the file was rewritten")

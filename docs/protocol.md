@@ -326,7 +326,7 @@ The phone's Memory screen uses five REST routes that have no dispatcher method. 
 
 ### `prompts`
 
-The prompts ironpet sends to agents on its own: the chat context and rules, the automation run wrapper, the messages that ask the chat agent to create or fix an automation, the meeting summary and the built-in mail and calendar checks. Each one's text is `~/.ironpet/prompts/<id>.md`, copied from the default the app ships the first time. `PromptsAPI` lists them with their default and whether a newer default is waiting, and saves, resets or keeps the user's text. Settings → Prompts is its only client today, so no RPC method or REST route exists yet.
+The prompts ironpet sends to agents on its own: the chat context and rules, the automation run wrapper, the messages that ask the chat agent to create or fix an automation, the meeting summary and the mail and calendar checks. Each one's text is `~/.ironpet/prompts/<id>.md`, copied from the default the app ships the first time. `PromptsAPI` lists them with their default and whether a newer default is waiting, and saves, resets or keeps the user's text. Settings → Prompts is its only client today, so no RPC method or REST route exists yet.
 
 ### `settings`
 
@@ -423,8 +423,7 @@ instead of agent 1: the agent a stdio bridge speaks for (the `IRONPET_AGENT_ID` 
 the automation whose session makes the call. `automations_list`, `status_sessions`, `status_overview` and the new `chat_threads_list` take an optional
 `agentId` and default to the calling agent. A hook sends `x-ironpet-agent` to attribute its session to an agent.
 
-The built-in and system automations (`morning-brief`, `day-recap`, `mail-calendar`) are node-level: they have no
-owner, an `agentId` written on them is ignored, they are listed for every agent, and they run as they did before. The memory pass is not an automation
+ironpet ships no automations, so each one has an owner, agent 1 when `agentId` is missing. The memory pass is not an automation
 and stays node-level.
 
 An automation run uses its owner's CLI, model and permissions, and a result it posts to "the chat" goes to its owner's main chat. `permissions` on an

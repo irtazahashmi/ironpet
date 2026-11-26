@@ -1,55 +1,17 @@
 import Foundation
 
-/// The GitHub and Sentry alerts that ironpet starts with. They are ordinary script automations, written by the user's
-/// own account (`createdBy: user`), so they run without approval and anyone can read and change them in `automations.json`.
+/// The GitHub and Sentry alert scripts. ironpet adds no automation on its own. The welcome window adds the GitHub alerts when
+/// the user ticks them, as an ordinary script automation (`createdBy: user`) that anyone can read and change in `automations.json`.
 package enum AutomationDefaults {
     package static let githubID = "github-alerts"
     package static let sentryID = "sentry-alerts"
 
-    package static let morningBriefID = "morning-brief"
-    package static let dayRecapID = "day-recap"
-    /// The automations that belong to this install, not to an agent: they are listed for every agent and run as they always have.
-    /// The memory pass is not an automation, so it needs no entry.
-    package static let nodeLevelIDs: Set<String> = Set(builtIns.map(\.id))
     package static let weekdays = ["mon", "tue", "wed", "thu", "fri"]
 
-    /// The built-in morning brief: what needs the user today, at 09:00 on weekdays. Off until the user turns it on. A brief
-    /// missed while the Mac slept or was off still comes until noon.
-    package static func morningBrief(enabled: Bool = false) -> Automation {
-        Automation(id: morningBriefID, name: "Morning brief", enabled: enabled,
-                   trigger: .init(type: "daily", times: ["09:00"], weekdays: weekdays, catchUpMinutes: 180),
-                   action: .init(type: "digest", digest: "brief"), presentation: .init(symbol: "sun.max.fill"), createdBy: "user",
-                   note: "Open alerts, meeting action items, inbox items and waiting agents. Built from data on this Mac; no agent runs.")
-    }
-
-    /// The built-in end-of-day recap: what happened today, at 18:00 on weekdays. Off until the user turns it on.
-    package static func dayRecap(enabled: Bool = false) -> Automation {
-        Automation(id: dayRecapID, name: "End-of-day recap", enabled: enabled,
-                   trigger: .init(type: "daily", times: ["18:00"], weekdays: weekdays, catchUpMinutes: 120),
-                   action: .init(type: "digest", digest: "recap"), presentation: .init(symbol: "moon.stars.fill"), createdBy: "user",
-                   note: "What agents finished, alerts resolved, meetings held and what is still open. Built from data on this Mac; no agent runs.")
-    }
-
-    package static let mailCalendarID = "mail-calendar"
-
-    /// The built-in mail and calendar checks: every hour, in its own agent session that reports to the chat. It adds inbox items
-    /// for new mail and upcoming events, using whatever mail and calendar tools the agent has. Its prompt is
-    /// `prompts/mail-calendar.md`. Off until the user turns it on.
-    package static func mailCalendar(enabled: Bool = false) -> Automation {
-        Automation(id: mailCalendarID, name: "Mail and calendar checks", enabled: enabled,
-                   trigger: .init(type: "interval", minutes: 60, clock: "wall"),
-                   action: .init(type: "prompt", prompt: "{{prompt.\(mailCalendarID)}}", session: "own", report: "chat"),
-                   presentation: .init(symbol: "envelope.badge"), createdBy: "user",
-                   note: "Checks new mail and the next 48 hours of events each hour and adds items to the inbox. Needs a mail or calendar tool the agent can use. Its prompt is in Settings → Prompts.")
-    }
-
-    /// Every built-in, added to the file when its id is missing.
-    package static var builtIns: [Automation] { [morningBrief(), dayRecap(), mailCalendar()] }
-
-    /// Built-ins of an earlier build that no longer exist. The task list is gone, and so are the automations that worked on it.
+    /// Automations of an earlier build that no longer exist. The task list is gone, and so are the automations that worked on it.
     package static let retiredIDs: Set<String> = ["weekly-review", "task-review", "task-scan", "screen-review"]
 
-    /// Takes the retired built-ins out of an automations file, so an upgrade never meets a `review` digest it cannot validate. An
+    /// Takes the retired automations out of an automations file, so an upgrade never meets a `review` digest it cannot validate. An
     /// automation is retired by its id, or by a `review` digest. Returns nil when there is nothing to remove.
     package static func removingRetired(in data: Data) -> Data? {
         guard var root = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any], let list = root["automations"] as? [[String: Any]] else { return nil }

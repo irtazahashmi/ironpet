@@ -104,7 +104,7 @@ final class AgentOwnerTests: XCTestCase {
         let water = try XCTUnwrap(store.automations.first { $0.id == "water" })
         XCTAssertNil(water.agentId)
         XCTAssertEqual(water.ownerAgentID, "agent_default")
-        XCTAssertNil(try XCTUnwrap(store.automations.first { $0.id == "morning-brief" }).ownerAgentID, "a built-in has no owner")
+        XCTAssertEqual(try XCTUnwrap(store.automations.first { $0.id == "morning-brief" }).ownerAgentID, "agent_default", "a kept former built-in is agent 1's")
         XCTAssertEqual(try String(contentsOf: file, encoding: .utf8), text, "loading does not rewrite the file")
     }
 
@@ -196,7 +196,7 @@ final class AgentOwnerTests: XCTestCase {
         let database = Database.open(path: nil, migrations: AppMigrations.all).database
         try ContractRig.addAgent("agent_two", number: 2, cli: "claude", model: "opus", to: database)
         let paths = AutomationPaths(file: directory.appendingPathComponent("automations.json"), directory: directory.appendingPathComponent("automations"))
-        let store = AutomationStore(paths: paths, defaults: { [] }, builtIns: AutomationDefaults.builtIns, watch: false)
+        let store = AutomationStore(paths: paths, defaults: { [] }, watch: false)
         let engine = AutomationEngine(env: AutomationEngine.Environment(now: Date.init, calendar: Calendar(identifier: .gregorian)))
         let service = AutomationService(store: store, engine: engine)
         service.registry = AgentRegistry(database: database)
@@ -217,24 +217,22 @@ final class AgentOwnerTests: XCTestCase {
         XCTAssertFalse(api.automations.contains { $0.name == "For nobody" })
     }
 
-    func testAutomationsListAsEachAgentWithTheBuiltInsForBoth() async throws {
+    func testAutomationsListAsEachAgentWithOnlyItsOwn() async throws {
         let (api, _) = try automationRig()
         _ = try api.create(CreateAutomationRequest(definition: definition("Mine")))
         _ = try api.create(CreateAutomationRequest(definition: definition("Theirs"), agentId: "agent_two"))
-        let nodeLevel = Set(AutomationDefaults.builtIns.map(\.id))
         let one = try api.list(agentId: nil)
         let two = try api.list(agentId: "agent_two")
-        XCTAssertEqual(Set(one.map(\.id)), nodeLevel.union(["mine"]), "agent 1 sees its own and the node-level ones")
-        XCTAssertEqual(Set(two.map(\.id)), nodeLevel.union(["theirs"]), "agent 2 does not see agent 1's automation")
+        XCTAssertEqual(Set(one.map(\.id)), ["mine"], "agent 1 sees its own")
+        XCTAssertEqual(Set(two.map(\.id)), ["theirs"], "agent 2 does not see agent 1's automation")
         XCTAssertEqual(try api.list(agentId: "agent_default").map(\.id), one.map(\.id))
         XCTAssertThrowsError(try api.list(agentId: "agent_nine")) { XCTAssertEqual(($0 as? APIError)?.code, .notFound) }
-        for builtIn in AutomationDefaults.builtIns { XCTAssertNil(builtIn.ownerAgentID, "\(builtIn.id) has no owner") }
     }
 
     func testTheAutomationToolsListAndCreateAsTheCallingAgent() async throws {
         let (api, _) = try automationRig()
         func names(_ result: Result<Any, AutomationError>) throws -> [String] {
-            ((try result.get()) as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }.filter { name in !AutomationDefaults.builtIns.contains { $0.name == name } }
+            ((try result.get()) as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }
         }
         let created = try await api.callJSON("create", ["name": "Theirs", "trigger": ["type": "interval", "minutes": 30, "clock": "wall"],
                                                        "action": ["type": "bubble", "title": "hi"]], by: "agent:mcp", agent: "agent_two").get()
@@ -257,7 +255,6 @@ final class AgentOwnerTests: XCTestCase {
         let (api, _) = try automationRig()
         _ = try api.create(CreateAutomationRequest(definition: definition("Theirs"), agentId: "agent_two"))
         XCTAssertEqual(api.owner(of: "theirs"), "agent_two")
-        XCTAssertNil(api.owner(of: "morning-brief"), "a built-in has no owner")
         let body = try JSONSerialization.data(withJSONObject: ["jsonrpc": "2.0", "id": 1, "method": "tools/call",
                                                                "params": ["name": "automations_list", "arguments": [String: Any]()]])
         let result = await MCPEndpoint.handle(body, automations: api, tasks: nil, caller: "automation:theirs")
@@ -265,11 +262,12 @@ final class AgentOwnerTests: XCTestCase {
         XCTAssertTrue(text.contains("Theirs"), "the automation's own session lists its owner's automations")
     }
 
-    func testAnOwnerWrittenOnABuiltInIsIgnored() async throws {
-        var morning = AutomationDefaults.morningBrief()
+    func testAKeptFormerBuiltInIsOwnedLikeAnyOtherAutomation() async throws {
+        var morning = RetiredBuiltIns.morningBrief()
+        XCTAssertEqual(morning.ownerAgentID, "agent_default")
         morning.agentId = "agent_two"
-        XCTAssertNil(morning.ownerAgentID)
-        XCTAssertTrue(morning.isVisible(to: "agent_default"))
+        XCTAssertEqual(morning.ownerAgentID, "agent_two")
+        XCTAssertFalse(morning.isVisible(to: "agent_default"))
         XCTAssertTrue(morning.isVisible(to: "agent_two"))
     }
 }
