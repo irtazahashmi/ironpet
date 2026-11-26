@@ -465,6 +465,9 @@ package final class ChatSession {
     private var turnAskedApproval = false
     /// True during a call or a meeting recording, when a reply is not read aloud on its own. Set by `AppDelegate`.
     package var isQuiet: () -> Bool = { false }
+    /// False for an agent that is not the active one: its replies show as text and are not read aloud on their own. The speaker button
+    /// on a reply still works. Set by `AppDelegate`; a chat with no other agent beside it always speaks.
+    package var speaksReplies: () -> Bool = { true }
 
     package nonisolated static let scratchWorkspace = Paths.root.appendingPathComponent("scratch")
 
@@ -489,7 +492,8 @@ package final class ChatSession {
         if restore { Task { await refreshAgents() } }
         if restore { restoreLastChat() }
         speechChanges = [self.speech.changes.observe { [weak self] in self?.changes.send() }]
-        self.speech.onFailure = { [weak self] message in self?.items.append(Item(kind: .error(message))) }
+        // Chats of several agents share one speaker, so the first chat (agent 1's) keeps its failure messages.
+        if self.speech.onFailure == nil { self.speech.onFailure = { [weak self] message in self?.items.append(Item(kind: .error(message))) } }
     }
 
     /// Reads a reply aloud, or stops it when it is the one being read.
@@ -1522,7 +1526,7 @@ package final class ChatSession {
                 onAttention?(error == nil ? "\(name) finished your task" : "\(name)'s task failed")
             }
             // The switch comes first: the quiet check starts polling the microphone list, which must not happen while off.
-            if error == nil, turnSpoken, !hidden, speech.isEnabled(), !isQuiet(), let answer = lastAnswerItem(),
+            if error == nil, turnSpoken, !hidden, speech.isEnabled(), speaksReplies(), !isQuiet(), let answer = lastAnswerItem(),
                case .assistant(let text) = answer.kind {
                 try? speech.speak(text, id: answer.id)
             }

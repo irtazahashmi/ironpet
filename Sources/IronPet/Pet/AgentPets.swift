@@ -21,6 +21,8 @@ final class AgentPets {
     private(set) var pets: [String: Pet] = [:]
     private var tokens: [ChangeToken] = []
     private var syncPending = false
+    /// Called after the pets on screen changed, so the app can move the active highlight.
+    var onChanged: (() -> Void)?
 
     init(api: IronPetAPI, registry: AgentRegistry, events: APIEventBus, make: @escaping (PetSlot, ChatSession, ChatViewModel) -> PetController) {
         self.api = api
@@ -85,6 +87,7 @@ final class AgentPets {
             pets[slot.agentID] = Pet(controller: controller, chat: model, session: session, slot: slot)
             controller.show()
         }
+        onChanged?()
     }
 
     private func remove(_ id: String) {

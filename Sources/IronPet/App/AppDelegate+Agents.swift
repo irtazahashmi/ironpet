@@ -9,6 +9,15 @@ extension AppDelegate {
         guard let registry = api.agentRecords?.registry else { return }
         chatModel.agentRecords = { registry.list() }
         chatModel.onPickAgent = { [weak self] id in self?.openAgentChat(id) }
+        // Voice and speech follow the active agent: its chat gets the transcript and only it reads its replies aloud.
+        let router = VoiceTranscriptRouter(activeAgent: { [weak self] in self?.api.chats.activeAgentID ?? AgentOwner.defaultID },
+                                           model: { [weak self] id in id == AgentOwner.defaultID ? self?.chatModel : self?.agentPets?.pets[id]?.chat })
+        chatModel.voice.onTranscript = { router.route($0) }
+        chat.speaksReplies = { [weak self] in self?.api.chats.speaksReplies(AgentOwner.defaultID) ?? true }
+        pet.onSelected = { [weak self] in self?.selectAgent(AgentOwner.defaultID) }
+        activeAgentToken = registry.activeChanges.observe { [weak self] in
+            DispatchQueue.main.async { MainActor.assumeIsolated { self?.refreshActiveHighlight() } }
+        }
         api.chats.makeSession = { [weak self] id in
             guard let self else { return ChatSession(restore: true, agentID: id) }
             return self.makeAgentSession(id)
@@ -17,6 +26,7 @@ extension AppDelegate {
         let pets = AgentPets(api: api, registry: registry, events: events) { [weak self] slot, session, model in
             self!.makeAgentPet(slot, session, model)
         }
+        pets.onChanged = { [weak self] in self?.refreshActiveHighlight() }
         agentPets = pets
         let supervisor = AgentSupervisor(registry: registry, launcher: api.chats)
         self.supervisor = supervisor
@@ -27,7 +37,8 @@ extension AppDelegate {
     /// The chat of an agent other than agent 1, with the callbacks agent 1's chat has: a bubble for an approval, a question or a finished
     /// task, each naming the agent, and its automations' notices and replies.
     private func makeAgentSession(_ id: String) -> ChatSession {
-        let session = ChatSession(restore: true, speech: nil, agentID: id)
+        let session = ChatSession(restore: true, speech: chat.speech, agentID: id)
+        session.speaksReplies = { [weak self] in self?.api.chats.speaksReplies(id) ?? true }
         session.spawner = platform.processes
         session.onAttention = { [weak self, weak session] title in
             guard let session else { return }
@@ -65,6 +76,7 @@ extension AppDelegate {
         let controller = PetController(store: store, signals: signals, agentID: slot.agentID, sprite: slot.sprite, offsetX: slot.offsetX)
         model.agentRecords = { [weak self] in self?.api.agentRecords?.registry.list() ?? [] }
         model.onPickAgent = { [weak self] id in self?.openAgentChat(id) }
+        controller.onSelected = { [weak self] in self?.selectAgent(slot.agentID) }
         controller.chat = session
         controller.chatModel = model
         controller.tasks = api.tasks
@@ -108,8 +120,32 @@ extension AppDelegate {
         return controller
     }
 
-    /// Opens an agent's chat: agent 1's in the main window, any other agent's in the window of its own pet.
+    /// Makes an agent the active one. An agent that is gone or disabled changes nothing.
+    func selectAgent(_ id: String) {
+        try? api.chats.select(active: id)
+    }
+
+    /// Puts the highlight on the active agent's pet, and on no pet while there is only one.
+    func refreshActiveHighlight() {
+        let onScreen = [AgentOwner.defaultID] + (agentPets?.pets.keys.sorted() ?? [])
+        let lit = AgentPetSet.highlighted(active: api.chats.activeAgentID, onScreen: onScreen)
+        pet.isHighlighted = lit == AgentOwner.defaultID
+        for (id, other) in agentPets?.pets ?? [:] { other.controller.isHighlighted = lit == id }
+    }
+
+    /// Opens the active agent's chat without changing which agent is active, for the voice shortcut.
+    func showActiveChat() {
+        let id = api.chats.activeAgentID
+        if id == AgentOwner.defaultID {
+            showChat()
+        } else if let controller = agentPets?.pets[id]?.controller, !controller.isChatVisible {
+            controller.showWindow(.chat)
+        }
+    }
+
+    /// Opens an agent's chat: agent 1's in the main window, any other agent's in the window of its own pet. The agent becomes the active one.
     func openAgentChat(_ id: String) {
+        selectAgent(id)
         if id == AgentOwner.defaultID {
             showChat()
         } else if let pets = agentPets?.pets[id] {

@@ -96,6 +96,8 @@ package final class AgentRegistry {
 
     /// Fires before anything this registry holds changes.
     package let changes = ChangeSignal()
+    /// Fires before the active agent changes, including when a disable or a delete moves it back to agent 1.
+    package let activeChanges = ChangeSignal()
     private let database: Database
     private let now: () -> Date
 
@@ -126,6 +128,9 @@ package final class AgentRegistry {
             CREATE TABLE agent_counter(value INTEGER NOT NULL);
             INSERT INTO agent_counter(value) SELECT COALESCE(MAX(number), 1) FROM agents;
             """),
+        .init(585, "agents: the pet the user selected last, which voice and speech follow", sql: """
+            CREATE TABLE agent_active(id INTEGER PRIMARY KEY CHECK (id = 1), agent_id TEXT NOT NULL) WITHOUT ROWID;
+            """),
     ]
 
     private static let columns = "id, number, name, pet, agent_cli, model, cli_models, instructions, permissions, created, updated, enabled"
@@ -148,6 +153,14 @@ package final class AgentRegistry {
         let id = id.isEmpty ? Self.chatAgentID : id
         let rows = (try? database.read { try $0.rows("SELECT \(Self.columns) FROM agents WHERE id = ?", [id]) }) ?? []
         return rows.first.flatMap(Self.record)
+    }
+
+    /// The agent the user selected last: voice goes to its chat and only it speaks its replies aloud. It is agent 1 until another is
+    /// selected, and again when the stored one is disabled, deleted or unknown.
+    package var activeAgentID: String {
+        let stored = (try? database.read { try $0.rows("SELECT agent_id FROM agent_active WHERE id = 1") })?.first?.first as? String
+        guard let stored, let record = get(stored), record.enabled else { return Self.chatAgentID }
+        return record.id
     }
 
     /// The agent the chat runs on.
@@ -196,6 +209,7 @@ package final class AgentRegistry {
         guard record != before else { return before }
         record.updated = now()
         changes.send()
+        if before.enabled, !record.enabled { clearActive(if: record.id) }
         try database.write { db in
             try db.execute("""
                 UPDATE agents SET name = ?, pet = ?, agent_cli = ?, model = ?, cli_models = ?, instructions = ?, permissions = ?, enabled = ?, updated = ?
@@ -204,6 +218,27 @@ package final class AgentRegistry {
                       Self.json(record.permissions), Int64(record.enabled ? 1 : 0), record.updated.timeIntervalSince1970, record.id])
         }
         return record
+    }
+
+    /// Makes an agent the active one and keeps it across restarts. An unknown or disabled agent is `notFound` or `unavailable`.
+    /// Selecting the agent that is already active writes and announces nothing.
+    package func select(active id: String) throws {
+        guard let record = get(id) else { throw APIError.notFound("no agent with id \"\(id)\"") }
+        guard record.enabled else { throw APIError.unavailable("agent \"\(record.id)\" is disabled") }
+        guard activeAgentID != record.id else { return }
+        activeChanges.send()
+        try database.write { try $0.execute("INSERT OR REPLACE INTO agent_active(id, agent_id) VALUES(1, ?)", [record.id]) }
+    }
+
+    /// Forgets the stored active agent when it is `id`, so agent 1 is active again and a later enable does not bring the choice back.
+    private func clearActive(if id: String) {
+        guard storedActiveID == id else { return }
+        activeChanges.send()
+        try? database.write { try $0.execute("DELETE FROM agent_active WHERE id = 1") }
+    }
+
+    private var storedActiveID: String? {
+        (try? database.read { try $0.rows("SELECT agent_id FROM agent_active WHERE id = 1") })?.first?.first as? String
     }
 
     /// Adds an agent, enabled. Its number is the next one and is never reused, even after a delete. Its id is `agent_` and a random part.
@@ -237,6 +272,7 @@ package final class AgentRegistry {
         guard let record = get(id) else { throw APIError.notFound("no agent with id \"\(id)\"") }
         guard record.id != Self.chatAgentID else { throw APIError.invalid("agent 1 cannot be deleted") }
         changes.send()
+        clearActive(if: record.id)
         try database.write { try $0.execute("DELETE FROM agents WHERE id = ?", [record.id]) }
     }
 
