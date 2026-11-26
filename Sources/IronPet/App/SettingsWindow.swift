@@ -21,7 +21,7 @@ final class SettingsModel: ObservableObject {
     var voiceKey: VoiceKey { VoiceKey(store: platform.secrets) }
     /// Set once the app has built it, before the window can open.
     var automations: AutomationsAPI?
-    /// The agents, for Settings → Agents. Nil without a database.
+    /// The pets, for Settings → General → Pets. Nil without a database.
     var agentRecords: AgentRecordsAPI?
     /// The meeting controller, for labelling the voices of the last meeting.
     var meeting: MeetingsAPI?
@@ -157,7 +157,6 @@ struct SettingsView: View {
 
     static let pages = [
         Page(tag: "general", title: "General", symbol: SharedSymbols.settings),
-        Page(tag: "agents", title: "Agents", symbol: "person.2"),
         Page(tag: "memory", title: "Memory", symbol: SharedSymbols.memory),
         Page(tag: "prompts", title: "Prompts", symbol: "text.bubble"),
         Page(tag: "integrations", title: "Integrations", symbol: "puzzlepiece.extension"),
@@ -213,8 +212,6 @@ struct SettingsView: View {
 
     @ViewBuilder private var content: some View {
         switch model.tab {
-        case "agents":
-            if let records = model.agentRecords { AgentsSettings(api: records) } else { Text("Agents need the database, which is not available.").foregroundStyle(.secondary) }
         case "memory": MemorySettings(model: model)
         case "prompts": PromptsSettings(model: model)
         case "integrations": IntegrationsSettings(telegram: model.telegram)
@@ -267,7 +264,6 @@ struct SettingsHeader: View {
 private struct GeneralSettings: View {
     @ObservedObject var model: SettingsModel
     @ObservedObject private var store = SettingsAPI.live
-    @State private var name = SettingsAPI.live.config.pet.name
 
     private var welcomeBackFooter: String {
         let minutes = Int(store.config.reminders.idleResetMinutes)
@@ -278,12 +274,10 @@ private struct GeneralSettings: View {
 
     var body: some View {
         Form {
-            Section("Pet") {
-                TextField("Name", text: $name)
-                    .onSubmit(saveName)
-                    .onChange(of: name) { saveName() }
-                    .onChange(of: store.config.pet.name) { if store.config.pet.name != name { name = store.config.pet.name } }
-                PetGallery(gallery: model.pets, buildPet: model.actions.buildPet)
+            if let records = model.agentRecords {
+                PetsSection(api: records, gallery: model.pets, buildPet: model.actions.buildPet)
+            } else {
+                Section("Pets") { Text("Pets need the database, which is not available.").foregroundStyle(.secondary) }
             }
             ChatBackgroundSection()
             PasteLimitsSection()
@@ -335,13 +329,13 @@ private struct GeneralSettings: View {
                     get: { store.config.tasks.scanScreen }, set: { on in store.update { $0.tasks.scanScreen = on } }))
                     .disabled(!store.config.tasks.scan || !store.config.screenCapture.enabled)
             } footer: {
-                Text("Each scan sends only what is new to the agent that already had it: a chat to its own agent, a meeting to the agent that summarized it. The agent can only answer. It suggests new tasks and changes to open tasks (done, who you wait on, a note), and nothing changes until you press Add or Accept in the Tasks section. The screen needs screen capture turned on. Add your own schedule under Automations if you want a different one.")
+                Text("Each scan sends only what is new to the pet that already had it: a chat to its own pet, a meeting to the pet that summarized it. The pet can only answer. It suggests new tasks and changes to open tasks (done, who you wait on, a note), and nothing changes until you press Add or Accept in the Tasks section. The screen needs screen capture turned on. Add your own schedule under Automations if you want a different one.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
                 Picker("Open sessions in", selection: Binding(get: { store.config.openIn },
                                                               set: { value in store.update { $0.openIn = value } })) {
-                    Text("Auto (the app that started the agent)").tag(Editors.auto)
+                    Text("Auto (the app that started the session)").tag(Editors.auto)
                     ForEach(openChoices, id: \.bundleID) { Text($0.name).tag($0.bundleID) }
                 }
             } footer: {
@@ -355,9 +349,9 @@ private struct GeneralSettings: View {
                         .help(agent.watchNote ?? "Adds ironpet's hooks to \(agent.configFile.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))")
                 }
             } header: {
-                Text("Agents")
+                Text("Watch sessions")
             } footer: {
-                Text("Lists the agents found on this Mac. Watching adds ironpet's hooks to the agent's own config so \(store.config.pet.name) sees sessions you start yourself. Turning one off removes only ironpet's hooks; an existing file is backed up as *.ironpet-backup the first time. Codex asks you to trust new hooks in its /hooks screen.")
+                Text("Lists the harnesses found on this Mac. Watching adds ironpet's hooks to the harness's own config so \(store.config.pet.name) sees sessions you start yourself. Turning one off removes only ironpet's hooks; an existing file is backed up as *.ironpet-backup the first time. Codex asks you to trust new hooks in its /hooks screen.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             SkillsSettings()
@@ -378,12 +372,6 @@ private struct GeneralSettings: View {
             choices.append(OpenTarget(name: Editors.appName(saved) ?? saved, bundleID: saved))
         }
         return choices
-    }
-
-    private func saveName() {
-        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        store.update { $0.pet.name = trimmed }
     }
 }
 
@@ -733,7 +721,7 @@ private struct VoiceModeSettings: View {
                 if settings.listenWith == Config.VoiceMode.wispr, !WisprBridge.isAvailable {
                     Text("Wispr Flow isn't installed, or hasn't dictated anything yet.").font(.caption).foregroundStyle(.orange)
                 }
-                TextField("Model", text: $modelName, prompt: Text("The agent's fastest"))
+                TextField("Model", text: $modelName, prompt: Text("The harness's fastest"))
                     .onSubmit(saveModel)
                     .onChange(of: modelName) { saveModel() }
                 Stepper(value: Binding(get: { settings.silenceSeconds }, set: { value in store.update { $0.voiceMode.silenceSeconds = value } }),
@@ -747,7 +735,7 @@ private struct VoiceModeSettings: View {
         } header: {
             Text("Conversation")
         } footer: {
-            Text("Press the shortcut and talk. \(name) answers out loud and keeps listening until you say bye, press Esc, or stay quiet for the time above; talking over \(name) cuts it off. The microphone is on only during a conversation. What you say goes to the voice server, then to the chat's agent, and the reply goes back to the voice server to be spoken. Longer work goes to background jobs. Anything the agent asks permission for waits for you to answer the alert, and a spoken yes never approves it. With Wispr Flow, its dictation is sent as soon as it lands and the app you were in gets focus back at the end. Voice mode doesn't listen or speak during calls and meeting recordings.")
+            Text("Press the shortcut and talk. \(name) answers out loud and keeps listening until you say bye, press Esc, or stay quiet for the time above; talking over \(name) cuts it off. The microphone is on only during a conversation. What you say goes to the voice server, then to the chat's pet, and the reply goes back to the voice server to be spoken. Longer work goes to background jobs. Anything the pet asks permission for waits for you to answer the alert, and a spoken yes never approves it. With Wispr Flow, its dictation is sent as soon as it lands and the app you were in gets focus back at the end. Voice mode doesn't listen or speak during calls and meeting recordings.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
@@ -826,7 +814,7 @@ private struct MeetingSettings: View {
             Section("Summary") {
                 Toggle("Summarize automatically when a meeting ends", isOn: Binding(
                     get: { meetings.autoSummary }, set: { on in store.update { $0.meetings.autoSummary = on } }))
-                Picker("Summary agent", selection: Binding(get: { meetings.summaryAgent }, set: setAgent)) {
+                Picker("Summary harness", selection: Binding(get: { meetings.summaryAgent }, set: setAgent)) {
                     ForEach(agents) { agent in Text(agent.name).tag(agent.id) }
                 }
                 Picker("Summary model", selection: Binding(get: { meetings.summaryModel ?? "" },
@@ -835,7 +823,7 @@ private struct MeetingSettings: View {
                     ForEach(modelChoices, id: \.id) { Text($0.name).tag($0.id) }
                 }
                 if models.isEmpty {
-                    Text("The model list fills in after this agent has run once in the chat. Default uses the agent's own choice.")
+                    Text("The model list fills in after this harness has run once in the chat. Default uses the harness's own choice.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
             }
@@ -855,7 +843,7 @@ private struct MeetingSettings: View {
             Section {
                 EmptyView()
             } footer: {
-                Text("When a meeting ends, the transcript is sent to the summary agent, which only gets the meeting folder and has every permission request refused: it can read the transcript and answer, and it cannot change files or run commands. ironpet writes summary.md itself. The server, model and key are the ones under Voice.")
+                Text("When a meeting ends, the transcript is sent to the summary harness, which only gets the meeting folder and has every permission request refused: it can read the transcript and answer, and it cannot change files or run commands. ironpet writes summary.md itself. The server, model and key are the ones under Voice.")
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
@@ -1004,7 +992,7 @@ struct IntegrationsSettings: View {
                         store.update { $0.integrations.shareMCPSignIns = on }
                     })
             ) {
-                Text("cursor-agent stores MCP sign-ins per folder. With this on, your MCP OAuth tokens are copied into each folder you chat in, so you sign in once. Relies on an internal Cursor file format.")
+                Text("Cursor stores MCP sign-ins per folder. With this on, your MCP OAuth tokens are copied into each folder you chat in, so you sign in once. Relies on an internal Cursor file format.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             TelegramIntegration(bridge: telegram)
@@ -1017,7 +1005,7 @@ struct IntegrationsSettings: View {
         let alert = NSAlert()
         alert.messageText = "Share MCP sign-ins across folders?"
         alert.informativeText = """
-            cursor-agent stores MCP sign-ins per folder. With this on, before each chat ironpet copies your \
+            Cursor stores MCP sign-ins per folder. With this on, before each chat ironpet copies your \
             signed-in MCP servers' OAuth tokens from ~/.cursor/projects/*/mcp-auth.json into the chat's folder, \
             so you only sign in once. The tokens stay on this Mac, but any folder you chat in gets them. This \
             relies on an internal Cursor file format.
@@ -1049,7 +1037,7 @@ private struct PasteLimitsSection: View {
         } header: {
             Text("Pasted text")
         } footer: {
-            Text("Pasting more than either limit adds the text to the chat as a pasted-text.txt attachment. The agent still reads all of it. Characters: \(Config.Chat.pasteCharsRange.lowerBound) to \(Config.Chat.pasteCharsRange.upperBound). Lines: \(Config.Chat.pasteLinesRange.lowerBound) to \(Config.Chat.pasteLinesRange.upperBound).")
+            Text("Pasting more than either limit adds the text to the chat as a pasted-text.txt attachment. The pet still reads all of it. Characters: \(Config.Chat.pasteCharsRange.lowerBound) to \(Config.Chat.pasteCharsRange.upperBound). Lines: \(Config.Chat.pasteLinesRange.lowerBound) to \(Config.Chat.pasteLinesRange.upperBound).")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

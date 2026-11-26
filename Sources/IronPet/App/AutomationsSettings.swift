@@ -111,7 +111,7 @@ struct AutomationList: View {
                         .padding(.horizontal, 14).padding(.bottom, 10)
                     }
                     Divider()
-                    SummaryRow(label: "Runs", symbol: "play") { value(a.action.type == "prompt" ? "A prompt for the agent" : a.action.type) }
+                    SummaryRow(label: "Runs", symbol: "play") { value(a.action.type == "prompt" ? "A prompt for the pet" : a.action.type) }
                     Divider()
                     SummaryRow(label: "Created by", symbol: "person") { value(a.createdBy) }
                 }
@@ -150,9 +150,9 @@ struct AutomationList: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 CardSection(title: "Reminders") { switchRow("Pause all reminders", isOn: binding(\.paused)) }
-                footer("A reminder on keyboard time only counts while you're at the keyboard. While an agent is working it can come a little early so you take the break while you'd be waiting anyway. Agents can add and change automations; anything that runs a command or a prompt waits for your Approve first.")
+                footer("A reminder on keyboard time only counts while you're at the keyboard. While a pet is working it can come a little early so you take the break while you'd be waiting anyway. Pets can add and change automations; anything that runs a command or a prompt waits for your Approve first.")
                 CardSection(title: "Automations") {
-                    if api.automations.isEmpty { Text("None yet. Ask an agent, or add one.").foregroundStyle(.secondary).padding(14) }
+                    if api.automations.isEmpty { Text("None yet. Ask a pet, or add one.").foregroundStyle(.secondary).padding(14) }
                     else if shown.isEmpty { Text("No automation has that text in its name or schedule.").foregroundStyle(.secondary).padding(14) }
                     ForEach(shown) { automation in
                         if automation.id != shown.first?.id { Divider() }
@@ -175,13 +175,13 @@ struct AutomationList: View {
                             if on { api.reviewApprovals() }
                         }))
                 }
-                footer("Agent-written scripts can run shell commands without review.")
+                footer("Scripts a pet writes can run shell commands without review.")
                 CardSection(title: "Failures") {
-                    switchRow("Ask the agent to fix automations that fail", isOn: Binding(
+                    switchRow("Ask the pet to fix automations that fail", isOn: Binding(
                         get: { config.config.automations.autoFix },
                         set: { on in config.update { $0.automations.autoFix = on } }))
                 }
-                footer("When a poll, script, shell command or prompt fails, ironpet sends the error to the current chat and asks your agent to fix it with the automation tools. Changes to a command, script or prompt still wait for your Approve. At most one request per automation every 6 hours, and only after it has run fine since the last one.")
+                footer("When a poll, script, shell command or prompt fails, ironpet sends the error to the current chat and asks your pet to fix it with the automation tools. Changes to a command, script or prompt still wait for your Approve. At most one request per automation every 6 hours, and only after it has run fine since the last one.")
                 CardSection(title: "Timing") {
                     SummaryRow(label: "Reset after being away", symbol: "moon.zzz", labelWidth: 200) { minutes(binding(\.idleResetMinutes), range: 1...60) }
                     Divider()
@@ -388,7 +388,7 @@ private struct NewAutomationSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("What kind of automation do you want?").font(.headline)
-            Text("Say it in your own words. Your agent creates it with the automation tools and tells you what it made. For example: remind me to stretch every 45 minutes, tell me when CI fails on one of my PRs, or every weekday at 17:30 ask the agent to summarize what I changed today.")
+            Text("Say it in your own words. Your pet creates it with the automation tools and tells you what it made. For example: remind me to stretch every 45 minutes, tell me when CI fails on one of my PRs, or every weekday at 17:30 ask the pet to summarize what I changed today.")
                 .font(.caption).foregroundStyle(.secondary)
             TextEditor(text: $text)
                 .font(.body)
@@ -397,7 +397,7 @@ private struct NewAutomationSheet: View {
             HStack {
                 Spacer()
                 Button("Cancel") { done(nil) }
-                Button("Ask the agent") { done(text.trimmingCharacters(in: .whitespacesAndNewlines)) }
+                Button("Ask the pet") { done(text.trimmingCharacters(in: .whitespacesAndNewlines)) }
                     .keyboardShortcut(.defaultAction)
                     .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
             }

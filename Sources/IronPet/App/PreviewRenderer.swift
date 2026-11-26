@@ -468,7 +468,7 @@ enum PreviewRenderer {
     }
 
     /// The Usage tab with a week of made-up events: cost mode, requests mode and the hourly Today range.
-    /// Two agents on one Mac: their two pets side by side, the chat of the second with the agent switcher in its header, and Settings → Agents.
+    /// Two agents on one Mac: their two pets side by side, the chat of the second with the agent switcher in its header, and Settings → Pets.
     private static func renderSeveralAgents(to dir: URL, spriteA: String?, spriteB: String?) {
         guard let database = try? Database(path: nil, migrations: AppMigrations.all) else { return }
         let registry = AgentRegistry(database: database)
@@ -497,7 +497,14 @@ enum PreviewRenderer {
         model.agentRecords = { registry.list() }
         render(ChatView(session: model).frame(width: 520, height: 640).panel(), to: dir, "chat-agent-switcher")
 
-        render(AgentsSettings(api: records).frame(width: 540, height: 360).panel(), to: dir, "settings-agents")
+        let gallery = PetGalleryModel(sprite: { spriteB })
+        render(Form { PetsSection(api: records, gallery: gallery, buildPet: { _ in }) }.formStyle(.grouped).frame(width: 540, height: 360).panel(), to: dir, "settings-pets")
+        // The gallery decodes the sheets off the main thread, so let it finish before the picture is taken.
+        gallery.setWindowShown(true)
+        gallery.setViewShown(true)
+        RunLoop.main.run(until: Date().addingTimeInterval(2))
+        render(PetDetails(api: records, gallery: gallery, petID: bunny.id, buildPet: { _ in }, close: {}).panel(), to: dir, "settings-pet-details")
+        gallery.setViewShown(false)
     }
 
     private static func renderUsage(to dir: URL) {
@@ -870,7 +877,9 @@ enum PreviewRenderer {
                       automation: "gmail-watch", name: "Gmail watcher")
         // What the task scan files: a new task, and a change to a task that exists.
         clock = Date().addingTimeInterval(-120)
-        store.suggest(scan: [TaskSuggestion.Draft(key: "scan", title: "Send Tom the deck", due: "2026-11-26")])
+        var deck = TaskSuggestion.Draft(key: "scan", title: "Send Tom the deck", due: "2026-11-26")
+        deck.clarify = TaskSuggestion.Clarify(context: .mac, area: "Sales", twoMinute: true)
+        store.suggest(scan: [deck])
         if let target = store.tasks.first(where: { $0.title == "Send the updated pricing deck" }) {
             store.suggest(scanUpdates: [(TaskSuggestion.Update(target: target.id, targetTitle: target.title, note: "Sent on Tuesday, Ana confirmed.",
                                                                markDone: true), nil)])

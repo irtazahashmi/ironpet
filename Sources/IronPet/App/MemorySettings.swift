@@ -116,8 +116,8 @@ struct MemorySettingsBody: View {
     private var learningSection: some View {
         Section {
             Toggle("Learn from chats", isOn: Binding(get: { config.reflect }, set: { on in store.update { $0.memory.reflect = on } }))
-                .help("A chat goes to its own agent, a meeting summary to the summary agent and an automation's answer to the agent that ran it. The agent only answers: no tools, a scratch folder, every permission refused. Summaries and automation answers can only add notes about people. Notes with keys or passwords are never saved.")
-            Picker("Agent", selection: Binding(get: { config.reflectAgent ?? "" }, set: setAgent)) {
+                .help("A chat goes to its own pet, a meeting summary to the summary harness and an automation's answer to the pet that ran it. It only answers: no tools, a scratch folder, every permission refused. Summaries and automation answers can only add notes about people. Notes with keys or passwords are never saved.")
+            Picker("Harness", selection: Binding(get: { config.reflectAgent ?? "" }, set: setAgent)) {
                 Text("Same as the chat (recommended)").tag("")
                 ForEach(agents) { agent in Text(agent.name).tag(agent.id) }
             }
@@ -130,7 +130,7 @@ struct MemorySettingsBody: View {
                 }
                 .disabled(!config.reflect)
             } else {
-                LabeledContent("Model") { Text("Haiku for Claude Code, each agent's default for the others").foregroundStyle(.secondary) }
+                LabeledContent("Model") { Text("Haiku for Claude Code, each harness's default for the others").foregroundStyle(.secondary) }
             }
             Stepper {
                 Text("Learn every \(config.digestMinutes) min")
@@ -145,7 +145,7 @@ struct MemorySettingsBody: View {
             .disabled(!config.reflect)
             Toggle("Learn from the screen", isOn: Binding(get: { config.learnFromScreen }, set: { on in store.update { $0.memory.learnFromScreen = on } }))
                 .disabled(!config.reflect || (!store.config.screenCapture.enabled && !config.learnFromScreen))
-                .help("Also reads the text of the screen captures that screen capture saves, with the same agent as the chats. Off by default.")
+                .help("Also reads the text of the screen captures that screen capture saves, with the same harness as the chats. Off by default.")
             if config.reflect, let error = memory.lastError {
                 Label("The last pass failed: \(error)", systemImage: SharedSymbols.warning)
                     .font(.caption).foregroundStyle(.orange).textSelection(.enabled)
@@ -153,7 +153,7 @@ struct MemorySettingsBody: View {
         } header: {
             Text("Learning")
         } footer: {
-Text("Once an hour, \(petName) sends what is new to the agent that already had it, which names the facts worth keeping. Each pass uses that agent's quota and shows as Memory in the Usage tab.")
+Text("Once an hour, \(petName) sends what is new to the pet that already had it, which names the facts worth keeping. Each pass uses that pet's quota and shows as Memory in the Usage tab.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

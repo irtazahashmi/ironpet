@@ -258,7 +258,7 @@ description: Create a new pet (character) for ironpet, the macOS desktop pet, as
 
 # Create an ironpet pet
 
-A pet is one PNG sprite sheet. ironpet shows every valid sheet in `~/.ironpet/pets/` as an animated tile in Settings → Pet, and the user picks it there. You write the sheet. You do not edit ironpet itself.
+A pet is one PNG sprite sheet. ironpet shows every valid sheet in `~/.ironpet/pets/` as an animated tile in Settings → General → Pets, and the user picks it there. You write the sheet. You do not edit ironpet itself.
 
 ## Steps
 
@@ -276,7 +276,7 @@ The user's request is the text after the command, for example `/ironpet-pets red
 5. Open the PNG and look at it. Check that the character matches the description in the idle, waving, jumping and running rows, and that no cell is cropped. Fix the theme and run again until it does.
 6. Check the size with `sips -g pixelWidth -g pixelHeight <file>`. It must be 1536 x 2704.
 7. Move the finished file into `~/.ironpet/pets/<name>.png` in one step (`mkdir -p` the folder, then `mv`). ironpet reloads the folder every couple of seconds, so a half-written file would show up as a broken tile.
-8. Tell the user the path and what you drew. They pick the pet in Settings → Pet.
+8. Tell the user the path and what you drew. They pick the pet in Settings → General → Pets.
 
 ## Sheet layout
 
@@ -358,6 +358,7 @@ Check each task yourself. If a query can answer the question, run the query. Do 
 
 Meetings and watchers propose tasks. They wait as suggestions and change nothing until you resolve them. `tasks_suggestions_list` shows them.
 
+- The app shows suggestions as the Inbox. A suggestion from the task scan may carry `clarify` (`context`, `area`, `two_minute`, `someday`): accepting applies it, so the task gets those labels and the someday status. Pass `status` to override it.
 - Accept with `tasks_suggestion_accept` when the evidence holds. Check it with a query where one can (a PR, a ticket, CI). Pass `title`, `due`, `notes` or `status` to correct what is applied. The `note` is required and names the evidence.
 - Reject with `tasks_suggestion_reject` and a required `note` with the reason when it is wrong or a duplicate of an existing task.
 - When only the user can decide, leave it and ask in one line.
