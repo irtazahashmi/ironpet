@@ -115,6 +115,8 @@ package struct AutomationError: Error, LocalizedError {
 package final class AutomationService {
     package let store: AutomationStore
     package let engine: AutomationEngine
+    /// The agents on this install, for checking the agent id a call names. Without it (tests with no database), only agent 1 exists.
+    package var registry: AgentRegistry?
     package var notice: (AutomationNotice) -> Void = { _ in }
     /// Where every bubble this service shows is also stored. Nil in tests that do not look at it.
     package var notifications: NotificationStore?
@@ -141,6 +143,35 @@ package final class AutomationService {
     package var sendToChat: ((_ automationID: String, _ message: String) -> Bool)?
     /// True while a message from this automation is queued or running in the chat.
     package var chatRunPending: (_ automationID: String) -> Bool = { _ in false }
+
+    /// The ways into one agent's main chat, for an agent whose chat is not the Mac's. `postNotice`, `sendToChat`, `chatRunPending` and
+    /// `forkSource` above are agent 1's chat. An automation reports to the chat of the agent that owns it.
+    package struct AgentChat {
+        package init(postNotice: ((_ kind: String, _ title: String, _ text: String, _ triggersTurn: Bool) -> Void)? = nil,
+                     sendToChat: ((_ automationID: String, _ message: String) -> Bool)? = nil,
+                     chatRunPending: @escaping (_ automationID: String) -> Bool = { _ in false },
+                     forkSource: @escaping (_ automation: Automation) -> String? = { _ in nil }) {
+            self.postNotice = postNotice
+            self.sendToChat = sendToChat
+            self.chatRunPending = chatRunPending
+            self.forkSource = forkSource
+        }
+
+        package var postNotice: ((_ kind: String, _ title: String, _ text: String, _ triggersTurn: Bool) -> Void)?
+        package var sendToChat: ((_ automationID: String, _ message: String) -> Bool)?
+        package var chatRunPending: (_ automationID: String) -> Bool
+        package var forkSource: (_ automation: Automation) -> String?
+    }
+
+    /// The main chats of the agents other than agent 1, by agent id. Empty until an agent has a chat of its own.
+    package var agentChats: [String: AgentChat] = [:]
+
+    /// The chat an automation reports to: its owner's. A node-level automation has no owner and reports to agent 1's, as it always has.
+    private func chat(for a: Automation) -> AgentChat? {
+        let owner = a.ownerAgentID ?? AgentOwner.defaultID
+        if owner != AgentOwner.defaultID { return agentChats[owner] }
+        return AgentChat(postNotice: postNotice, sendToChat: sendToChat, chatRunPending: chatRunPending, forkSource: forkSource)
+    }
     /// Builds a `digest` action's brief or recap from data on this Mac. Nil when the stores are not ready. `slot` is the
     /// daily slot being delivered, so a recap caught up after midnight covers the slot's day; nil for Run now.
     package var digest: (_ kind: Brief.Kind, _ automation: Automation, _ slot: Date?) -> Brief? = { _, _, _ in nil }
@@ -405,7 +436,7 @@ package final class AutomationService {
         switch a.action.type {
         case "shell":
             let command = AutomationTemplate.render(a.action.command ?? "", values: values.shellSafe)
-            let toChat = a.action.shellReportsToChat && postNotice != nil
+            let toChat = a.action.shellReportsToChat && chat(for: a)?.postNotice != nil
             return runInBackground(a, done: fire.finished) { [self] in
                 let result = await runShell(command, a.action.timeoutSeconds ?? 60)
                 if toChat {
@@ -418,13 +449,13 @@ package final class AutomationService {
             let prompt = AutomationTemplate.render(a.action.prompt ?? "", values: values)
             var fork: String?
             if a.action.effectiveSession == "fork" {
-                fork = forkSource(a)
+                fork = chat(for: a)?.forkSource(a)
                 if fork == nil {
                     let agent = AutomationPrompt.agentID(a)
                     record(a.id, "warning", "fork not supported by \(AgentCatalog.agent(id: agent)?.name ?? agent), ran as new")
                 }
             }
-            let toChat = a.action.effectiveReport == "chat" && postNotice != nil
+            let toChat = a.action.effectiveReport == "chat" && chat(for: a)?.postNotice != nil
             return runInBackground(a, done: fire.finished) { [self] in
                 switch await runSession?(a, prompt, fork) ?? .failure(.init(message: "no agent")) {
                 case .success(let answer):
@@ -435,7 +466,7 @@ package final class AutomationService {
                         afterRun(a)
                     } else if toChat {
                         record(a.id, "ok", "posted to chat: " + trimmed)
-                        postNotice?("automation:\(a.id)", Self.noticeTitle(a), trimmed, true)
+                        chat(for: a)?.postNotice?("automation:\(a.id)", Self.noticeTitle(a), trimmed, true)
                         afterRun(a)
                     } else {
                         finish(a, ok: true, text: answer, fire: fire, background: true, thread: latestThread(a.id))
@@ -443,7 +474,7 @@ package final class AutomationService {
                 case .failure(let error):
                     if toChat {
                         record(a.id, "failed", error.message)
-                        postNotice?("automation:\(a.id)", Self.noticeTitle(a) + " failed", error.message, false)
+                        chat(for: a)?.postNotice?("automation:\(a.id)", Self.noticeTitle(a) + " failed", error.message, false)
                         afterRun(a, ok: false)
                     } else {
                         finish(a, ok: false, text: error.message, fire: fire, thread: latestThread(a.id))
@@ -500,7 +531,7 @@ package final class AutomationService {
     /// A prompt without poll item data runs in the user's chat, with the chat's agent, tools and memory. Item text comes
     /// from outside (a web page, an issue title), so a prompt that uses it stays in the restricted background run.
     package func runsInChat(_ a: Automation) -> Bool {
-        guard sendToChat != nil, a.action.type == "prompt", !runsInSession(a) else { return false }
+        guard chat(for: a)?.sendToChat != nil, a.action.type == "prompt", !runsInSession(a) else { return false }
         return !Self.usesItemData(a.action.prompt ?? "")
     }
 
@@ -535,11 +566,11 @@ package final class AutomationService {
 
     private func deliverToChat(_ a: Automation, fire: AutomationEngine.Fire, values: [String: Any]) {
         // One message per automation: a slow turn must not stack up behind its own schedule.
-        if chatRunPending(a.id) { return record(a.id, "skipped", "skipped: previous run still in the chat") }
+        if chat(for: a)?.chatRunPending(a.id) == true { return record(a.id, "skipped", "skipped: previous run still in the chat") }
         let message = chatHeader(a) + "\n\n" + AutomationTemplate.render(a.action.prompt ?? "", values: values)
         // Record before sending: the chat reports "running" synchronously, and that row must come after this one.
         record(a.id, "sent", "sent to chat")
-        if sendToChat?(a.id, message) != true {
+        if chat(for: a)?.sendToChat?(a.id, message) != true {
             record(a.id, "failed", "the chat did not take the message")
         }
         // The turn is not done yet. `chatOutcome` applies `until` when it ends.
@@ -589,7 +620,7 @@ package final class AutomationService {
             \(output.isEmpty ? "(no output)" : output)
             """
         record(a.id, result.ok ? "ok" : "failed", "posted to chat: " + result.summary)
-        postNotice?("automation:\(a.id)", Self.noticeTitle(a) + (result.ok ? "" : " failed"), text, result.ok)
+        chat(for: a)?.postNotice?("automation:\(a.id)", Self.noticeTitle(a) + (result.ok ? "" : " failed"), text, result.ok)
         afterRun(a, ok: result.ok)
     }
 
@@ -861,7 +892,7 @@ package final class AutomationService {
     /// replaces one the agent has not read yet, so a run that has several things to say should send one `chat` action.
     private func scriptChat(_ action: [String: Any], _ a: Automation) -> String? {
         guard let body = text(action, "text"), !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return "a chat action needs text" }
-        guard let postNotice else { return "the main chat is not available" }
+        guard let postNotice = chat(for: a)?.postNotice else { return "the main chat is not available" }
         var (posted, cut) = Self.head(body, bytes: Self.maxChatTextBytes)
         if cut { posted += "\n(text cut off at \(Self.maxChatTextBytes / 1024) KiB)" }
         let line = text(action, "title").map { $0.components(separatedBy: .newlines).joined(separator: " ") }
@@ -893,13 +924,25 @@ package final class AutomationService {
 
     // MARK: Operations
 
-    /// `by` is `user` for Settings and `agent:mcp` or `agent:cli` for the other paths.
-    package func call(_ op: String, _ args: [String: Any], by: String) async -> Result<Any, AutomationError> {
+    /// `by` is `user` for Settings and `agent:mcp` or `agent:cli` for the other paths. `agent` is the agent the call comes from, when
+    /// the caller knows: `list` shows its automations and `create` makes the automation its own, unless the arguments name an
+    /// `agentId`. With neither, the call is agent 1's, as the Mac's window is.
+    package func call(_ op: String, _ args: [String: Any], by: String, agent: String? = nil) async -> Result<Any, AutomationError> {
         do {
             switch op {
-            case "list": return .success(store.automations.map(summary))
+            case "list":
+                let owner = try resolveOwner(args["agentId"] as? String ?? agent)
+                return .success(store.automations.filter { $0.isVisible(to: owner) }.map(summary))
             case "get": return .success(detail(try find(args)))
-            case "create": return .success(withApprovalNote(try create(args, by: by)))
+            case "create":
+                var args = args
+                if let agent {
+                    // The calling agent owns what it creates, unless the definition names another owner.
+                    var raw = (args["automation"] as? [String: Any]) ?? args
+                    if raw["agentId"] == nil { raw["agentId"] = agent }
+                    if args["automation"] != nil { args["automation"] = raw } else { args = raw }
+                }
+                return .success(withApprovalNote(try create(args, by: by)))
             case "update": return .success(withApprovalNote(try update(args, by: by)))
             case "delete":
                 let a = try find(args)
@@ -938,6 +981,16 @@ package final class AutomationService {
         }
     }
 
+    /// The agent id a call names, checked against the agents on this install. Nil and empty are agent 1. An id no agent has is an error
+    /// that starts with "no agent", which `AutomationsAPI` reports as not found.
+    package func resolveOwner(_ raw: String?) throws -> String {
+        do {
+            return try AgentOwner.resolve(raw, registry: registry)
+        } catch let error as APIError {
+            throw AutomationError(message: error.message)
+        }
+    }
+
     package func find(_ args: [String: Any]) throws -> Automation {
         guard let id = args["id"] as? String else { throw AutomationError(message: "id is required") }
         guard let a = store.automations.first(where: { $0.id == id }) else { throw AutomationError(message: "no automation with id \"\(id)\"") }
@@ -949,6 +1002,8 @@ package final class AutomationService {
         let name = raw["name"] as? String ?? ""
         if raw["id"] == nil { raw["id"] = AutomationValidator.slug(name, taken: Set(store.automations.map(\.id))) }
         raw["createdBy"] = by
+        // The owner is the agent the definition names, or agent 1 for the Mac's window. An id no agent has is rejected.
+        raw["agentId"] = try resolveOwner(raw["agentId"] as? String)
         var (parsed, errors) = AutomationValidator.parseOne(raw)
         if let a = parsed {
             errors += AutomationValidator.validate(a, now: engine.env.now(), isNew: true)
@@ -963,6 +1018,7 @@ package final class AutomationService {
         let existing = try find(args)
         let changes = (args["changes"] as? [String: Any]) ?? args.filter { $0.key != "id" }
         guard !changes.isEmpty else { throw AutomationError(message: "changes is empty") }
+        if let agent = changes["agentId"] as? String { _ = try resolveOwner(agent) }
         var raw = (try JSONSerialization.jsonObject(with: JSONEncoder().encode(existing))) as? [String: Any] ?? [:]
         raw = Self.merge(changes, into: raw)
         if let newTrigger = changes["trigger"] as? [String: Any], let type = newTrigger["type"] as? String, type != existing.trigger.type {
@@ -1019,6 +1075,7 @@ package final class AutomationService {
     package func summary(_ a: Automation) -> [String: Any] {
         var out: [String: Any] = ["id": a.id, "name": a.name, "enabled": a.enabled, "trigger": describe(a.trigger),
                                   "action": a.action.type, "createdBy": a.createdBy]
+        if let owner = a.ownerAgentID { out["agentId"] = owner }
         if let ref = engine.state.records.ref(.auto, a.id) { out["ref"] = ref }
         if let next = engine.nextRun(a) { out["nextRun"] = AutomationClock.format(next) }
         if let last = engine.state.history(a.id, limit: 1).last { out["lastRun"] = ["time": AutomationClock.format(last.date), "outcome": last.outcome, "output": last.output] }
@@ -1049,8 +1106,12 @@ package final class AutomationService {
     }
 
     package func history(_ id: String, limit: Int) -> [[String: String]] {
-        engine.state.history(id, limit: max(1, limit)).reversed().map {
-            ["time": AutomationClock.format($0.date), "outcome": $0.outcome, "output": $0.output]
+        let runs = engine.state.history(id, limit: max(1, limit))
+        let refs = engine.state.records.refs(.run, runs.compactMap { $0.id.map(String.init) })
+        return runs.reversed().map { run in
+            var out = ["time": AutomationClock.format(run.date), "outcome": run.outcome, "output": run.output]
+            if let key = run.id.map(String.init), let ref = refs[key] { out["ref"] = ref }
+            return out
         }
     }
 

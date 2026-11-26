@@ -34,12 +34,13 @@ public enum RequestRetry {
         _ policy: RetryPolicy = .standard,
         sleep: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
         onRetry: (Int) -> Void = { _ in },
+        retriesTimeouts: Bool = true,
         _ call: () async throws -> T
     ) async throws -> T {
         var attempt = 1
         while true {
             do { return try await call() } catch {
-                guard attempt < policy.attempts, isTransient(error), !Task.isCancelled else { throw error }
+                guard attempt < policy.attempts, isTransient(error), retriesTimeouts || !isTimeout(error), !Task.isCancelled else { throw error }
                 onRetry(attempt)
                 try await sleep(policy.delay(afterAttempt: attempt))
                 attempt += 1
@@ -47,11 +48,17 @@ public enum RequestRetry {
         }
     }
 
+    /// True when the request ran out of time. A big read that timed out makes the Mac build the same answer again, so a caller can skip the retry.
+    public static func isTimeout(_ error: Error) -> Bool {
+        if let client = error as? ClientError { return client == .timedOut }
+        return (error as? URLError)?.code == .timedOut
+    }
+
     /// True when the Mac was not reached, or a proxy in front of it answered for it. An answer from the Mac itself (4xx) is final.
     public static func isTransient(_ error: Error) -> Bool {
         if let client = error as? ClientError {
             switch client {
-            case .transport: return true
+            case .transport, .timedOut: return true
             case .api(let status, _, _): return status == 502 || status == 503 || status == 504
             default: return false
             }

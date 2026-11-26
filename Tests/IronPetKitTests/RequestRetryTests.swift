@@ -28,6 +28,35 @@ final class RequestRetryTests: XCTestCase {
         XCTAssertEqual(seen, [.seconds(1), .seconds(2)])
     }
 
+    // S4: a timed-out big read is not retried when the caller says so, and a small request still is.
+    func testATimedOutReadIsNotRetriedWhenTheCallerSaysSo() async {
+        let counter = Counter()
+        do {
+            _ = try await RequestRetry.perform(RetryPolicy(attempts: 3, base: .milliseconds(1)), sleep: { _ in }, retriesTimeouts: false) { () async throws -> Int in
+                _ = await counter.next()
+                throw ClientError.timedOut
+            }
+            XCTFail("should throw")
+        } catch { XCTAssertEqual(error as? ClientError, .timedOut) }
+        let tries = await counter.value
+        XCTAssertEqual(tries, 1)
+    }
+
+    func testATimeoutIsRetriedByDefaultAndOtherNetworkErrorsStillAreWithoutRetryingTimeouts() async throws {
+        let timeouts = Counter()
+        let value: Int = try await RequestRetry.perform(RetryPolicy(attempts: 3, base: .milliseconds(1)), sleep: { _ in }) {
+            if await timeouts.next() < 3 { throw ClientError.timedOut }
+            return 1
+        }
+        XCTAssertEqual(value, 1)
+        let drops = Counter()
+        let again: Int = try await RequestRetry.perform(RetryPolicy(attempts: 3, base: .milliseconds(1)), sleep: { _ in }, retriesTimeouts: false) {
+            if await drops.next() < 3 { throw ClientError.transport("The network connection was lost.") }
+            return 2
+        }
+        XCTAssertEqual(again, 2, "a dropped connection is transient even where timeouts are not retried")
+    }
+
     func testTheLastFailureIsThrownAfterTheLastTry() async {
         let counter = Counter()
         do {

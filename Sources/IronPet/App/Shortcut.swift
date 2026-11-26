@@ -30,6 +30,9 @@ struct Shortcut: Equatable {
             ("/", kVK_ANSI_Slash), ("\\", kVK_ANSI_Backslash), ("`", kVK_ANSI_Grave),
             ("space", kVK_Space), ("return", kVK_Return), ("tab", kVK_Tab), ("escape", kVK_Escape),
             ("up", kVK_UpArrow), ("down", kVK_DownArrow), ("left", kVK_LeftArrow), ("right", kVK_RightArrow),
+            // ISO and JIS keys that ANSI keyboards lack. `section` is § on European layouts, left of 1.
+            ("section", kVK_ISO_Section), ("yen", kVK_JIS_Yen), ("underscore", kVK_JIS_Underscore),
+            ("keypad-comma", kVK_JIS_KeypadComma), ("eisu", kVK_JIS_Eisu), ("kana", kVK_JIS_Kana),
         ]
         let fkeys = [kVK_F1, kVK_F2, kVK_F3, kVK_F4, kVK_F5, kVK_F6, kVK_F7, kVK_F8, kVK_F9, kVK_F10, kVK_F11,
                      kVK_F12].enumerated().map { ("f\($0.offset + 1)", $0.element) }
@@ -56,9 +59,13 @@ struct Shortcut: Equatable {
 
     /// From a key press while recording. nil for keys we can't name or presses without a modifier.
     init?(event: NSEvent) {
-        guard let key = Self.keys.first(where: { $0.code == Int(event.keyCode) }) else { return nil }
+        self.init(keyCode: Int(event.keyCode), modifierFlags: event.modifierFlags)
+    }
+
+    /// The same as `init?(event:)`, from the parts of the event, so tests need no `NSEvent`.
+    init?(keyCode: Int, modifierFlags mods: NSEvent.ModifierFlags) {
+        guard let key = Self.keys.first(where: { $0.code == keyCode }) else { return nil }
         var flags = 0
-        let mods = event.modifierFlags
         if mods.contains(.control) { flags |= controlKey }
         if mods.contains(.option) { flags |= optionKey }
         if mods.contains(.shift) { flags |= shiftKey }
@@ -67,11 +74,18 @@ struct Shortcut: Equatable {
         self.init(keyCode: key.code, modifiers: flags)
     }
 
-    /// Function keys work alone; anything else needs ⌘, ⌥ or ⌃ so typing (including Shift for capitals) isn't
-    /// hijacked.
+    /// Why the recorder refused a key press, or nil when `Shortcut(keyCode:modifierFlags:)` accepts it.
+    static func rejection(keyCode: Int, modifierFlags: NSEvent.ModifierFlags) -> String? {
+        guard keys.contains(where: { $0.code == keyCode }) else { return "That key isn't supported as a shortcut." }
+        guard Shortcut(keyCode: keyCode, modifierFlags: modifierFlags) == nil else { return nil }
+        return "Use ⌘, ⌥ or ⌃ (Shift alone isn't enough), or a function key or §."
+    }
+
+    /// Function keys and § work alone. Anything else needs ⌘, ⌥ or ⌃ so typing (including Shift for capitals)
+    /// isn't hijacked.
     private static func isAllowed(keyName: String, modifiers: Int) -> Bool {
         let isFunctionKey = keyName.count > 1 && keyName.hasPrefix("f") && Int(keyName.dropFirst()) != nil
-        return isFunctionKey || modifiers & (cmdKey | optionKey | controlKey) != 0
+        return isFunctionKey || keyName == "section" || modifiers & (cmdKey | optionKey | controlKey) != 0
     }
 
     private var keyName: String { Self.keys.first { $0.code == keyCode }?.name ?? "?" }
@@ -84,7 +98,9 @@ struct Shortcut: Equatable {
     /// `"⌥⌘G"`, for menus and labels.
     var display: String {
         let symbols: [String: String] = ["space": "Space", "return": "↩", "tab": "⇥", "escape": "⎋",
-                                         "up": "↑", "down": "↓", "left": "←", "right": "→"]
+                                         "up": "↑", "down": "↓", "left": "←", "right": "→",
+                                         "section": "§", "yen": "¥", "underscore": "_", "keypad-comma": "Num ,",
+                                         "eisu": "英数", "kana": "かな"]
         let key = symbols[keyName] ?? keyName.uppercased()
         return Self.modifierNames.filter { modifiers & $0.flag != 0 }.map(\.symbol).joined() + key
     }

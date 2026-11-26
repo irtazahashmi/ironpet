@@ -22,6 +22,31 @@ public struct RemoteChatReply: Codable, Equatable, Hashable, Sendable {
     }
 }
 
+/// Text selected in another app that went with a user message, as the Mac sends it.
+public struct RemoteChatSelection: Codable, Equatable, Hashable, Sendable {
+    public var appName: String
+    public var windowTitle: String?
+    public var text: String
+    public var trimmed: Bool?
+
+    enum CodingKeys: String, CodingKey {
+        case text, trimmed
+        case appName = "app_name"
+        case windowTitle = "window_title"
+    }
+
+    public init(appName: String, windowTitle: String? = nil, text: String, trimmed: Bool? = nil) {
+        self.appName = appName; self.windowTitle = windowTitle; self.text = text; self.trimmed = trimmed
+    }
+
+    /// The source as the Mac shows it, for example `Notes — Shopping`.
+    public var sourceLabel: String {
+        let title = windowTitle?.trimmingCharacters(in: .whitespacesAndNewlines)
+        if let title, !title.isEmpty { return "\(appName) — \(title)" }
+        return appName
+    }
+}
+
 public struct RemoteFormLine: Codable, Equatable, Hashable, Sendable {
     public var question: String
     public var answer: String
@@ -50,6 +75,8 @@ public struct RemoteChatItem: Codable, Equatable, Hashable, Identifiable, Sendab
     /// The client a user message came from: `ios`, `telegram`, `voice`... Nil for the Mac.
     public var origin: String?
     public var reply: RemoteChatReply?
+    /// The selection from another app that went with this message. Nil on older Macs.
+    public var selection: RemoteChatSelection?
     public var text: String?
     public var ok: Bool?
     public var fileName: String?
@@ -58,14 +85,14 @@ public struct RemoteChatItem: Codable, Equatable, Hashable, Identifiable, Sendab
     public var lines: [RemoteFormLine]?
 
     enum CodingKeys: String, CodingKey {
-        case id, kind, date, origin, reply, text, ok, skipped, lines
+        case id, kind, date, origin, reply, selection, text, ok, skipped, lines
         case fileName = "file_name"
         case isImage = "is_image"
     }
 
-    public init(id: String, kind: String, date: Date? = nil, origin: String? = nil, reply: RemoteChatReply? = nil, text: String? = nil,
+    public init(id: String, kind: String, date: Date? = nil, origin: String? = nil, reply: RemoteChatReply? = nil, selection: RemoteChatSelection? = nil, text: String? = nil,
                 ok: Bool? = nil, fileName: String? = nil, isImage: Bool? = nil, skipped: Bool? = nil, lines: [RemoteFormLine]? = nil) {
-        self.id = id; self.kind = kind; self.date = date; self.origin = origin; self.reply = reply; self.text = text; self.ok = ok
+        self.id = id; self.kind = kind; self.date = date; self.origin = origin; self.reply = reply; self.selection = selection; self.text = text; self.ok = ok
         self.fileName = fileName; self.isImage = isImage; self.skipped = skipped; self.lines = lines
     }
 
@@ -77,6 +104,7 @@ public struct RemoteChatItem: Codable, Equatable, Hashable, Identifiable, Sendab
         date = try? c.decodeIfPresent(Date.self, forKey: .date)
         origin = try c.decodeIfPresent(String.self, forKey: .origin)
         reply = try? c.decodeIfPresent(RemoteChatReply.self, forKey: .reply)
+        selection = try? c.decodeIfPresent(RemoteChatSelection.self, forKey: .selection)
         text = try c.decodeIfPresent(String.self, forKey: .text)
         ok = try c.decodeIfPresent(Bool.self, forKey: .ok)
         fileName = try c.decodeIfPresent(String.self, forKey: .fileName)
@@ -106,7 +134,19 @@ public struct RemoteApproval: Codable, Equatable, Hashable, Identifiable, Sendab
     public var id: String
     public var title: String
     public var detail: String
-    public init(id: String, title: String, detail: String = "") { self.id = id; self.title = title; self.detail = detail }
+    /// The agent that is asking, and its name. Nil from a Mac from before several agents, and for a request that belongs to no chat.
+    public var agentId: String?
+    public var agentName: String?
+
+    enum CodingKeys: String, CodingKey {
+        case id, title, detail
+        case agentId = "agent_id"
+        case agentName = "agent_name"
+    }
+
+    public init(id: String, title: String, detail: String = "", agentId: String? = nil, agentName: String? = nil) {
+        self.id = id; self.title = title; self.detail = detail; self.agentId = agentId; self.agentName = agentName
+    }
 }
 
 public struct RemoteFormOption: Codable, Equatable, Hashable, Sendable {
@@ -160,14 +200,21 @@ public struct RemoteForm: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var fields: [RemoteFormField]
     public var answers: [String: RemoteFormAnswer]
     public var canSubmit: Bool
+    /// The agent that is asking, and its name. Nil from a Mac from before several agents.
+    public var agentId: String?
+    public var agentName: String?
 
     enum CodingKeys: String, CodingKey {
         case id, message, fields, answers
         case canSubmit = "can_submit"
+        case agentId = "agent_id"
+        case agentName = "agent_name"
     }
 
-    public init(id: String, message: String, fields: [RemoteFormField], answers: [String: RemoteFormAnswer] = [:], canSubmit: Bool = false) {
+    public init(id: String, message: String, fields: [RemoteFormField], answers: [String: RemoteFormAnswer] = [:], canSubmit: Bool = false,
+                agentId: String? = nil, agentName: String? = nil) {
         self.id = id; self.message = message; self.fields = fields; self.answers = answers; self.canSubmit = canSubmit
+        self.agentId = agentId; self.agentName = agentName
     }
 
     public init(from decoder: Decoder) throws {
@@ -177,6 +224,8 @@ public struct RemoteForm: Codable, Equatable, Hashable, Identifiable, Sendable {
         fields = try c.decodeIfPresent([RemoteFormField].self, forKey: .fields) ?? []
         answers = try c.decodeIfPresent([String: RemoteFormAnswer].self, forKey: .answers) ?? [:]
         canSubmit = try c.decodeIfPresent(Bool.self, forKey: .canSubmit) ?? false
+        agentId = try c.decodeIfPresent(String.self, forKey: .agentId)
+        agentName = try c.decodeIfPresent(String.self, forKey: .agentName)
     }
 
     /// The fields grouped into pages, one page per question, the same way the Mac groups them.
@@ -337,13 +386,21 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
     public var items: [RemoteChatItem]
     /// Whether older messages exist before `items`. Set only for a paged read; nil from a Mac that sends the whole thread.
     public var hasMore: Bool?
+    /// Where this answer stands in the Mac's event stream: the launch (`epoch`) and the last event (`seq`). A later read sends them as
+    /// `epoch` and `after` and gets only what changed. Nil from a Mac that does not send them.
+    public var epoch: String?
+    public var seq: Int?
+    /// True when `items` holds only the messages that changed after the cursor sent, not a page of the thread.
+    public var delta: Bool?
+    /// True when the Mac could not honour the cursor and `items` is the newest page, as for a read with no cursor.
+    public var reset: Bool?
     public var approvals: [RemoteApproval]
     public var forms: [RemoteForm]
     public var queue: [RemoteQueued]
     public var options: RemoteChatOptions
 
     enum CodingKeys: String, CodingKey {
-        case title, state, running, activity, agent, model, notice, items, approvals, forms, queue, options
+        case title, state, running, activity, agent, model, notice, items, approvals, forms, queue, options, epoch, seq, delta, reset
         case runStarted = "run_started"
         case threadID = "thread_id"
         case folderLabel = "folder_label"
@@ -375,6 +432,10 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
         notice = try c.decodeIfPresent(String.self, forKey: .notice)
         items = try c.decodeIfPresent(Lossy<RemoteChatItem>.self, forKey: .items)?.elements ?? []
         hasMore = try c.decodeIfPresent(Bool.self, forKey: .hasMore)
+        epoch = try c.decodeIfPresent(String.self, forKey: .epoch)
+        seq = try c.decodeIfPresent(Int.self, forKey: .seq)
+        delta = try c.decodeIfPresent(Bool.self, forKey: .delta)
+        reset = try c.decodeIfPresent(Bool.self, forKey: .reset)
         approvals = try c.decodeIfPresent(Lossy<RemoteApproval>.self, forKey: .approvals)?.elements ?? []
         forms = try c.decodeIfPresent(Lossy<RemoteForm>.self, forKey: .forms)?.elements ?? []
         queue = try c.decodeIfPresent(Lossy<RemoteQueued>.self, forKey: .queue)?.elements ?? []
@@ -395,6 +456,10 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
         try c.encodeIfPresent(notice, forKey: .notice)
         try c.encode(items, forKey: .items)
         try c.encodeIfPresent(hasMore, forKey: .hasMore)
+        try c.encodeIfPresent(epoch, forKey: .epoch)
+        try c.encodeIfPresent(seq, forKey: .seq)
+        try c.encodeIfPresent(delta, forKey: .delta)
+        try c.encodeIfPresent(reset, forKey: .reset)
         try c.encode(approvals, forKey: .approvals)
         try c.encode(forms, forKey: .forms)
         try c.encode(queue, forKey: .queue)

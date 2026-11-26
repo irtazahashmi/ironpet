@@ -39,12 +39,14 @@ package enum AutomationMCP {
              "inputSchema": ["type": "object", "properties": properties, "required": required]]
         }
         let id: [String: Any] = ["id": ["type": "string", "description": "Automation id"]]
+        let agent: [String: Any] = ["agentId": ["type": "string", "description": "The agent whose automations to list, such as agent_default for agent 1. Defaults to the calling agent. The built-in automations (morning brief, day recap, task review, mail and calendar) belong to no agent and are listed for every agent."]]
         return [
-            tool("automations_list", "List every ironpet automation with its trigger, next run and last result.\n\n" + guide),
+            tool("automations_list", "List the calling agent's ironpet automations, and the built-in ones, with trigger, next run and last result.\n\n" + guide, agent),
             tool("automations_get", "Get one automation in full (trigger, action with report and quiet, until), with its recent runs.", id, required: ["id"]),
             tool("automations_create", "Create an automation. Pass the fields at the top level (name, trigger, action, presentation). id is made from the name when missing.\n\n" + guide,
                  ["name": ["type": "string"], "id": ["type": "string"], "enabled": ["type": "boolean"], "trigger": ["type": "object"],
                   "action": ["type": "object"], "presentation": ["type": "object"], "note": ["type": "string"],
+                  "agentId": ["type": "string", "description": "The agent that owns the automation. Its runs use that agent's CLI, model and permissions. Defaults to the calling agent."],
                   "until": ["type": "string", "enum": AutomationValidator.untilValues,
                             "description": "Delete the automation after a run: success (the action succeeded, such as exit 0) or once (the first completed run). Not for script triggers."]],
                  required: ["name", "trigger"]),
@@ -99,13 +101,14 @@ package enum AutomationCLI {
     }
 
     /// Sends one request to the app. Returns nil when the app is not running.
-    package static func post(path: String, body: Data, caller: String? = nil) -> (status: Int, body: Data)? {
+    package static func post(path: String, body: Data, caller: String? = nil, agent: String? = nil) -> (status: Int, body: Data)? {
         guard let (port, token) = endpoint(), let url = URL(string: "http://127.0.0.1:\(port)\(path)") else { return nil }
         var request = URLRequest(url: url, timeoutInterval: 120)
         request.httpMethod = "POST"
         request.httpBody = body
         request.setValue(token, forHTTPHeaderField: "x-ironpet-token")
         if let caller { request.setValue(caller, forHTTPHeaderField: MCPEndpoint.callerHeader) }
+        if let agent { request.setValue(agent, forHTTPHeaderField: MCPEndpoint.agentHeader) }
         let semaphore = DispatchSemaphore(value: 0)
         nonisolated(unsafe) var result: (Int, Data)?
         URLSession.shared.dataTask(with: request) { data, response, _ in
@@ -210,9 +213,11 @@ package enum AutomationCLI {
     package static func stdioBridge(path: String = "/mcp") -> Int32 {
         // Set by the session that started this bridge when it is not the user's chat, such as an automation's own session.
         let caller = ProcessInfo.processInfo.environment[MCPEndpoint.callerVariable]
+        // Set by the process that started this bridge for an agent other than agent 1. Without it the calls are agent 1's.
+        let agent = ProcessInfo.processInfo.environment[MCPEndpoint.agentVariable].flatMap { $0.isEmpty ? nil : $0 }
         while let line = readLine(strippingNewline: true) {
             guard !line.trimmingCharacters(in: .whitespaces).isEmpty else { continue }
-            guard let response = post(path: path, body: Data(line.utf8), caller: caller) else {
+            guard let response = post(path: path, body: Data(line.utf8), caller: caller, agent: agent) else {
                 if let message = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any], let id = message["id"] {
                     let error: [String: Any] = ["jsonrpc": "2.0", "id": id, "error": ["code": -32000, "message": "ironpet is not running"]]
                     if let data = try? JSONSerialization.data(withJSONObject: error) { print(String(decoding: data, as: UTF8.self)) }

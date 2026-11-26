@@ -76,6 +76,37 @@ final class ChatViewModel: ObservableObject {
     /// Messages with a read queued but not started. A streamed reply fires an event per chunk, and one read gets them all.
     private var queuedMessageReads: Set<UUID> = []
 
+    /// The name this window shows for its agent. Nil in agent 1's window, which shows the pet's name from Settings.
+    @Published var agentName: String?
+    /// The sprite the window's avatars use. Nil in agent 1's window.
+    @Published var avatar: AvatarSprite?
+    /// The agents a user can switch between, as the registry has them now. The window reads it each time it draws the menu.
+    var agentRecords: () -> [AgentRecord] = { [] }
+    /// The user picked another agent in the switcher: open that agent's chat.
+    var onPickAgent: (String) -> Void = { _ in }
+
+    var switcher: AgentSwitcher { AgentSwitcher(records: agentRecords(), current: api.agentID) }
+
+    func pickAgent(_ id: String) {
+        guard let target = switcher.target(picking: id) else { return }
+        onPickAgent(target)
+    }
+
+    /// An approval's title, with the name of the agent that asks when there is more than one agent to tell apart.
+    func approvalHeading(_ approval: ChatApprovalInfo) -> String {
+        Self.heading(approval.title, agent: approval.agentName, showsAgent: switcher.isVisible || api.agentID != AgentOwner.defaultID)
+    }
+
+    func formHeading(_ form: ChatFormInfo) -> String {
+        Self.heading(form.form.message.isEmpty ? "The agent has a question" : form.form.message, agent: form.agentName,
+                     showsAgent: switcher.isVisible || api.agentID != AgentOwner.defaultID)
+    }
+
+    nonisolated static func heading(_ title: String, agent: String?, showsAgent: Bool) -> String {
+        guard showsAgent, let agent, !agent.isEmpty else { return title }
+        return "\(agent): \(title)"
+    }
+
     init(api: ChatAPI, voiceAPI: VoiceAPI, events: APIEventBus, voice: VoiceController? = nil, persists: Bool = true) {
         self.api = api
         self.voiceAPI = voiceAPI
@@ -117,6 +148,8 @@ final class ChatViewModel: ObservableObject {
     }
 
     private func heard(_ event: APIEvent) {
+        // The bus carries every agent's chat. A window follows its own agent's.
+        if event.kind == .chatItem || event.kind == .chatState, AgentOwner.id(event.agentId) != api.agentID { return }
         switch (event.kind, event.id) {
         case (.chatItem, let id?):
             guard let uuid = UUID(uuidString: id) else { return }
@@ -275,7 +308,7 @@ final class ChatViewModel: ObservableObject {
         let fromUser: Bool
         switch item.kind {
         case .user(let t): sender = "You"; text = t; fromUser = true
-        case .assistant(let t): sender = SettingsAPI.live.config.pet.name; text = t; fromUser = false
+        case .assistant(let t): sender = agentName ?? SettingsAPI.live.config.pet.name; text = t; fromUser = false
         default: return
         }
         let trimmed = selection?.trimmingCharacters(in: .whitespacesAndNewlines)

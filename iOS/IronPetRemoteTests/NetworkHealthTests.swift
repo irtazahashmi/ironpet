@@ -30,6 +30,19 @@ final class NetworkHealthTests: XCTestCase {
         NetworkHealth(stripDelay: .seconds(10), now: { clock.now }, sleep: { try await clock.sleep($0) })
     }
 
+    // S5: the path coming back reconnects the event socket at once, instead of after its back-off.
+    func testThePathReturningReconnectsTheEventSocketNow() {
+        let network = make(ManualClock())
+        var reconnects = 0
+        network.onPathReturned = { reconnects += 1 }
+        network.setPath(satisfied: true)
+        XCTAssertEqual(reconnects, 0, "a path that never dropped is not a return")
+        network.setPath(satisfied: false)
+        XCTAssertEqual(reconnects, 0)
+        network.setPath(satisfied: true)
+        XCTAssertEqual(reconnects, 1)
+    }
+
     private func settle() async { for _ in 0..<5 { await Task.yield() } }
 
     /// Waits until `condition` holds. Work that hops to another thread, such as a timer registering its sleep or a stream handing over

@@ -110,16 +110,19 @@ public struct RemoteScreenCapture: Codable, Equatable, Identifiable, Sendable {
     public var role: String?
     public var outline: String?
     public var elements: String?
+    /// The public `screen_<hex>` id. Nil from a Mac older than record ids.
+    public var ref: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, time, app, window, trigger, url, text, root, role, outline, elements
+        case id, time, app, window, trigger, url, text, root, role, outline, elements, ref
         case bundleID = "bundle_id"
     }
 
     public init(id: Int, time: Date, app: String, bundleID: String = "", window: String, trigger: String = "", url: String? = nil,
-                text: String? = nil, root: String? = nil, role: String? = nil, outline: String? = nil, elements: String? = nil) {
+                text: String? = nil, root: String? = nil, role: String? = nil, outline: String? = nil, elements: String? = nil,
+                ref: String? = nil) {
         self.id = id; self.time = time; self.app = app; self.bundleID = bundleID; self.window = window; self.trigger = trigger; self.url = url
-        self.text = text; self.root = root; self.role = role; self.outline = outline; self.elements = elements
+        self.text = text; self.root = root; self.role = role; self.outline = outline; self.elements = elements; self.ref = ref
     }
 }
 

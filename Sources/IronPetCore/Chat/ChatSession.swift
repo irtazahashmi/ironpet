@@ -15,6 +15,7 @@ package final class ChatSession {
             date: Date? = Date(),
             origin: String? = nil,
             reply: Reply? = nil,
+            selection: FrontSelection? = nil,
             meta: [ItemMeta]? = nil,
             metaSent: Bool? = nil
         ) {
@@ -23,6 +24,7 @@ package final class ChatSession {
             self.date = date
             self.origin = origin
             self.reply = reply
+            self.selection = selection
             self.meta = meta
             self.metaSent = metaSent
         }
@@ -46,6 +48,8 @@ package final class ChatSession {
         package var origin: String?
         /// The earlier message this one answers, when the user used Reply.
         package var reply: Reply?
+        /// Text selected in another app that went with this user message. Older saved threads lack it.
+        package var selection: FrontSelection?
         /// Context for the agent that the chat never draws. Set only by IronPet code.
         package var meta: [ItemMeta]?
         /// True once `meta` has gone to the agent in a turn.
@@ -187,12 +191,18 @@ package final class ChatSession {
     /// Where `chat.item` and `chat.state` are published for API clients.
     package weak var events: APIEventBus?
 
+    /// Publishes on the event bus, tagged with this chat's agent unless it is agent 1, so a client that watches several agents' chats can
+    /// tell whose message changed.
+    private func publish(_ kind: APIEventKind, id: String? = nil) {
+        events?.publish(kind, id: id, agentId: ownerAgentID == AgentOwner.defaultID ? nil : ownerAgentID)
+    }
+
     /// Publishes `chat.item` with the id of each item that was added or changed. A removal, a reset or a change to many items at once
     /// publishes it without an id, which tells a client to read the transcript again.
     private func publishItemChanges(from old: [Item]) {
         guard let events else { return }
-        guard let changed = Self.changedItems(old: old, new: items) else { return events.publish(.chatItem) }
-        for id in changed { events.publish(.chatItem, id: id.uuidString) }
+        guard let changed = Self.changedItems(old: old, new: items) else { return publish(.chatItem) }
+        for id in changed { publish(.chatItem, id: id.uuidString) }
     }
 
     /// The ids of added or edited items, or nil when the change is not that: a removal, a reorder, a reset, or more than a few edits.
@@ -210,26 +220,26 @@ package final class ChatSession {
     }
     package var workspace: URL? {
         willSet { changes.send() }
-        didSet { events?.publish(.chatState, id: "options") }
+        didSet { publish(.chatState, id: "options") }
     }
     /// Set when the chat opened outside a coding app; the user picks a folder before sending.
     package private(set) var needsWorkspace = false {
         willSet { changes.send() }
-        didSet { events?.publish(.chatState, id: "options") }
+        didSet { publish(.chatState, id: "options") }
     }
     package private(set) var recents: [URL] = [] {
         willSet { changes.send() }
-        didSet { events?.publish(.chatState, id: "options") }
+        didSet { publish(.chatState, id: "options") }
     }
     /// The permission mode the agent reported for this chat's session, and every mode it advertises. Both are empty until the session
     /// starts. The chat offers exactly those modes and adds none.
     package private(set) var agentMode: String? {
         willSet { changes.send() }
-        didSet { events?.publish(.chatState, id: "options") }
+        didSet { publish(.chatState, id: "options") }
     }
     package private(set) var agentModes: [AgentMode] = [] {
         willSet { changes.send() }
-        didSet { events?.publish(.chatState, id: "options") }
+        didSet { publish(.chatState, id: "options") }
     }
 
     private static func modeKey(_ agent: ACPAgent) -> String { "chatMode.\(agent.id)" }
@@ -255,60 +265,62 @@ package final class ChatSession {
 
     package private(set) var state: State = .idle {
         willSet { changes.send() }
-        didSet { if state != oldValue { events?.publish(.chatState) } }
+        didSet { if state != oldValue { publish(.chatState) } }
     }
     /// Approvals, forms and the queue change without `state` changing, so each publishes `chat.state` with what changed as the id.
     package private(set) var approvals: [Approval] = [] {
         willSet { changes.send() }
-        didSet { events?.publish(.chatState, id: "approvals") }
+        didSet { publish(.chatState, id: "approvals") }
     }
     package private(set) var forms: [PendingForm] = [] {
         willSet { changes.send() }
         didSet {
-            events?.publish(.chatState, id: "forms")
+            publish(.chatState, id: "forms")
             onFormsChanged?()
         }
     }
-    package private(set) var history: [ChatThread] = ThreadStore.recent() {
+    /// The agent whose main chat this is. Its threads are the ones `history` lists.
+    package let ownerAgentID: String
+    package private(set) var history: [ChatThread] = [] {
         willSet { changes.send() }
-        didSet { events?.publish(.chatState, id: "threads") }
+        didSet { publish(.chatState, id: "threads") }
     }
     /// Messages typed while a turn runs. Each keeps the attachments present when it was queued.
     package private(set) var queue: [QueuedMessage] = [] {
         willSet { changes.send() }
-        didSet { events?.publish(.chatState, id: "queue") }
+        didSet { publish(.chatState, id: "queue") }
     }
     /// What the agent is doing right now, e.g. "Running `npm test`".
     package private(set) var activity: String? {
         willSet { changes.send() }
-        didSet { events?.publish(.chatState, id: "status") }
+        didSet { publish(.chatState, id: "status") }
     }
     package private(set) var runStartedAt: Date? {
         willSet { changes.send() }
-        didSet { events?.publish(.chatState, id: "status") }
+        didSet { publish(.chatState, id: "status") }
     }
     package private(set) var lastRunDuration: TimeInterval? {
         willSet { changes.send() }
-        didSet { events?.publish(.chatState, id: "status") }
+        didSet { publish(.chatState, id: "status") }
     }
     /// Models the agent offered in its last session. Empty hides the picker.
     package private(set) var models: [ChatModel] = [] {
         willSet { changes.send() }
-        didSet { events?.publish(.chatState, id: "options") }
+        didSet { publish(.chatState, id: "options") }
     }
     package private(set) var agent: ACPAgent =
         AgentCatalog.agent(id: ChatAgentPreference.resolveID())! {
         willSet { changes.send() }
-        didSet { events?.publish(.chatState, id: "options") }
+        didSet { publish(.chatState, id: "options") }
     }
     /// Installed agents that answer `initialize`. Starts as just the current one until the check finishes.
     package private(set) var agents: [ACPAgent] = [] {
         willSet { changes.send() }
-        didSet { events?.publish(.chatState, id: "options") }
+        didSet { publish(.chatState, id: "options") }
     }
     package private(set) var commands: [SlashCommand] = [] {
         willSet { changes.send() }
-        didSet { events?.publish(.chatState, id: "commands") }
+        didSet { publish(.chatState, id: "commands") }
     }
     package func receiveCommands(_ list: [SlashCommand]) {
         commands = list
@@ -318,23 +330,51 @@ package final class ChatSession {
     package var model: String? {
         willSet { changes.send() }
         didSet {
-            UserDefaults.standard.set(model, forKey: "chatModel.\(agent.id)")
-            events?.publish(.chatState, id: "options")
+            if let registry { _ = try? registry.update(ownerAgentID, AgentRecordPatch(model: .some(model))) }
+            else { UserDefaults.standard.set(model, forKey: "chatModel.\(agent.id)") }
+            publish(.chatState, id: "options")
         }
+    }
+    /// This chat's agent record. Once set, the chat's CLI and model are read from it and written to it, not kept in `UserDefaults`.
+    private var registry: AgentRegistry?
+    /// What the user calls this chat's agent. Agent 1 is the pet, named in Settings. Another agent has its own name.
+    package var agentDisplayName: String {
+        if ownerAgentID != AgentOwner.defaultID, let name = registry?.get(ownerAgentID)?.name { return name }
+        return ConfigStore.shared.config.pet.name
+    }
+
+    /// The agent's standing instructions. They go with the first turn of every new agent session, after the memory notes.
+    package private(set) var instructions: String = ""
+
+    /// Starts reading and writing the chat's agent CLI and model on this chat's agent record. The registry needs the database, which opens
+    /// after the chat is built, so the app calls this once it is open (after `AgentRegistry.adoptLegacySettings`). Calling it again reads
+    /// the record again, which is how a changed CLI, model or instruction reaches a running chat.
+    package func attach(registry: AgentRegistry) {
+        guard let record = registry.get(ownerAgentID) else { return }
+        self.registry = registry
+        instructions = record.instructions
+        guard let stored = AgentCatalog.agent(id: record.agentCli) else { return }
+        if stored != agent {
+            agent = stored
+            models = Self.cachedModels(for: stored)
+            commands = SlashCommand.cached(for: stored.id)
+            if !agents.contains(stored) { agents.append(stored) }
+        }
+        if model != record.model { model = record.model }
     }
     /// Set when an adapter has no runtime: the chat offers a one-time Bun download.
     package private(set) var runtimeOffer: String? {
         willSet { changes.send() }
-        didSet { events?.publish(.chatState, id: "options") }
+        didSet { publish(.chatState, id: "options") }
     }
     package private(set) var installingRuntime = false {
         willSet { changes.send() }
-        didSet { events?.publish(.chatState, id: "options") }
+        didSet { publish(.chatState, id: "options") }
     }
     /// Set when the agent asks the user to sign in.
     package private(set) var signInOptions: [AuthMethod] = [] {
         willSet { changes.send() }
-        didSet { events?.publish(.chatState, id: "options") }
+        didSet { publish(.chatState, id: "options") }
     }
 
     package var modelName: String {
@@ -369,7 +409,7 @@ package final class ChatSession {
 
     /// The IronPet thread. It is the first agent session's id and never changes, so memory search hits stay valid.
     package private(set) var threadID: String? {
-        didSet { if persists { UserDefaults.standard.set(threadID, forKey: Self.threadKey) } }
+        didSet { if persists { UserDefaults.standard.set(threadID, forKey: threadKey) } }
     }
     /// The agent session the thread runs on. Differs from `threadID` after a rollover; nil before the first turn and
     /// between a rollover and the first turn of the new session.
@@ -390,7 +430,8 @@ package final class ChatSession {
     package var handoffTimeout: Duration = .seconds(90)
     /// False for preview sessions, so rendering screenshots neither reads nor overwrites the real chat.
     private let persists: Bool
-    private static let threadKey = "chatThread"
+    /// Where the open thread's id is kept between launches. Agent 1 keeps the key it always had.
+    private var threadKey: String { ownerAgentID == AgentOwner.defaultID ? "chatThread" : "chatThread.\(ownerAgentID)" }
     private var acp: ACPBackend?
     /// Ignores events from a turn the user stopped.
     private var turnID: UUID?
@@ -425,14 +466,16 @@ package final class ChatSession {
     /// True during a call or a meeting recording, when a reply is not read aloud on its own. Set by `AppDelegate`.
     package var isQuiet: () -> Bool = { false }
 
-    package static let scratchWorkspace = Paths.root.appendingPathComponent("scratch")
+    package nonisolated static let scratchWorkspace = Paths.root.appendingPathComponent("scratch")
 
     /// `restore` reopens the chat that was open when the app last quit: its thread, folder and backend,
     /// plus the unsent draft and attachments. The picked permission mode is kept per agent, not per chat.
     /// Starts the agent's process and the probes. `AppDelegate` sets the Mac one right after creating the session.
     package var spawner: ProcessSpawner = UnsupportedProcessSpawner()
 
-    package init(restore: Bool = true, speech: SpeechOutput? = nil) {
+    package init(restore: Bool = true, speech: SpeechOutput? = nil, agentID: String = AgentOwner.defaultID) {
+        ownerAgentID = AgentOwner.id(agentID)
+        history = ThreadStore.recent(agent: ownerAgentID)
         self.speech = speech ?? UnsupportedSpeechOutput()
         persists = restore
         recents = (UserDefaults.standard.stringArray(forKey: "recentWorkspaces") ?? [])
@@ -467,7 +510,7 @@ package final class ChatSession {
 
     private func restoreLastChat() {
         let defaults = UserDefaults.standard
-        if let id = defaults.string(forKey: Self.threadKey), let thread = ThreadStore.load(id) {
+        if let id = defaults.string(forKey: threadKey), let thread = ThreadStore.load(id) {
             apply(thread.restoredAfterQuit(), reason: "restore after launch")
         }
     }
@@ -529,8 +572,14 @@ package final class ChatSession {
 
     private func select(_ next: ACPAgent) {
         agent = next
-        UserDefaults.standard.set(next.id, forKey: ChatAgentPreference.key)
-        model = UserDefaults.standard.string(forKey: "chatModel.\(next.id)")
+        if let registry {
+            // The record brings back the model last picked for this CLI.
+            let record = try? registry.update(ownerAgentID, AgentRecordPatch(agentCli: next.id))
+            model = record?.model
+        } else {
+            UserDefaults.standard.set(next.id, forKey: ChatAgentPreference.key)
+            model = UserDefaults.standard.string(forKey: "chatModel.\(next.id)")
+        }
         models = Self.cachedModels(for: next)
         commands = SlashCommand.cached(for: next.id)
         if !agents.contains(next) { agents.append(next) }
@@ -756,7 +805,8 @@ package final class ChatSession {
             if case .user(let text) = item.kind { return text } else { return nil }
         }.first ?? "Chat"
         let title = firstPrompt.count > 60 ? String(firstPrompt.prefix(57)) + "…" : firstPrompt
-        var thread = ChatThread(id: threadID, title: title, workspace: workspace.path, updatedAt: Date(), items: items, agent: agent.id)
+        var thread = ChatThread(id: threadID, title: title, workspace: workspace.path, updatedAt: Date(), items: items, agent: agent.id,
+                                agentId: ownerAgentID)
         // Continuing an automation's thread keeps it marked as one, and keeps its run count.
         if let earlier = ThreadStore.load(threadID), earlier.automation != nil {
             thread.title = earlier.title
@@ -773,11 +823,11 @@ package final class ChatSession {
         thread.previousSessions = previousSessions.isEmpty ? nil : previousSessions
         thread.handoff = pendingHandoff
         ThreadStore.save(thread)
-        history = ThreadStore.recent()
+        history = ThreadStore.recent(agent: ownerAgentID)
     }
 
     /// Reloads the thread list after something else saved a thread, such as an automation run.
-    package func refreshHistory() { history = ThreadStore.recent() }
+    package func refreshHistory() { history = ThreadStore.recent(agent: ownerAgentID) }
 
     /// A background job saved `thread`. When it is the one on screen and no turn of the chat's own is running, the
     /// transcript shows the job's new steps.
@@ -860,16 +910,16 @@ package final class ChatSession {
         let origin = client?.client ?? (automation != nil ? Self.automationOrigin : nil)
         if !silent {
             items += shots.map { Item(kind: .screenshot($0.path), origin: origin) }
-            items.append(Item(kind: .user(prompt), origin: origin, reply: reply))
+            items.append(Item(kind: .user(prompt), origin: origin, reply: reply, selection: selection))
         }
         // The first turn of every new agent session carries the memory notes, including the one after a rollover. Building them reads the
         // memory store and the config from disk. A client's message waits for its ack on this actor, so for a client the build moves
         // after the ack (see `run`). A message typed on the Mac builds it here, as before.
         let handoff = pendingHandoff
         let buildPreamble: (() -> String?)? = agentSessionID == nil ? {
-            let built = Self.preambleBuilder(workspace, prompt)
-            if let handoff, let built { return SessionHandoff.insert(handoff, into: built) }
-            return built
+            var built = Self.preambleBuilder(workspace, prompt)
+            if let handoff, let notes = built { built = SessionHandoff.insert(handoff, into: notes) }
+            return Self.withInstructions(self.instructions, built)
         } : nil
         var preamble: String?
         if client == nil { preamble = buildPreamble?() }
@@ -888,6 +938,15 @@ package final class ChatSession {
                     images: shots.filter(FolderFileIntake.isImageFile), files: shots.filter { !FolderFileIntake.isImageFile($0) }),
             laterPreamble: client == nil ? nil : buildPreamble)
         return true
+    }
+
+    /// The agent's standing instructions after the memory notes. Empty instructions change nothing, so agent 1 sends what it always did.
+    package nonisolated static func withInstructions(_ instructions: String, _ preamble: String?) -> String? {
+        let text = instructions.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !text.isEmpty else { return preamble }
+        let block = "<agent_instructions>\n\(text)\n</agent_instructions>"
+        guard let preamble, !preamble.isEmpty else { return block }
+        return preamble + "\n\n" + block
     }
 
     /// Builds the memory notes for a new agent session. A test replaces it to make the build slow.
@@ -978,7 +1037,7 @@ package final class ChatSession {
                                       reply: earlier?.reply ?? queue.compactMap(\.reply).first,
                                       selection: earlier?.selection ?? queue.compactMap(\.selection).first)
         queue = []
-        events?.publish(.chatState, id: "draft")
+        publish(.chatState, id: "draft")
     }
 
     /// True when the running turn takes a message typed now: the agent advertised steering.
@@ -1028,7 +1087,7 @@ package final class ChatSession {
             let origin = message.origin?.client
             items += message.attachments.map { Item(kind: .screenshot($0.path), origin: origin) }
             let prompt = Self.displayText(message)
-            items.append(Item(kind: .user(prompt), origin: origin, reply: message.reply))
+            items.append(Item(kind: .user(prompt), origin: origin, reply: message.reply, selection: message.selection))
             if let sender = message.origin, stops != generation {
                 // Stop came while the message was on its way. Nothing is left to report the turn's end to this sender.
                 onTurn?(sender, .failed("Stopped on the Mac."))
@@ -1195,6 +1254,11 @@ package final class ChatSession {
         backend.onElicitation = { [weak self] form, respond in self?.handleElicitation(form, respond: respond) }
         backend.onBackground = { [weak self] event in self?.handleBackground(event) }
         backend.onPromptSent = { [weak self] in self?.steerNext() }
+        backend.onUnexpectedExit = { [weak self] in
+            // An idle agent that exits is simply started again by the next message. Only a process that dies in a turn is a crash.
+            guard let self, self.isRunning else { return }
+            self.onAgentCrash?()
+        }
         backend.onModes = { [weak self] current, modes in self?.receiveModes(current: current, modes: modes) }
         backend.preferredMode = pickedMode
         agentModes = []
@@ -1245,6 +1309,14 @@ package final class ChatSession {
         }
     }
 
+    /// The agent's process ended while a turn ran. The supervisor restarts it with a delay.
+    package var onAgentCrash: (() -> Void)?
+
+    /// Stops the agent's process and leaves the chat as it is. The next message starts a new one.
+    package func stopAgentProcess() {
+        shutdownAgent()
+    }
+
     /// Stops the agent process for good, e.g. when the app quits.
     package func shutdown() {
         stop()
@@ -1285,7 +1357,7 @@ package final class ChatSession {
         let pending = PendingForm(form: form, respond: respond)
         forms.append(pending)
         if !isVisible {
-            onFormNeeded?("\(ConfigStore.shared.config.pet.name) has a question for you", String(form.message.prefix(240)))
+            onFormNeeded?("\(agentDisplayName) has a question for you", String(form.message.prefix(240)))
         }
     }
 
@@ -1446,7 +1518,7 @@ package final class ChatSession {
             // Before the queue moves on: the next message replaces the origin this turn belongs to.
             finishTurn(error: error, noChange: hidden)
             if !isVisible, !hidden {
-                let name = ConfigStore.shared.config.pet.name
+                let name = agentDisplayName
                 onAttention?(error == nil ? "\(name) finished your task" : "\(name)'s task failed")
             }
             // The switch comes first: the quiet check starts polling the microphone list, which must not happen while off.

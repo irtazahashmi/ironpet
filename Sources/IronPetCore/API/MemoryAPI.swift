@@ -58,6 +58,19 @@ package final class MemoryAPI {
     /// The valid fact with this `claim_` ref.
     package func claim(ref: String) -> MemoryClaim? { pages().claim(ref: ref) }
 
+    // MARK: Records, for `get`
+
+    /// The page with this `page_` ref, as `memory_page` gives it.
+    package func pageRecord(ref: String) -> [String: Any]? { pages().page(ref: ref).map(MemoryMCP.pageJSON) }
+
+    /// The valid claim with this `claim_` ref, as `memory_page` lists it, with the ref of its page.
+    package func claimRecord(ref: String) -> [String: Any]? {
+        guard let claim = claim(ref: ref) else { return nil }
+        var object = MemoryMCP.claimJSON(claim)
+        object["page"] = entities().first { $0.id == claim.entity }?.ref
+        return object
+    }
+
     /// Forgets one fact. The change log keeps it, but no screen offers Undo.
     @discardableResult
     package func forgetClaim(_ id: Int64) -> Bool { pages().forgetClaim(id, source: MemoryNote.userSource) }
@@ -65,6 +78,12 @@ package final class MemoryAPI {
     /// Forgets every fact of a page and its links.
     @discardableResult
     package func forgetPage(_ page: String) -> Bool { pages().forgetPage(page, source: MemoryNote.userSource) }
+
+    /// Merges pages of one type into `keep` (ids, `page_` refs or names). Moves their facts and links, keeps their names as aliases and
+    /// deletes them. This cannot be undone.
+    package func mergePages(_ others: [String], into keep: String) -> Result<EntityMemoryStore.PageMerge, MemoryError> {
+        pages().mergePages(others, into: keep)
+    }
 
     /// Puts a change back. Refuses when the page has changed since.
     package func undo(_ change: MemoryChange) -> Result<Void, MemoryError> { pages().undo(change) }
