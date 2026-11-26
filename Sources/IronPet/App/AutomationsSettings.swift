@@ -3,16 +3,16 @@ import enum IronPetKit.SharedSymbols
 import IronPetCore
 import SwiftUI
 
-/// The Automations tab: every reminder and watcher with a switch, when it runs next, and how its last run went.
+/// The main window's Automations section: every reminder and watcher with a switch, when it runs next, and how its last run went.
+/// The settings that apply to all of them are on the Automations page of the Settings window.
 struct AutomationsSettings: View {
     @ObservedObject var model: SettingsModel
-    @ObservedObject private var config = SettingsAPI.live
     /// The automation to show in full when the tab appears. The preview renderer uses it.
     var open: String?
 
     var body: some View {
         if let service = model.automations {
-            AutomationList(api: service, config: config, showLogs: model.showLogs, createWithAgent: model.createWithAgent, open: open)
+            AutomationList(api: service, showLogs: model.showLogs, createWithAgent: model.createWithAgent, open: open)
         } else {
             ListScreen(title: IronPetSection.automations.title) {
                 Text("Automations are not ready yet.").foregroundStyle(.secondary).frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -24,7 +24,6 @@ struct AutomationsSettings: View {
 /// The Automations screen once the service is ready. Internal so the tests and the preview renderer can build it.
 struct AutomationList: View {
     @ObservedObject var api: AutomationsAPI
-    @ObservedObject var config: SettingsAPI
     let showLogs: (String?) -> Void
     let createWithAgent: (String) -> Void
     @State private var asking = false
@@ -34,9 +33,8 @@ struct AutomationList: View {
     @State private var search = ""
     @State private var nav: ListNavigation<String>
 
-    init(api: AutomationsAPI, config: SettingsAPI, showLogs: @escaping (String?) -> Void, createWithAgent: @escaping (String) -> Void, open: String? = nil) {
+    init(api: AutomationsAPI, showLogs: @escaping (String?) -> Void, createWithAgent: @escaping (String) -> Void, open: String? = nil) {
         self.api = api
-        self.config = config
         self.showLogs = showLogs
         self.createWithAgent = createWithAgent
         _nav = State(initialValue: ListNavigation(opened: open))
@@ -130,27 +128,9 @@ struct AutomationList: View {
         Text(text).multilineTextAlignment(.trailing).textSelection(.enabled)
     }
 
-    /// A line of explanation under a card.
-    private func footer(_ text: String) -> some View {
-        Text(text).font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4).frame(maxWidth: .infinity, alignment: .leading)
-    }
-
-    private func switchRow(_ title: String, isOn: Binding<Bool>) -> some View {
-        HStack {
-            Text(title)
-            Spacer()
-            Toggle(title, isOn: isOn).labelsHidden().toggleStyle(.switch)
-        }
-        .font(.system(size: 13.5))
-        .padding(.horizontal, 14)
-        .frame(minHeight: 40)
-    }
-
     private var form: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
-                CardSection(title: "Reminders") { switchRow("Pause all reminders", isOn: binding(\.paused)) }
-                footer("A reminder on keyboard time only counts while you're at the keyboard. While a pet is working it can come a little early so you take the break while you'd be waiting anyway. Pets can add and change automations; anything that runs a command or a prompt waits for your Approve first.")
                 CardSection(title: "Automations") {
                     if api.automations.isEmpty { Text("None yet. Ask a pet, or add one.").foregroundStyle(.secondary).padding(14) }
                     else if shown.isEmpty { Text("No automation has that text in its name or schedule.").foregroundStyle(.secondary).padding(14) }
@@ -166,35 +146,6 @@ struct AutomationList: View {
                         Spacer()
                     }
                     .padding(.horizontal, 14).padding(.vertical, 10)
-                }
-                CardSection(title: "Approval") {
-                    switchRow("Auto-approve automation changes", isOn: Binding(
-                        get: { config.config.automations.autoApprove },
-                        set: { on in
-                            config.update { $0.automations.autoApprove = on }
-                            if on { api.reviewApprovals() }
-                        }))
-                }
-                footer("Scripts a pet writes can run shell commands without review.")
-                CardSection(title: "Failures") {
-                    switchRow("Ask the pet to fix automations that fail", isOn: Binding(
-                        get: { config.config.automations.autoFix },
-                        set: { on in config.update { $0.automations.autoFix = on } }))
-                }
-                footer("When a poll, script, shell command or prompt fails, ironpet sends the error to the current chat and asks your pet to fix it with the automation tools. Changes to a command, script or prompt still wait for your Approve. At most one request per automation every 6 hours, and only after it has run fine since the last one.")
-                CardSection(title: "Timing") {
-                    SummaryRow(label: "Reset after being away", symbol: "moon.zzz", labelWidth: 200) { minutes(binding(\.idleResetMinutes), range: 1...60) }
-                    Divider()
-                    SummaryRow(label: "Snooze for", symbol: "bell.slash", labelWidth: 200) { minutes(binding(\.snoozeMinutes), range: 1...120) }
-                    Divider()
-                    SummaryRow(label: "Keep logs for", symbol: "tray.full", labelWidth: 200) {
-                        Stepper(value: Binding(get: { config.config.automations.logRetentionDays },
-                                               set: { days in config.update { $0.automations.logRetentionDays = days } }), in: 1...365, step: 1) {
-                            Text("\(config.config.automations.logRetentionDays) day\(config.config.automations.logRetentionDays == 1 ? "" : "s")")
-                                .monospacedDigit().frame(minWidth: 56, alignment: .trailing)
-                        }
-                        .fixedSize()
-                    }
                 }
             }
             .padding(.horizontal, ListScreenMetrics.gutter + 4)
@@ -303,17 +254,6 @@ struct AutomationList: View {
         f.unitsStyle = .short
         return f
     }()
-
-    private func binding<T>(_ path: WritableKeyPath<Config.Reminders, T>) -> Binding<T> {
-        Binding(get: { config.config.reminders[keyPath: path] }, set: { value in config.update { $0.reminders[keyPath: path] = value } })
-    }
-
-    private func minutes(_ value: Binding<Double>, range: ClosedRange<Double>) -> some View {
-        Stepper(value: value, in: range, step: 5) {
-            Text("\(Int(value.wrappedValue)) min").monospacedDigit().frame(minWidth: 56, alignment: .trailing)
-        }
-        .fixedSize()
-    }
 }
 
 /// Shows what an automation would run, so the user reads it before pressing Approve.

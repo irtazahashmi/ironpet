@@ -308,6 +308,7 @@ package struct Config: Codable, Equatable {
             package var minutes: Double
         }
 
+        /// No longer read by the automation engine; kept so an old `config.json` and the phone settings patch still decode.
         package var paused = false
         package var water = Item(minutes: 45)
         package var stretch = Item(minutes: 60)

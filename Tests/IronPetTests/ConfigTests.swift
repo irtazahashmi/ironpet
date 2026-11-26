@@ -88,6 +88,24 @@ final class ConfigTests: XCTestCase {
         XCTAssertTrue(error?.contains("reminders.paused") == true, error ?? "no error")
     }
 
+    func testTimingAndAutomationValuesFromTheOldLayoutStillLoad() throws {
+        try write(#"{"reminders":{"paused":true,"idleResetMinutes":15,"snoozeMinutes":25},"automations":{"autoApprove":true,"autoFix":false,"logRetentionDays":30}}"#)
+        let (config, error) = Config.load(from: file)
+        XCTAssertNil(error)
+        XCTAssertEqual(config.reminders.idleResetMinutes, 15)
+        XCTAssertEqual(config.reminders.snoozeMinutes, 25)
+        XCTAssertTrue(config.automations.autoApprove)
+        XCTAssertFalse(config.automations.autoFix)
+        XCTAssertEqual(config.automations.logRetentionDays, 30)
+    }
+
+    func testTheAutomationsPageIsInTheSettingsSidebarBetweenPromptsAndIntegrations() {
+        let tags = SettingsView.pages.map(\.tag)
+        let at = tags.firstIndex(of: "automations")
+        XCTAssertEqual(at, tags.firstIndex(of: "prompts").map { $0 + 1 })
+        XCTAssertEqual(at.map { tags[$0 + 1] }, "integrations")
+    }
+
     func testInvalidJSONFallsBackToDefaultsWithError() throws {
         try write("not json")
         let (config, error) = Config.load(from: file)

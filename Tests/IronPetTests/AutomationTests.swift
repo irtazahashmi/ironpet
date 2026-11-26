@@ -208,12 +208,17 @@ final class AutomationMigrationTests: AutomationTestCase {
         XCTAssertEqual(fired, 2)
     }
 
-    func testPauseHoldsTimeBasedAutomations() {
-        let rig = makeRig([bubble("water", minutes: 5)], timing: .init(paused: true))
+    func testSnoozeUsesTheSnoozeMinutesTheSettingsPageWrites() {
+        let rig = makeRig([bubble("water", minutes: 60)], timing: .init(snoozeMinutes: 20))
         var fired = 0
         rig.engine.onFire = { _ in fired += 1 }
-        run(rig, minutes: 20)
-        XCTAssertEqual(fired, 0)
+        run(rig, minutes: 60)
+        XCTAssertEqual(fired, 1)
+        rig.engine.snooze(["water"])
+        run(rig, minutes: 19)
+        XCTAssertEqual(fired, 1, "still snoozed")
+        run(rig, minutes: 1.5)
+        XCTAssertEqual(fired, 2, "back after the 20 minutes")
     }
 }
 

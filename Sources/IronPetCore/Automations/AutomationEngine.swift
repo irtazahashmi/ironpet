@@ -38,13 +38,11 @@ package final class AutomationEngine {
     }
 
     package struct Timing {
-        package init(paused: Bool = false, idleResetMinutes: Double = 5, snoozeMinutes: Double = 10) {
-            self.paused = paused
+        package init(idleResetMinutes: Double = 5, snoozeMinutes: Double = 10) {
             self.idleResetMinutes = idleResetMinutes
             self.snoozeMinutes = snoozeMinutes
         }
 
-        package var paused = false
         package var idleResetMinutes: Double = 5
         package var snoozeMinutes: Double = 10
     }
@@ -243,35 +241,33 @@ package final class AutomationEngine {
         let working = env.isAgentWorking()
         let enabled = automations.filter(\.enabled)
 
-        if !timing.paused {
-            if away {
-                for key in activeElapsed.keys { activeElapsed[key] = 0 }
-            } else {
-                tickActive(enabled.filter(\.trigger.countsKeyboardTime), elapsed: elapsed, working: working)
-            }
-            for a in enabled {
-                switch a.trigger.type {
-                case "interval" where a.trigger.clock == "wall":
-                    if now.timeIntervalSince(wallLast[a.id] ?? now) >= (a.trigger.minutes ?? 1) * 60 {
-                        wallLast[a.id] = now
-                        state.clearSnooze(a.id)
-                        onFire(Fire(automations: [a], item: nil, agentWorking: working))
-                    }
-                case "daily" where a.trigger.catchUpMinutes != nil:
-                    if let slot = catchUpSlot(a, now: now) {
-                        state.setDailySlot(a.id, slot)
-                        onFire(Fire(automations: [a], item: nil, agentWorking: working, slot: slot))
-                    }
-                case "daily":
-                    if dailyDue(a, from: previous, to: now) { onFire(Fire(automations: [a], item: nil, agentWorking: working)) }
-                case "once":
-                    if !onceFired.contains(a.id), let at = a.trigger.at.flatMap(AutomationClock.parse), at <= now {
-                        onceFired.insert(a.id)
-                        onFire(Fire(automations: [a], item: nil, agentWorking: working))
-                    }
-                default:
-                    break
+        if away {
+            for key in activeElapsed.keys { activeElapsed[key] = 0 }
+        } else {
+            tickActive(enabled.filter(\.trigger.countsKeyboardTime), elapsed: elapsed, working: working)
+        }
+        for a in enabled {
+            switch a.trigger.type {
+            case "interval" where a.trigger.clock == "wall":
+                if now.timeIntervalSince(wallLast[a.id] ?? now) >= (a.trigger.minutes ?? 1) * 60 {
+                    wallLast[a.id] = now
+                    state.clearSnooze(a.id)
+                    onFire(Fire(automations: [a], item: nil, agentWorking: working))
                 }
+            case "daily" where a.trigger.catchUpMinutes != nil:
+                if let slot = catchUpSlot(a, now: now) {
+                    state.setDailySlot(a.id, slot)
+                    onFire(Fire(automations: [a], item: nil, agentWorking: working, slot: slot))
+                }
+            case "daily":
+                if dailyDue(a, from: previous, to: now) { onFire(Fire(automations: [a], item: nil, agentWorking: working)) }
+            case "once":
+                if !onceFired.contains(a.id), let at = a.trigger.at.flatMap(AutomationClock.parse), at <= now {
+                    onceFired.insert(a.id)
+                    onFire(Fire(automations: [a], item: nil, agentWorking: working))
+                }
+            default:
+                break
             }
         }
         for a in enabled where a.trigger.type == "poll" || a.trigger.type == "script" { startPollIfDue(a, now: now) }
