@@ -48,6 +48,7 @@ package final class RPCDispatcher {
         registerAgents()
         registerAgentRecords()
         registerAutomations()
+        registerDashboards()
         registerChat()
         registerMemory()
         registerSettings()
@@ -292,6 +293,26 @@ package final class RPCDispatcher {
             guard let records else { throw APIError.unavailable("this host has no agent records") }
             try records.delete(p.id)
         }
+    }
+
+    private func registerDashboards() {
+        let dashboards = api.dashboards
+        add("dashboards.list", "GET /v1/dashboards", result: "[RemoteDashboard]") { dashboards.list() }
+        add("dashboards.get", "none", params: "ID", result: "DashboardDetail") { (p: ID) in try dashboards.get(p.id) }
+        add("dashboards.create", "none", params: "CreateDashboardRequest", result: "RemoteDashboard") { (p: CreateDashboardRequest) in try dashboards.create(p) }
+        add("dashboards.update", "none", params: "UpdateDashboardRequest", result: "RemoteDashboard") { (p: UpdateDashboardRequest) in try dashboards.update(p) }
+        addVoid("dashboards.setAppearance", "PATCH /v1/dashboards/:id", params: "DashboardAppearanceRequest") { (p: DashboardAppearanceRequest) in
+            try dashboards.setAppearance(id: p.id, icon: p.icon, color: p.color)
+        }
+        addVoid("dashboards.delete", "none", params: "ID") { (p: ID) in try dashboards.delete(p.id) }
+        addVoid("dashboards.approve", "none", params: "ID") { (p: ID) in try dashboards.approve(p.id) }
+        addVoid("dashboards.deny", "none", params: "ID") { (p: ID) in try dashboards.deny(p.id) }
+        add("dashboards.view", "GET /v1/dashboards/:id/view", params: "ID", result: "RemoteDashboardView") { (p: ID) in try await dashboards.view(p.id) }
+        add("dashboards.click", "POST /v1/dashboards/:id/click", params: "DashboardClickRequest", result: "RemoteDashboardClick") { (p: DashboardClickRequest) in
+            try await dashboards.click(p)
+        }
+        add("dashboards.data", "none", params: "ID", result: "DashboardData") { (p: ID) in try dashboards.data(p.id) }
+        add("dashboards.post", "none", params: "DashboardPostRequest", result: "DashboardData") { (p: DashboardPostRequest) in try dashboards.post(p) }
     }
 
     private func registerAutomations() {

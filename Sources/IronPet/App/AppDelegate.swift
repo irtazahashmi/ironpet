@@ -373,10 +373,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let agentRegistry = AgentRegistry(database: database)
         agentRegistry.adoptLegacySettings(pet: config.config.pet)
         chat.attach(registry: agentRegistry)
-        api = IronPetAPI(stores: .init(tasks: tasks, automations: service, signals: signals, bubbles: announcer.bubbles, notifications: notificationStore, sessions: self.store, chat: chat, meeting: platform.meetings, meetingLibrary: meetings, config: config, speech: platform.speech, petAssets: platform.pets, files: platform.files, usage: UsageStore.shared, permissions: backgroundPermissions, nodeID: NodeIdentity.nodeID(in: database), agents: agentRegistry), events: events, clients: clients)
+        api = IronPetAPI(stores: .init(tasks: tasks, automations: service, signals: signals, bubbles: announcer.bubbles, notifications: notificationStore, sessions: self.store, chat: chat, meeting: platform.meetings, meetingLibrary: meetings, config: config, speech: platform.speech, petAssets: platform.pets, files: platform.files, usage: UsageStore.shared, permissions: backgroundPermissions, nodeID: NodeIdentity.nodeID(in: database), agents: agentRegistry, dashboards: DashboardStore(), spawner: platform.processes), events: events, clients: clients)
         // After `api`: it reads `settingsModel`, whose Telegram bridge needs `api.chat`.
         startUpdates(database: database)
         pet.tasks = api.tasks
+        pet.dashboards = api.dashboards
         pet.notifications = NotificationsModel(api: api.notifications, events: events)
         announcer.notifications = notificationStore
         announcer.openNotification = { [weak self] id in self?.pet.openNotification(id) }
@@ -1277,7 +1278,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             MCPEndpoint.route(request, automations: { self?.api?.automations }, tasks: { self?.api?.tasks }, screen: { self?.api?.screen },
                               desktop: { self?.api?.desktop }, memory: { self?.api?.memory }, assistant: { self?.api?.assistant },
                               notifications: { self?.api?.notifications }, records: { self?.api?.records }, agentRecords: { self?.api?.agentRecords },
-                              chat: { self?.api?.chat }, respond: respond)
+                              chat: { self?.api?.chat }, dashboards: { self?.api?.dashboards }, respond: respond)
         }
         try server.start()
         self.server = server

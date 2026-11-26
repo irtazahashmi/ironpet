@@ -67,6 +67,7 @@ final class PetController: NSObject {
     }
     /// The Tasks section's list. Falls back to an empty list.
     var tasks: TasksAPI?
+    var dashboards: DashboardsAPI?
     /// The Automations section. Set before the window first opens.
     var settings: SettingsModel?
     /// The Settings row at the bottom of the sidebar: opens the Settings window.
@@ -357,6 +358,7 @@ final class PetController: NSObject {
     }
 
     private var taskList: TasksAPI { tasks ?? Self.noTasks }
+    private var dashboardList: DashboardsAPI { dashboards ?? .unavailable }
 
     private func makeWindow() -> IronPetPanel {
         let actions = SessionActions(
@@ -391,7 +393,7 @@ final class PetController: NSObject {
             },
             onBriefOpen: { [weak self] target in self?.openBrief(target) })
         let window = IronPetPanel(model: windowModel, session: chatModel, content: IronPetWindowView(
-            model: windowModel, agents: agentList, alerts: alertList, tasks: taskList, notifications: notifications ?? .empty, chat: chatModel,
+            model: windowModel, agents: agentList, alerts: alertList, tasks: taskList, dashboards: dashboardList, notifications: notifications ?? .empty, chat: chatModel,
             meetings: meetingsAPI, settings: settings, brief: brief, actions: actions))
         window.onVisibilityChange = { [weak self] visible in
             guard let self else { return }

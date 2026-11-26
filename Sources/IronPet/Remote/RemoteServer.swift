@@ -339,6 +339,7 @@ final class RemoteServer {
         addResourceRoutes(to: router)
         addChatRoutes(to: router)
         addAutomationRoutes(to: router)
+        addDashboardRoutes(to: router)
         addMeetingRoutes(to: router)
         addMemoryRoutes(to: router)
         addSettingsRoutes(to: router)
@@ -424,6 +425,27 @@ final class RemoteServer {
         router.post("/v1/automations/:id/run-now") { [self] _, context in
             let id = Self.parameter(context, "id")
             return await self.phoneFour(context) { try await RemoteAutomations(api: $0, device: $1).runNow(id) }
+        }
+    }
+
+    /// User-defined dashboards. The Mac runs the script; the phone draws the view and sends back the handler a tap runs.
+    private func addDashboardRoutes(to router: Router<RemoteContext>) {
+        router.get("/v1/dashboards") { [self] _, context in
+            await self.phoneFour(context) { api, _ in RemoteDashboards(api: api).list() }
+        }
+        router.get("/v1/dashboards/:id/view") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.phoneFour(context) { api, _ in try await RemoteDashboards(api: api).view(id) }
+        }
+        router.post("/v1/dashboards/:id/click") { [self] request, context in
+            let id = Self.parameter(context, "id")
+            let body = try await Self.object(request, context)
+            return await self.phoneFour(context) { api, _ in try await RemoteDashboards(api: api).click(id, body) }
+        }
+        router.patch("/v1/dashboards/:id") { [self] request, context in
+            let id = Self.parameter(context, "id")
+            let body = try await Self.object(request, context)
+            return await self.phoneFour(context) { api, _ in try RemoteDashboards(api: api).setAppearance(id, body) }
         }
     }
 

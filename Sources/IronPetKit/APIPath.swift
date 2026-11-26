@@ -57,6 +57,12 @@ public enum APIPath {
     public static func chatFormSkip(_ id: String) -> String { "/v1/chat/forms/\(id)/skip" }
     public static let uploads = "/v1/uploads"
 
+    /// The user-defined dashboards. `GET` lists them, `view` gives the finished view of one, `click` runs a handler, and `PATCH` changes
+    /// the icon or colour.
+    public static let dashboards = "/v1/dashboards"
+    public static func dashboard(_ id: String) -> String { "/v1/dashboards/\(id)" }
+    public static func dashboardView(_ id: String) -> String { "/v1/dashboards/\(id)/view" }
+    public static func dashboardClick(_ id: String) -> String { "/v1/dashboards/\(id)/click" }
     public static let automations = "/v1/automations"
     public static func automation(_ id: String) -> String { "/v1/automations/\(id)" }
     public static func automationHistory(_ id: String) -> String { "/v1/automations/\(id)/history" }

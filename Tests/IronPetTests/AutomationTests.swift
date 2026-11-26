@@ -1964,3 +1964,23 @@ final class AlertRestoreTests: XCTestCase {
         XCTAssertEqual(state.alertHash("ci", "1"), "", "the next run re-adds it, without a bubble")
     }
 }
+
+
+// MARK: - The dashboard action
+
+@MainActor
+final class DashboardActionTests: AutomationTestCase {
+    func testADashboardActionPostsAndFailsOnceTheDashboardIsGone() throws {
+        let rig = makeRig([bubble("feed", minutes: 5)])
+        let api = DashboardsAPI(store: DashboardStore(paths: DashboardPaths(root: FileManager.default.temporaryDirectory
+            .appendingPathComponent("ironpet-dash-action-\(UUID().uuidString)")), watch: false))
+        rig.service.dashboards = api
+        _ = try api.create(CreateDashboardRequest(id: "board", title: "Board", script: "export default function () { return Column([]); }"))
+        let automation = try XCTUnwrap(rig.store.automations.first)
+        rig.service.perform([["type": "dashboard", "id": "board", "data": ["open": 7]]], for: automation, firstRun: false)
+        XCTAssertTrue(try api.data("board").data.contains("7"))
+        try api.delete("board")
+        rig.service.perform([["type": "dashboard", "id": "board", "data": ["open": 8]]], for: automation, firstRun: false)
+        XCTAssertFalse(rig.service.history(automation.id, limit: 10).isEmpty)
+    }
+}

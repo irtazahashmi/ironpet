@@ -32,7 +32,9 @@ package final class IronPetAPI {
             usage: UsageStore? = nil,
             permissions: BackgroundPermissions? = nil,
             nodeID: String? = nil,
-            agents: AgentRegistry? = nil
+            agents: AgentRegistry? = nil,
+            dashboards: DashboardStore? = nil,
+            spawner: ProcessSpawner = UnsupportedProcessSpawner()
         ) {
             self.tasks = tasks
             self.automations = automations
@@ -51,6 +53,8 @@ package final class IronPetAPI {
             self.permissions = permissions
             self.nodeID = nodeID
             self.agents = agents
+            self.dashboards = dashboards
+            self.spawner = spawner
         }
 
         package var tasks: TaskStore
@@ -76,10 +80,15 @@ package final class IronPetAPI {
         package var nodeID: String?
         /// The `agents` table. Nil where there is no database to keep it, as in a test that opens only one feature's migrations.
         package var agents: AgentRegistry?
+        /// The dashboards on disk. Nil keeps them in a folder nothing reads, so a test that builds an API leaves `~/.ironpet` alone.
+        package var dashboards: DashboardStore?
+        /// Runs the commands a dashboard's `run` capability allows.
+        package var spawner: ProcessSpawner = UnsupportedProcessSpawner()
     }
 
     package let events: APIEventBus
     private var petMirror: APIEventBus.Subscription?
+    private var dashboardMirror: APIEventBus.Subscription?
     /// Which install this is, and the agent its changes are attributed to.
     package let node: NodeAPI
     package let tasks: TasksAPI
@@ -108,6 +117,8 @@ package final class IronPetAPI {
     package private(set) var assistant: AssistantAPI?
     package private(set) var memory: MemoryAPI?
     package let pet: PetAPI
+    /// User-defined dashboards: a manifest and a script each, with their own storage.
+    package let dashboards: DashboardsAPI
     /// The clients connected now, and the handshake that opens a session.
     package let session: SessionAPI
     package var clients: ClientRegistry { session.clients }
@@ -170,12 +181,36 @@ package final class IronPetAPI {
             }
             if stores.config === ConfigStore.shared { AgentRegistry.live = agentRecords.registry }
         }
+        let dashboardStore = stores.dashboards ?? DashboardStore(
+            paths: DashboardPaths(root: FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-dashboards-\(UUID().uuidString)")), watch: false)
+        dashboardStore.events = events
+        let inboxAPI = tasks, alertsAPI = alerts, agentsAPI = agents, chatAPI = chat
+        let dashboardsAPI = DashboardsAPI(store: dashboardStore, sources: DashboardsAPI.Sources(
+            inbox: { inboxAPI.suggestions.map(DashboardSnapshots.inbox) },
+            alerts: { alertsAPI.alerts.map(DashboardSnapshots.alert) },
+            agents: { agentsAPI.sessions.map(DashboardSnapshots.agent) },
+            inboxDone: { try inboxAPI.done($0) },
+            inboxRemove: { try inboxAPI.remove(RemoveSuggestionRequest(id: $0, note: "removed from a dashboard")) },
+            prompt: { text, dashboard in
+                let result = try await chatAPI.send(SendChatRequest(text: text, origin: ChatOrigin(client: ChatOrigin.dashboardClient, ref: dashboard)))
+                if result.outcome == .ignored { throw APIError.failed("the chat did not take the message") }
+            },
+            spawner: stores.spawner))
+        dashboards = dashboardsAPI
+        stores.automations.dashboards = dashboardsAPI
+        // What a script reads can change without the dashboard changing, so the sidebar numbers follow these too.
+        dashboardMirror = events.subscribe { [weak dashboardsAPI] event in
+            switch event.kind {
+            case .suggestionsChanged, .alertsChanged, .agentsChanged: dashboardsAPI?.scheduleCounts()
+            default: break
+            }
+        }
         served = { [unowned self] in self.servedFacades }
     }
 
     /// The facades `session.hello` reports: the ones a client can call now. `memory` and `screen` join once they are attached.
     private var servedFacades: [String] {
-        var names = ["agents", "alerts", "automations", "bubbles", "chat", "meetings", "node", "notifications", "inbox", "session", "settings", "today"]
+        var names = ["agents", "alerts", "automations", "bubbles", "chat", "dashboards", "meetings", "node", "notifications", "inbox", "session", "settings", "today"]
         if agentRecords != nil { names.append("agentrecords") }
         if memory != nil { names.append("memory") }
         if screen != nil { names.append("screen") }

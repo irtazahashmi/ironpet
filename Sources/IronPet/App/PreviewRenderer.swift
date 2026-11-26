@@ -1,6 +1,7 @@
 import AppKit
 import ImageIO
 import IronPetCore
+import IronPetKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -199,7 +200,8 @@ enum PreviewRenderer {
         settingsModel.capture = ScreenAPI(service: CaptureService(store: capturesStore, config: { ConfigStore.shared.config.screenCapture }))
         patterned.voiceMode.enabled = true
         ConfigStore.shared.usePreview(patterned)
-        for section in IronPetSection.allCases {
+        renderDashboards(to: dir, chat: chat, sessions: sessions, signals: signals, tasks: tasks, meetings: meetings, settings: settingsModel, brief: brief)
+        for section in IronPetSection.allCases where section != .dashboard {
             for (suffix, scheme) in [("dark", ColorScheme.dark), ("light", .light)] {
                 for collapsed in [false, true] {
                     // A throwaway suite, so rendering never changes the user's saved sidebar state.
@@ -434,6 +436,52 @@ enum PreviewRenderer {
         let file = dir.appendingPathComponent("\(name).png")
         try? rep.representation(using: .png, properties: [:])?.write(to: file)
         print("wrote \(file.path)")
+    }
+
+    /// A dashboard open in the window and the approval sheet, from made-up data. ironpet ships no dashboards: these exist only here.
+    private static func renderDashboards(to dir: URL, chat: ChatSession, sessions: SessionStore, signals: SignalStore, tasks: TasksAPI,
+                                         meetings: MeetingsAPI, settings: SettingsModel, brief: BriefModel) {
+        let script = """
+            export default {
+              view() {
+                return Column([
+                  Text("Work", { style: "title" }),
+                  Row([
+                    Stat({ label: "Waiting for you", value: "2", caption: "agents", tone: "warn" }),
+                    Stat({ label: "Working", value: "3", caption: "agents", tone: "info" }),
+                    Stat({ label: "Failed CI", value: "1", caption: "pull requests", tone: "bad" }),
+                  ]),
+                  Card({ title: "Needs you", badge: "2", tone: "warn", children: [
+                    List([
+                      { title: "Fix the flaky login test", caption: "Claude Code in ironpet", badge: "Input", tone: "warn", symbol: "circle.fill" },
+                      { title: "Review the sidebar order", caption: "Cursor in ironpet-ios", badge: "Approve", tone: "warn", symbol: "circle.fill" },
+                    ]),
+                  ] }),
+                  Chart({ title: "Finished agents this week", kind: "bar", points: [3, 5, 2, 6, 4, 7, 5], labels: ["M", "T", "W", "T", "F", "S", "S"] }),
+                  Button({ label: "Ask Ghost what to do first", symbol: "sparkles", onClick: () => ironpet.openChat() }),
+                ]);
+              },
+              count() { return 2; },
+            };
+            """
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-preview-dashboards-\(UUID().uuidString)")
+        let api = DashboardsAPI(store: DashboardStore(paths: DashboardPaths(root: folder), watch: false))
+        guard (try? api.create(CreateDashboardRequest(id: "work", title: "Work", icon: "briefcase", color: "teal", count: true, script: script))) != nil else { return }
+        _ = try? api.create(CreateDashboardRequest(id: "release", title: "Release", icon: "shippingbox", color: "orange", script: "export default { view() { return Column([]); } };"))
+        let work = RemoteDashboard(id: "work", title: "Work", icon: "briefcase", color: "teal", showsCount: true, count: 2, approval: "pending", capabilities: [
+            RemoteDashboardCapability(kind: "read", title: "Read agents and the inbox", detail: "Sees the titles of your agent sessions and inbox items."),
+            RemoteDashboardCapability(kind: "run", title: "Run gh pr list", detail: "Runs this command as you, without a shell.", isNew: true),
+            RemoteDashboardCapability(kind: "prompt", title: "Send Ghost a message", detail: "A button can start a chat turn for you."),
+        ])
+        render(DashboardApprovalSheet(dashboard: work, decidedBefore: true, onApprove: {}, onDeny: {}).panel(), to: dir, "dashboard-approval")
+        for (suffix, scheme) in [("dark", ColorScheme.dark), ("light", .light)] {
+            let model = IronPetWindowModel(defaults: UserDefaults(suiteName: "ironpet-previews") ?? .standard)
+            model.todayShown = true
+            model.open(dashboard: "work")
+            let view = IronPetWindowView(model: model, agents: AgentsAPI(store: sessions), alerts: AlertsAPI(store: signals), tasks: tasks, dashboards: api, chat: Self.chatModel(chat),
+                                         meetings: meetings, settings: settings, brief: brief, actions: .none)
+            renderWindow(model: model, session: chat, content: view, to: dir, "dashboard-window-\(suffix)", scheme: scheme)
+        }
     }
 
     /// The Usage tab with a week of made-up events: cost mode, requests mode and the hourly Today range.

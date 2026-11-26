@@ -1534,6 +1534,10 @@ private struct UserBubble: View {
                     Image(systemName: SharedSymbols.sourceVoice).font(.system(size: 9))
                     Text("Voice").font(.system(size: 10))
                 }
+                if source == ChatOrigin.dashboardClient {
+                    Image(systemName: "square.grid.2x2").font(.system(size: 9))
+                    Text("Dashboard").font(.system(size: 10))
+                }
                 if source == ChatOrigin.iosClient {
                     Image(systemName: SharedSymbols.sourceIPhone).font(.system(size: 9))
                     Text(ChatOrigin.badge(for: source)?.label ?? "").font(.system(size: 10))
@@ -1543,6 +1547,7 @@ private struct UserBubble: View {
             .foregroundStyle(.tertiary)
             .help(source == ChatOrigin.telegramClient ? "Sent from Telegram" : source == ChatOrigin.automationClient ? "Sent by an automation"
                   : source == ChatOrigin.jobClient ? "Sent to a background job" : source == ChatOrigin.voiceClient ? "Said in voice mode"
+                  : source == ChatOrigin.dashboardClient ? "Sent by a dashboard"
                   : ChatOrigin.badge(for: source)?.help ?? "")
         }
         .frame(maxWidth: .infinity, alignment: .trailing)

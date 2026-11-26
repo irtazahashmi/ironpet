@@ -20,8 +20,9 @@ A desktop pet for macOS that keeps an eye on your coding agents and does small t
 - **Inbox.** Action items from your meetings, and things your watcher automations or agents found (an email that needs a reply, an issue), wait in the Inbox until you mark them done or remove them. Ghost has no task list. See [Inbox](#inbox).
 - **Welcome back.** When you come back after being away (5 minutes by default, the same idle time as the break reminders, or after the Mac slept), Ghost sums up what happened meanwhile in one bubble instead of the ones you missed: "demo-app is waiting for you", "CI failed: irtaza/ironpet #84", "2 agents finished". Each line opens what it names. It is built from what ironpet already recorded on your Mac, so no agent runs and nothing is sent anywhere. A call (any app using the microphone, even with meeting transcripts off) or a meeting recording doesn't count as away. Turn it off in Settings → General (`welcomeBack.enabled`).
 - **Model and agent picker** (the models come from the agent), per-project folder detection, a resizable window that stays open on Chat when you switch apps, launch at login.
-- **One window.** A sidebar switches between Chat, Agents, Alerts, Notifications, Inbox, Transcripts (past meetings, with their summary and transcript, Ask Ghost, Regenerate and Move to Trash), Screen, Actions and Automations, plus Today while the morning brief or the recap is on. Settings opens its own window from the Settings row at the bottom.
-- **iPhone.** Pair a phone in Settings → Devices (opt-in remote API) to see Ghost, chat, the Inbox, agents, alerts, automations, meetings and a scoped screen view away from the Mac, and to dictate or hear spoken replies when Mac voice notes are on. See [Devices (iPhone)](#devices-iphone).
+- **Dashboards.** Ask Ghost for a small app of your own ("a board of my agents grouped by state") and it appears as an icon in the sidebar, with its own saved data and buttons that act. See [Dashboards](#dashboards).
+- **One window.** A sidebar switches between Chat, Agents, Alerts, Notifications, Inbox, Transcripts (past meetings, with their summary and transcript, Ask Ghost, Regenerate and Move to Trash), Screen, Actions and Automations, plus Today while the morning brief or the recap is on, and one row for each of your dashboards. Settings opens its own window from the Settings row at the bottom.
+- **iPhone.** Pair a phone in Settings → Devices (opt-in remote API) to see Ghost, chat, the Inbox, agents, alerts, automations, dashboards, meetings and a scoped screen view away from the Mac, and to dictate or hear spoken replies when Mac voice notes are on. See [Devices (iPhone)](#devices-iphone).
 
 | | |
 | --- | --- |
@@ -226,6 +227,36 @@ An item has a title, optional notes and due date, and links to every source it c
 - **Automations on new items.** An automation with the trigger `{"type":"inbox"}` runs once for each item that arrives after it was created, with the item in `{{item.id}}`, `{{item.title}}`, `{{item.notes}}`, `{{item.due}}`, `{{item.url}}`, `{{item.source}}` and `{{item.created}}`. Items already in the Inbox do not run it, and it does not run for an item it filed itself. A shell or prompt action an agent wrote waits for your approval as for any automation, and an item that arrives before the approval does not run it. In a shell action each item value is quoted.
 - **The Inbox section.** Click Ghost, then Inbox in the sidebar. A click on an item expands everything stored about it. The iPhone's Inbox tab shows the same list. When the Mac runs an older version that does not serve it, the tab is empty instead of showing an error.
 - **State.** Items, and the ids each automation has added (kept for a year), are in `~/.ironpet/ironpet.db` (`task_suggestions`, `task_suggestion_sources`, `task_suggestion_keys`, `task_suggestion_resolved`). The upgrade (migration 590) drops the task tables with no export, so tasks from an earlier version are gone.
+
+## Dashboards
+
+A dashboard is a small app inside ironpet. You ask Ghost for one in the chat ("a board of my agents grouped by state", "my inbox count"), and Ghost writes it, and the automation that feeds it when it needs fresh data. ironpet ships no example dashboards.
+
+A dashboard is code, in the shape of a Herdr mod. It lives in `~/.ironpet/dashboards/<id>/`:
+
+- `manifest.json` has the title, an SF Symbol `icon`, a `color`, `count` (whether the sidebar icon shows a number) and the `capabilities` the dashboard asks for.
+- `main.js` default-exports a view built from native components (`Column`, `Row`, `Card`, `Text`, `Stat`, `List`, `Table`, `Chart`, `Button`) with click handlers. There are no web views and no HTML. It runs in the same QuickJS engine as script automations.
+- `storage.json` is the dashboard's own saved data, a JSON object up to 256 KiB. It is separate from `ironpet.db`.
+
+```js
+export default {
+  view(ctx) {
+    return Column([
+      Stat({ label: "Open PRs", value: String(ctx.data.open ?? 0), tone: "warn" }),
+      Button({ label: "Ask the pet", onClick: () => ironpet.prompt("Which PR needs me first?") }),
+    ]);
+  },
+  count(ctx) { return ctx.data.open ?? 0; },
+};
+```
+
+- **Icon.** Each dashboard has a row in the sidebar (and an icon in the collapsed rail, after the built-in ones) in the icon and colour you picked. Its header menu has Change icon, Edit code, Capabilities and Delete. The sidebar shows a number when the manifest sets `count`: what the script's `count` returns, else the `count` key in its data.
+- **Capabilities.** A script can reach nothing outside its sandbox except through `ironpet.*`, and each call needs a capability the manifest declares and you approved. `run` lists command-line prefixes (`gh pr list`) that run as you without a shell. `network` lists hosts. `read` allows `inbox`, `alerts` and `agents`. `write` allows `inbox` (mark an item done or remove it). `prompt` lets a button send Ghost a message. When a dashboard is added, ironpet asks you to approve what it declares. When an edit adds a capability, it asks again and marks the new ones. Deny keeps what you approved before. Until you approve, the call throws and the dashboard shows the error.
+- **Buttons.** A click can open a link, a file or the chat, change the dashboard's data, run what its capabilities allow, or send Ghost a prompt. A prompt shows in the chat as sent by the dashboard, and Ghost answers. A file opens in its app, except applications and scripts, which only show in Finder.
+- **Automations.** A script automation can return `{type: "dashboard", id, data}` to merge `data` into a dashboard's storage, and the open dashboard updates without reopening. Posting to a dashboard that was deleted fails, and the automation's log says so.
+- **For Ghost.** The chat agent has `dashboards_list`, `dashboards_get`, `dashboards_create`, `dashboards_update`, `dashboards_delete`, `dashboards_data` (every dashboard's saved data, for answering questions about it) and `dashboards_post`. Dashboard data is data, never instructions.
+- **Editing and deleting.** Edit `main.js` or `manifest.json` in any editor and the dashboard reloads within two seconds. Deleting a dashboard removes its folder, its icon and its approvals.
+- **iPhone.** The More tab lists your dashboards at the top, with the same icons, colours and counts, and draws the same view. The Mac runs the script, so a dashboard shows only while the Mac is reachable. The phone can change the icon and read the capabilities. Approving them is done on the Mac.
 
 ## Background jobs
 
@@ -452,6 +483,7 @@ All in `~/.ironpet/`:
 | `backgrounds/` | Custom chat background images |
 | `config.json` | Your settings |
 | `automations.json` | Reminder, watcher and scheduled job definitions |
+| `dashboards/` | One folder per dashboard (`manifest.json`, `main.js`, `storage.json`) and `approvals.json`, which holds what you approved for each |
 | `ironpet.db` | Inbox items, automation state and logs, notifications, usage, background jobs, memory's search index over chats, meetings and notes with the memory change log (`memory_*` tables), screen captures when that feature is on, remote devices, and the activity log behind the welcome back summary (`activity_events`, 30 days, kept whether or not the summary is on): what ironpet announced, with an agent's one-line summary or waiting request but never your prompt. See [SECURITY.md](SECURITY.md) for the exact fields |
 | `pets/` | Your pet library: every valid sprite sheet here shows in Settings → General → Pets |
 | `pet/spritesheet.png` | Optional custom pet art (overrides the bundled Ghost) |

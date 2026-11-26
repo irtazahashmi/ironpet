@@ -3,6 +3,9 @@ import SwiftUI
 
 /// The fifth tab: the screens that do not need a tab of their own.
 struct MoreView: View {
+    let dashboards: DashboardsModel
+    /// Makes the model for one open dashboard.
+    let makeDashboard: (String) -> DashboardViewModel
     let alerts: AlertsModel
     let automations: AutomationsModel
     let meetings: MeetingsModel
@@ -15,6 +18,7 @@ struct MoreView: View {
     var body: some View {
         NavigationStack(path: $path) {
             List {
+                DashboardsSection(model: dashboards)
                 Group {
                     NavigationLink(value: MoreDestination.alerts) {
                         HStack {
@@ -65,6 +69,7 @@ struct MoreView: View {
                 case .screen: ScreenView(model: screen)
                 case .settings: PhoneSettingsView(model: settings)
                 case .phoneAgent: PhoneAgentView(model: phoneAgent)
+                case .dashboard(let id): DashboardDetailView(list: dashboards, model: makeDashboard(id))
                 }
             }
         }

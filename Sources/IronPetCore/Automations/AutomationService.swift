@@ -756,6 +756,7 @@ package final class AutomationService {
             case "prompt": problem = scriptPrompt(action, a)
             case "chat": problem = scriptChat(action, a)
             case "resolve_task": problem = resolveTask(action, a)
+            case "dashboard": problem = scriptDashboard(action, a)
             case "suggest_task":
                 do {
                     let draft = try TaskSuggestion.Draft(action: action)
@@ -764,12 +765,30 @@ package final class AutomationService {
                 } catch {
                     problem = error.localizedDescription
                 }
-            default: problem = "type must be bubble, alert, prompt, suggest_task, resolve_task or chat"
+            default: problem = "type must be bubble, alert, prompt, suggest_task, resolve_task, chat or dashboard"
             }
             if let problem { record(a.id, "failed", "action \(index + 1): \(problem)") }
         }
         if dropped > 0 { record(a.id, "failed", "at most \(Self.maxSuggestionsPerRun) suggest_task actions per run, \(dropped) left out") }
         if !drafts.isEmpty { suggestTasks(drafts, a, firstRun: firstRun) }
+    }
+
+    /// Where `dashboard` actions go: the storage of a dashboard.
+    package weak var dashboards: DashboardsAPI?
+
+    /// Merges `data` into a dashboard's storage. A dashboard that was deleted refuses the post, and the run records the failure, so an
+    /// automation whose dashboard is gone shows in its log why it no longer feeds anything.
+    private func scriptDashboard(_ action: [String: Any], _ a: Automation) -> String? {
+        guard let id = text(action, "id") else { return "a dashboard action needs the dashboard's id" }
+        guard let patch = action["data"] as? [String: Any] else { return "a dashboard action needs data: an object" }
+        guard let dashboards else { return "dashboards are not available" }
+        do {
+            try dashboards.post(id: id, patch: patch)
+            record(a.id, "ok", "posted to dashboard \(id)")
+            return nil
+        } catch {
+            return "dashboard \(id): \(error.localizedDescription)"
+        }
     }
 
     /// Where `suggest_task` actions go: suggestions only, never tasks.
