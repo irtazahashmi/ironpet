@@ -38,6 +38,7 @@ final class MemoryUITests: XCTestCase {
     func testBrowseFilterOpenAPageAndFollowALink() {
         openMemory()
         XCTAssertTrue(app.buttons["memory-row-page_4e91b0"].waitForExistence(timeout: 20))
+        XCTAssertFalse(app.staticTexts["memory-count"].exists, "the list shows no count label")
         attach("memory-list")
         app.buttons["memory-chip-people"].tap()
         XCTAssertTrue(app.buttons["memory-row-page_9594cc"].waitForExistence(timeout: 10))

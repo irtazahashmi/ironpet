@@ -15,7 +15,6 @@ struct MemoryView: View {
                 }
                 chips
                 if let list = model.list {
-                    Text(list.countLabel).font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("memory-count")
                     ForEach(list.pages) { row in
                         NavigationLink(value: MoreDestination.memoryPage(row.id)) { MemoryRowView(row: row, needle: model.query) }
                             .accessibilityIdentifier("memory-row-\(row.id)")
