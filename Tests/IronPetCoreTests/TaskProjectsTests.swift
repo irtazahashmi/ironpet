@@ -91,7 +91,8 @@ final class TaskProjectsTests: XCTestCase {
     }
 
     func testProjectsSurviveAReload() async throws {
-        let site = try api.upsertProject(id: nil, title: "Launch the new site", area: "Work", goal: "Grow sales")
+        let sales = try api.upsertGoal(id: nil, title: "Grow sales")
+        let site = try api.upsertProject(id: nil, title: "Launch the new site", area: "Work", goal: .some(sales.id))
         store.reload()
         XCTAssertEqual(api.project(site.id), site)
     }

@@ -392,3 +392,34 @@ extension TasksAPI {
                                 markReviewed: markReviewed)
     }
 }
+
+// MARK: Areas, goals and key results
+
+extension TasksAPI {
+    package var areas: [TaskArea] { store.areas }
+    package var goals: [TaskGoal] { store.goals }
+    package func keyResults(of goal: String) -> [TaskKeyResult] { store.keyResults(of: goal) }
+    package func progress(of goal: String) -> Double? { store.progress(of: goal) }
+    package func projects(serving goal: String) -> [TaskProject] { store.projects(serving: goal) }
+    package func goalGroups(_ goals: [TaskGoal]) -> [TaskGoalGroup] { store.goalGroups(goals) }
+
+    package func deleteKeyResult(_ id: String) throws { try store.deleteKeyResult(id) }
+
+    @discardableResult
+    package func upsertArea(id: String?, title: String?, notes: String? = nil) throws -> TaskArea {
+        try store.upsertArea(id: id, title: title, notes: notes)
+    }
+
+    @discardableResult
+    package func upsertGoal(id: String?, title: String?, why: String? = nil, area: String?? = nil, status: TaskGoal.Status? = nil,
+                            due: Date?? = nil) throws -> TaskGoal {
+        try store.upsertGoal(id: id, title: title, why: why, area: area, status: status, due: due)
+    }
+
+    @discardableResult
+    package func upsertKeyResult(id: String?, goal: String? = nil, metric: String? = nil, start: Double? = nil, target: Double? = nil,
+                                 current: Double? = nil, unit: String?? = nil, due: Date?? = nil, source: String?? = nil) throws -> TaskKeyResult {
+        try store.upsertKeyResult(id: id, goal: goal, metric: metric, start: start, target: target, current: current, unit: unit, due: due,
+                                  source: source)
+    }
+}

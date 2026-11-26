@@ -7,7 +7,7 @@ description: Keep ironpet's task list for the user, the list shown in Ghost's Ta
 
 ironpet keeps one task list for the user. It belongs to you. The user is not expected to read it. Your job is to move each item to done and to keep the user on track with the things only they can do.
 
-Tools: `tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_close`, `tasks_suggest`, `tasks_suggestions_list`, `tasks_suggestion_accept`, `tasks_suggestion_reject`, `task_filters_list`, `task_filters_upsert`, `task_filters_delete`, `task_filters_reorder`, `task_projects_list`, `task_projects_upsert`, and for screen activity `screen_search` and `screen_window`. If the tools are not available, use the CLI: `IronPet tasks list|show|add|update|status|done|suggest|suggestions|accept|reject|filters|filter-set|filter-delete|filter-order` (the app must be running). Fields: `title`, `notes`, `status`, `source`, `due`, `links`, `waiting_on` and `labels`.
+Tools: `tasks_list`, `tasks_get`, `tasks_create`, `tasks_update`, `tasks_close`, `tasks_suggest`, `tasks_suggestions_list`, `tasks_suggestion_accept`, `tasks_suggestion_reject`, `task_filters_list`, `task_filters_upsert`, `task_filters_delete`, `task_filters_reorder`, `task_projects_list`, `task_projects_upsert`, `task_goals_list`, `task_goals_upsert`, `task_areas_upsert`, `task_key_results_upsert`, `task_key_results_delete`, and for screen activity `screen_search` and `screen_window`. If the tools are not available, use the CLI: `IronPet tasks list|show|add|update|status|done|suggest|suggestions|accept|reject|filters|filter-set|filter-delete|filter-order` (the app must be running). Fields: `title`, `notes`, `status`, `source`, `due`, `links`, `waiting_on` and `labels`.
 
 ## What to track
 
@@ -35,6 +35,10 @@ A task that waits on someone (`waiting_on`) records when the user asked them (`a
 ## Projects
 
 A project is an outcome that takes more than one step ("Move house", "Launch the new site"), not a code folder. Create one with `task_projects_upsert` (`title`, an `outcome` that says what done looks like, `area`, `goal`, `review_days`) when the user describes such an outcome, and link its steps with `project` on `tasks_create` or `tasks_update`. `task_projects_list` gives each project's `next_actions`, `stalled` (active with no next action) and `due_for_review`. Every active project needs a next action: when one is stalled, propose its next step with `tasks_suggest` instead of inventing a task. Set `status` to `someday` or `done` when the user parks or finishes it, and `reviewed: true` after the user reviewed it. When you propose the next step of a stalled project with `tasks_suggest`, pass the project's id in `project`, so the task joins it when the user adds it. Projects need these tools: the `IronPet tasks` CLI has no project commands.
+
+## Areas, goals and key results
+
+GTD's higher horizons. An area (`task_areas_upsert`) is a part of life or work the user keeps up, such as Health or Sales. A goal (`task_goals_upsert`: `title`, `why`, `area`, `due`) is what they want to reach in the next year or two, and each goal has key results (`task_key_results_upsert`: `goal`, `metric`, `start`, `target`, `unit`, `due`, `source`) that measure it. Serve a goal with projects by setting a project's `goal` to the goal's id. `task_goals_list` shows the progress (0 to 1) of every key result and goal. Update `current` when the user tells you a number or when a `source` you can read shows it; ask rather than guess. Set a goal's `status` to `achieved` or `dropped` when the user says so, and delete a key result that was wrong with `task_key_results_delete` (it asks the user). A project's `area` is still a free-text label, not an area id. Vision (horizon 4) and purpose (horizon 5) are not tables: keep them as memory notes about the user (`memory_remember`), and read them in the weekly review.
 
 ## Statuses
 

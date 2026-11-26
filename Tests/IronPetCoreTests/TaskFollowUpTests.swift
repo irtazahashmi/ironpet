@@ -80,10 +80,10 @@ final class TaskFollowUpTests: XCTestCase {
         XCTAssertNil(try store.update(own.id, askedAt: day(-5), by: "test").askedAt)
     }
 
-    func testMigration573StartsTheClockOfTasksAlreadyWaiting() async throws {
-        let file = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-573-\(UUID().uuidString).db")
+    func testMigration583StartsTheClockOfTasksAlreadyWaiting() async throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-583-\(UUID().uuidString).db")
         defer { try? FileManager.default.removeItem(at: file) }
-        let before = Database.open(path: file, migrations: AppMigrations.all.filter { $0.version < 573 }).database
+        let before = Database.open(path: file, migrations: AppMigrations.all.filter { $0.version < 583 }).database
         try before.write { db in
             try db.execute("""
                 INSERT INTO task_items(id, title, notes, status, source, created, updated, waiting_on)
