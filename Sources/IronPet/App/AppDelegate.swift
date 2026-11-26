@@ -369,6 +369,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let tasks = TaskStore(database: database)
         taskStore = tasks
         let service = AutomationService(store: store, engine: engine, database: database)
+        tasks.onAdded = { [weak service] items in service?.inboxItemsAdded(items) }
         let notificationStore = NotificationStore(database: database)
         // Agent 1 takes over the chat settings an older build kept in UserDefaults and config.json, once, before anything reads them.
         let agentRegistry = AgentRegistry(database: database)

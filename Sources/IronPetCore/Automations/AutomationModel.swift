@@ -46,7 +46,7 @@ package struct Automation: Codable, Equatable, Identifiable {
             self.catchUpMinutes = catchUpMinutes
         }
 
-        /// `interval`, `daily`, `once`, `poll`, `script` or `stream`.
+        /// `interval`, `daily`, `once`, `poll`, `script`, `stream` or `inbox`.
         package var type: String
         /// `interval`: minutes between runs. `poll`: minutes between polls.
         package var minutes: Double?
@@ -362,7 +362,7 @@ package struct AutomationFile: Codable {
 
 package enum AutomationValidator {
     package static let weekdays = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"]
-    package static let triggerTypes = ["interval", "daily", "once", "poll", "script", "stream"]
+    package static let triggerTypes = ["interval", "daily", "once", "poll", "script", "stream", "inbox"]
     package static let actionTypes = ["bubble", "prompt", "shell", "digest"]
     package static let sessions = ["main", "chat", "new", "own", "fork"]
     package static let reports = ["bubble", "chat"]
@@ -497,6 +497,12 @@ package enum AutomationValidator {
             } else { errors.append("trigger.at must be an ISO 8601 date and time, such as 2026-11-20T15:30:00+01:00") }
         case "stream":
             errors += validate(stream: t)
+        case "inbox":
+            // Fires for each new inbox item. It has no timing or source of its own.
+            for (field, present) in [("minutes", t.minutes != nil), ("source", t.source != nil), ("script", t.script != nil), ("times", t.times != nil),
+                                     ("at", t.at != nil)] where present {
+                errors.append("trigger.\(field) does not apply to an inbox trigger")
+            }
         case "script":
             if let m = t.minutes, m >= 1, m <= 525_600 {} else { errors.append("trigger.minutes must be a number from 1 to 525600") }
             if (t.script ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { errors.append("trigger.script is empty") }

@@ -23,7 +23,7 @@ public struct RemoteAutomation: Codable, Equatable, Hashable, Identifiable, Send
     public var enabled: Bool
     /// One line about the trigger, such as "daily at 09:00".
     public var trigger: String
-    /// The trigger type: `daily`, `interval`, `once`, `poll`, `script` or `stream`.
+    /// The trigger type: `daily`, `interval`, `once`, `poll`, `script`, `stream` or `inbox`.
     public var triggerType: String
     /// The action type: `bubble`, `prompt`, `shell`, `digest` or `none`.
     public var action: String

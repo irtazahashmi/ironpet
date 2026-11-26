@@ -346,10 +346,22 @@ package final class AutomationEngine {
             return nil
         case "once":
             return onceFired.contains(a.id) ? nil : a.trigger.at.flatMap(AutomationClock.parse)
-        case "stream":
+        case "stream", "inbox":
             return nil
         default:
             return nextPollAt[a.id] ?? now
+        }
+    }
+
+    /// Fires every enabled, approved `inbox` automation once for each item that just arrived. Items that were already in the inbox
+    /// never come through here, so a new automation does not run for them. An automation does not run for an item it filed itself.
+    /// `items` are the template values (`{{item.title}}`); `origin_id` names what filed the item.
+    package func inboxItemsArrived(_ items: [[String: Any]]) {
+        let working = env.isAgentWorking()
+        for a in automations where a.enabled && a.trigger.type == "inbox" && mayRun(a) {
+            for item in items where item["origin_id"] as? String != a.id {
+                onFire(Fire(automations: [a], item: item, agentWorking: working))
+            }
         }
     }
 

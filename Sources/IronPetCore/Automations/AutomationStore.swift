@@ -256,7 +256,7 @@ package enum AutomationSchema {
           "required": ["type"],
           "additionalProperties": false,
           "properties": {
-            "type": { "enum": ["interval", "daily", "once", "poll", "script", "stream"] },
+            "type": { "enum": ["interval", "daily", "once", "poll", "script", "stream", "inbox"] },
             "minutes": { "type": "number", "minimum": 1, "description": "interval: minutes between runs. poll: minutes between polls." },
             "clock": { "enum": ["active", "wall"], "description": "active counts keyboard time only. wall counts clock time." },
             "times": { "type": "array", "items": { "type": "string", "pattern": "^[0-2]?[0-9]:[0-5][0-9]$" } },
