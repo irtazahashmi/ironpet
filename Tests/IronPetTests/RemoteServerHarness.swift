@@ -55,7 +55,7 @@ final class RemoteServerHarness {
          configureAutomations: ((AutomationService) -> Void)? = nil) {
         events = APIEventBus(capacity: eventCapacity)
         database = APITestSupport.memoryDatabase()
-        api = APITestSupport.makeAPI(events: events, automations: automations, signals: signals, bubbles: bubbles, sessions: sessions, chat: chat,
+        api = APITestSupport.makeAPI(events: events, database: database, automations: automations, signals: signals, bubbles: bubbles, sessions: sessions, chat: chat,
                                      meeting: meeting, meetingLibrary: meetingLibrary, config: config, petAssets: petAssets, usage: usage,
                                      configureAutomations: configureAutomations)
         let clock = clock

@@ -235,7 +235,7 @@ final class AgentOwnerTests: XCTestCase {
     func testTheAutomationToolsListAndCreateAsTheCallingAgent() async throws {
         let (api, _) = try automationRig()
         func names(_ result: Result<Any, AutomationError>) throws -> [String] {
-            ((try result.get()) as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }.filter { !["Morning brief", "End-of-day recap", "Task review", "Mail and calendar checks"].contains($0) }
+            ((try result.get()) as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }.filter { name in !AutomationDefaults.builtIns.contains { $0.name == name } }
         }
         let created = try await api.callJSON("create", ["name": "Theirs", "trigger": ["type": "interval", "minutes": 30, "clock": "wall"],
                                                        "action": ["type": "bubble", "title": "hi"]], by: "agent:mcp", agent: "agent_two").get()
