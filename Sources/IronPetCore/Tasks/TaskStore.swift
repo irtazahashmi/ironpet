@@ -306,7 +306,7 @@ package final class TaskStore {
             if scope != nil {
                 guard seenKeys.insert(key).inserted else { filings.append(SuggestFiling(change: .ignored("id \"\(key)\" appears twice in one call"))); continue }
             }
-            let source = InboxSource(kind: kind, ref: kind == .meeting ? ref : (scope == nil ? ref : ref), url: draft.url,
+            let source = InboxSource(kind: kind, ref: ref, url: draft.url,
                                      label: Self.label(origin: origin, kind: kind))
 
             // 1. An id used before: update its item, or stay out when the item is gone.
