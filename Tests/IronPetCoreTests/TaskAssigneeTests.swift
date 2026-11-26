@@ -36,7 +36,7 @@ final class TaskAssigneeTests: XCTestCase {
 
     // MARK: S1, assign and reassign
 
-    func testAssigningToAnAgentAndBackToTheUserRecordsTwoEvents() throws {
+    func testAssigningToAnAgentAndBackToTheUserRecordsTwoEvents() async throws {
         let id = try store.create(title: "Review the PR", source: .user, by: "user").id
         XCTAssertNil(store.task(id)?.assignee)
 
@@ -53,7 +53,7 @@ final class TaskAssigneeTests: XCTestCase {
         XCTAssertEqual(changes.map(\.agent), [AgentOwner.defaultID, AgentOwner.defaultID])
     }
 
-    func testAssigningTheSameAssigneeAgainAddsNoEvent() throws {
+    func testAssigningTheSameAssigneeAgainAddsNoEvent() async throws {
         let id = try store.create(title: "Same", source: .user, assignee: agentB, by: "user").id
         let before = try events(id).count
         try store.update(id, assignee: .some(agentB), by: "user")
@@ -62,7 +62,7 @@ final class TaskAssigneeTests: XCTestCase {
         XCTAssertEqual(try events(id).count, before + 1, "only the hand back to the user is a change")
     }
 
-    func testAssigningOverMCPAndBack() throws {
+    func testAssigningOverMCPAndBack() async throws {
         guard case .success(let created) = call("create", ["title": "Over MCP", "origin": origin()]),
               let id = (created as? [String: Any])?["id"] as? String else { return XCTFail("create failed") }
         guard case .success(let assigned) = call("update", ["id": id, "changes": ["assignee": agentB]]) else { return XCTFail("assign failed") }
@@ -72,7 +72,7 @@ final class TaskAssigneeTests: XCTestCase {
         XCTAssertEqual(try events(id).filter { $0.detail.hasPrefix("assignee:") }.count, 2)
     }
 
-    func testAssigningOverTheTypedAPI() throws {
+    func testAssigningOverTheTypedAPI() async throws {
         let id = try api.create(CreateTaskRequest(title: "Typed", source: .user, assignee: agentB)).id
         XCTAssertEqual(api.task(id)?.assignee, agentB)
         try api.update(UpdateTaskRequest(id: id, assignee: "user"))
@@ -84,7 +84,7 @@ final class TaskAssigneeTests: XCTestCase {
 
     // MARK: S2, an unknown agent
 
-    func testAnUnknownAgentIsNotFoundAndNothingChanges() throws {
+    func testAnUnknownAgentIsNotFoundAndNothingChanges() async throws {
         XCTAssertThrowsError(try api.create(CreateTaskRequest(title: "Nope", source: .user, assignee: "agent_missing"))) { error in
             XCTAssertEqual((error as? APIError)?.code, .notFound)
         }
@@ -99,7 +99,7 @@ final class TaskAssigneeTests: XCTestCase {
         XCTAssertEqual(try events(id).count, before)
     }
 
-    func testAnUnknownAgentIsRefusedOverMCP() {
+    func testAnUnknownAgentIsRefusedOverMCP() async {
         guard case .failure(let error) = call("create", ["title": "Nope", "origin": origin(), "assignee": "agent_missing"]) else {
             return XCTFail("create succeeded")
         }
@@ -107,7 +107,7 @@ final class TaskAssigneeTests: XCTestCase {
         XCTAssertTrue(api.items.isEmpty)
     }
 
-    func testADisabledAgentIsKnownAndADeletedOneIsNot() throws {
+    func testADisabledAgentIsKnownAndADeletedOneIsNot() async throws {
         try AgentRegistry(database: database).update(agentB, AgentRecordPatch(enabled: false))
         let id = try store.create(title: "Parked", source: .user, assignee: agentB, by: "user").id
         XCTAssertEqual(store.task(id)?.assignee, agentB)
@@ -115,13 +115,13 @@ final class TaskAssigneeTests: XCTestCase {
         XCTAssertThrowsError(try store.update(id, assignee: .some(agentB), by: "user"))
     }
 
-    func testWithoutARegistryOnlyAgentOneIsKnown() throws {
+    func testWithoutARegistryOnlyAgentOneIsKnown() async throws {
         let lone = TaskStore(database: Database.open(path: nil, migrations: TaskStore.migrations).database)
         XCTAssertEqual(try lone.create(title: "One", source: .user, assignee: AgentOwner.defaultID, by: "user").assignee, AgentOwner.defaultID)
         XCTAssertThrowsError(try lone.create(title: "Two", source: .user, assignee: agentB, by: "user"))
     }
 
-    func testAgentOneIsNotTheUser() throws {
+    func testAgentOneIsNotTheUser() async throws {
         let id = try store.create(title: "Agent one's", source: .user, assignee: AgentOwner.defaultID, by: "user").id
         XCTAssertEqual(store.task(id)?.assignee, AgentOwner.defaultID)
         XCTAssertEqual(api.list(TaskListRequest(assignee: "user")).count, 0)
@@ -129,7 +129,7 @@ final class TaskAssigneeTests: XCTestCase {
 
     // MARK: S3, the filter
 
-    func testListFiltersByAssignee() throws {
+    func testListFiltersByAssignee() async throws {
         let a = try store.create(title: "For one", source: .user, assignee: AgentOwner.defaultID, by: "user").id
         let b = try store.create(title: "For two", source: .user, assignee: agentB, by: "user").id
         let me = try store.create(title: "For me", source: .user, by: "user").id
@@ -142,7 +142,7 @@ final class TaskAssigneeTests: XCTestCase {
         XCTAssertEqual(api.list(TaskListRequest(assignee: "agent_missing")).count, 0)
     }
 
-    func testTheMCPListFiltersByAssignee() throws {
+    func testTheMCPListFiltersByAssignee() async throws {
         let b = try store.create(title: "For two", source: .user, assignee: agentB, by: "user").id
         let me = try store.create(title: "For me", source: .user, by: "user").id
         func listed(_ args: [String: Any]) -> [String] {
@@ -157,7 +157,7 @@ final class TaskAssigneeTests: XCTestCase {
 
     // MARK: S4, older clients and old databases
 
-    func testAnUpdateWithoutTheFieldKeepsTheAssignee() throws {
+    func testAnUpdateWithoutTheFieldKeepsTheAssignee() async throws {
         let id = try store.create(title: "Kept", source: .user, assignee: agentB, by: "user").id
         try api.update(UpdateTaskRequest(id: id, title: "Kept, renamed"))
         XCTAssertEqual(api.task(id)?.assignee, agentB)
@@ -165,7 +165,7 @@ final class TaskAssigneeTests: XCTestCase {
         XCTAssertEqual(api.task(id)?.assignee, agentB)
     }
 
-    func testARequestWithoutAnAssigneeDecodes() throws {
+    func testARequestWithoutAnAssigneeDecodes() async throws {
         let create = try JSONDecoder().decode(CreateTaskRequest.self, from: Data(#"{"title":"Old","notes":"","status":"backlog","source":"user","links":[],"labels":{},"by":"user"}"#.utf8))
         XCTAssertNil(create.assignee)
         let update = try JSONDecoder().decode(UpdateTaskRequest.self, from: Data(#"{"id":"old","clearDue":false,"labels":{},"removeLabels":[],"by":"user"}"#.utf8))
@@ -174,7 +174,7 @@ final class TaskAssigneeTests: XCTestCase {
         XCTAssertNil(list.assignee)
     }
 
-    func testTasksFromBeforeTheMigrationBelongToTheUser() throws {
+    func testTasksFromBeforeTheMigrationBelongToTheUser() async throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-assignee-\(UUID().uuidString).db")
         defer { try? FileManager.default.removeItem(at: file) }
         var old: Database? = try Database(path: file, migrations: AppMigrations.all.filter { $0.version < 572 })
@@ -196,7 +196,7 @@ final class TaskAssigneeTests: XCTestCase {
 
     // MARK: S5, what the Mac shows
 
-    func testTheMacShowsYouOrTheAgentsName() throws {
+    func testTheMacShowsYouOrTheAgentsName() async throws {
         let agents = api.agents
         XCTAssertEqual(agents.map(\.id).sorted(), [AgentOwner.defaultID, agentB].sorted())
         XCTAssertEqual(TaskAssignee.name(nil, agents: agents), "You")
@@ -205,14 +205,14 @@ final class TaskAssigneeTests: XCTestCase {
         XCTAssertEqual(TaskAssignee.name("agent_gone", agents: agents), "agent_gone", "a deleted agent shows its id")
     }
 
-    func testThePickerListsTheUserThenEveryAgentAndKeepsADeletedOne() {
+    func testThePickerListsTheUserThenEveryAgentAndKeepsADeletedOne() async {
         let agents = api.agents
         XCTAssertEqual(TaskAssignee.choices(current: nil, agents: agents).map(\.name), ["You", "Ghost", "Agent 2"])
         XCTAssertEqual(TaskAssignee.choices(current: nil, agents: agents).first?.id, nil)
         XCTAssertEqual(TaskAssignee.choices(current: "agent_gone", agents: agents).last?.id, "agent_gone")
     }
 
-    func testChangingTheAssigneeInTheDetailUpdatesTheTaskAndAddsTheEvent() throws {
+    func testChangingTheAssigneeInTheDetailUpdatesTheTaskAndAddsTheEvent() async throws {
         let id = try api.create(CreateTaskRequest(title: "Detail edit", source: .user)).id
         try TaskEdits.setAssignee(agentB, of: id, in: api)
         XCTAssertEqual(api.task(id)?.assignee, agentB)
@@ -222,7 +222,7 @@ final class TaskAssigneeTests: XCTestCase {
         XCTAssertThrowsError(try TaskEdits.setAssignee("agent_missing", of: id, in: api))
     }
 
-    func testTheRemoteTaskCarriesTheAssigneeOnlyWhenSet() throws {
+    func testTheRemoteTaskCarriesTheAssigneeOnlyWhenSet() async throws {
         let mine = RemoteTask(try store.create(title: "Mine", source: .user, by: "user"))
         let theirs = RemoteTask(try store.create(title: "Theirs", source: .user, assignee: agentB, by: "user"))
         XCTAssertNil(mine.assignee)
