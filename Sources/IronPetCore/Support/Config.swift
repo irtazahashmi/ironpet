@@ -797,6 +797,7 @@ package struct Config: Codable, Equatable {
         c.memory.recallBytesProject = clamp(c.memory.recallBytesProject, Memory.recallBytesRange)
         c.memory.recallBytesPeople = clamp(c.memory.recallBytesPeople, Memory.recallBytesRange)
         c.memory.digestMinutes = clamp(c.memory.digestMinutes, Memory.digestMinutesRange)
+        c.tasks.inboxScanMinutes = clamp(c.tasks.inboxScanMinutes, Tasks.inboxScanMinutesRange)
         c.memory.maxClaimsPerEntity = clamp(c.memory.maxClaimsPerEntity, Memory.maxClaimsPerEntityRange)
         c.memory.noteMaxLength = clamp(c.memory.noteMaxLength, Memory.noteMaxLengthRange)
         c.jobs.retentionDays = clamp(c.jobs.retentionDays, Jobs.retentionDaysRange)

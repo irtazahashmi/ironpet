@@ -260,6 +260,13 @@ final class ConfigTests: XCTestCase {
         XCTAssertFalse(set.inboxScanBubbles)
     }
 
+    func testTheInboxScanIntervalIsClamped() throws {
+        try write(#"{"tasks":{"inboxScanMinutes":0}}"#)
+        XCTAssertEqual(Config.load(from: file).config.tasks.inboxScanMinutes, 5)
+        try write(#"{"tasks":{"inboxScanMinutes":99999}}"#)
+        XCTAssertEqual(Config.load(from: file).config.tasks.inboxScanMinutes, 1_440)
+    }
+
     func testRetiredTaskKeysInAnOldFileAreIgnored() throws {
         try write(#"{"tasks":{"dueReminders":false,"keepDoneDays":9,"scan":false,"scanMinutes":60,"meetingSuggestions":false}}"#)
         let (config, error) = Config.load(from: file)
