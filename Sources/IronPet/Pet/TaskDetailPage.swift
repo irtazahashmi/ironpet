@@ -128,6 +128,7 @@ struct TaskDetailPage: View {
                 .accessibilityLabel("Task title")
             Text("Created \(TaskDetail.time(task.created))")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
+            if let ref = task.ref { RecordIDLine(ref: ref) }
         }
     }
 

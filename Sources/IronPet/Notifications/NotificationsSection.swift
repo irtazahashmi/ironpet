@@ -159,7 +159,7 @@ struct NotificationsSection: View {
     }
 
     private func detail(_ item: NotificationItem) -> some View {
-        NotificationDetail(item: item, opener: model.opener, onBack: { model.close() })
+        NotificationDetail(item: item, ref: model.api.refs([item.id])[item.id], opener: model.opener, onBack: { model.close() })
             .onExitCommand { model.close() }
     }
 
@@ -199,6 +199,8 @@ struct NotificationsSection: View {
 /// A notification in full, as cards: the source, type and time over the title, then the summary, the description and the links.
 struct NotificationDetail: View {
     let item: NotificationItem
+    /// The notification's public `notif_` id, shown under the date.
+    var ref: String? = nil
     let opener: NotificationLinkOpener
     let onBack: () -> Void
 
@@ -222,6 +224,7 @@ struct NotificationDetail: View {
                 Text(item.title).font(.system(size: 24, weight: .bold)).textSelection(.enabled)
                 Label(item.created.formatted(date: .abbreviated, time: .shortened), systemImage: item.type.symbol)
                     .font(.system(size: 12)).foregroundStyle(.secondary)
+                if let ref { RecordIDLine(ref: ref) }
             }
             .padding(14)
             .frame(maxWidth: .infinity, alignment: .leading)

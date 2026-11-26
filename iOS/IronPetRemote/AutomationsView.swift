@@ -138,6 +138,7 @@ struct AutomationDetailView: View {
                         if let next = automation.nextRun, automation.enabled { LabeledContent("Next", value: next.formatted(date: .abbreviated, time: .shortened)) }
                         LabeledContent("Made by", value: automation.createdBy)
                         if let stream = automation.stream { LabeledContent("Stream", value: stream) }
+                        if let ref = automation.ref { RecordIDLine(ref: ref) }
                     }
                     if automation.waitsForApproval {
                         Section {
