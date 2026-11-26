@@ -360,15 +360,32 @@ package struct Config: Codable, Equatable {
     }
 
     package struct Tasks: Codable, Equatable {
-        package init(meetingSuggestions: Bool = true, meetingSuggestionBubbles: Bool = true) {
+        package init(meetingSuggestions: Bool = true, meetingSuggestionBubbles: Bool = true, inboxScan: Bool = false,
+                     inboxScanMinutes: Int = Tasks.defaultInboxScanMinutes, inboxScanScreen: Bool = false, inboxScanBubbles: Bool = true) {
             self.meetingSuggestions = meetingSuggestions
             self.meetingSuggestionBubbles = meetingSuggestionBubbles
+            self.inboxScan = inboxScan
+            self.inboxScanMinutes = inboxScanMinutes
+            self.inboxScanScreen = inboxScanScreen
+            self.inboxScanBubbles = inboxScanBubbles
         }
 
         /// After a meeting summary, add the action items that belong to "Me" to the inbox. Nothing is done with them without a click.
         package var meetingSuggestions = true
         /// Show the "From your meeting" bubble. Off skips only the bubble. The Inbox items and the notification are still added.
         package var meetingSuggestionBubbles = true
+        /// The inbox scan: every `inboxScanMinutes` it reads the chat messages that are new and adds what the user committed to or needs to
+        /// act on. Off by default, since each run sends text to an agent.
+        package var inboxScan = false
+        /// Minutes between two scans.
+        package var inboxScanMinutes = Tasks.defaultInboxScanMinutes
+        /// The scan also reads the text of the screen captures that are new. Needs screen capture to be on. Off by default.
+        package var inboxScanScreen = false
+        /// Show the bubble for items the scan added. Off skips only the bubble. The Inbox items and the notification are still added.
+        package var inboxScanBubbles = true
+
+        package static let defaultInboxScanMinutes = 30
+        package static let inboxScanMinutesRange = 5...1440
     }
 
     /// Background jobs: work an agent hands off to its own agent session (`jobs_start`), each shown in the chat.

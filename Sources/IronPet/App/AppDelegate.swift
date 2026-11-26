@@ -72,6 +72,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var jobToOpen: String?
     /// Ghost's memory: the background reflection pass and the search index. Nil until the database is open.
     private var memory: MemoryReflector?
+    private var inboxScanner: InboxScanner?
     /// Nil until the database is open, a moment after launch.
     private var activity: ActivityLog?
     private var remote: RemoteController?
@@ -427,6 +428,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         setUpScreenCapture(database)
         setUpDesktopControl()
         setUpMemory(database)
+        setUpInboxScan(tasks)
         setUpJobs(database, tasks: tasks)
         service.notifications = notificationStore
         service.latestThread = { ThreadStore.latest(automation: $0)?.id }
@@ -686,6 +688,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         })
         if !TestControl.isEnabled {
             DispatchQueue.main.asyncAfter(deadline: .now() + 60) { [weak reflector] in reflector?.tick() }
+        }
+    }
+
+    /// The Inbox scan: every `tasks.inboxScanMinutes` it reads the new chat messages and, when asked, the new screen text, and files what the
+    /// user committed to. It reads nothing while `tasks.inboxScan` is off.
+    private func setUpInboxScan(_ tasks: TaskStore) {
+        let scanner = InboxScanner(store: tasks, spawner: platform.processes)
+        scanner.automatic = !TestControl.isEnabled
+        scanner.config = { [config] in config.config.tasks }
+        scanner.captures = { [weak self] in self?.capture?.store.recent(limit: 200) ?? [] }
+        scanner.digestAgent = { [weak self] in self?.chat.agent.id }
+        scanner.added = { [weak self] added in
+            guard let self else { return }
+            offerSuggestions(added, bubble: config.config.tasks.inboxScanBubbles)
+        }
+        scanner.seedIfNeeded()
+        inboxScanner = scanner
+        timers.append(Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak scanner] _ in
+            MainActor.assumeIsolated { scanner?.tick() }
+        })
+        if !TestControl.isEnabled {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 90) { [weak scanner] in scanner?.tick() }
         }
     }
 
@@ -1447,11 +1471,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// One info bubble for suggestions that just arrived, from a meeting, a watcher or screen capture. They wait in the Inbox
     /// until the user or an agent marks them done or removes them.
-    private func offerSuggestions(_ added: [TaskSuggestion]) {
+    /// `bubble` overrides the switch the origin implies, for the scan, which has its own.
+    private func offerSuggestions(_ added: [TaskSuggestion], bubble: Bool? = nil) {
         guard !added.isEmpty else { return }
         for suggestion in added { activity?.record(.taskSuggested(suggestion)) }
         announcer.taskSuggestions(added, review: { [weak self] in self?.showTasks() },
-                                  bubble: Self.showsSuggestionBubble(for: added, config: config.config))
+                                  bubble: bubble ?? Self.showsSuggestionBubble(for: added, config: config.config))
     }
 
     /// A meeting's bubble follows its own switch. Suggestions from an automation always get theirs.
