@@ -67,9 +67,11 @@ struct TodayView: View {
     }
 
     static func emptyDetail(_ kind: Brief.Kind) -> String {
-        kind == .brief
-            ? "Due tasks, alerts, open action items from meetings and agents waiting on you show up here."
-            : "Finished agent turns, closed tasks, resolved alerts and meetings from today show up here."
+        switch kind {
+        case .brief: return "Due tasks, alerts, open action items from meetings and agents waiting on you show up here."
+        case .recap: return "Finished agent turns, closed tasks, resolved alerts and meetings from today show up here."
+        case .review: return "The inbox, projects without a next action, follow-ups, someday ideas and your goals show up here."
+        }
     }
 }
 

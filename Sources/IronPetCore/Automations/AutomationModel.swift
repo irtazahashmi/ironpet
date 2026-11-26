@@ -351,7 +351,7 @@ package enum AutomationValidator {
     package static let sessions = ["main", "chat", "new", "own", "fork"]
     package static let reports = ["bubble", "chat"]
     package static let untilValues = ["success", "once"]
-    package static let digestKinds = ["brief", "recap"]
+    package static let digestKinds = Brief.Kind.allCases.map(\.rawValue)
     package static let pollModes = ["json", "lines", "text", "exit_code"]
     package static let streamModes = ["lines", "json"]
     package static let buttons = ["done", "snooze"]

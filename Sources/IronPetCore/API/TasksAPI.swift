@@ -398,6 +398,7 @@ extension TasksAPI {
 extension TasksAPI {
     package var areas: [TaskArea] { store.areas }
     package var goals: [TaskGoal] { store.goals }
+    package var keyResults: [TaskKeyResult] { store.keyResults }
     package func keyResults(of goal: String) -> [TaskKeyResult] { store.keyResults(of: goal) }
     package func progress(of goal: String) -> Double? { store.progress(of: goal) }
     package func projects(serving goal: String) -> [TaskProject] { store.projects(serving: goal) }

@@ -299,7 +299,7 @@ package enum AutomationSchema {
             "session": { "enum": ["chat", "new", "own"], "description": "prompt action: chat (default) posts into the open chat. new runs in a fresh agent session every time. own reuses one thread for this automation and moves to a fresh agent session, with a handoff summary, when its transcript passes chat.sessionRolloverMB (agents other than Claude Code start a fresh thread after 50 runs). new and own runs show up in the thread list as automation runs, and have the agent's full tools minus disallowedTools. A prompt that uses {{item.*}} stays read-only whatever session says." },
             "allowedTools": { "type": "array", "items": { "type": "string" }, "description": "prompt action with session new or own: tools the agent may use without asking, such as Bash(gh pr list:*)." },
             "disallowedTools": { "type": "array", "items": { "type": "string" }, "description": "prompt action with session new or own: tools the agent may not use, such as Bash(rm:*) or WebFetch." },
-            "digest": { "enum": ["brief", "recap"], "description": "digest action: brief lists what needs you today, recap what happened today. Built from data on this Mac; no agent runs." }
+            "digest": { "enum": ["brief", "recap", "review"], "description": "digest action: brief lists what needs you today, recap what happened today, review prepares the weekly review. Built from data on this Mac; no agent runs." }
           }
         },
         "presentation": {

@@ -209,6 +209,7 @@ enum PreviewRenderer {
         render(today(.brief, brief), to: dir, "today-brief")
         render(today(.brief, brief), to: dir, "today-brief-light", scheme: .light)
         render(today(.recap, brief), to: dir, "today-recap")
+        render(today(.review, brief), to: dir, "today-review")
         render(today(.brief, BriefModel(briefs: [])), to: dir, "today-empty")
 
         renderUsage(to: dir)

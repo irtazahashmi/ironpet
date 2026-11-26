@@ -45,7 +45,8 @@ package final class BriefSource {
         let live = Array(sessions.sessions.values)
         let input = BriefInput(now: now, calendar: calendar, day: day, tasks: tasks.items, sessions: live, alerts: signals.signals,
                                meetings: meetings(since: min(since, today.start), until: now),
-                               activity: activity?.briefActivity(in: today) ?? Self.finishedSessions(live, in: today))
+                               activity: activity?.briefActivity(in: today) ?? Self.finishedSessions(live, in: today),
+                               suggestions: tasks.suggestions, projects: tasks.projects, goals: tasks.goals, keyResults: tasks.keyResults)
         return BriefBuilder.build(kind, input, meetingsSince: since)
     }
 
