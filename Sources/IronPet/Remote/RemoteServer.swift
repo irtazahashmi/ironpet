@@ -115,7 +115,6 @@ final class RemoteServer {
     private let uploads: RemoteUploads
     /// The messages phones sent over the event socket, so a resend creates nothing.
     private let sends = RemoteSendLedger()
-    private let taskChanges = RemoteTaskLedger()
     /// How often one message's `chat.item` event may reach a socket.
     var itemInterval: Duration = .milliseconds(100)
     private var tasks: [Task<Void, Never>] = []
@@ -316,46 +315,12 @@ final class RemoteServer {
             return Self.error(426, "upgrade_required", "this route is a WebSocket")
         }
 
-        router.get("/v1/tasks") { [self] request, context in
-            let query = Self.query(request)
-            return try await self.call(context) { try $0.list(query: query) }
-        }
-        router.post("/v1/tasks") { [self] request, context in
-            let body = try await Self.object(request, context)
-            return try await self.call(context, status: 201) { try $0.create(body) }
-        }
-        router.get("/v1/tasks/:id") { [self] _, context in
-            let id = Self.parameter(context, "id")
-            return try await self.call(context) { try $0.get(id) }
-        }
-        router.patch("/v1/tasks/:id") { [self] request, context in
-            let id = Self.parameter(context, "id")
-            let body = try await Self.object(request, context)
-            return try await self.call(context) { try $0.update(id, body) }
-        }
-        router.post("/v1/tasks/:id/close") { [self] request, context in
-            let id = Self.parameter(context, "id")
-            let body = try await Self.object(request, context)
-            return try await self.call(context) { try $0.close(id, body) }
-        }
-        router.delete("/v1/tasks/:id") { [self] _, context in
-            let id = Self.parameter(context, "id")
-            return try await self.call(context) { try $0.delete(id) }
-        }
-        router.get("/v1/task-filters") { [self] _, context in
-            try await self.call(context) { $0.filters() }
-        }
-        router.delete("/v1/task-filters/:id") { [self] _, context in
-            let id = Self.parameter(context, "id")
-            return try await self.call(context) { try $0.deleteFilter(id) }
-        }
         router.get("/v1/suggestions") { [self] _, context in
             try await self.call(context) { try $0.suggestions() }
         }
-        router.post("/v1/suggestions/:id/accept") { [self] request, context in
+        router.post("/v1/suggestions/:id/accept") { [self] _, context in
             let id = Self.parameter(context, "id")
-            let body = try await Self.object(request, context)
-            return try await self.call(context) { try $0.accept(id, body) }
+            return try await self.call(context) { try $0.accept(id) }
         }
         router.post("/v1/suggestions/:id/reject") { [self] request, context in
             let id = Self.parameter(context, "id")
@@ -780,12 +745,12 @@ final class RemoteServer {
         }
     }
 
-    /// Runs a task call on the main actor, as every other client of `IronPetAPI` does, and turns its result or error into a response.
+    /// Runs an inbox call on the main actor, as every other client of `IronPetAPI` does, and turns its result or error into a response.
     private func call(_ context: RemoteContext, status: Int = 200, _ body: @MainActor (RemoteTasks) throws -> [String: Any]) async throws -> Response {
-        guard let device = context.device else { return Self.error(401, "unauthorized", "unauthorized") }
-        let api = api, ledger = taskChanges
+        guard context.device != nil else { return Self.error(401, "unauthorized", "unauthorized") }
+        let api = api
         return await MainActor.run {
-            do { return Self.json(status, try body(RemoteTasks(api: api, by: "remote:\(device.id)", ledger: ledger))) } catch {
+            do { return Self.json(status, try body(RemoteTasks(api: api))) } catch {
                 return Self.errorResponse(RemoteFailure(error))
             }
         }

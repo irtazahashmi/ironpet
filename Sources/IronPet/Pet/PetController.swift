@@ -167,7 +167,7 @@ final class PetController: NSObject {
     /// For `/test/window`.
     var windowState: [String: Any] {
         ["visible": isWindowVisible, "section": windowModel.section.rawValue, "todayShown": windowModel.todayShown,
-         "briefKind": windowModel.briefKind.rawValue, "focusTask": windowModel.focusTask ?? "", "focusMeeting": windowModel.focusMeeting ?? ""]
+         "briefKind": windowModel.briefKind.rawValue, "focusMeeting": windowModel.focusMeeting ?? ""]
     }
 
     /// Lists or hides the Today row: a brief or recap automation is on.
@@ -182,12 +182,9 @@ final class PetController: NSObject {
         showWindow(.today)
     }
 
-    /// A Today row: its task or meeting in this window, its session in the editor or terminal, its alert's link.
+    /// A Today row: its meeting in this window, its session in the editor or terminal, its alert's link.
     func openBrief(_ target: Brief.Target) {
         switch target {
-        case .task(let id):
-            windowModel.focusTask = id
-            windowModel.section = .tasks
         case .meeting(let id):
             windowModel.focusMeeting = id
             windowModel.section = .transcripts
@@ -340,10 +337,7 @@ final class PetController: NSObject {
             if let session = store.sessions[id] { return jump(to: session) }
             onOpenSession?(id)
         }
-        opener.openTask = { [weak self] id in
-            self?.windowModel.focusTask = id
-            self?.windowModel.section = .tasks
-        }
+        opener.openTask = { [weak self] _ in self?.windowModel.section = .inbox }
         opener.openAlert = { [weak self] _ in self?.windowModel.section = .alerts }
         return opener
     }

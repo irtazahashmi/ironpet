@@ -70,14 +70,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var jobToOpen: String?
     /// Ghost's memory: the background reflection pass and the search index. Nil until the database is open.
     private var memory: MemoryReflector?
-    private var taskScanner: TaskScanner?
-    private var dueReminders: TaskDueReminders?
     /// Nil until the database is open, a moment after launch.
     private var activity: ActivityLog?
     private var remote: RemoteController?
     private var welcomeBack: WelcomeBack?
     private var brief: TodayAPI?
-    /// The task store, for the meeting suggestions and the test endpoints. Everything else uses `api.tasks`.
+    /// The inbox store, for the meeting suggestions and the test endpoints. Everything else uses `api.tasks`.
     private var taskStore: TaskStore?
     /// The Mac chat window's state, on top of `ChatAPI`. Built with the API.
     var chatModel: ChatViewModel!
@@ -345,8 +343,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             AutomationMigration.defaults(from: config.config, sentryConfigured: AutomationDefaults.sentryConfigured)
         }, builtIns: AutomationDefaults.builtIns)
         HeartbeatRemoval.runOnce(store: store)
-        // The task scan replaced Screen review. A user who had it on starts with the scan's screen source on.
-        ScreenReviewMigration.run(store: store, config: config)
         let engine = AutomationEngine(env: .init(
             now: { [weak self] in Date().addingTimeInterval(self?.testClockOffset ?? 0) },
             presence: SessionPresence(registry: clients, local: platform.presence),
@@ -420,7 +416,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         api.agents.focusHandler = { [weak pet] session in pet?.jump(to: session) }
         api.agents.askHandler = { [weak self] prompt in self?.ask(prompt) }
         api.alerts.askHandler = { [weak self] prompt in self?.ask(prompt) }
-        setUpDueReminders(tasks)
         setUpWelcomeBack(log, tasks: tasks)
         pet.settings = settingsModel
         pet.onSettings = { [weak self] in self?.showSettings(tab: nil) }
@@ -453,9 +448,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         signals.onDismiss = { [state = service.engine.state] id in state.closeAlert(signalID: id) }
         signals.reportIfUnavailable(database)
         service.nudge = { [weak self] moods in self?.pet.nudge(moods, each: moods == [.done] ? 3 : 4) }
-        service.tasks = tasks
         service.suggested = { [weak self] added in self?.offerSuggestions(added) }
-        setUpTaskScan(service, tasks: tasks)
         let workspace = store.paths.workspace
         // Not read by memory: this restricted run is for prompts with item text from outside, and its answer is built from that text.
         let spawner = platform.processes
@@ -522,7 +515,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Background jobs (`jobs_start`): rows in the Agents section, Allow and Deny bubbles for their approvals, and their
     /// threads in the chat.
     private func setUpJobs(_ database: Database, tasks: TaskStore) {
-        let service = JobService(database: database, tasks: tasks)
+        let service = JobService(database: database)
         service.spawner = platform.processes
         service.currentAgent = { [weak self] in self.map { ($0.chat.agent, $0.chat.model) } }
         service.onChange = { [weak self] job in
@@ -596,7 +589,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         context.jobs = { [weak self] in self?.jobs }
         context.sessions = { [weak self] in self?.store.ordered.filter { $0.source != .job } ?? [] }
         context.resolveAgent = { [weak self] id in try AgentOwner.resolve(id, registry: self?.api?.agentRecords?.registry) }
-        context.tasks = { [weak self] in self?.api?.tasks }
         context.alerts = { [weak self] in self?.signals.signals ?? [] }
         context.brief = { [weak self] kind in self?.brief?.brief(BriefRequest(kind: kind)) }
         context.meetings = { [weak self] in
@@ -674,7 +666,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         reflector.automatic = !TestControl.isEnabled
         reflector.onChange = { [weak self] in self?.settingsModel.memory?.reload() }
         reflector.seedIfNeeded()
-        reflector.tasks = { [weak self] in self?.taskStore?.tasks ?? [] }
         reflector.captures = { [weak self] in self?.capture?.store.recent(limit: 200) ?? [] }
         reflector.digestAgent = { [weak self] in self?.chat.agent.id }
         // A name that stays ambiguous is asked once, not again with a notification every digest.
@@ -696,27 +687,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// The task scan is a system automation: the engine runs it, but it is not in `automations.json`, so the Automations list never
-    /// shows it. Settings → Tasks turns it off and sets the interval, and `apply(config:previous:)` passes that on.
-    private func setUpTaskScan(_ service: AutomationService, tasks: TaskStore) {
-        let scanner = TaskScanner(store: tasks, spawner: platform.processes)
-        scanner.config = { [config] in config.config }
-        scanner.captures = { [weak self] in self?.capture?.store.recent(limit: 200) ?? [] }
-        scanner.digestAgent = { [weak self] in self?.chat.agent.id }
-        scanner.onFiled = { [weak self] added in self?.offerSuggestions(added) }
-        scanner.seedIfNeeded()
-        taskScanner = scanner
-        service.runTaskScan = { [weak scanner] in await scanner?.scan() ?? TaskScanner.Outcome(skipped: true) }
-        // A test run starts no scan of its own, so an e2e scenario never files suggestions it did not ask for.
-        service.system = TestControl.isEnabled ? [] : AutomationDefaults.system(for: config.config.tasks)
-    }
-
     /// A summary was written or regenerated. `agent` wrote it; nil is the summary agent in Settings, which regeneration uses.
     private func memorySawMeeting(_ folder: URL, agent: String?) {
         EntityMemoryStore.shared.index.indexMeeting(folder)
         let writer = agent ?? config.config.meetings.summaryAgent
         memory?.meetingSummaryWritten(folder, agent: writer)
-        taskScanner?.meetingSummaryWritten(folder, agent: writer)
     }
 
     private func memorySawAutomation(_ id: String, answer: String, agent: String) {
@@ -893,10 +868,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     /// Applies settings that need more than being read at the point of use.
     private func apply(config new: Config, previous old: Config) {
-        if new.tasks.scan != old.tasks.scan || new.tasks.scanMinutes != old.tasks.scanMinutes, !TestControl.isEnabled {
-            automations.system = AutomationDefaults.system(for: new.tasks)
-        }
-        if !new.tasks.scan { taskScanner?.cancel() }
         updates.apply(new.updates)
         let (newAgents, oldAgents) = (hookAgents(in: new), hookAgents(in: old))
         setHooks(installed: newAgents.filter { !oldAgents.contains($0) })
@@ -1105,11 +1076,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// Shows a record in the section that owns it. A record with no page of its own opens the nearest one.
     private func openRecord(_ found: RecordResolver.Found) {
         switch found.kind {
-        case .task:
-            pet.windowModel.focusTask = found.key
-            pet.showWindow(.tasks)
-        case .filter:
-            pet.showWindow(.tasks)
         case .job:
             openJob(found.key)
         case .auto, .run:
@@ -1469,8 +1435,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         offerSuggestions(tasks.suggest(items, meeting: meeting))
     }
 
-    /// One info bubble for suggestions that just arrived, from a meeting, a watcher or screen capture. They wait until the Tasks tab
-    /// or a reviewing agent adds or rejects them.
+    /// One info bubble for suggestions that just arrived, from a meeting, a watcher or screen capture. They wait in the Inbox
+    /// until the user or an agent marks them done or removes them.
     private func offerSuggestions(_ added: [TaskSuggestion]) {
         guard !added.isEmpty else { return }
         for suggestion in added { activity?.record(.taskSuggested(suggestion)) }
@@ -1478,27 +1444,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func showTasks() {
-        pet.showWindow(.tasks)
-    }
-
-    private func setUpDueReminders(_ tasks: TaskStore) {
-        let reminders = TaskDueReminders(store: tasks, now: { [weak self] in Date().addingTimeInterval(self?.testClockOffset ?? 0) })
-        let bubbles = announcer.bubbles
-        reminders.isShowing = { bubbles.bubbles.contains { $0.id == Announcer.tasksDueID } }
-        reminders.hide = { bubbles.dismiss(Announcer.tasksDueID) }
-        reminders.show = { [weak self, weak reminders] list, isNew in
-            if isNew { for task in list { self?.activity?.record(.taskDue(task)) } }
-            let ids = list.map(\.id)
-            self?.announcer.tasksDue(list, chime: isNew, done: { reminders?.done(ids) }, snooze: { reminders?.snooze(ids) },
-                                     open: { self?.showTasks() })
-        }
-        // Async, so a bubble button that changes a task finishes and closes its bubble before the check replaces it.
-        tasks.onChange = { [weak reminders] _ in DispatchQueue.main.async { reminders?.check() } }
-        dueReminders = reminders
-        timers.append(Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak reminders] _ in
-            MainActor.assumeIsolated { reminders?.check() }
-        })
-        DispatchQueue.main.asyncAfter(deadline: .now() + 5) { [weak reminders] in reminders?.check() }
+        pet.showWindow(.inbox)
     }
 
     /// Sums up what happened when the user comes back after being away. Samples the idle time every 2 s, because the
@@ -1517,7 +1463,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let welcome = WelcomeBack(log: log, bubbles: announcer.bubbles, env: env)
         welcome.live = { [weak self, tasks] in
             guard let self else { return .init() }
-            return WelcomeBack.liveState(sessions: Array(store.sessions.values), signals: signals.signals, tasks: tasks.tasks,
+            return WelcomeBack.liveState(sessions: Array(store.sessions.values), signals: signals.signals,
                                          suggestions: tasks.suggestions, now: Date())
         }
         welcome.show = { [weak self] digest, away in

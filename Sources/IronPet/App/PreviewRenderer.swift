@@ -1,8 +1,6 @@
 import AppKit
 import ImageIO
 import IronPetCore
-import enum IronPetKit.BuiltInQuickFilters
-import enum IronPetKit.QuickFilterSelection
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -166,35 +164,13 @@ enum PreviewRenderer {
         ConfigStore.shared.usePreview(captureOff)
         render(ScreenSection(model: CaptureStatusModel()).frame(width: 600, height: 460).panel(), to: dir, "screen-off")
         ConfigStore.shared.usePreview(screenConfig)
-        render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks")
-        render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks-light", scheme: .light)
-        // Tall enough to show the folded groups at the end: Someday, Deferred and Done.
-        render(list(sessions, tasks: tasks, on: .tasks, height: 1200), to: dir, "tasks-all-groups")
-        // The Projects view: next actions per project, and a stalled one.
-        TaskViewMode.projects.save()
-        render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks-projects")
-        TaskViewMode.goals.save()
-        render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks-goals")
-        TaskViewMode.list.save()
-        // The Next actions chip, selected: the open tasks grouped under their contexts.
-        QuickFilterSelection.save(BuiltInQuickFilters.nextActionsID)
-        render(list(sessions, tasks: tasks, on: .tasks, height: 1000), to: dir, "tasks-next-actions")
-        QuickFilterSelection.save(nil)
-        for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
-            render(TaskBoardView(columns: TaskBoard.columns(tasks.all, filter: nil, query: ""), onOpen: { _ in }, onDrop: { _, _ in })
-                .frame(width: 1480, height: 520).panel(), to: dir, "tasks-board" + suffix, scheme: scheme)
-        }
-        if let sample = tasks.all.first {
-            render(TaskDetailPage(tasks: tasks, id: sample.id, onBack: {}, onOpen: { _ in }).frame(width: 760, height: 1000).panel(), to: dir, "task-detail")
-            render(TaskDetailPage(tasks: tasks, id: sample.id, onBack: {}, onOpen: { _ in }).frame(width: 760, height: 1000).panel(), to: dir, "task-detail-light", scheme: .light)
-        }
-        render(LabelPopover(others: [["merge": "auto", "repo": "app"], ["merge": "manual"]], own: [:], onAdd: { _, _ in nil }, onDone: {})
-            .frame(width: 260).padding(8).panel(), to: dir, "task-label-popover")
+        render(list(sessions, tasks: tasks, on: .inbox), to: dir, "inbox")
+        render(list(sessions, tasks: tasks, on: .inbox), to: dir, "inbox-light", scheme: .light)
         let noTasks = TasksAPI(store: TaskStore(database: Database.open(path: nil, migrations: TaskStore.migrations).database))
-        render(list(sessions, tasks: noTasks, on: .tasks), to: dir, "tasks-empty")
+        render(list(sessions, tasks: noTasks, on: .inbox), to: dir, "inbox-empty")
 
         // Today, from the same sample stores plus a meeting on the last weekday and a few agent turns from today.
-        let briefSource = BriefSource(tasks: tasks, sessions: sessions, signals: signals, meetingsRoot: sampleBriefMeetings(),
+        let briefSource = BriefSource(sessions: sessions, signals: signals, meetingsRoot: sampleBriefMeetings(),
                                       activity: FixedBriefActivity(events: sampleActivity))
         let brief = BriefModel(source: TodayAPI(source: briefSource))
         brief.weekdays = { AutomationDefaults.weekdays }
@@ -211,7 +187,6 @@ enum PreviewRenderer {
         render(today(.brief, brief), to: dir, "today-brief")
         render(today(.brief, brief), to: dir, "today-brief-light", scheme: .light)
         render(today(.recap, brief), to: dir, "today-recap")
-        render(today(.review, brief), to: dir, "today-review")
         render(today(.brief, BriefModel(briefs: [])), to: dir, "today-empty")
 
         renderUsage(to: dir)
@@ -393,18 +368,6 @@ enum PreviewRenderer {
                               subtitle: "Your agent is still working, good moment for it.", body: water.body,
                               actions: [.init("done", "Done", style: .primary) {}, .init("snooze", "Snooze 10 min") {}])
         render(PetScene(atlas: atlas, row: .drinking, frame: 3, bubbles: [reminder]), to: dir, "reminder")
-        let today = Calendar.current.startOfDay(for: Date())
-        let due = [("Fix the flaky login test", today.addingTimeInterval(-86_400)), ("Send the deck to Maya", today),
-                   ("Renew the domain before it lapses on Friday", Date().addingTimeInterval(-600))].map { title, date in
-            TaskItem(id: title, title: title, notes: "", status: .backlog, source: .chat, due: date, links: [],
-                     created: Date(), updated: Date(), closed: nil)
-        }
-        render(PetScene(atlas: atlas, row: .waiting, frame: 0,
-                        bubbles: [Announcer.tasksDueBubble(Array(due.prefix(1)), now: Date(), done: {}, snooze: {}, open: {})]),
-               to: dir, "task-due")
-        render(PetScene(atlas: atlas, row: .waiting, frame: 0,
-                        bubbles: [Announcer.tasksDueBubble(due, now: Date(), done: {}, snooze: {}, open: {})]),
-               to: dir, "task-due-several")
         for (kind, automation) in [(Brief.Kind.brief, AutomationDefaults.morningBrief()), (.recap, AutomationDefaults.dayRecap())] {
             let bubble = Announcer.briefBubble(briefSource.build(kind, weekdays: AutomationDefaults.weekdays), automation: automation,
                                                now: Date(), open: {})
@@ -424,7 +387,6 @@ enum PreviewRenderer {
                   extra: ["label": "CI failed"]),
             event(.sessionDone, "codex:2", "api", minutes: 10),
             event(.sessionDone, "claude:3", "website", minutes: 30),
-            event(.taskDue, "renew", "Renew the domain before it lapses on Friday", minutes: 1),
             event(.meetingSummary, "/m/summary.md", "2026-11-17 10-00 Standup", minutes: 50),
         ]
         func welcome(_ events: [ActivityEvent]) -> BubbleDraft {
@@ -837,72 +799,7 @@ enum PreviewRenderer {
 
     private static func sampleTasks() -> TasksAPI {
         var clock = Date()
-        // The app's migrations, not only the task store's, so each sample task gets its public id as in the app.
         let store = TaskStore(database: Database.open(path: nil, migrations: AppMigrations.all).database, now: { clock })
-        let day: TimeInterval = 86_400
-        func add(_ title: String, _ status: TaskStatus, _ source: TaskSource, ago: TimeInterval, due: Date? = nil,
-                 notes: String = "", links: [TaskLink] = [], waitingOn: String? = nil) {
-            clock = Date().addingTimeInterval(-ago)
-            _ = try? store.create(title: title, notes: notes, status: status, source: source, due: due, links: links,
-                                  waitingOn: waitingOn, by: "agent:mcp")
-        }
-        let today = Calendar.current.startOfDay(for: Date())
-        add("Approve the staging deploy for the rate limiter", .needsYou, .agent, ago: 600,
-            notes: "## Why now\n\nThe canary has been **green for an hour**. Steps:\n\n- check the `rate_limit` dashboard\n- read https://example.com/runbook\n- ask ops@example.com if unsure\n\nSee [the PR](https://github.com/you/api-server/pull/17).",
-            links: [TaskLink(kind: .url, ref: "https://github.com/you/api-server/pull/17", label: "PR #17"),
-                    TaskLink(kind: .thread, ref: "t1", label: nil), TaskLink(kind: .file, ref: "/Users/you/notes/deploy.md", label: nil)])
-        _ = try? store.update(store.ordered[0].id, addLabels: ["merge": "auto", "repo": "api-server", "area": "payments", "context": "mac"], by: "agent:mcp")
-        add("Fix the flaky login test", .inProgress, .chat, ago: 1500, due: today.addingTimeInterval(-day),
-            links: [TaskLink(kind: .session, ref: "3", label: nil), TaskLink(kind: .thread, ref: "t1", label: nil)])
-        add("Make the settings page work on mobile", .inProgress, .telegram, ago: 3 * 3600,
-            due: today.addingTimeInterval(2 * day + 17 * 3600))
-        add("Write the release notes for 2.4", .backlog, .meeting, ago: day, due: today.addingTimeInterval(4 * day),
-            links: [TaskLink(kind: .file, ref: "/Users/you/.ironpet/meetings/2026-11-15-1000", label: "Meeting")])
-        add("Upgrade the docs site to Node 20", .backlog, .cli, ago: 2 * day)
-        add("Send the updated pricing deck", .backlog, .meeting, ago: day + 1800, due: today.addingTimeInterval(3 * day),
-            links: [TaskLink(kind: .file, ref: "/Users/you/.ironpet/meetings/2026-11-15-1000", label: "Meeting")], waitingOn: "Ana")
-        add("Rotate the Sentry token", .done, .user, ago: 2 * 3600)
-        add("Answer Maya about the onboarding copy", .done, .meeting, ago: day + 3600)
-        add("Remove the old feature flags", .done, .agent, ago: 3 * day)
-        if let deck = store.tasks.first(where: { $0.title == "Send the updated pricing deck" }) {
-            _ = try? store.update(deck.id, askedAt: today.addingTimeInterval(-9 * day), by: "agent:mcp")
-        }
-        add("Learn to bake sourdough", .someday, .chat, ago: 5 * day)
-        add("Renew the domain", .backlog, .user, ago: day)
-        if let renew = store.tasks.first(where: { $0.title == "Renew the domain" }) {
-            _ = try? store.update(renew.id, deferUntil: .some(today.addingTimeInterval(10 * day)), by: "agent:mcp")
-        }
-        if let launch = try? store.upsertProject(id: nil, title: "Ship release 2.4", outcome: "2.4 is in the App Store", area: "Work", goal: nil,
-                                                  status: nil, reviewDays: 7) {
-            for title in ["Write the release notes for 2.4", "Fix the flaky login test"] {
-                if let task = store.tasks.first(where: { $0.title == title }) { _ = try? store.update(task.id, project: .some(launch.id), by: "agent:mcp") }
-            }
-        }
-        _ = try? store.upsertProject(id: nil, title: "Move to the new office", outcome: "The team works from Kalasatama", area: "Work",
-                                     goal: nil, status: nil, reviewDays: nil)
-        if let work = try? store.upsertArea(id: nil, title: "Work", notes: nil),
-           let grow = try? store.upsertGoal(id: nil, title: "Grow the app to 10k users", why: "Enough to go full time", area: .some(work.id),
-                                            status: nil, due: nil) {
-            _ = try? store.upsertKeyResult(id: nil, goal: grow.id, metric: "Weekly active users", start: 2_000, target: 10_000, current: 6_400,
-                                           unit: .some("users"), due: nil, source: nil)
-            _ = try? store.upsertKeyResult(id: nil, goal: grow.id, metric: "App Store rating", start: 3.9, target: 4.6, current: 4.4,
-                                           unit: nil, due: nil, source: nil)
-            if let launch = store.projects.first(where: { $0.title == "Ship release 2.4" }) {
-                _ = try? store.upsertProject(id: launch.id, title: nil, outcome: nil, area: nil, goal: .some(grow.id), status: nil, reviewDays: nil)
-            }
-        }
-        if let health = try? store.upsertArea(id: nil, title: "Health", notes: nil),
-           let run = try? store.upsertGoal(id: nil, title: "Run a half marathon", why: "", area: .some(health.id), status: nil, due: nil) {
-            _ = try? store.upsertKeyResult(id: nil, goal: run.id, metric: "Longest run", start: 5, target: 21, current: 12, unit: .some("km"),
-                                           due: nil, source: nil)
-        }
-        _ = try? store.upsertProject(id: nil, title: "Learn Rust", outcome: "", area: "Growth", goal: nil, status: .someday, reviewDays: nil)
-        for (title, context) in [("Make the settings page work on mobile", "phone"), ("Fix the flaky login test", "mac"),
-                                 ("Upgrade the docs site to Node 20", "agent")] {
-            if let task = store.tasks.first(where: { $0.title == title }) {
-                _ = try? store.update(task.id, addLabels: ["context": context], by: "agent:mcp")
-            }
-        }
         clock = Date().addingTimeInterval(-900)
         store.suggest([("Send the design review notes to the team", "Friday", nil), ("Share the load test results", nil, "Priya")],
                       meeting: URL(fileURLWithPath: "/Users/you/.ironpet/meetings/2026-11-16-1500"))
@@ -910,21 +807,8 @@ enum PreviewRenderer {
         store.suggest([TaskSuggestion.Draft(key: "msg-1", title: "Reply to Sam about the Q4 budget", due: nil,
                                             url: URL(string: "https://mail.google.com/mail/u/0/#inbox/1"))],
                       automation: "gmail-watch", name: "Gmail watcher")
-        // What the task scan files: a new task, and a change to a task that exists.
-        clock = Date().addingTimeInterval(-120)
-        var deck = TaskSuggestion.Draft(key: "scan", title: "Send Tom the deck", due: "2026-11-26")
-        deck.clarify = TaskSuggestion.Clarify(context: .mac, area: "Sales", twoMinute: true)
-        store.suggest(scan: [deck])
-        if let target = store.tasks.first(where: { $0.title == "Send the updated pricing deck" }) {
-            store.suggest(scanUpdates: [(TaskSuggestion.Update(target: target.id, targetTitle: target.title, note: "Sent on Tuesday, Ana confirmed.",
-                                                               markDone: true), nil)])
-        }
         clock = Date()
-        let api = TasksAPI(store: store)
-        _ = try? api.upsertQuickFilter(id: nil, name: "Open", query: ["not": ["status": "done"]])
-        _ = try? api.upsertQuickFilter(id: nil, name: "Needs me", query: ["status": "needs_you"])
-        _ = try? api.upsertQuickFilter(id: nil, name: "Due soon", query: ["and": [["due": ["before": "2099-01-01"]], ["not": ["status": "done"]]]])
-        return api
+        return TasksAPI(store: store)
     }
 
     private static var sampleSignals: [Signal] {
