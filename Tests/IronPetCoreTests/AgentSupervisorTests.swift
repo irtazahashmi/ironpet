@@ -199,12 +199,15 @@ final class AgentSupervisorTests: XCTestCase {
         XCTAssertEqual(launcher.live("agent_b")[0].launch.model, "sonnet")
     }
 
-    func testARenameRestartsToo() {
+    func testARenameDoesNotRestart() {
         let supervisor = supervisor()
         supervisor.reconcile()
+        let old = launcher.live("agent_b")[0]
         records[1].name = "Rabbit"
         supervisor.reconcile()
-        XCTAssertEqual(launcher.live("agent_b")[0].launch.name, "Rabbit")
+        XCTAssertFalse(old.stopped)
+        XCTAssertEqual(launcher.launched.count, 2)
+        XCTAssertEqual(supervisor.running["agent_b"]?.name, "Rabbit")
     }
 
     func testANewAgentStartsAndADeletedOneStops() {

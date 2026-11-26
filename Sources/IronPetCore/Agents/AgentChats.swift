@@ -18,6 +18,10 @@ package final class ChatAgentProcess: AgentProcess {
         session.onAgentCrash = nil
         end()
     }
+
+    package func adopts(_ launch: AgentLaunch) -> Bool {
+        session.agent.id == launch.cli && session.model == launch.model && session.instructions == launch.instructions
+    }
 }
 
 /// The chats of the agents that run on this node, one `ChatSession` and one `ChatAPI` each, and the way a call finds the right one.

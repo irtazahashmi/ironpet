@@ -20,6 +20,11 @@ package struct AgentLaunch: Equatable, Sendable {
     package var cli: String
     package var model: String?
     package var instructions: String
+
+    /// Whether a process started with `other` would behave the same as one started with this. A rename changes nothing the process uses.
+    func sameProcess(as other: AgentLaunch) -> Bool {
+        cli == other.cli && model == other.model && instructions == other.instructions
+    }
 }
 
 /// One running agent process, as the supervisor sees it. The Mac app's is the agent's chat runtime; a test's is a fake.
@@ -29,6 +34,13 @@ package protocol AgentProcess: AnyObject {
     var onCrash: (@MainActor () -> Void)? { get set }
     /// Ends the process. Does not call `onCrash`.
     func stop()
+    /// True when this process already runs with `launch`, for example because the chat's own picker changed the model it uses. The
+    /// supervisor then keeps it instead of ending a turn that is in progress.
+    func adopts(_ launch: AgentLaunch) -> Bool
+}
+
+extension AgentProcess {
+    package func adopts(_ launch: AgentLaunch) -> Bool { false }
 }
 
 @MainActor
@@ -136,6 +148,11 @@ package final class AgentSupervisor {
         for (id, launch) in wanted.sorted(by: { $0.key < $1.key }) {
             if var entry = entries[id] {
                 guard entry.launch != launch else { continue }
+                if entry.launch.sameProcess(as: launch) || entry.process?.adopts(launch) == true {
+                    entry.launch = launch
+                    entries[id] = entry
+                    continue
+                }
                 if !changed { changes.send(); changed = true }
                 entry.cancelRestart?()
                 entry.process?.stop()
