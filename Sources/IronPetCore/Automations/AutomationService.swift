@@ -1093,12 +1093,22 @@ package final class AutomationService {
         }
     }
 
+    /// Runs the `inbox` automations for items that were just added to the inbox.
+    package func inboxItemsAdded(_ items: [TaskSuggestion]) {
+        engine.inboxItemsArrived(items.map { item in
+            var values = TaskJSON.json(item)
+            if case .automation(let id, _) = item.origin { values["origin_id"] = id }
+            return values
+        })
+    }
+
     package func describe(_ t: Automation.Trigger) -> String {
         switch t.type {
         case "interval": return "every \(Int(t.minutes ?? 0)) min (\(t.clock == "wall" ? "clock time" : "keyboard time"))"
         case "daily": return "daily at \((t.times ?? []).joined(separator: ", "))" + (t.weekdays.map { " on \($0.joined(separator: ", "))" } ?? "")
         case "once": return "once at \(t.at ?? "?")"
         case "script": return "runs a script every \(Int(t.minutes ?? 0)) min"
+        case "inbox": return "runs for each new inbox item"
         case "stream":
             let command = (t.command ?? "").split(whereSeparator: \.isNewline).first.map(String.init) ?? ""
             return "streams `\(command.count > 60 ? String(command.prefix(60)) + "…" : command)`"

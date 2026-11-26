@@ -61,6 +61,14 @@ package final class TasksAPI {
         store.suggest(request.draft, agent: request.kind, sourceRef: request.sourceRef)
     }
 
+    /// The notes on an item, oldest first.
+    package func notes(for id: String) -> [InboxNote] { store.notes(for: id) }
+
+    /// Adds a note to an item. `by` says who wrote it, such as `cli` or `agent:mcp`.
+    package func addNote(_ id: String, text: String, by: String) throws {
+        try run { try store.addNote(id, text: text, by: by) }
+    }
+
     /// Takes the item off the list. Nothing else is created.
     package func done(_ id: String) throws {
         try run { try store.done(id) }
