@@ -86,7 +86,7 @@ struct PromptsSettingsBody: View {
     var body: some View {
         Form {
             Section {
-                Text("What Ghost tells the agent on its own. Changes apply to the next run. Words in braces, such as {name}, are filled in on each run.")
+                Text("What Ghost tells the pet on its own. Changes apply to the next run. Words in braces, such as {name}, are filled in on each run.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
                 Picker("Prompt", selection: Binding(get: { state.selected ?? "" }, set: { state.select($0) })) {

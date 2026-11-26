@@ -110,7 +110,7 @@ struct UsageSettings: View {
                     Text("\(summary.uncostedEvents) \(summary.uncostedEvents == 1 ? "request" : "requests") in this range reported no cost and count as 0.")
                         .font(.caption).foregroundStyle(.secondary)
                 }
-                Text("Only what ironpet runs itself: chat (Telegram included), automation prompts, meeting summaries and transcription. Band agents and Claude Code or Codex sessions started elsewhere are not counted. Numbers come from the agent or provider, never estimated, and stay on this Mac.")
+                Text("Only what ironpet runs itself: chat (Telegram included), automation prompts, meeting summaries and transcription. Band sessions and Claude Code or Codex sessions started elsewhere are not counted. Numbers come from the harness or provider, never estimated, and stay on this Mac.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section("By feature and model") {
@@ -308,7 +308,7 @@ struct UsageSettings: View {
                     }
                 }
             }
-            Text("A dash means the agent or provider did not report it. Time is the turn length for agents and the audio length the provider reported for transcription.")
+            Text("A dash means the harness or provider did not report it. Time is the turn length for pets and the audio length the provider reported for transcription.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

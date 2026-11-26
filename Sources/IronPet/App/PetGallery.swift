@@ -11,7 +11,8 @@ final class PetClock: ObservableObject {
 }
 
 /// Backs the pet gallery in Settings. One timer drives every tile's animation and another polls the pets folder, and
-/// both run only while the General page of the ironpet window is on screen.
+/// both run only while a pet's details are on screen. The gallery edits one pet at a time: the first pet's image lives in
+/// `config.pet.sprite`, every other pet's in its record.
 @MainActor
 final class PetGalleryModel: ObservableObject {
     @Published private(set) var entries: [PetEntry] = []
@@ -28,6 +29,11 @@ final class PetGalleryModel: ObservableObject {
     /// The pet API the gallery selects and imports through. `AppDelegate` sets the app's; the default works on `library`.
     lazy var api = PetAPI(settings: .live, assets: MacPetAssets(library: library, bundled: bundled, backgrounds: ChatBackground.folder))
     private let spriteOverride: (() -> String?)?
+    /// The sprite of the pet whose details are open, for the "current" tile when its sheet lives outside the pets folder.
+    var currentSprite: (() -> String?)?
+    /// A pet waiting for a built sheet: the sheets known when the build started, so the first new one goes to that pet.
+    private var pendingBuild: (petID: String, records: AgentRecordsAPI?, known: Set<String>)?
+    private lazy var assets = MacPetAssets(library: library, bundled: bundled, backgrounds: ChatBackground.folder)
     private var animationTimer: Timer?
     private var pollTimer: Timer?
     private var signature: PetFolderSignature?
@@ -42,7 +48,7 @@ final class PetGalleryModel: ObservableObject {
         self.spriteOverride = sprite
     }
 
-    private var sprite: String? { spriteOverride.map { $0() } ?? SettingsAPI.live.config.pet.sprite }
+    private var sprite: String? { spriteOverride.map { $0() } ?? currentSprite?() ?? SettingsAPI.live.config.pet.sprite }
 
     var isActive: Bool { viewShown && windowShown }
 
@@ -101,47 +107,100 @@ final class PetGalleryModel: ObservableObject {
             await MainActor.run { [weak self] in
                 guard let self, self.generation == id else { return }
                 self.entries = entries
+                self.assignBuilt(from: entries)
             }
         }
     }
 
-    func select(_ entry: PetEntry) {
-        api.select(entry)
+    private static func isFirst(_ petID: String) -> Bool { petID == AgentRegistry.chatAgentID }
+
+    /// Makes `entry` the image of the pet `petID`.
+    func select(_ entry: PetEntry, petID: String, records: AgentRecordsAPI?) {
+        if Self.isFirst(petID) {
+            api.select(entry)
+        } else {
+            setSprite(PetLibrary.tildePath(entry.url), petID: petID, records: records)
+        }
     }
 
-    /// Copies a sheet the user picked into the pets folder and makes it the pet.
-    func add(_ url: URL) {
+    /// Puts the pet back on the bundled Ghost.
+    func reset(petID: String, records: AgentRecordsAPI?) {
+        if Self.isFirst(petID) {
+            SettingsAPI.live.update { $0.pet.sprite = nil }
+        } else {
+            setSprite("", petID: petID, records: records)
+        }
+    }
+
+    private func setSprite(_ path: String, petID: String, records: AgentRecordsAPI?) {
         do {
-            try api.importPet(url)
+            try records?.update(UpdateAgentRequest(id: petID, pet: path))
+            importError = nil
+        } catch {
+            importError = (error as? APIError)?.message ?? error.localizedDescription
+        }
+    }
+
+    /// Copies a sheet the user picked into the pets folder and makes it the image of the pet `petID`.
+    func add(_ url: URL, petID: String, records: AgentRecordsAPI?) {
+        do {
+            if Self.isFirst(petID) {
+                try api.importPet(url)
+            } else {
+                let entry: PetEntry
+                do { entry = try assets.importSheet(url) } catch { throw APIError.invalid(error.localizedDescription) }
+                setSprite(PetLibrary.tildePath(entry.url), petID: petID, records: records)
+            }
             importError = nil
             reload()
         } catch {
             importError = (error as? APIError)?.message ?? error.localizedDescription
         }
     }
+
+    /// "Build a new pet" was sent for this pet. The first sheet that shows up in the pets folder afterwards becomes its image.
+    func buildStarted(petID: String, records: AgentRecordsAPI?) {
+        pendingBuild = (petID, records, Set(entries.map(\.id)))
+    }
+
+    private func assignBuilt(from entries: [PetEntry]) {
+        guard let pending = pendingBuild, let entry = entries.first(where: { !pending.known.contains($0.id) }) else { return }
+        pendingBuild = nil
+        select(entry, petID: pending.petID, records: pending.records)
+    }
 }
 
+/// The image picker of one pet's details: the sprite grid, "Build a new pet", "Add from file…" and "Reset".
 struct PetGallery: View {
     @ObservedObject var gallery: PetGalleryModel
+    let petID: String
+    @ObservedObject var records: AgentRecordsAPI
     var buildPet: (String) -> Void
     @ObservedObject private var store = SettingsAPI.live
     @State private var asking = false
 
+    /// The sheet this pet shows. Nil is the bundled Ghost.
+    private var sprite: String? {
+        petID == AgentRegistry.chatAgentID ? store.config.pet.sprite : (try? records.get(petID))?.pet
+    }
+
     private let columns = [GridItem(.adaptive(minimum: 92, maximum: 120), spacing: 10)]
 
     var body: some View {
-        let selected = PetLibrary.selectedID(in: gallery.entries, sprite: store.config.pet.sprite)
+        let selected = PetLibrary.selectedID(in: gallery.entries, sprite: sprite)
         VStack(alignment: .leading, spacing: 8) {
             LazyVGrid(columns: columns, spacing: 10) {
                 ForEach(Array(gallery.entries.enumerated()), id: \.element.id) { index, entry in
-                    PetTile(entry: entry, index: index, isSelected: entry.id == selected, gallery: gallery, clock: gallery.clock)
+                    PetTile(entry: entry, index: index, isSelected: entry.id == selected, gallery: gallery, clock: gallery.clock) {
+                        gallery.select(entry, petID: petID, records: records)
+                    }
                 }
                 BuildTile { asking = true }
             }
             HStack {
                 Button("Add from file…", action: addFromFile).controlSize(.small)
-                if store.config.pet.sprite != nil {
-                    Button("Reset") { store.update { $0.pet.sprite = nil } }.controlSize(.small)
+                if sprite != nil {
+                    Button("Reset") { gallery.reset(petID: petID, records: records) }.controlSize(.small)
                 }
             }
             if let error = gallery.importError {
@@ -151,12 +210,20 @@ struct PetGallery: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
         }
-        .onAppear { gallery.setViewShown(true) }
+        .onAppear {
+            gallery.currentSprite = { [petID, records] in
+                petID == AgentRegistry.chatAgentID ? SettingsAPI.live.config.pet.sprite : (try? records.get(petID))?.pet
+            }
+            gallery.setViewShown(true)
+        }
         .onDisappear { gallery.setViewShown(false) }
         .sheet(isPresented: $asking) {
             BuildPetSheet { description in
                 asking = false
-                if let description { buildPet(description) }
+                if let description {
+                    gallery.buildStarted(petID: petID, records: records)
+                    buildPet(description)
+                }
             }
         }
     }
@@ -166,7 +233,7 @@ struct PetGallery: View {
         panel.allowedContentTypes = [.png, .webP]
         panel.directoryURL = PetLibrary.folder
         guard panel.runModal() == .OK, let url = panel.url else { return }
-        gallery.add(url)
+        gallery.add(url, petID: petID, records: records)
     }
 }
 
@@ -176,9 +243,10 @@ private struct PetTile: View {
     let isSelected: Bool
     let gallery: PetGalleryModel
     @ObservedObject var clock: PetClock
+    let choose: () -> Void
 
     var body: some View {
-        Button { gallery.select(entry) } label: {
+        Button(action: choose) {
             VStack(spacing: 4) {
                 preview.frame(width: 64, height: 69)
                 Text(entry.name).font(.caption).lineLimit(1).truncationMode(.tail)
@@ -192,7 +260,7 @@ private struct PetTile: View {
         .buttonStyle(.plain)
         .accessibilityLabel(entry.name)
         .accessibilityAddTraits(isSelected ? .isSelected : [])
-        .help("Use \(entry.name) as the pet")
+        .help("Use \(entry.name) as this pet's image")
     }
 
     @ViewBuilder private var preview: some View {
@@ -219,7 +287,7 @@ private struct BuildTile: View {
             .contentShape(RoundedRectangle(cornerRadius: 10))
         }
         .buttonStyle(.plain)
-        .help("Ask the chat agent to draw a new pet")
+        .help("Ask the chat to draw a new image for this pet")
     }
 }
 
