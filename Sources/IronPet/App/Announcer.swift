@@ -56,8 +56,9 @@ final class Announcer {
         if alsoSystemNotifications { notifier.announce(session) }
     }
 
-    func approval(id: UUID, title: String, detail: String) {
-        let heading = "\(ConfigStore.shared.config.pet.name) wants to: \(title)"
+    /// `agentName` is the agent that asks, when it is not agent 1, so the bubble says who wants what.
+    func approval(id: UUID, title: String, detail: String, agentName: String? = nil) {
+        let heading = "\(agentName ?? ConfigStore.shared.config.pet.name) wants to: \(title)"
         let open = store(NotificationDraft(type: .approval, title: heading, summary: NotificationDraft.summary(of: detail), description: detail))
         bubbles.show(Self.approvalBubble(id: id, heading: heading, detail: detail, decide: { [weak self] allow in self?.decide(id, allow) },
                                          openChat: { [weak self] in self?.openChat() }, open: open))

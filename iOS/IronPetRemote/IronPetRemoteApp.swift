@@ -58,6 +58,7 @@ struct MainTabs: View {
     @State private var tasks: TasksModel
     @State private var pet: PetModel
     @State private var chat: ChatModel
+    @State private var chats: AgentChatsModel
     @State private var today: TodayModel
     @State private var agents: AgentsModel
     @State private var alerts: AlertsModel
@@ -99,6 +100,13 @@ struct MainTabs: View {
         // The chat the phone saw last shows at once, before the Mac answers.
         chatModel.useCache(FileChatCache.forToken(client.token))
         _chat = State(initialValue: chatModel)
+        // One chat model per other agent, each with its own cache file. Their messages wait in memory, not in the outbox file.
+        let agentChats = AgentChatsModel(client: client, events: events, network: network, main: chatModel, makeChat: { [client] agentId in
+            let model = ChatModel(client: client, events: events, network: network, agentId: agentId, onUnauthorized: unauthorized)
+            model.useCache(FileChatCache.forToken(client.token, agentId: agentId))
+            return model
+        }, onUnauthorized: unauthorized)
+        _chats = State(initialValue: agentChats)
         _today = State(initialValue: TodayModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
         _agents = State(initialValue: AgentsModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
         _memory = State(initialValue: MemoryModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
@@ -151,9 +159,14 @@ struct MainTabs: View {
         TabView(selection: $tab) {
             PetView(model: pet, today: today, app: model, client: client, open: open)
                 .tabItem { Label("Pet", systemImage: AppTab.pet.symbol) }.tag(AppTab.pet)
-            ChatView(model: chat, backgroundID: pet.backgroundID, backgroundImage: pet.backgroundImage, avatar: PetAvatar.face(of: pet.atlas), petName: pet.pet?.name ?? "")
-                .tabItem { Label("Chat", systemImage: AppTab.chat.symbol) }.badge(chat.approvals.count + chat.forms.count).tag(AppTab.chat)
+            ChatView(model: chats.current, backgroundID: pet.backgroundID, backgroundImage: pet.backgroundImage,
+                     avatar: chats.currentRecord.map { $0.isDefault } ?? true ? PetAvatar.face(of: pet.atlas) : nil,
+                     petName: chats.currentRecord.flatMap { $0.isDefault ? nil : $0.displayName } ?? pet.pet?.name ?? "", agents: chats)
+                .id(chats.current.agentId ?? defaultAgentID)
+                .tabItem { Label("Chat", systemImage: AppTab.chat.symbol) }.badge(chats.waitingCount).tag(AppTab.chat)
             TasksView(model: tasks, onAsk: { [chat] text in
+                // A task question goes to agent 1, so its chat is the one the tab shows.
+                chats.select(nil)
                 tab = .chat
                 Task { await chat.sendPrompt(text) }
             })
@@ -175,7 +188,7 @@ struct MainTabs: View {
         .tint(pet.accent)
         .environment(\.macAccent, pet.accent ?? .accentColor)
         // The alert count and the waiting approvals are on their tabs before the user opens it.
-        .task { network.startPathMonitor(); alerts.start(); chat.start(); pet.start(); automations.start(); voice.onTranscript = { [chat] text, mode in if mode == .draft { chat.insertDictation(text) } }; voice.onSend = { [chat] in chat.voiceEvent($0) }; chat.resendVoice = { [voice] in await voice.resend($0) }; chat.transcribeSaved = { [voice] in await voice.transcribeSaved($0, $1) }; voice.hasComposerContent = { [chat] in chat.hasComposerContent }; voice.hasEarlierMessages = { [chat] in chat.hasEarlierMessages }; voice.start() }
+        .task { network.startPathMonitor(); alerts.start(); chat.start(); chats.start(); pet.start(); automations.start(); voice.onTranscript = { [chat] text, mode in if mode == .draft { chat.insertDictation(text) } }; voice.onSend = { [chat] in chat.voiceEvent($0) }; chat.resendVoice = { [voice] in await voice.resend($0) }; chat.transcribeSaved = { [voice] in await voice.transcribeSaved($0, $1) }; voice.hasComposerContent = { [chat] in chat.hasComposerContent }; voice.hasEarlierMessages = { [chat] in chat.hasEarlierMessages }; voice.start() }
         // The five minutes count from the app going to the background, whichever screen is open. Watching only inside the Meetings
         // screen would leave the text unlocked after the person left it and then left the app.
         .onChange(of: scenePhase) { _, phase in
@@ -185,12 +198,12 @@ struct MainTabs: View {
             screen.gate.scenePhaseChanged(phase)
         }
         // A background changed on the Mac shows when the Chat tab opens.
-        .onChange(of: tab) { _, next in if next == .chat { Task { await pet.reloadPet(applyMood: false) } } }
+        .onChange(of: tab) { _, next in if next == .chat { Task { await pet.reloadPet(applyMood: false); await chats.refresh() } } }
         // Leaving the tabs (unpair or a 401) must close the socket, which otherwise keeps reconnecting with the old token.
-        .onDisappear { [network, tasks, pet, chat, today, agents, alerts, automations, meetings, memory, screen, phoneSettings, voice] in
+        .onDisappear { [network, tasks, pet, chat, chats, today, agents, alerts, automations, meetings, memory, screen, phoneSettings, voice] in
             voice.stop()
             network.stopPathMonitor()
-            tasks.stop(); pet.stop(); chat.stop(); today.stop(); agents.stop(); alerts.stop(); automations.stop(); meetings.stop(); memory.stop(); screen.stop(); phoneSettings.stop()
+            tasks.stop(); pet.stop(); chat.stop(); chats.stop(); today.stop(); agents.stop(); alerts.stop(); automations.stop(); meetings.stop(); memory.stop(); screen.stop(); phoneSettings.stop()
             meetings.gate.lock()
             screen.gate.lock()
         }

@@ -122,6 +122,7 @@ package final class RPCDispatcher {
     package nonisolated static func notification(for event: APIEvent) -> JSONRPCNotification {
         var fields: [String: RemoteJSON] = ["seq": .int(event.seq), "at": .string(isoFormatter.string(from: event.at))]
         if let id = event.id { fields["id"] = .string(id) }
+        if let agent = event.agentId { fields["agentId"] = .string(agent) }
         return JSONRPCNotification(method: event.kind.rawValue, params: .object(fields))
     }
 
@@ -230,6 +231,7 @@ package final class RPCDispatcher {
 
     package struct SetMode: Codable, Equatable {
         package var id: String
+        package var agentId: String?
     }
 
     package struct MemoryCall: Codable, Equatable {
@@ -285,6 +287,18 @@ package final class RPCDispatcher {
             guard let records else { throw APIError.unavailable("this host has no agent records") }
             return try records.get(p.id)
         }
+        add("agent.create", "POST /v1/agent-records", params: "CreateAgentRequest", result: "AgentRecord") { (p: CreateAgentRequest) -> AgentRecord in
+            guard let records else { throw APIError.unavailable("this host has no agent records") }
+            return try records.create(p)
+        }
+        add("agent.update", "PATCH /v1/agent-records/:id", params: "UpdateAgentRequest", result: "AgentRecord") { (p: UpdateAgentRequest) -> AgentRecord in
+            guard let records else { throw APIError.unavailable("this host has no agent records") }
+            return try records.update(p)
+        }
+        addVoid("agent.delete", "DELETE /v1/agent-records/:id", params: "ID") { (p: ID) in
+            guard let records else { throw APIError.unavailable("this host has no agent records") }
+            try records.delete(p.id)
+        }
     }
 
     private func registerAutomations() {
@@ -305,20 +319,23 @@ package final class RPCDispatcher {
     }
 
     private func registerChat() {
+        // Every call names the agent whose chat it is about, or none for agent 1. `chat.threads` reads the disk, so it also lists the
+        // threads of an agent that is not running.
+        let api = api
         let chat = api.chat
-        add("chat.snapshot", "GET /v1/chat/current", result: "ChatSnapshot") { chat.snapshot() }
-        add("chat.status", "none", result: "ChatStatus") { await chat.status() }
-        add("chat.messages", "none", result: "[ChatItem]") { await chat.messages() }
+        add("chat.snapshot", "GET /v1/chat/current", params: "AgentScopeRequest", result: "ChatSnapshot") { (p: AgentScopeRequest) in try api.chat(for: p.agentId).snapshot() }
+        add("chat.status", "none", params: "AgentScopeRequest", result: "ChatStatus") { (p: AgentScopeRequest) in await try api.chat(for: p.agentId).status() }
+        add("chat.messages", "none", params: "AgentScopeRequest", result: "[ChatItem]") { (p: AgentScopeRequest) in await try api.chat(for: p.agentId).messages() }
         add("chat.threads", "GET /v1/chat/threads", params: "AgentScopeRequest", result: "[ChatThreadInfo]") { (p: AgentScopeRequest) in try await chat.threads(agentId: p.agentId) }
-        add("chat.send", "POST /v1/chat/current/messages", params: "SendChatRequest", result: "ChatSendResult") { (p: SendChatRequest) in try await chat.send(p) }
-        add("chat.stop", "POST /v1/chat/current/stop", result: "ChatStopResult") { await chat.stop() }
-        addVoid("chat.newChat", "POST /v1/chat/new") { await chat.newChat() }
-        addVoid("chat.openThread", "POST /v1/chat/open/:id", params: "ID") { (p: ID) in try await chat.openThread(p.id) }
-        addVoid("chat.decide", "POST /v1/chat/approvals/:id", params: "DecideApprovalRequest") { (p: DecideApprovalRequest) in try await chat.decide(p) }
-        addVoid("chat.answerForm", "POST /v1/chat/forms/:id", params: "AnswerFormRequest") { (p: AnswerFormRequest) in try await chat.answerForm(p) }
-        addVoid("chat.submitForm", "POST /v1/chat/forms/:id/submit", params: "UUIDParam") { (p: UUIDParam) in try await chat.submitForm(p.id) }
-        addVoid("chat.skipForm", "POST /v1/chat/forms/:id/skip", params: "UUIDParam") { (p: UUIDParam) in try await chat.skipForm(p.id) }
-        addVoid("chat.setMode", "none", params: "SetMode") { (p: SetMode) in await chat.setMode(p.id) }
+        add("chat.send", "POST /v1/chat/current/messages", params: "SendChatRequest", result: "ChatSendResult") { (p: SendChatRequest) in try await api.chat(for: p.agentId).send(p) }
+        add("chat.stop", "POST /v1/chat/current/stop", params: "AgentScopeRequest", result: "ChatStopResult") { (p: AgentScopeRequest) in await try api.chat(for: p.agentId).stop() }
+        addVoid("chat.newChat", "POST /v1/chat/new", params: "AgentScopeRequest") { (p: AgentScopeRequest) in await try api.chat(for: p.agentId).newChat() }
+        addVoid("chat.openThread", "POST /v1/chat/open/:id", params: "ChatOpenRequest") { (p: ChatOpenRequest) in try await api.chat(for: p.agentId).openThread(p.id) }
+        addVoid("chat.decide", "POST /v1/chat/approvals/:id", params: "DecideApprovalRequest") { (p: DecideApprovalRequest) in try await api.chat(for: p.agentId).decide(p) }
+        addVoid("chat.answerForm", "POST /v1/chat/forms/:id", params: "AnswerFormRequest") { (p: AnswerFormRequest) in try await api.chat(for: p.agentId).answerForm(p) }
+        addVoid("chat.submitForm", "POST /v1/chat/forms/:id/submit", params: "ChatFormTarget") { (p: ChatFormTarget) in try await api.chat(for: p.agentId).submitForm(p.id) }
+        addVoid("chat.skipForm", "POST /v1/chat/forms/:id/skip", params: "ChatFormTarget") { (p: ChatFormTarget) in try await api.chat(for: p.agentId).skipForm(p.id) }
+        addVoid("chat.setMode", "none", params: "SetMode") { (p: SetMode) in await try api.chat(for: p.agentId).setMode(p.id) }
     }
 
     private func registerMemory() {

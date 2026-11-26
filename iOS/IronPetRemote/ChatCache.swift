@@ -23,11 +23,12 @@ final class FileChatCache: ChatCaching {
 
     private static var folder: URL { FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0] }
 
-    /// The cache for one pairing. The file name carries a hash of the device token, so a chat saved for one Mac is never shown for
-    /// another. Files of earlier pairings are deleted.
-    static func forToken(_ token: String?) -> FileChatCache {
-        let name = fileName(for: token)
-        for old in files() where old.hasPrefix(prefix) && old != name {
+    /// The cache for one pairing and one agent. The file name carries a hash of the device token, so a chat saved for one Mac is never shown
+    /// for another, and agent 1 keeps the name it always had. Files of earlier pairings are deleted, and those of this pairing's other agents stay.
+    static func forToken(_ token: String?, agentId: String? = nil) -> FileChatCache {
+        let tokenPart = hash(token)
+        let name = prefix + tokenPart + (agentId.map { "-" + hash($0) } ?? "") + ".json"
+        for old in files() where old.hasPrefix(prefix) && !old.hasPrefix(prefix + tokenPart) {
             try? FileManager.default.removeItem(at: folder.appendingPathComponent(old))
         }
         return FileChatCache(url: folder.appendingPathComponent(name))
@@ -40,8 +41,8 @@ final class FileChatCache: ChatCaching {
 
     private static let prefix = "chat-"
 
-    private static func fileName(for token: String?) -> String {
-        prefix + SHA256.hash(data: Data((token ?? "").utf8)).prefix(6).map { String(format: "%02x", $0) }.joined() + ".json"
+    private static func hash(_ text: String?) -> String {
+        SHA256.hash(data: Data((text ?? "").utf8)).prefix(6).map { String(format: "%02x", $0) }.joined()
     }
 
     private static func files() -> [String] {

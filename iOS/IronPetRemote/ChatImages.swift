@@ -35,8 +35,8 @@ final class ChatImages {
     private var downloading = 0
     private var waiting: [CheckedContinuation<Void, Never>] = []
 
-    init(client: IronPetClient) {
-        fetch = { id in try await client.downloadChatImage(messageID: id) }
+    init(client: IronPetClient, agentId: String? = nil) {
+        fetch = { id in try await client.downloadChatImage(messageID: id, agentId: agentId) }
         bytes.totalCostLimit = 64 << 20
         thumbnails.countLimit = 200
     }

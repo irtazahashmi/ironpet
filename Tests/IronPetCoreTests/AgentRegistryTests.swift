@@ -136,7 +136,7 @@ final class AgentRegistryTests: XCTestCase {
 
     func testTheMCPToolsListAndGetAgentOne() async throws {
         let api = AgentRecordsAPI(registry: AgentRegistry(database: try Database(path: nil, migrations: AppMigrations.all)))
-        XCTAssertEqual(AgentMCP.tools.compactMap { $0["name"] as? String }, ["agents_list", "agents_get"])
+        XCTAssertEqual(AgentMCP.tools.compactMap { $0["name"] as? String }, ["agents_list", "agents_get", "agents_create", "agents_update", "agents_delete"])
         XCTAssertTrue(MCPEndpoint.tools.contains { $0["name"] as? String == "agents_get" })
         let list = try XCTUnwrap(try AgentMCP.call("agents_list", [:], api: api).get() as? [String: Any])
         let agents = try XCTUnwrap(list["agents"] as? [[String: Any]])
