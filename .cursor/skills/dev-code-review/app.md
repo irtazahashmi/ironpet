@@ -96,7 +96,7 @@ Installed-app and e2e checks change the user's machine (see Ground rules in `SKI
 | `SetupWindow`, `SettingsWindow`, `IronPetPanel`, `Config` | `setup`, `settings` (take over the keyboard) |
 | `Voice/` | `voice`, `voice-key` (opt-in, need a local mlx-audio server); `speech` for spoken replies (opt-in, uses a stand-in speech server); `voice-mode` for voice mode (opt-in, one front-desk turn on the chat's agent) |
 | `Meeting/` | `meeting`, `meeting-system` (opt-in) |
-| `Tasks/`, task tools, `IronPet tasks` | `tasks` |
+| `Tasks/`, `inbox_*` tools | `tasks` |
 | `Activity/`, digest bubbles | `welcome-back` |
 | `Brief/`, `TodayView`, `digest` actions, daily `catchUpMinutes` | `brief` |
 | `Memory/`, `MemoryPreamble`, `memory_*` tools, Settings → Memory | `memory` (opt-in, runs chat turns and one reflection pass); `cursor` and `claude` for the preamble |

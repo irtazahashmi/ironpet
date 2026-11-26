@@ -804,10 +804,10 @@ private struct MeetingSettings: View {
                 }
             }
             Section {
-                Toggle("Suggest action items as tasks", isOn: Binding(
+                Toggle("Add meeting action items to the Inbox", isOn: Binding(
                     get: { store.config.tasks.meetingSuggestions }, set: { on in store.update { $0.tasks.meetingSuggestions = on } }))
             } footer: {
-                Text("After a summary, \(store.config.pet.name) offers the items marked as yours, and the ones someone else owns as tasks you're waiting on. Nothing is added until you choose.")
+                Text("After a summary, \(store.config.pet.name) offers the items marked as yours, and the ones someone else owns that you are waiting on, as Inbox items. You mark each one done or remove it.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {

@@ -141,7 +141,7 @@ struct MemorySettingsBody: View {
                 let d = config.digestMinutes
                 store.update { $0.memory.digestMinutes = max(Config.Memory.digestMinutesRange.lowerBound, d > 60 ? d - 60 : d - 15) }
             }
-            .help("Once an hour, Ghost reads what is new in chats, meeting summaries and tasks, and merges any page that has grown too long.")
+            .help("Once an hour, Ghost reads what is new in chats, meeting summaries and the Inbox, and merges any page that has grown too long.")
             .disabled(!config.reflect)
             Toggle("Learn from the screen", isOn: Binding(get: { config.learnFromScreen }, set: { on in store.update { $0.memory.learnFromScreen = on } }))
                 .disabled(!config.reflect || (!store.config.screenCapture.enabled && !config.learnFromScreen))
