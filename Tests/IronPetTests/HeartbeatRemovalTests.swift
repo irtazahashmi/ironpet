@@ -27,9 +27,9 @@ final class HeartbeatRemovalTests: AutomationTestCase {
                    action: .init(type: "prompt", prompt: "/heartbeat"), createdBy: "user")
     }
 
-    private func store(_ list: [Automation], builtIns: [Automation] = []) -> AutomationStore {
+    private func store(_ list: [Automation]) -> AutomationStore {
         _ = AutomationStore(paths: paths, defaults: { list }, watch: false)
-        return AutomationStore(paths: paths, defaults: { [] }, builtIns: builtIns, watch: false)
+        return AutomationStore(paths: paths, defaults: { [] }, watch: false)
     }
 
     private func write(_ path: String, _ text: String) throws {
@@ -48,10 +48,9 @@ final class HeartbeatRemovalTests: AutomationTestCase {
 
     // S1
     func testANewInstallGetsNoHeartbeatAutomation() {
-        let s = store([], builtIns: AutomationDefaults.builtIns)
+        let s = store([])
         XCTAssertNil(s.automations.first { $0.id == "heartbeat" })
-        XCTAssertEqual(Set(s.automations.map(\.id)), [AutomationDefaults.morningBriefID, AutomationDefaults.dayRecapID,
-                                                  AutomationDefaults.mailCalendarID])
+        XCTAssertTrue(s.automations.isEmpty)
         XCTAssertNil(BundledSkills.named("heartbeat"))
     }
 

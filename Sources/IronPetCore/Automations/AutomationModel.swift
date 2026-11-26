@@ -262,17 +262,13 @@ package struct Automation: Codable, Equatable, Identifiable {
     /// completed run whatever the outcome. Missing means it stays. Not for script triggers, which return `done: true`.
     package var until: String?
     /// The id of the agent that owns the automation: its runs use that agent's CLI, model and permissions and report to that agent's
-    /// chat. Missing in a file written before agents owned automations, which is agent 1's. Ignored for the node-level automations
-    /// (`AutomationDefaults.nodeLevelIDs`).
+    /// chat. Missing in a file written before agents owned automations, which is agent 1's.
     package var agentId: String?
 
-    /// The owning agent's id, or nil for a node-level automation (morning brief, day recap, mail and calendar),
-    /// which no agent owns. A missing `agentId` is agent 1.
-    package var ownerAgentID: String? {
-        AutomationDefaults.nodeLevelIDs.contains(id) ? nil : AgentOwner.id(agentId)
-    }
+    /// The owning agent's id. A missing `agentId` is agent 1.
+    package var ownerAgentID: String? { AgentOwner.id(agentId) }
 
-    /// Whether this automation is listed for and runs on behalf of this agent. Node-level automations are for every agent.
+    /// Whether this automation is listed for and runs on behalf of this agent.
     package func isVisible(to agent: String) -> Bool { ownerAgentID.map { $0 == agent } ?? true }
 
     package var isByUser: Bool { createdBy == "user" }

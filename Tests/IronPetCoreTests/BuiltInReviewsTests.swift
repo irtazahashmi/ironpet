@@ -1,7 +1,7 @@
 import XCTest
 @testable import IronPetCore
 
-/// The mail and calendar checks: a built-in that ships off and reads its prompt from the editable store.
+/// The mail and calendar checks of earlier builds: no longer added, but a kept copy still reads its prompt from the editable store.
 final class BuiltInReviewsTests: XCTestCase {
     private var directory: URL!
     private var savedDirectory: URL!
@@ -21,16 +21,15 @@ final class BuiltInReviewsTests: XCTestCase {
         super.tearDown()
     }
 
-    func testItIsABuiltInThatStartsOff() {
-        for automation in [AutomationDefaults.mailCalendar()] {
+    func testTheShippedCopyIsValidAndOff() {
+        for automation in [RetiredBuiltIns.mailCalendar()] {
             XCTAssertFalse(automation.enabled, automation.id)
-            XCTAssertTrue(AutomationDefaults.builtIns.contains { $0.id == automation.id }, automation.id)
             XCTAssertEqual(AutomationValidator.validate(automation), [], automation.id)
         }
     }
 
     func testItRunsEveryHourInItsOwnSessionAndReportsToTheChat() {
-        for automation in [AutomationDefaults.mailCalendar()] {
+        for automation in [RetiredBuiltIns.mailCalendar()] {
             XCTAssertEqual(automation.trigger.type, "interval", automation.id)
             XCTAssertEqual(automation.trigger.minutes, 60, automation.id)
             XCTAssertEqual(automation.action.effectiveSession, "own", automation.id)
@@ -41,7 +40,7 @@ final class BuiltInReviewsTests: XCTestCase {
     @MainActor
     func testThePromptIsTheEditableFileAndAnEditAppliesToTheNextRun() {
         let cases: [(Automation, String)] = [
-            (AutomationDefaults.mailCalendar(), "mail-calendar"),
+            (RetiredBuiltIns.mailCalendar(), "mail-calendar"),
         ]
         for (automation, id) in cases {
             let prompt = automation.action.prompt ?? ""
@@ -55,15 +54,14 @@ final class BuiltInReviewsTests: XCTestCase {
     }
 
     func testThePromptHasANoticeForAnEmptyOrNothingReply() {
-        for automation in [AutomationDefaults.mailCalendar()] {
+        for automation in [RetiredBuiltIns.mailCalendar()] {
             XCTAssertEqual(automation.action.quietReplies, ["NOTHING", "NOTHING_NEW"], automation.id)
         }
     }
 }
 
 extension BuiltInReviewsTests {
-    func testScreenReviewIsNoLongerABuiltInOrAPrompt() {
-        XCTAssertFalse(AutomationDefaults.builtIns.contains { $0.id == "screen-review" })
+    func testScreenReviewIsNoLongerAPrompt() {
         XCTAssertNil(Prompts.info("screen-review"))
         XCTAssertNil(Prompts.defaultText("screen-review"))
         for id in ["task-scan", "task-review", "task-instructions"] { XCTAssertNil(Prompts.info(id), id) }
