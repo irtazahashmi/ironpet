@@ -129,7 +129,7 @@ package final class TaskStore {
             }
         },
         // The tickler: a task stays out of the list until `defer_until`. Nothing to fill in for existing tasks.
-        .init(570, "tasks: defer until") { db in
+        .init(580, "tasks: defer until") { db in
             if !(try TaskStore.columns(db, "task_items")).contains("defer_until") {
                 try db.execute("ALTER TABLE task_items ADD COLUMN defer_until REAL")
             }
