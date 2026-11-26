@@ -17,25 +17,25 @@ final class ClarifyProposalTests: XCTestCase {
         return try XCTUnwrap(store.suggest(scan: [draft]).first)
     }
 
-    func testTheScanAnswerCarriesTheProposal() throws {
+    func testTheScanAnswerCarriesTheProposal() async throws {
         let answer = #"{"new":[{"title":"Call the dentist","context":"Phone","area":"Health","two_minute":true,"someday":false}],"updates":[]}"#
         let proposals = try TaskScanner.parse(answer, knownTasks: []).get()
         XCTAssertEqual(proposals.new.first?.clarify, TaskSuggestion.Clarify(context: .phone, area: "Health", twoMinute: true))
     }
 
-    func testAnUnknownContextIsDroppedButTheTaskIsStillFiled() throws {
+    func testAnUnknownContextIsDroppedButTheTaskIsStillFiled() async throws {
         let answer = #"{"new":[{"title":"Fix the printer","context":"office","area":"Home"}],"updates":[]}"#
         let proposal = try XCTUnwrap(try TaskScanner.parse(answer, knownTasks: []).get().new.first)
         XCTAssertEqual(proposal.title, "Fix the printer")
         XCTAssertEqual(proposal.clarify, TaskSuggestion.Clarify(area: "Home"))
     }
 
-    func testAnEntryWithoutClarifyFieldsHasNoProposal() throws {
+    func testAnEntryWithoutClarifyFieldsHasNoProposal() async throws {
         let proposal = try XCTUnwrap(try TaskScanner.parse(#"{"new":[{"title":"A"}],"updates":[]}"#, knownTasks: []).get().new.first)
         XCTAssertNil(proposal.clarify)
     }
 
-    func testTheProposalSurvivesAReload() throws {
+    func testTheProposalSurvivesAReload() async throws {
         let clarify = TaskSuggestion.Clarify(context: .errands, area: "House", twoMinute: false, someday: true)
         _ = try file(clarify)
         store.reload()
@@ -43,7 +43,7 @@ final class ClarifyProposalTests: XCTestCase {
         XCTAssertEqual(clarify.summary, "Errands · House · Someday")
     }
 
-    func testAddingAppliesTheProposalInOneStep() throws {
+    func testAddingAppliesTheProposalInOneStep() async throws {
         let suggestion = try file(TaskSuggestion.Clarify(context: .phone, area: "Health", twoMinute: true))
         let task = try store.accept(suggestion.id)
         XCTAssertEqual(task.labels, ["context": "phone", "area": "Health"])
@@ -51,21 +51,21 @@ final class ClarifyProposalTests: XCTestCase {
         XCTAssertTrue(store.suggestions.isEmpty)
     }
 
-    func testASomedayProposalFilesTheTaskAsSomedayUnlessTheReviewerSaysOtherwise() throws {
+    func testASomedayProposalFilesTheTaskAsSomedayUnlessTheReviewerSaysOtherwise() async throws {
         let musing = try file(TaskSuggestion.Clarify(someday: true), title: "Learn the cello")
         XCTAssertEqual(try store.accept(musing.id).status, .someday)
         let other = try file(TaskSuggestion.Clarify(someday: true), title: "Learn Italian")
         XCTAssertEqual(try store.accept(other.id, overrides: .init(status: "in_progress")).status, .inProgress)
     }
 
-    func testASuggestionWithoutAProposalAddsToTheBacklogAsBefore() throws {
+    func testASuggestionWithoutAProposalAddsToTheBacklogAsBefore() async throws {
         let plain = try file(nil)
         let task = try store.accept(plain.id)
         XCTAssertEqual(task.status, .backlog)
         XCTAssertTrue(task.labels.isEmpty)
     }
 
-    func testAgentsSeeTheProposal() throws {
+    func testAgentsSeeTheProposal() async throws {
         let suggestion = try file(TaskSuggestion.Clarify(context: .mac, twoMinute: true))
         let clarify = try XCTUnwrap(TaskJSON.json(suggestion)["clarify"] as? [String: Any])
         XCTAssertEqual(clarify["context"] as? String, "mac")
@@ -73,17 +73,17 @@ final class ClarifyProposalTests: XCTestCase {
         XCTAssertNil(clarify["area"])
     }
 
-    func testTheAreaIsCleanedLikeTheRestOfTheScanText() throws {
+    func testTheAreaIsCleanedLikeTheRestOfTheScanText() async throws {
         let entry: [String: Any] = ["title": "A", "area": "Sa\u{202E}les\u{0007}"]
         XCTAssertEqual(TaskScanner.clarify(entry)?.area, "Sales")
     }
 
-    func testWorkSomeoneElseHoldsIsNeverProposedAsSomeday() throws {
+    func testWorkSomeoneElseHoldsIsNeverProposedAsSomeday() async throws {
         let entry: [String: Any] = ["title": "A", "waiting_on": "Ana", "someday": true, "context": "calls"]
         XCTAssertEqual(TaskScanner.clarify(entry), TaskSuggestion.Clarify(context: .calls))
     }
 
-    func testThePhoneReceivesTheProposalWithTheSameWording() throws {
+    func testThePhoneReceivesTheProposalWithTheSameWording() async throws {
         let suggestion = try file(TaskSuggestion.Clarify(context: .phone, area: "Health", twoMinute: true))
         let remote = RemoteSuggestion(suggestion)
         XCTAssertEqual(remote.clarify, RemoteSuggestionClarify(context: "phone", area: "Health", twoMinute: true))
@@ -93,7 +93,7 @@ final class ClarifyProposalTests: XCTestCase {
         XCTAssertEqual(decoded, RemoteSuggestionClarify(context: "mac"), "missing flags read as false")
     }
 
-    func testTheWireSuggestionCarriesTheProposalAndReadsItBack() throws {
+    func testTheWireSuggestionCarriesTheProposalAndReadsItBack() async throws {
         let suggestion = try file(TaskSuggestion.Clarify(context: .calls, twoMinute: true))
         let data = try JSONEncoder().encode(RemoteSuggestion(suggestion))
         let object = try XCTUnwrap(JSONSerialization.jsonObject(with: data) as? [String: Any])

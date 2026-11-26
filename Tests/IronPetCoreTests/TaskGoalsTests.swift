@@ -16,7 +16,7 @@ final class TaskGoalsTests: XCTestCase {
         try XCTUnwrap(try TaskJSON.call(api, op, args, by: "agent:mcp").get() as? [String: Any])
     }
 
-    func testKeyResultProgressRunsFromStartToTargetInEitherDirection() {
+    func testKeyResultProgressRunsFromStartToTargetInEitherDirection() async {
         func result(_ start: Double, _ target: Double, _ current: Double) -> TaskKeyResult {
             TaskKeyResult(id: "k", goal: "g", metric: "m", start: start, target: target, current: current, unit: nil, due: nil, source: nil, updated: Date())
         }
@@ -27,7 +27,7 @@ final class TaskGoalsTests: XCTestCase {
         XCTAssertEqual(result(5, 5, 5).progress, 1)
     }
 
-    func testAGoalsProgressIsTheMeanOfItsKeyResults() throws {
+    func testAGoalsProgressIsTheMeanOfItsKeyResults() async throws {
         let goal = try api.upsertGoal(id: nil, title: "Grow the business")
         XCTAssertNil(api.progress(of: goal.id), "no key results, no progress")
         let revenue = try api.upsertKeyResult(id: nil, goal: goal.id, metric: "Monthly revenue", start: 10, target: 20, unit: "k EUR")
@@ -38,7 +38,7 @@ final class TaskGoalsTests: XCTestCase {
         XCTAssertEqual(api.progress(of: goal.id), 0.75)
     }
 
-    func testLinksMustPointAtThingsThatExist() throws {
+    func testLinksMustPointAtThingsThatExist() async throws {
         XCTAssertThrowsError(try api.upsertGoal(id: nil, title: "Run a marathon", area: .some("health")))
         let health = try api.upsertArea(id: nil, title: "Health")
         let goal = try api.upsertGoal(id: nil, title: "Run a marathon", area: .some(health.id))
@@ -48,14 +48,14 @@ final class TaskGoalsTests: XCTestCase {
         XCTAssertThrowsError(try api.upsertGoal(id: "nope", title: "X"))
     }
 
-    func testProjectsServeAGoalThroughTheirGoalField() throws {
+    func testProjectsServeAGoalThroughTheirGoalField() async throws {
         let goal = try api.upsertGoal(id: nil, title: "Grow the business")
         let site = try api.upsertProject(id: nil, title: "Launch the new site", goal: .some(goal.id))
         _ = try api.upsertProject(id: nil, title: "Move house")
         XCTAssertEqual(api.projects(serving: goal.id).map(\.id), [site.id])
     }
 
-    func testAgentsBuildAndReadTheHorizons() throws {
+    func testAgentsBuildAndReadTheHorizons() async throws {
         let area = try call("areas_upsert", ["title": "Work"])
         let goal = try call("goals_upsert", ["title": "Ship 2.0", "why": "Customers asked for it", "area": try XCTUnwrap(area["id"])])
         let goalID = try XCTUnwrap(goal["id"] as? String)
@@ -73,7 +73,7 @@ final class TaskGoalsTests: XCTestCase {
         XCTAssertEqual((try call("goals_list", ["include_closed": true])["goals"] as? [[String: Any]])?.count, 1)
     }
 
-    func testBadNumbersAreRefused() throws {
+    func testBadNumbersAreRefused() async throws {
         let goal = try api.upsertGoal(id: nil, title: "Read more")
         XCTAssertThrowsError(try TaskJSON.call(api, "key_results_upsert", ["goal": goal.id, "metric": "Books", "start": "zero", "target": 12],
                                                by: "agent:mcp").get())
@@ -81,7 +81,7 @@ final class TaskGoalsTests: XCTestCase {
                                                by: "agent:mcp").get())
     }
 
-    func testTheHorizonsSurviveAReload() throws {
+    func testTheHorizonsSurviveAReload() async throws {
         let goal = try api.upsertGoal(id: nil, title: "Read more", why: "Calmer evenings")
         let result = try api.upsertKeyResult(id: nil, goal: goal.id, metric: "Books", start: 0, target: 12, source: .some("Goodreads"))
         store.reload()
@@ -89,7 +89,7 @@ final class TaskGoalsTests: XCTestCase {
         XCTAssertEqual(api.keyResults(of: goal.id), [result])
     }
 
-    func testZeroAndOneFromJSONAreNumbersButABooleanIsNot() throws {
+    func testZeroAndOneFromJSONAreNumbersButABooleanIsNot() async throws {
         let goal = try api.upsertGoal(id: nil, title: "Read more")
         func decoded(_ json: String) throws -> [String: Any] {
             try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
@@ -101,7 +101,7 @@ final class TaskGoalsTests: XCTestCase {
                                                by: "agent:mcp").get())
     }
 
-    func testAProjectsGoalMustExistAndAKeyResultCannotMove() throws {
+    func testAProjectsGoalMustExistAndAKeyResultCannotMove() async throws {
         XCTAssertThrowsError(try api.upsertProject(id: nil, title: "Launch", goal: .some("Grow the business")), "a title is not an id")
         let goal = try api.upsertGoal(id: nil, title: "Grow the business")
         let other = try api.upsertGoal(id: nil, title: "Read more")
@@ -109,7 +109,7 @@ final class TaskGoalsTests: XCTestCase {
         XCTAssertThrowsError(try api.upsertKeyResult(id: result.id, goal: other.id, current: 2))
     }
 
-    func testAreaTitlesAreUniqueWithoutRegardToCase() throws {
+    func testAreaTitlesAreUniqueWithoutRegardToCase() async throws {
         let work = try api.upsertArea(id: nil, title: "Work")
         XCTAssertThrowsError(try api.upsertArea(id: nil, title: "work"))
         let home = try api.upsertArea(id: nil, title: "Home")
@@ -117,7 +117,7 @@ final class TaskGoalsTests: XCTestCase {
         XCTAssertEqual(try api.upsertArea(id: work.id, title: "Work").title, "Work", "renaming to its own title is fine")
     }
 
-    func testDeletingAKeyResultLeavesTheOthers() throws {
+    func testDeletingAKeyResultLeavesTheOthers() async throws {
         let goal = try api.upsertGoal(id: nil, title: "Grow the business")
         let wrong = try api.upsertKeyResult(id: nil, goal: goal.id, metric: "Duplicate", start: 0, target: 10)
         _ = try api.upsertKeyResult(id: nil, goal: goal.id, metric: "Revenue", start: 0, target: 10, current: 10)
@@ -127,7 +127,7 @@ final class TaskGoalsTests: XCTestCase {
         XCTAssertThrowsError(try api.deleteKeyResult(wrong.id))
     }
 
-    func testGoalsGroupByAreaThenNoArea() throws {
+    func testGoalsGroupByAreaThenNoArea() async throws {
         let work = try api.upsertArea(id: nil, title: "Work")
         let health = try api.upsertArea(id: nil, title: "Health")
         let ship = try api.upsertGoal(id: nil, title: "Ship 2.0", area: .some(work.id))
