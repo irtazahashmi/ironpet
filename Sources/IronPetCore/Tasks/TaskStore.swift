@@ -181,6 +181,26 @@ package final class TaskStore {
                                                              by TEXT NOT NULL, text TEXT NOT NULL);
             CREATE INDEX IF NOT EXISTS task_suggestion_notes_by_item ON task_suggestion_notes(item, id);
             """),
+        // An item lists every place it came from, so a mail about a meeting's item adds a source instead of a second item. Each row gets
+        // its one source from its origin and url. A key remembers the item it made, so the same id arriving again updates that item
+        // while it is in the inbox. A resolved item keeps its reason here after it leaves the list.
+        .init(592, "inbox: sources, key to item, resolved items") { db in
+            try db.script("""
+                CREATE TABLE IF NOT EXISTS task_suggestion_sources(suggestion TEXT NOT NULL, position INTEGER NOT NULL, kind TEXT NOT NULL,
+                                                                   ref TEXT NOT NULL, url TEXT, label TEXT,
+                                                                   PRIMARY KEY(suggestion, position)) WITHOUT ROWID;
+                INSERT OR IGNORE INTO task_suggestion_sources(suggestion, position, kind, ref, url, label)
+                    SELECT id, 0, CASE WHEN meeting IS NOT NULL THEN 'meeting' ELSE 'automation' END, COALESCE(meeting, automation), url,
+                           CASE WHEN meeting IS NOT NULL THEN 'Meeting' ELSE automation_name END
+                    FROM task_suggestions;
+                CREATE TABLE IF NOT EXISTS task_suggestion_resolved(id INTEGER PRIMARY KEY AUTOINCREMENT, item TEXT NOT NULL, title TEXT NOT NULL,
+                                                                    due TEXT, notes TEXT NOT NULL DEFAULT '', created REAL NOT NULL,
+                                                                    resolved REAL NOT NULL, reason TEXT NOT NULL, sources TEXT NOT NULL);
+                """)
+            if try !TaskStore.columns(db, "task_suggestion_keys").contains("item") {
+                try db.execute("ALTER TABLE task_suggestion_keys ADD COLUMN item TEXT")
+            }
+        },
     ]
 
     /// A source reference as stored: a JSON object, keys sorted.
@@ -232,79 +252,208 @@ package final class TaskStore {
     /// Stores meeting action items. Items already in the inbox are skipped.
     @discardableResult
     package func suggest(_ items: [(title: String, due: String?, waitingOn: String?)], meeting: URL) -> [TaskSuggestion] {
-        store(items.map { TaskSuggestion.Draft(key: "", title: $0.title, due: $0.due, waitingOn: $0.waitingOn) }, origin: .meeting(meeting))
+        let drafts = items.map { TaskSuggestion.Draft(key: "", title: $0.title, due: $0.due, waitingOn: $0.waitingOn) }
+        return Self.added(file(drafts, origin: .meeting(meeting), scope: nil, sourceRef: nil, kind: .meeting, ref: meeting.path))
     }
 
-    /// Stores what a watcher automation proposed. Besides the title check, a key this automation suggested before is
-    /// left out, even after it was marked done or removed.
+    /// Stores what a watcher automation proposed. A key this automation suggested before updates its item while the item is in the
+    /// inbox, and is left out after the item was marked done, removed or resolved. Returns the new items.
     @discardableResult
     package func suggest(_ drafts: [TaskSuggestion.Draft], automation id: String, name: String) -> [TaskSuggestion] {
-        let seen = suggestedKeys(id)
-        var keys = Set<String>()
-        let fresh = drafts.filter { !seen.contains($0.key) && keys.insert($0.key).inserted }
-        let waiting = suggestions.filter { if case .automation(let other, _) = $0.origin { return other == id } else { return false } }.count
+        Self.added(file(drafts, automation: id, name: name))
+    }
+
+    /// `suggest` with what happened to each draft.
+    package func file(_ drafts: [TaskSuggestion.Draft], automation id: String, name: String) -> [SuggestFiling] {
         let name = TaskSuggestion.Draft.clean(name, limit: 100, newlines: false)
-        return store(fresh, origin: .automation(id: id, name: name.isEmpty ? id : name), limit: Self.maxPendingPerAutomation - waiting)
+        return file(drafts, origin: .automation(id: id, name: name.isEmpty ? id : name), scope: id, sourceRef: nil, kind: .automation, ref: id)
     }
 
     /// Stores what an agent proposed through `inbox_add`. It goes through the same path as a watcher's `suggest_task`, so the
-    /// same dedupe and limits apply. Agent suggestions share one source per origin kind (`agent:email`, `agent:pr`), so an id from
+    /// same dedupe and limits apply. Agent suggestions share one scope per origin kind (`agent:email`, `agent:pr`), so an id from
     /// mail never collides with an automation's id or with an id from another kind. `sourceRef` is the origin the agent gave.
     @discardableResult
     package func suggest(_ draft: TaskSuggestion.Draft, agent kind: TaskSource, sourceRef: String) -> [TaskSuggestion] {
-        let id = "agent:\(kind.rawValue)"
-        guard !suggestedKeys(id).contains(draft.key) else { return [] }
-        let waiting = suggestions.filter { if case .automation(let other, _) = $0.origin { return other == id } else { return false } }.count
-        return store([draft], origin: .automation(id: id, name: "\(kind.rawValue) agent"), limit: Self.maxPendingPerAutomation - waiting,
-                     sourceRef: sourceRef)
+        file(draft, agent: kind, sourceRef: sourceRef).compactMap { $0.change.keepsItem ? $0.item : nil }
     }
 
-    private func store(_ drafts: [TaskSuggestion.Draft], origin: TaskSuggestion.Origin, limit: Int = .max,
-                       sourceRef: String? = nil) -> [TaskSuggestion] {
+    /// `suggest(_:agent:sourceRef:)` with what happened.
+    package func file(_ draft: TaskSuggestion.Draft, agent kind: TaskSource, sourceRef: String) -> [SuggestFiling] {
+        let ref = (TaskJSON.refValue(sourceRef) as? [String: Any])?["ref"] as? String ?? ""
+        return file([draft], origin: .automation(id: "agent:\(kind.rawValue)", name: "\(kind.rawValue) agent"), scope: "agent:\(kind.rawValue)",
+                    sourceRef: sourceRef, kind: kind, ref: ref)
+    }
+
+    private static func added(_ filings: [SuggestFiling]) -> [TaskSuggestion] {
+        filings.compactMap { $0.change == .added ? $0.item : nil }
+    }
+
+    /// The one path every draft takes. `scope` is the automation id or `agent:<kind>` the draft's id belongs to, nil for meetings.
+    private func file(_ drafts: [TaskSuggestion.Draft], origin: TaskSuggestion.Origin, scope: String?, sourceRef: String?, kind: TaskSource,
+                      ref: String) -> [SuggestFiling] {
         // Compared by `ActionItems.normalized`, so a regenerated summary that words an item with another case, spacing or
         // closing full stop does not offer it a second time.
-        let existing = Set(suggestions.map { ActionItems.normalized($0.title) })
         let time = now()
-        var added: [(key: String, suggestion: TaskSuggestion)] = []
-        var taken = Set(suggestions.map(\.id))
-        for draft in drafts where added.count < limit {
-            guard let title = try? TaskValidator.title(draft.title), !existing.contains(ActionItems.normalized(title)),
-                  !added.contains(where: { ActionItems.normalized($0.suggestion.title) == ActionItems.normalized(title) }) else { continue }
+        var items = suggestions
+        var filings: [SuggestFiling] = []
+        var writes: [(TaskSuggestion, isNew: Bool, key: String?)] = []
+        var newKeys: [(key: String, item: String?)] = []
+        var taken = Set(items.map(\.id))
+        var seenKeys = Set<String>()
+        var waiting = scope.map { scope in items.filter { if case .automation(let other, _) = $0.origin { return other == scope } else { return false } }.count } ?? 0
+        let known = scope.map(keyItems) ?? [:]
+        var pendingKeys: [String: String?] = [:]
+
+        func replace(_ item: TaskSuggestion) {
+            if let index = items.firstIndex(where: { $0.id == item.id }) { items[index] = item }
+            if let index = writes.firstIndex(where: { $0.0.id == item.id }) { writes[index].0 = item }
+        }
+
+        for draft in drafts {
+            let key = draft.key
+            if scope != nil {
+                guard seenKeys.insert(key).inserted else { filings.append(SuggestFiling(change: .ignored("id \"\(key)\" appears twice in one call"))); continue }
+            }
+            let source = InboxSource(kind: kind, ref: ref, url: draft.url,
+                                     label: Self.label(origin: origin, kind: kind))
+
+            // 1. An id used before: update its item, or stay out when the item is gone.
+            if scope != nil, let entry = pendingKeys[key] ?? known[key] {
+                guard let itemID = entry, let current = items.first(where: { $0.id == itemID }) else {
+                    filings.append(SuggestFiling(change: .ignored("this id was added before and the item is no longer in the inbox")))
+                    continue
+                }
+                var changed = current
+                let didChange = Self.apply(draft, source: source, to: &changed, replaceTitle: true)
+                if didChange {
+                    replace(changed)
+                    if !writes.contains(where: { $0.0.id == changed.id }) { writes.append((changed, false, nil)) }
+                }
+                filings.append(SuggestFiling(change: didChange ? .updated : .ignored("this id is already in the inbox with the same text"), item: changed))
+                continue
+            }
+
+            // 2. The caller named an existing item, or the url is one an item already has: add a source to it.
+            if scope != nil {
+                var target: TaskSuggestion?
+                if let named = draft.sameAs?.trimmingCharacters(in: .whitespacesAndNewlines), !named.isEmpty {
+                    guard let found = items.first(where: { $0.id == named }) ?? self.itemForKey(named, scope: scope, items: items, pending: pendingKeys) else {
+                        filings.append(SuggestFiling(change: .ignored("same_as \"\(named)\" is not an item in the inbox. It may have been done, removed or resolved, or the id is wrong. Nothing was added.")))
+                        continue
+                    }
+                    target = found
+                } else if let url = draft.url {
+                    target = items.first { $0.sources.contains { $0.url.map(InboxSource.normalized) == InboxSource.normalized(url) } }
+                }
+                if let target {
+                    var changed = target
+                    _ = Self.apply(draft, source: source, to: &changed, replaceTitle: false)
+                    replace(changed)
+                    if !writes.contains(where: { $0.0.id == changed.id }) { writes.append((changed, false, nil)) }
+                    pendingKeys[key] = .some(changed.id)
+                    newKeys.append((key, changed.id))
+                    filings.append(SuggestFiling(change: .merged, item: changed))
+                    continue
+                }
+            }
+
+            // 3. A new item.
+            guard let title = try? TaskValidator.title(draft.title) else { filings.append(SuggestFiling(change: .ignored("bad title"))); continue }
+            guard !items.contains(where: { ActionItems.normalized($0.title) == ActionItems.normalized(title) }) else {
+                filings.append(SuggestFiling(change: .ignored("the title is already in the inbox")))
+                continue
+            }
+            guard scope == nil || waiting < Self.maxPendingPerAutomation else {
+                filings.append(SuggestFiling(change: .ignored("this source already has \(Self.maxPendingPerAutomation) items waiting")))
+                continue
+            }
             let id = AutomationValidator.slug(title, taken: taken)
             taken.insert(id)
             let waitingOn = draft.waitingOn.flatMap { try? TaskValidator.waitingOn(String($0.prefix(TaskValidator.maxWaitingOn))) }
-            let ref: [String: Any]
+            let reference: [String: Any]
             switch origin {
             case .meeting(let folder):
-                ref = ["ref": folder.path, "reason": "Action item from the meeting summary", "meeting": folder.path]
+                reference = ["ref": folder.path, "reason": "Action item from the meeting summary", "meeting": folder.path]
             case .automation(let automation, let name):
-                ref = ["ref": automation, "reason": "Suggested by the \(name) watcher", "automation": automation,
-                       "at": ISO8601DateFormatter().string(from: time)]
+                reference = ["ref": automation, "reason": "Suggested by the \(name) watcher", "automation": automation,
+                             "at": ISO8601DateFormatter().string(from: time)]
             }
-            added.append((draft.key, TaskSuggestion(id: id, title: title, due: draft.due, notes: draft.notes, url: draft.url,
-                                                    origin: origin, created: time, waitingOn: waitingOn,
-                                                    sourceRef: sourceRef ?? draft.sourceRef ?? Self.refText(ref))))
+            let item = TaskSuggestion(id: id, title: title, due: draft.due, notes: draft.notes, url: draft.url, origin: origin, created: time,
+                                      waitingOn: waitingOn, sourceRef: sourceRef ?? draft.sourceRef ?? Self.refText(reference), sources: [source])
+            items.append(item)
+            writes.append((item, true, scope == nil ? nil : key))
+            if scope != nil { pendingKeys[key] = .some(id); newKeys.append((key, id)) }
+            waiting += 1
+            filings.append(SuggestFiling(change: .added, item: item))
         }
-        guard !added.isEmpty else { return [] }
+        guard !writes.isEmpty || !newKeys.isEmpty else { return filings }
         do {
             try database.write { db in
-                for (key, s) in added {
-                    if case .automation(let id, _) = s.origin {
-                        try db.execute("INSERT OR REPLACE INTO task_suggestion_keys(automation, key, at) VALUES(?, ?, ?)",
-                                       [id, key, time.timeIntervalSince1970])
-                    }
-                    try Self.insert(s, db)
+                for (key, item) in newKeys {
+                    guard let scope else { continue }
+                    try db.execute("INSERT OR REPLACE INTO task_suggestion_keys(automation, key, at, item) VALUES(?, ?, ?, ?)",
+                                   [scope, key, time.timeIntervalSince1970, item])
+                }
+                for (item, isNew, _) in writes {
+                    if isNew { try Self.insert(item, db) } else { try Self.update(item, db) }
                 }
             }
         } catch {
             NSLog("ironpet: could not store inbox items: \(error.localizedDescription)")
-            return []
+            return drafts.map { _ in SuggestFiling(change: .ignored("the inbox could not be saved")) }
         }
         reload()
         didChange()
-        let items = added.map(\.suggestion)
-        onAdded?(items)
-        return items
+        let added = filings.compactMap { $0.change == .added ? $0.item : nil }
+        if !added.isEmpty { onAdded?(added) }
+        return filings
+    }
+
+    private static func label(origin: TaskSuggestion.Origin, kind: TaskSource) -> String {
+        switch origin {
+        case .meeting: return "Meeting"
+        case .automation(let id, let name): return id.hasPrefix("agent:") ? InboxSource.displayName(kind) : name
+        }
+    }
+
+    /// Applies a draft to an item the draft is about. Returns whether anything changed. Text the draft leaves out stays as it is, so a
+    /// follow-up that only carries a new due date keeps the title and notes. A merge keeps the title and the notes that are there.
+    private static func apply(_ draft: TaskSuggestion.Draft, source: InboxSource, to item: inout TaskSuggestion, replaceTitle: Bool) -> Bool {
+        let before = item
+        if replaceTitle, let title = try? TaskValidator.title(draft.title) { item.title = title }
+        if let due = draft.due { item.due = due }
+        if !draft.notes.isEmpty, replaceTitle || item.notes.isEmpty { item.notes = draft.notes }
+        // An update takes the new page. A merge keeps the page the item has, and the new one is listed as a source.
+        if let url = draft.url, replaceTitle || item.url == nil { item.url = url }
+        // A source adds a place only when it names something and is not one the item lists. The same reference with a new page
+        // changes that source's page, so a follow-up does not list the mail twice.
+        if source.url != nil || !source.ref.isEmpty {
+            if let index = item.sources.firstIndex(where: { $0.isSame(as: source) }) {
+                if let url = source.url, item.sources[index].url == nil || replaceTitle { item.sources[index].url = url }
+            } else {
+                item.sources.append(source)
+            }
+        }
+        return item != before
+    }
+
+    /// The item a caller's own id names: an id it used in its own scope, or for an agent an id any kind of agent used.
+    private func itemForKey(_ name: String, scope: String?, items: [TaskSuggestion], pending: [String: String?]) -> TaskSuggestion? {
+        guard let scope else { return nil }
+        if let id = (pending[name] ?? keyItems(scope)[name]) ?? nil, let item = items.first(where: { $0.id == id }) { return item }
+        guard scope.hasPrefix("agent:") else { return nil }
+        for other in agentScopes where other != scope {
+            if let id = keyItems(other)[name] ?? nil, let item = items.first(where: { $0.id == id }) { return item }
+        }
+        return nil
+    }
+
+    /// Every key of a scope with the item it made, nil once the item left the inbox.
+    private func keyItems(_ scope: String) -> [String: String?] {
+        let rows = (try? database.read { db in try db.rows("SELECT key, item FROM task_suggestion_keys WHERE automation = ?", [scope]) }) ?? []
+        var result: [String: String?] = [:]
+        for row in rows { if let key = row[0] as? String { result[key] = .some(row[1] as? String) } }
+        return result
     }
 
     private static func insert(_ s: TaskSuggestion, _ db: Database.Connection) throws {
@@ -318,13 +467,24 @@ package final class TaskStore {
             VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [s.id, s.title, s.due, s.notes, s.url?.absoluteString, meeting, automation, name, s.created.timeIntervalSince1970,
                   s.waitingOn, s.sourceRef])
+        try writeSources(s, db)
     }
 
-    private func suggestedKeys(_ automation: String) -> Set<String> {
-        Set((try? database.read { db in
-            try db.rows("SELECT key FROM task_suggestion_keys WHERE automation = ?", [automation]).compactMap { $0[0] as? String }
-        }) ?? [])
+    private static func update(_ s: TaskSuggestion, _ db: Database.Connection) throws {
+        try db.execute("UPDATE task_suggestions SET title = ?, due = ?, notes = ?, url = ? WHERE id = ?",
+                       [s.title, s.due, s.notes, s.url?.absoluteString, s.id])
+        try writeSources(s, db)
     }
+
+    private static func writeSources(_ s: TaskSuggestion, _ db: Database.Connection) throws {
+        try db.execute("DELETE FROM task_suggestion_sources WHERE suggestion = ?", [s.id])
+        for (position, source) in s.sources.enumerated() {
+            try db.execute("INSERT INTO task_suggestion_sources(suggestion, position, kind, ref, url, label) VALUES(?, ?, ?, ?, ?, ?)",
+                           [s.id, position, source.kind.rawValue, source.ref, source.url?.absoluteString, source.label])
+        }
+    }
+
+    // MARK: Done, remove, resolve
 
     /// Takes an item off the list because the user (or an agent) is done with it. Nothing else is created.
     package func done(_ suggestionID: String) throws {
@@ -339,10 +499,68 @@ package final class TaskStore {
         removeSuggestion(suggestionID)
     }
 
+    /// Takes an item off the list because its source settled it (the mail was answered, the event passed). The reason is kept in a
+    /// resolved record with the item's title, due date and sources, and the item's id stays ignored like a removed one.
+    @discardableResult
+    package func resolve(_ suggestionID: String, reason: String) throws -> ResolvedSuggestion {
+        guard let item = suggestions.first(where: { $0.id == suggestionID }) else { throw TaskError(message: "no inbox item \"\(suggestionID)\"") }
+        let reason = try Self.validReason(reason)
+        let record = ResolvedSuggestion(id: item.id, title: item.title, reason: reason, resolved: now(), created: item.created, due: item.due,
+                                        sources: item.sources)
+        let sources = String(data: (try? JSONEncoder().encode(item.sources)) ?? Data("[]".utf8), encoding: .utf8) ?? "[]"
+        try database.write { db in
+            try db.execute("""
+                INSERT INTO task_suggestion_resolved(item, title, due, notes, created, resolved, reason, sources) VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+                """, [item.id, item.title, item.due, item.notes, item.created.timeIntervalSince1970, record.resolved.timeIntervalSince1970,
+                      reason, sources])
+        }
+        removeSuggestion(item.id)
+        return record
+    }
+
+    /// The reason on one line, up to 200 characters.
+    package static func validReason(_ value: String) throws -> String {
+        let reason = TaskSuggestion.Draft.clean(value, limit: 200, newlines: false)
+        guard !reason.isEmpty else { throw TaskError(message: "reason is required, for example \"answered\"") }
+        return reason
+    }
+
+    /// Items that were resolved, newest first.
+    package func resolved(limit: Int = 100) -> [ResolvedSuggestion] {
+        let rows = (try? database.read { db in
+            try db.rows("""
+                SELECT item, title, due, created, resolved, reason, sources FROM task_suggestion_resolved ORDER BY resolved DESC, id DESC LIMIT ?
+                """, [limit])
+        }) ?? []
+        return rows.compactMap { row in
+            guard let id = row[0] as? String, let title = row[1] as? String, let created = row[3] as? Double, let resolved = row[4] as? Double,
+                  let reason = row[5] as? String else { return nil }
+            let sources = (row[6] as? String).flatMap { try? JSONDecoder().decode([InboxSource].self, from: Data($0.utf8)) } ?? []
+            return ResolvedSuggestion(id: id, title: title, reason: reason, resolved: Date(timeIntervalSince1970: resolved),
+                                      created: Date(timeIntervalSince1970: created), due: row[2] as? String, sources: sources)
+        }
+    }
+
+    /// The item an id names: an item id, or an id the caller used when it added the item (a mail id) in one of `scopes`.
+    package func item(named name: String, scopes: [String]) -> TaskSuggestion? {
+        if let item = suggestions.first(where: { $0.id == name }) { return item }
+        for scope in scopes {
+            if let id = keyItems(scope)[name] ?? nil, let item = suggestions.first(where: { $0.id == id }) { return item }
+        }
+        return nil
+    }
+
+    /// The scopes of every kind of agent, for resolving an item by the id the agent added it under.
+    package var agentScopes: [String] { TaskSource.originKinds.map { "agent:\($0.rawValue)" } }
+
     private func removeSuggestion(_ id: String) {
         try? database.write { db in
             try db.execute("DELETE FROM task_suggestions WHERE id = ?", [id])
+            try db.execute("DELETE FROM task_suggestion_sources WHERE suggestion = ?", [id])
             try db.execute("DELETE FROM task_suggestion_notes WHERE item = ?", [id])
+            // The keys stay, so the same id arriving again is ignored. They stop naming the item, so a later item that gets the
+            // same id is not changed by an old key.
+            try db.execute("UPDATE task_suggestion_keys SET item = NULL WHERE item = ?", [id])
         }
         reload()
         didChange()
@@ -388,8 +606,9 @@ package final class TaskStore {
         lastPrune = time
         do {
             try database.write { db in
-                try db.execute("DELETE FROM task_suggestion_keys WHERE at < ?",
-                               [time.addingTimeInterval(-Double(Self.keepSuggestedKeysDays) * 86_400).timeIntervalSince1970])
+                let cutoff = time.addingTimeInterval(-Double(Self.keepSuggestedKeysDays) * 86_400).timeIntervalSince1970
+                try db.execute("DELETE FROM task_suggestion_keys WHERE at < ?", [cutoff])
+                try db.execute("DELETE FROM task_suggestion_resolved WHERE resolved < ?", [cutoff])
             }
         } catch {
             NSLog("ironpet: could not prune the inbox: \(error.localizedDescription)")
@@ -400,7 +619,12 @@ package final class TaskStore {
         prune()
         do {
             let suggested = try database.read { db -> [TaskSuggestion] in
-                try db.rows("""
+                var sources: [String: [InboxSource]] = [:]
+                for row in try db.rows("SELECT suggestion, kind, ref, url, label FROM task_suggestion_sources ORDER BY suggestion, position") {
+                    guard let id = row[0] as? String, let kind = (row[1] as? String).flatMap(TaskSource.init(rawValue:)), let ref = row[2] as? String else { continue }
+                    sources[id, default: []].append(InboxSource(kind: kind, ref: ref, url: (row[3] as? String).flatMap(URL.init(string:)), label: row[4] as? String))
+                }
+                return try db.rows("""
                     SELECT id, title, due, notes, url, meeting, automation, automation_name, created, waiting_on, source_ref
                     FROM task_suggestions ORDER BY created, id
                     """).compactMap { row -> TaskSuggestion? in
@@ -416,7 +640,7 @@ package final class TaskStore {
                     return TaskSuggestion(id: id, title: title, due: row[2] as? String, notes: row[3] as? String ?? "",
                                           url: (row[4] as? String).flatMap(URL.init(string:)), origin: origin,
                                           created: Date(timeIntervalSince1970: created), waitingOn: row[9] as? String,
-                                          sourceRef: row[10] as? String)
+                                          sourceRef: row[10] as? String, sources: sources[id])
                 }
             }
             if suggested != suggestions { suggestions = suggested }

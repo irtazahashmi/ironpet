@@ -1301,6 +1301,55 @@ final class AutomationScriptEngineTests: AutomationTestCase {
         XCTAssertEqual(bubbles.count, 1, "nothing new, no bubble")
     }
 
+    func testSuggestTaskWithTheSameIdUpdatesTheItemAndResolveTaskRemovesIt() async throws {
+        let (rig, _) = rig(scripted())
+        let tasks = TaskStore(database: Database.open(path: nil, migrations: AppMigrations.all).database)
+        var bubbles: [[TaskSuggestion]] = []
+        rig.service.tasks = tasks
+        rig.service.suggested = { bubbles.append($0) }
+        var actions: [[String: Any]] = []
+        rig.engine.runScript = { _, state in self.output(actions, state: state ?? "{}") }
+        func suggest(_ due: String) -> [String: Any] { ["type": "suggest_task", "id": "mail-1", "title": "Reply to Sam", "due": due] }
+
+        actions = [suggest("2026-12-01")]
+        await rig.engine.pollNow("ci")
+        let id = try XCTUnwrap(tasks.suggestions.first?.id)
+
+        actions = [suggest("2026-12-08")]
+        await rig.engine.pollNow("ci")
+        XCTAssertEqual(tasks.suggestions.map(\.id), [id], "the same key is the same item")
+        XCTAssertEqual(tasks.suggestions.first?.due, "2026-12-08")
+        XCTAssertTrue(bubbles.isEmpty, "an update is not news")
+
+        actions = [["type": "resolve_task", "id": "mail-1", "reason": "answered"]]
+        await rig.engine.pollNow("ci")
+        XCTAssertTrue(tasks.suggestions.isEmpty)
+        XCTAssertEqual(tasks.resolved().map(\.reason), ["answered"])
+
+        // The watcher lists the same actions on every run. Neither one brings the item back or fails.
+        actions = [suggest("2026-12-09"), ["type": "resolve_task", "id": "mail-1", "reason": "answered"]]
+        await rig.engine.pollNow("ci")
+        XCTAssertTrue(tasks.suggestions.isEmpty)
+        XCTAssertEqual(tasks.resolved().count, 1)
+        XCTAssertFalse(rig.engine.state.history("ci").contains { $0.output.hasPrefix("action ") }, "\(rig.engine.state.history("ci").map(\.output))")
+    }
+
+    func testResolveTaskNeedsAnIdAndAReasonAndOnlyReachesItsOwnItems() async throws {
+        let (rig, _) = rig(scripted())
+        let tasks = TaskStore(database: Database.open(path: nil, migrations: AppMigrations.all).database)
+        rig.service.tasks = tasks
+        tasks.suggest([TaskSuggestion.Draft(key: "mail-1", title: "Reply to Sam")], automation: "other", name: "Other")
+        var actions: [[String: Any]] = [["type": "resolve_task", "reason": "answered"], ["type": "resolve_task", "id": "mail-1"],
+                                        ["type": "resolve_task", "id": "mail-1", "reason": "answered"]]
+        rig.engine.runScript = { _, state in self.output(actions, state: state ?? "{}") }
+        await rig.engine.pollNow("ci")
+        let history = rig.engine.state.history("ci").map(\.output)
+        XCTAssertTrue(history.contains("action 1: a resolve_task needs an id"), "\(history)")
+        XCTAssertTrue(history.contains { $0.contains("action 2:") && $0.contains("reason") }, "\(history)")
+        XCTAssertEqual(tasks.suggestions.count, 1, "an id another automation used is not this watcher's to resolve")
+        actions = []
+    }
+
     func testSuggestTaskWithoutAnInboxIsRecorded() async {
         let (rig, _) = rig(scripted())
         rig.engine.runScript = { _, _ in self.output([["type": "suggest_task", "id": "1", "title": "x"]]) }

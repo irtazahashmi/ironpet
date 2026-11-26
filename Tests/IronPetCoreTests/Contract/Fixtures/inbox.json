@@ -49,6 +49,13 @@
               }
             },
             "sourceRef" : "{\"ref\":\"mail 1\",\"reason\":\"Sam asked\"}",
+            "sources" : [
+              {
+                "kind" : "email",
+                "label" : "Email",
+                "ref" : "mail 1"
+              }
+            ],
             "title" : "Reply to Sam"
           }
         ]
@@ -76,6 +83,13 @@
               }
             },
             "sourceRef" : "{\"ref\":\"mail 1\",\"reason\":\"Sam asked\"}",
+            "sources" : [
+              {
+                "kind" : "email",
+                "label" : "Email",
+                "ref" : "mail 1"
+              }
+            ],
             "title" : "Reply to Sam"
           }
         ]
@@ -170,6 +184,13 @@
               }
             },
             "sourceRef" : "pr 2",
+            "sources" : [
+              {
+                "kind" : "pr",
+                "label" : "Pull request",
+                "ref" : ""
+              }
+            ],
             "title" : "Review PR 2"
           }
         ]
@@ -201,6 +222,241 @@
       },
       "response" : {
         "id" : 9,
+        "jsonrpc" : "2.0",
+        "result" : [
+
+        ]
+      }
+    },
+    {
+      "capture" : {
+        "deckId" : "result[0].id"
+      },
+      "name" : "add the first source",
+      "request" : {
+        "id" : 10,
+        "jsonrpc" : "2.0",
+        "method" : "inbox.add",
+        "params" : {
+          "draft" : {
+            "due" : "2026-12-01",
+            "key" : "pr-3",
+            "notes" : "",
+            "title" : "Send the deck",
+            "url" : "https://example.com/pr/3"
+          },
+          "kind" : "pr",
+          "sourceRef" : "{\"ref\":\"pr 3\",\"reason\":\"Review asked\"}"
+        }
+      },
+      "response" : {
+        "id" : 10,
+        "jsonrpc" : "2.0",
+        "result" : [
+          {
+            "created" : "<date>",
+            "due" : "2026-12-01",
+            "id" : "$deckId",
+            "notes" : "",
+            "origin" : {
+              "automation" : {
+                "id" : "agent:pr",
+                "name" : "pr agent"
+              }
+            },
+            "sourceRef" : "{\"ref\":\"pr 3\",\"reason\":\"Review asked\"}",
+            "sources" : [
+              {
+                "kind" : "pr",
+                "label" : "Pull request",
+                "ref" : "pr 3",
+                "url" : "https://example.com/pr/3"
+              }
+            ],
+            "title" : "Send the deck",
+            "url" : "https://example.com/pr/3"
+          }
+        ]
+      }
+    },
+    {
+      "name" : "add the same thing from a mail",
+      "request" : {
+        "id" : 11,
+        "jsonrpc" : "2.0",
+        "method" : "inbox.add",
+        "params" : {
+          "draft" : {
+            "key" : "mail-9",
+            "notes" : "",
+            "sameAs" : "$deckId",
+            "title" : "Deck mail",
+            "url" : "https://mail.example.com/9"
+          },
+          "kind" : "email",
+          "sourceRef" : "{\"ref\":\"mail 9\",\"reason\":\"Sam asked\"}"
+        }
+      },
+      "response" : {
+        "id" : 11,
+        "jsonrpc" : "2.0",
+        "result" : [
+          {
+            "created" : "<date>",
+            "due" : "2026-12-01",
+            "id" : "$deckId",
+            "notes" : "",
+            "origin" : {
+              "automation" : {
+                "id" : "agent:pr",
+                "name" : "pr agent"
+              }
+            },
+            "sourceRef" : "{\"ref\":\"pr 3\",\"reason\":\"Review asked\"}",
+            "sources" : [
+              {
+                "kind" : "pr",
+                "label" : "Pull request",
+                "ref" : "pr 3",
+                "url" : "https://example.com/pr/3"
+              },
+              {
+                "kind" : "email",
+                "label" : "Email",
+                "ref" : "mail 9",
+                "url" : "https://mail.example.com/9"
+              }
+            ],
+            "title" : "Send the deck",
+            "url" : "https://example.com/pr/3"
+          }
+        ]
+      }
+    },
+    {
+      "name" : "add the first key again with a new due date",
+      "request" : {
+        "id" : 12,
+        "jsonrpc" : "2.0",
+        "method" : "inbox.add",
+        "params" : {
+          "draft" : {
+            "due" : "2026-12-08",
+            "key" : "pr-3",
+            "notes" : "",
+            "title" : "Send the deck"
+          },
+          "kind" : "pr",
+          "sourceRef" : "{\"ref\":\"pr 3\",\"reason\":\"Review asked\"}"
+        }
+      },
+      "response" : {
+        "id" : 12,
+        "jsonrpc" : "2.0",
+        "result" : [
+          {
+            "created" : "<date>",
+            "due" : "2026-12-08",
+            "id" : "$deckId",
+            "notes" : "",
+            "origin" : {
+              "automation" : {
+                "id" : "agent:pr",
+                "name" : "pr agent"
+              }
+            },
+            "sourceRef" : "{\"ref\":\"pr 3\",\"reason\":\"Review asked\"}",
+            "sources" : [
+              {
+                "kind" : "pr",
+                "label" : "Pull request",
+                "ref" : "pr 3",
+                "url" : "https://example.com/pr/3"
+              },
+              {
+                "kind" : "email",
+                "label" : "Email",
+                "ref" : "mail 9",
+                "url" : "https://mail.example.com/9"
+              }
+            ],
+            "title" : "Send the deck",
+            "url" : "https://example.com/pr/3"
+          }
+        ]
+      }
+    },
+    {
+      "name" : "resolve",
+      "request" : {
+        "id" : 13,
+        "jsonrpc" : "2.0",
+        "method" : "inbox.resolve",
+        "params" : {
+          "id" : "$deckId",
+          "reason" : "answered"
+        }
+      },
+      "response" : {
+        "id" : 13,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "created" : "<date>",
+          "due" : "2026-12-08",
+          "id" : "$deckId",
+          "reason" : "answered",
+          "resolved" : "<date>",
+          "sources" : [
+            {
+              "kind" : "pr",
+              "label" : "Pull request",
+              "ref" : "pr 3",
+              "url" : "https://example.com/pr/3"
+            },
+            {
+              "kind" : "email",
+              "label" : "Email",
+              "ref" : "mail 9",
+              "url" : "https://mail.example.com/9"
+            }
+          ],
+          "title" : "Send the deck"
+        }
+      }
+    },
+    {
+      "name" : "list after resolve",
+      "request" : {
+        "id" : 14,
+        "jsonrpc" : "2.0",
+        "method" : "inbox.list"
+      },
+      "response" : {
+        "id" : 14,
+        "jsonrpc" : "2.0",
+        "result" : [
+
+        ]
+      }
+    },
+    {
+      "name" : "add the resolved key again",
+      "request" : {
+        "id" : 15,
+        "jsonrpc" : "2.0",
+        "method" : "inbox.add",
+        "params" : {
+          "draft" : {
+            "key" : "pr-3",
+            "notes" : "",
+            "title" : "Send the deck"
+          },
+          "kind" : "pr",
+          "sourceRef" : "x"
+        }
+      },
+      "response" : {
+        "id" : 15,
         "jsonrpc" : "2.0",
         "result" : [
 

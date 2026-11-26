@@ -112,7 +112,7 @@ private struct InboxRow: View {
                     VStack(alignment: .leading, spacing: 3) {
                         HStack(spacing: 5) {
                             Image(systemName: item.source.symbol).font(.system(size: 10)).accessibilityHidden(true)
-                            Text("\(item.originLabel), \(TaskTime.relative(item.created))")
+                            Text("\(item.fromLabel), \(TaskTime.relative(item.created))")
                             if let due = item.due {
                                 Text("·").accessibilityHidden(true)
                                 Label("Due \(due)", systemImage: "calendar").labelStyle(DueLabelStyle())

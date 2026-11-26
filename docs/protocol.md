@@ -227,8 +227,9 @@ The Inbox: action items from meetings, and items that watchers and agents add. T
 | `inbox.done` | `ID` | `null` | `POST /v1/suggestions/:id/accept` |
 | `inbox.list` | none | `[TaskSuggestion]` | `GET /v1/suggestions` |
 | `inbox.remove` | `RemoveSuggestionRequest` | `null` | `POST /v1/suggestions/:id/reject` |
+| `inbox.resolve` | `ResolveSuggestionRequest` | `ResolvedSuggestion` | none |
 
-`inbox.add` has no REST route because the phone does not add items. `RemoveSuggestionRequest` is `{"id", "note"}`, and `note` is optional. There are no `tasks.*` methods: migration 590 dropped the task tables, with no export.
+`inbox.add` and `inbox.resolve` have no REST route because the phone does not add or resolve items. `inbox.add` answers with the item the request ended up in: a new item, an item that took the new text because its id was already in the inbox, or an item that gained a source because the draft named it in `sameAs` or carried the same url. It answers `[]` when the id's item is gone or the title is already in the inbox. Every `TaskSuggestion` has `sources`, each `{kind, ref, url?, label?}`, first the source that created it. `ResolveSuggestionRequest` is `{"id", "reason"}`, where `id` is an item id or the id the agent added it under, and `ResolvedSuggestion` keeps the reason, the time and the sources. `RemoveSuggestionRequest` is `{"id", "note"}`, and `note` is optional. There are no `tasks.*` methods: migration 590 dropped the task tables, with no export.
 
 ### `alerts`
 

@@ -103,6 +103,7 @@ extension RemoteSuggestion {
         }
         self.init(id: suggestion.id, title: suggestion.title, created: suggestion.created, origin: origin, originDetail: detail, due: suggestion.due,
                   notes: suggestion.notes, url: suggestion.url?.absoluteString, waitingOn: suggestion.waitingOn,
-                  sourceRef: suggestion.sourceRef.map { RemoteJSON(reference: $0) })
+                  sourceRef: suggestion.sourceRef.map { RemoteJSON(reference: $0) },
+                  sources: suggestion.sources.map { RemoteSource(kind: $0.kind.rawValue, ref: $0.ref, url: $0.url?.absoluteString, label: $0.label) })
     }
 }

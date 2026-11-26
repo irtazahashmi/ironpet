@@ -53,6 +53,109 @@ package struct TaskLink: Equatable, Codable {
     package var label: String?
 }
 
+/// One place an inbox item came from: the meeting it was written in, a mail, a PR, or a watcher. An item has one source when it is
+/// created and gains another each time the same thing arrives from somewhere else, so the user sees every place it came from.
+package struct InboxSource: Equatable, Codable {
+    package init(kind: TaskSource, ref: String, url: URL? = nil, label: String? = nil) {
+        self.kind = kind
+        self.ref = ref
+        self.url = url
+        self.label = label
+    }
+
+    package var kind: TaskSource
+    /// A meeting folder path, an automation id, or whatever reference the agent named (a session, a thread, an id).
+    package var ref: String
+    /// The page for this source, http or https.
+    package var url: URL?
+    /// What the link button is called: "Meeting", "Email", the watcher's name.
+    package var label: String?
+
+    /// Two sources are the same place when they are the same kind and have the same url or the same non-empty reference. A mail and a
+    /// pull request with one url are two sources, so the item says it came from both.
+    package func isSame(as other: InboxSource) -> Bool {
+        guard kind == other.kind else { return false }
+        if let url, let other = other.url, InboxSource.normalized(url) == InboxSource.normalized(other) { return true }
+        return !ref.isEmpty && ref == other.ref
+    }
+
+    /// A url compared without its fragment, a trailing slash or the case of its scheme and host.
+    package static func normalized(_ url: URL) -> String {
+        guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url.absoluteString }
+        parts.fragment = nil
+        parts.scheme = parts.scheme?.lowercased()
+        parts.host = parts.host?.lowercased()
+        if parts.path.count > 1, parts.path.hasSuffix("/") { parts.path.removeLast() }
+        return parts.string ?? url.absoluteString
+    }
+
+    /// The word on the link button for a source an agent named.
+    package static func displayName(_ kind: TaskSource) -> String {
+        switch kind {
+        case .email: return "Email"
+        case .pr: return "Pull request"
+        case .meeting: return "Meeting"
+        case .capture: return "Screen capture"
+        case .chat: return "Chat"
+        case .automation: return "Watcher"
+        case .telegram: return "Telegram"
+        case .cli: return "CLI"
+        case .agent: return "Agent"
+        case .user: return "You"
+        }
+    }
+}
+
+/// What happened to one draft an agent or watcher filed.
+package enum SuggestChange: Equatable {
+    /// A new item.
+    case added
+    /// The id was seen before and its item is still in the inbox, so the item took the new text.
+    case updated
+    /// The draft named an existing item (`same_as`) or carried the same url as one, so that item gained a source.
+    case merged
+    /// Nothing was stored. The text says why.
+    case ignored(String)
+
+    /// Whether the draft ended up in an item.
+    package var keepsItem: Bool {
+        if case .ignored = self { return false }
+        return true
+    }
+}
+
+/// One draft's result, with the item it ended up in when there is one.
+package struct SuggestFiling: Equatable {
+    package init(change: SuggestChange, item: TaskSuggestion? = nil) {
+        self.change = change
+        self.item = item
+    }
+
+    package var change: SuggestChange
+    package var item: TaskSuggestion?
+}
+
+/// An inbox item that left the list because its source resolved it, with the reason.
+package struct ResolvedSuggestion: Identifiable, Equatable, Codable {
+    package init(id: String, title: String, reason: String, resolved: Date, created: Date, due: String? = nil, sources: [InboxSource] = []) {
+        self.id = id
+        self.title = title
+        self.reason = reason
+        self.resolved = resolved
+        self.created = created
+        self.due = due
+        self.sources = sources
+    }
+
+    package let id: String
+    package var title: String
+    package var reason: String
+    package var resolved: Date
+    package var created: Date
+    package var due: String?
+    package var sources: [InboxSource]
+}
+
 /// An inbox item: an action item from a meeting summary, or something a watcher automation or an agent found, that waits until the
 /// user marks it done or removes it. It is text only and never sent to an agent.
 package struct TaskSuggestion: Identifiable, Equatable, Codable {
@@ -65,8 +168,10 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
         origin: Origin,
         created: Date,
         waitingOn: String? = nil,
-        sourceRef: String? = nil
+        sourceRef: String? = nil,
+        sources: [InboxSource]? = nil
     ) {
+        self.sources = sources ?? Self.firstSource(origin: origin, url: url)
         self.id = id
         self.title = title
         self.due = due
@@ -88,7 +193,8 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
     /// (cleaned by `init?(action:)`).
     package struct Draft: Equatable, Codable {
         package init(key: String, title: String, due: String? = nil, notes: String = "", url: URL? = nil, waitingOn: String? = nil,
-                     sourceRef: String? = nil) {
+                     sourceRef: String? = nil, sameAs: String? = nil) {
+            self.sameAs = sameAs
             self.sourceRef = sourceRef
             self.key = key
             self.title = title
@@ -108,6 +214,9 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
         package var waitingOn: String?
         /// Where the draft came from, when the producer knows. Used when `store` is not given a reference.
         package var sourceRef: String?
+        /// The id of an item already in the inbox that this is the same thing as, named by the caller. The item gains this draft's
+        /// source instead of a second item appearing.
+        package var sameAs: String?
     }
 
     package let id: String
@@ -122,17 +231,37 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
     package var waitingOn: String? = nil
     /// Where the suggestion came from, for diagnostics: a JSON object.
     package var sourceRef: String? = nil
+    /// Every place the item came from, first the one that created it. A mail that arrives about a meeting's item adds a second.
+    package var sources: [InboxSource]
+
+    /// The source an item has when it is created: its origin and the page it names.
+    package static func firstSource(origin: Origin, url: URL?) -> [InboxSource] {
+        switch origin {
+        case .meeting(let folder): return [InboxSource(kind: .meeting, ref: folder.path, url: url, label: "Meeting")]
+        case .automation(let id, let name): return [InboxSource(kind: .automation, ref: id, url: url, label: name)]
+        }
+    }
 
     package var meeting: URL? {
         if case .meeting(let url) = origin { return url }
         return nil
     }
 
-    /// Where the item came from, as links the user can open: the meeting it was written in, and the page the watcher or agent named.
+    /// Where the item came from, as links the user can open: one for the meeting it was written in and one for each page a source
+    /// named. The same link is listed once.
     package var links: [TaskLink] {
         var links: [TaskLink] = []
-        if let folder = meeting { links.append(TaskLink(kind: .meeting, ref: folder.lastPathComponent, label: "Meeting")) }
-        if let url { links.append(TaskLink(kind: .url, ref: url.absoluteString)) }
+        func add(_ link: TaskLink) { if !links.contains(link) { links.append(link) } }
+        for source in sources {
+            if source.kind == .meeting, source.ref.hasPrefix("/"), source.url == nil || source.ref == meeting?.path {
+                add(TaskLink(kind: .meeting, ref: (source.ref as NSString).lastPathComponent, label: source.label ?? "Meeting"))
+            }
+            if let url = source.url {
+                // A source's own name tells two links apart. The first watcher link stays unnamed, as it was before sources.
+                let named = sources.count > 1 || source.kind != .automation
+                add(TaskLink(kind: .url, ref: url.absoluteString, label: named ? source.label : nil))
+            }
+        }
         return links
     }
 
@@ -142,6 +271,17 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
         case .meeting: return .meeting
         case .automation: return .automation
         }
+    }
+
+    /// `originLabel`, and for a merged item the other sources by name: "Meeting and Email".
+    package var fromLabel: String {
+        guard sources.count > 1 else { return originLabel }
+        var names: [String] = []
+        for source in sources {
+            let name = source.label ?? InboxSource.displayName(source.kind)
+            if !names.contains(name) { names.append(name) }
+        }
+        return names.count > 1 ? "From " + names.dropLast().joined(separator: ", ") + " and " + names[names.count - 1] : originLabel
     }
 
     /// The source a reader filters by. An item an agent or the CLI added keeps its kind (`email`, `pr`, `cli`), which the store
@@ -168,7 +308,7 @@ extension TaskSuggestion.Draft {
     package static let maxNotes = 2000
     package static let maxURL = 2048
 
-    /// Reads a script's `{type: "suggest_task", id, title, due?, notes?, url?}`. The text comes from outside (mail, chat,
+    /// Reads a script's `{type: "suggest_task", id, title, due?, notes?, url?, same_as?}`. The text comes from outside (mail, chat,
     /// issues), so it is clamped and stripped of control characters, and a due or url that does not parse is dropped.
     package init(action: [String: Any]) throws {
         func string(_ key: String) -> String? {
@@ -184,6 +324,8 @@ extension TaskSuggestion.Draft {
         if let raw = string("due")?.trimmingCharacters(in: .whitespaces), raw.count == 10, (try? TaskValidator.due(raw)) != nil {
             due = raw
         }
+        let named = Self.clean(string("same_as") ?? "", limit: Self.maxKey, newlines: false)
+        sameAs = named.isEmpty ? nil : named
         notes = Self.clean(string("notes") ?? "", limit: Self.maxNotes, newlines: true)
         while notes.utf8.count > TaskValidator.maxNotes { notes.removeLast() }
         if let raw = string("url")?.trimmingCharacters(in: .whitespaces), raw.count <= Self.maxURL, let url = URL(string: raw),

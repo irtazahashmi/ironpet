@@ -247,6 +247,7 @@ package final class RPCDispatcher {
         add("inbox.list", "GET /v1/suggestions", result: "[TaskSuggestion]") { inbox.suggestions }
         add("inbox.add", "none", params: "SuggestTaskRequest", result: "[TaskSuggestion]") { (p: SuggestTaskRequest) in inbox.suggest(p) }
         addVoid("inbox.done", "POST /v1/suggestions/:id/accept", params: "ID") { (p: ID) in try inbox.done(p.id) }
+        add("inbox.resolve", "none", params: "ResolveSuggestionRequest", result: "ResolvedSuggestion") { (p: ResolveSuggestionRequest) in try inbox.resolve(p) }
         addVoid("inbox.remove", "POST /v1/suggestions/:id/reject", params: "RemoveSuggestionRequest") { (p: RemoveSuggestionRequest) in try inbox.remove(p) }
     }
 

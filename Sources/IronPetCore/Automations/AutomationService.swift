@@ -755,6 +755,7 @@ package final class AutomationService {
             case "alert": problem = scriptAlert(action, a, firstRun: firstRun)
             case "prompt": problem = scriptPrompt(action, a)
             case "chat": problem = scriptChat(action, a)
+            case "resolve_task": problem = resolveTask(action, a)
             case "suggest_task":
                 do {
                     let draft = try TaskSuggestion.Draft(action: action)
@@ -763,7 +764,7 @@ package final class AutomationService {
                 } catch {
                     problem = error.localizedDescription
                 }
-            default: problem = "type must be bubble, alert, prompt, suggest_task or chat"
+            default: problem = "type must be bubble, alert, prompt, suggest_task, resolve_task or chat"
             }
             if let problem { record(a.id, "failed", "action \(index + 1): \(problem)") }
         }
@@ -773,6 +774,21 @@ package final class AutomationService {
 
     /// Where `suggest_task` actions go: suggestions only, never tasks.
     package var tasks: TaskStore?
+    /// A `resolve_task` action: the item this automation suggested under `id` leaves the inbox, with `reason`. An id whose item is
+    /// already gone is not a failure, because a watcher lists the same actions on every run.
+    private func resolveTask(_ action: [String: Any], _ a: Automation) -> String? {
+        guard let tasks else { return "resolve_task: the inbox is not available" }
+        let key = TaskSuggestion.Draft.clean((action["id"] as? String) ?? "", limit: TaskSuggestion.Draft.maxKey, newlines: false)
+        guard !key.isEmpty else { return "a resolve_task needs an id" }
+        do {
+            let reason = try TaskStore.validReason((action["reason"] as? String) ?? "")
+            if let item = tasks.item(named: key, scopes: [a.id]) { try tasks.resolve(item.id, reason: reason) }
+            return nil
+        } catch {
+            return error.localizedDescription
+        }
+    }
+
     /// Offers what one run added, in one bubble.
     package var suggested: (_ added: [TaskSuggestion]) -> Void = { _ in }
 

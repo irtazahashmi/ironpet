@@ -168,7 +168,7 @@ final class InboxCLIAndMCPTests: XCTestCase {
 
     func testTheToolListNamesTheNewToolsAndKeepsTheOldOnes() throws {
         let names = Set(TaskMCP.tools.compactMap { $0["name"] as? String })
-        XCTAssertEqual(names, ["inbox_list", "inbox_get", "inbox_note", "inbox_add", "inbox_done", "inbox_remove"])
+        XCTAssertEqual(names, ["inbox_list", "inbox_get", "inbox_note", "inbox_add", "inbox_done", "inbox_remove", "inbox_resolve"])
         XCTAssertTrue(ApprovalRules.ownTaskTools.isSuperset(of: names))
     }
 }

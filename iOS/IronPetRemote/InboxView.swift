@@ -38,8 +38,8 @@ struct InboxRow: View {
         VStack(alignment: .leading, spacing: 6) {
             Text(item.title)
             Text(subtitle).font(.caption).foregroundStyle(.secondary)
-            if let link = item.sourceLink {
-                Link(link.host ?? link.absoluteString, destination: link).font(.caption).accessibilityIdentifier("source-\(item.id)")
+            ForEach(Array(item.sourceLinks.enumerated()), id: \.element.id) { index, link in
+                Link(link.label, destination: link.url).font(.caption).accessibilityIdentifier(index == 0 ? "source-\(item.id)" : "source-\(item.id)-\(index)")
             }
             if !item.notes.isEmpty { Text(item.notes).font(.caption).foregroundStyle(.secondary).lineLimit(3) }
             HStack {
@@ -55,6 +55,7 @@ struct InboxRow: View {
     }
 
     private var subtitle: String {
-        "\(item.originLabel) · \(item.created.formatted(.relative(presentation: .named)))"
+        let from = item.sources.count > 1 ? "\(item.originLabel) and \(item.sources.count - 1) more" : item.originLabel
+        return "\(from) · \(item.created.formatted(.relative(presentation: .named)))"
     }
 }
