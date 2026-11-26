@@ -72,7 +72,7 @@ final class AgentSupervisorTests: XCTestCase {
 
     // MARK: S1, one process per enabled agent
 
-    func testItStartsOneProcessPerEnabledAgentWithThatAgentsConfiguration() {
+    func testItStartsOneProcessPerEnabledAgentWithThatAgentsConfiguration() async {
         let supervisor = supervisor()
         supervisor.reconcile()
         XCTAssertEqual(launcher.launched.count, 2)
@@ -82,7 +82,7 @@ final class AgentSupervisorTests: XCTestCase {
         XCTAssertEqual(launcher.launched.count, 2, "a second reconcile starts nothing")
     }
 
-    func testACrashRestartsOnlyThatAgentAfterTheBackoff() {
+    func testACrashRestartsOnlyThatAgentAfterTheBackoff() async {
         let supervisor = supervisor()
         supervisor.reconcile()
         let b = launcher.live("agent_b")[0]
@@ -100,7 +100,7 @@ final class AgentSupervisorTests: XCTestCase {
         XCTAssertEqual(launcher.live("agent_default").first === a, true)
     }
 
-    func testTheBackoffDoublesAndStopsAtTheCap() {
+    func testTheBackoffDoublesAndStopsAtTheCap() async {
         let supervisor = supervisor()
         supervisor.reconcile()
         for _ in 0..<6 {
@@ -111,7 +111,7 @@ final class AgentSupervisorTests: XCTestCase {
         XCTAssertEqual(supervisor.attempts("agent_b"), 6)
     }
 
-    func testAProcessThatStaysUpResetsTheBackoff() {
+    func testAProcessThatStaysUpResetsTheBackoff() async {
         let supervisor = supervisor()
         supervisor.reconcile()
         launcher.live("agent_b")[0].crash()
@@ -124,7 +124,7 @@ final class AgentSupervisorTests: XCTestCase {
         XCTAssertEqual(clock.delays.last, 1, "it ran longer than stableAfter, so the next delay starts over")
     }
 
-    func testALaunchThatThrowsIsRetriedWithBackoff() {
+    func testALaunchThatThrowsIsRetriedWithBackoff() async {
         let supervisor = supervisor()
         launcher.failNext = 2
         supervisor.reconcile()
@@ -135,7 +135,7 @@ final class AgentSupervisorTests: XCTestCase {
         XCTAssertEqual(supervisor.running.count, 2)
     }
 
-    func testStoppingTheNodeStopsEveryProcessAndEveryPendingRestart() {
+    func testStoppingTheNodeStopsEveryProcessAndEveryPendingRestart() async {
         let supervisor = supervisor()
         supervisor.reconcile()
         launcher.live("agent_b")[0].crash()
@@ -152,7 +152,7 @@ final class AgentSupervisorTests: XCTestCase {
 
     // MARK: S3, disabling and enabling
 
-    func testDisablingAnAgentStopsItsProcessAndEnablingStartsItAgain() {
+    func testDisablingAnAgentStopsItsProcessAndEnablingStartsItAgain() async {
         let supervisor = supervisor()
         supervisor.reconcile()
         let first = launcher.live("agent_b")[0]
@@ -167,14 +167,14 @@ final class AgentSupervisorTests: XCTestCase {
         XCTAssertTrue(launcher.live("agent_b")[0] !== first)
     }
 
-    func testADisabledAgentStartsNoProcess() {
+    func testADisabledAgentStartsNoProcess() async {
         records[1].enabled = false
         let supervisor = supervisor()
         supervisor.reconcile()
         XCTAssertEqual(launcher.launched.map { $0.launch.agentID }, ["agent_default"])
     }
 
-    func testDisablingACrashedAgentCancelsItsRestart() {
+    func testDisablingACrashedAgentCancelsItsRestart() async {
         let supervisor = supervisor()
         supervisor.reconcile()
         launcher.live("agent_b")[0].crash()
@@ -187,7 +187,7 @@ final class AgentSupervisorTests: XCTestCase {
 
     // MARK: S4, the supervisor reacts to configuration
 
-    func testAChangedConfigurationRestartsOnlyThatAgent() {
+    func testAChangedConfigurationRestartsOnlyThatAgent() async {
         let supervisor = supervisor()
         supervisor.reconcile()
         let a = launcher.live("agent_default")[0]
@@ -199,7 +199,7 @@ final class AgentSupervisorTests: XCTestCase {
         XCTAssertEqual(launcher.live("agent_b")[0].launch.model, "sonnet")
     }
 
-    func testARenameDoesNotRestart() {
+    func testARenameDoesNotRestart() async {
         let supervisor = supervisor()
         supervisor.reconcile()
         let old = launcher.live("agent_b")[0]
@@ -210,7 +210,7 @@ final class AgentSupervisorTests: XCTestCase {
         XCTAssertEqual(supervisor.running["agent_b"]?.name, "Rabbit")
     }
 
-    func testANewAgentStartsAndADeletedOneStops() {
+    func testANewAgentStartsAndADeletedOneStops() async {
         let supervisor = supervisor()
         supervisor.reconcile()
         let b = launcher.live("agent_b")[0]
@@ -223,7 +223,7 @@ final class AgentSupervisorTests: XCTestCase {
 
     // MARK: S8, an install with one agent
 
-    func testWithOnlyAgentOneTheLaunchIsTheDefaultConfiguration() {
+    func testWithOnlyAgentOneTheLaunchIsTheDefaultConfiguration() async {
         records = [records[0]]
         let supervisor = supervisor()
         supervisor.reconcile()
@@ -231,7 +231,7 @@ final class AgentSupervisorTests: XCTestCase {
         XCTAssertEqual(launcher.launched[0].launch, AgentLaunch(agentID: "agent_default", name: "Ghost", cli: "cursor", model: nil, instructions: ""))
     }
 
-    func testBackoffDelays() {
+    func testBackoffDelays() async {
         let backoff = RestartBackoff(initial: 1, cap: 60)
         XCTAssertEqual((1...8).map { backoff.delay(attempt: $0) }, [1, 2, 4, 8, 16, 32, 60, 60])
     }
@@ -244,7 +244,7 @@ final class AgentRegistryLifecycleTests: XCTestCase {
         AgentRegistry(database: try Database(path: nil, migrations: AppMigrations.all))
     }
 
-    func testCreateAddsAnEnabledAgentWithTheNextNumber() throws {
+    func testCreateAddsAnEnabledAgentWithTheNextNumber() async throws {
         let registry = try registry()
         let b = try registry.create(name: "Bunny", pet: "/tmp/bunny.png", agentCli: "claude", model: "opus", instructions: "Be brief.")
         XCTAssertEqual(b.number, 2)
@@ -255,14 +255,14 @@ final class AgentRegistryLifecycleTests: XCTestCase {
         XCTAssertEqual(registry.list().map(\.number), [1, 2])
     }
 
-    func testCreateRejectsAnEmptyNameAndAnUnknownCli() throws {
+    func testCreateRejectsAnEmptyNameAndAnUnknownCli() async throws {
         let registry = try registry()
         XCTAssertThrowsError(try registry.create(name: "  ", agentCli: "claude"))
         XCTAssertThrowsError(try registry.create(name: "X", agentCli: "no-such-cli"))
         XCTAssertEqual(registry.list().count, 1)
     }
 
-    func testANumberIsNeverReusedAfterADelete() throws {
+    func testANumberIsNeverReusedAfterADelete() async throws {
         let registry = try registry()
         let b = try registry.create(name: "B", agentCli: "claude")
         try registry.delete(b.id)
@@ -270,7 +270,7 @@ final class AgentRegistryLifecycleTests: XCTestCase {
         XCTAssertEqual(c.number, 3)
     }
 
-    func testDisableAndEnableKeepTheRecord() throws {
+    func testDisableAndEnableKeepTheRecord() async throws {
         let registry = try registry()
         let b = try registry.create(name: "B", agentCli: "claude", model: "opus")
         try registry.update(b.id, AgentRecordPatch(enabled: false))
@@ -281,14 +281,14 @@ final class AgentRegistryLifecycleTests: XCTestCase {
         XCTAssertEqual(registry.enabledAgents().count, 2)
     }
 
-    func testAgentOneCannotBeDeletedOrDisabled() throws {
+    func testAgentOneCannotBeDeletedOrDisabled() async throws {
         let registry = try registry()
         XCTAssertThrowsError(try registry.delete("agent_default"))
         XCTAssertThrowsError(try registry.update("agent_default", AgentRecordPatch(enabled: false)))
         XCTAssertEqual(registry.get("agent_default")?.enabled, true)
     }
 
-    func testAnUnknownIdIsNotFound() throws {
+    func testAnUnknownIdIsNotFound() async throws {
         let registry = try registry()
         XCTAssertThrowsError(try registry.delete("agent_nope")) { XCTAssertEqual(($0 as? APIError)?.code, .notFound) }
         XCTAssertThrowsError(try registry.update("agent_nope", AgentRecordPatch(name: "x"))) { XCTAssertEqual(($0 as? APIError)?.code, .notFound) }
@@ -309,7 +309,7 @@ final class AgentRegistryLifecycleTests: XCTestCase {
         supervisor.stopAll()
     }
 
-    func testAnOlderWireRecordWithoutEnabledDecodesAsEnabled() throws {
+    func testAnOlderWireRecordWithoutEnabledDecodesAsEnabled() async throws {
         let json = #"{"id":"agent_x","number":2,"name":"X","agentCli":"claude","instructions":"","permissions":{},"cliModels":{},"created":0,"updated":0}"#
         let record = try JSONDecoder().decode(AgentRecord.self, from: Data(json.utf8))
         XCTAssertTrue(record.enabled)
