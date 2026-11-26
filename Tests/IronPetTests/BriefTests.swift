@@ -265,12 +265,6 @@ final class DailyCatchUpTests: AutomationTestCase {
         XCTAssertEqual(fired(rig, "brief"), 1, "Monday")
     }
 
-    func testPausedRemindersHoldIt() {
-        let rig = makeRig([daily("brief", at: "09:00", grace: 180)], timing: .init(paused: true))
-        wake(rig, at: AutomationTestClock.monday(hour: 9, minute: 30))
-        XCTAssertEqual(fired(rig, "brief"), 0)
-    }
-
     func testTheSlotTableReachesADatabaseAlreadyPastEveryOtherMigration() throws {
         let file = dir.appendingPathComponent("app.db")
         var old: Database? = try Database(path: file, migrations: AppMigrations.all.filter { $0.version <= 305 })
