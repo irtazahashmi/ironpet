@@ -19,7 +19,7 @@ final class TaskProjectsTests: XCTestCase {
         try XCTUnwrap(try TaskJSON.call(api, op, args, by: "agent:mcp").get() as? [String: Any])
     }
 
-    func testAProjectWithoutANextActionIsStalled() throws {
+    func testAProjectWithoutANextActionIsStalled() async throws {
         let site = try api.upsertProject(id: nil, title: "Launch the new site", outcome: "The new site is live")
         XCTAssertEqual(api.stalledProjects(now: clock).map(\.id), [site.id], "a new project has no step yet")
 
@@ -28,7 +28,7 @@ final class TaskProjectsTests: XCTestCase {
         XCTAssertTrue(api.stalledProjects(now: clock).isEmpty)
     }
 
-    func testWaitingDeferredAndDoneStepsAreNotNextActions() throws {
+    func testWaitingDeferredAndDoneStepsAreNotNextActions() async throws {
         let site = try api.upsertProject(id: nil, title: "Launch the new site")
         _ = try store.create(title: "Logo from Ana", source: .user, waitingOn: "Ana", project: site.id, by: "test")
         _ = try store.create(title: "Press release", source: .user, deferUntil: clock.addingTimeInterval(86_400), project: site.id, by: "test")
@@ -37,13 +37,13 @@ final class TaskProjectsTests: XCTestCase {
         XCTAssertEqual(api.stalledProjects(now: clock).map(\.id), [site.id])
     }
 
-    func testOnlyActiveProjectsCanBeStalled() throws {
+    func testOnlyActiveProjectsCanBeStalled() async throws {
         _ = try api.upsertProject(id: nil, title: "Learn the cello", status: .someday)
         _ = try api.upsertProject(id: nil, title: "Old launch", status: .done)
         XCTAssertTrue(api.stalledProjects(now: clock).isEmpty)
     }
 
-    func testAReviewIntervalComesDueAndReviewingResetsIt() throws {
+    func testAReviewIntervalComesDueAndReviewingResetsIt() async throws {
         let site = try api.upsertProject(id: nil, title: "Launch the new site", reviewDays: 7)
         XCTAssertFalse(site.isDueForReview(now: clock))
         clock = clock.addingTimeInterval(7 * 86_400)
@@ -52,11 +52,11 @@ final class TaskProjectsTests: XCTestCase {
         XCTAssertFalse(reviewed.isDueForReview(now: clock))
     }
 
-    func testATaskCannotJoinAProjectThatDoesNotExist() {
+    func testATaskCannotJoinAProjectThatDoesNotExist() async {
         XCTAssertThrowsError(try store.create(title: "Orphan", source: .user, project: "nope", by: "test"))
     }
 
-    func testAgentsCreateListAndLinkProjects() throws {
+    func testAgentsCreateListAndLinkProjects() async throws {
         let created = try call("projects_upsert", ["title": "Move house", "outcome": "We live in the new flat", "area": "Home", "review_days": 7])
         let id = try XCTUnwrap(created["id"] as? String)
         XCTAssertEqual(created["area"] as? String, "Home")
@@ -80,23 +80,23 @@ final class TaskProjectsTests: XCTestCase {
         XCTAssertEqual((try call("projects_list", ["status": "done"])["projects"] as? [[String: Any]])?.count, 1)
     }
 
-    func testBadProjectInputIsRefused() {
+    func testBadProjectInputIsRefused() async {
         XCTAssertThrowsError(try TaskJSON.call(api, "projects_upsert", ["outcome": "No title"], by: "agent:mcp").get())
         XCTAssertThrowsError(try TaskJSON.call(api, "projects_upsert", ["title": "X", "review_days": 0], by: "agent:mcp").get())
         XCTAssertThrowsError(try TaskJSON.call(api, "projects_upsert", ["title": "X", "status": "paused"], by: "agent:mcp").get())
     }
 
-    func testTheProjectToolsRunWithoutAPrompt() {
+    func testTheProjectToolsRunWithoutAPrompt() async {
         XCTAssertTrue(ApprovalRules.ownTaskTools.isSuperset(of: ["task_projects_list", "task_projects_upsert"]))
     }
 
-    func testProjectsSurviveAReload() throws {
+    func testProjectsSurviveAReload() async throws {
         let site = try api.upsertProject(id: nil, title: "Launch the new site", area: "Work", goal: "Grow sales")
         store.reload()
         XCTAssertEqual(api.project(site.id), site)
     }
 
-    func testAcceptingAProposedNextStepUnstallsTheProject() throws {
+    func testAcceptingAProposedNextStepUnstallsTheProject() async throws {
         let site = try api.upsertProject(id: nil, title: "Launch the new site")
         let proposal = try call("suggest", ["id": "next-1", "title": "Draft the homepage copy", "project": site.id,
                                             "origin": ["kind": "agent", "ref": "review", "reason": "stalled project"]])
@@ -107,12 +107,12 @@ final class TaskProjectsTests: XCTestCase {
         XCTAssertTrue(api.stalledProjects(now: clock).isEmpty)
     }
 
-    func testASuggestionCannotNameAProjectThatDoesNotExist() {
+    func testASuggestionCannotNameAProjectThatDoesNotExist() async {
         let args: [String: Any] = ["id": "x", "title": "Y", "project": "nope", "origin": ["kind": "agent", "ref": "r", "reason": "r"]]
         XCTAssertThrowsError(try TaskJSON.call(api, "suggest", args, by: "agent:mcp").get())
     }
 
-    func testAnUnknownProjectIdIsRefusedInsteadOfCreatingADuplicate() throws {
+    func testAnUnknownProjectIdIsRefusedInsteadOfCreatingADuplicate() async throws {
         _ = try api.upsertProject(id: nil, title: "Launch the new site")
         XCTAssertThrowsError(try TaskJSON.call(api, "projects_upsert", ["id": "lanch-the-new-site", "title": "Launch"], by: "agent:mcp").get())
         XCTAssertThrowsError(try TaskJSON.call(api, "projects_upsert", ["id": 7, "title": "Launch"], by: "agent:mcp").get())
