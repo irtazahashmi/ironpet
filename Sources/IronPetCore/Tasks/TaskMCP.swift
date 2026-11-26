@@ -14,6 +14,7 @@ package enum TaskMCP {
         - needs_you: only the user can take the next step (a decision, a review, a login, a reply). Say what they need to do in the note.
         - someday: the user may do it one day but has not committed to it. It is never a next action.
         - done: finished or no longer needed. Close it with tasks_close and a note rather than deleting it.
+        A task waiting on someone has asked_at; follow_up_due is true once \(TaskFollowUp.workingDays) working days have passed, the time to propose a follow-up.
         defer_until hides a task until that day (the tickler), for something that cannot or should not start before then. null shows it again.
         waiting_on names the person the user is waiting on (a meeting action item someone else owns). Those tasks are shown apart and \
         never count as needing the user. Clear it (null) once the next step is the user's again.
@@ -67,6 +68,8 @@ package enum TaskMCP {
                            "reason": ["type": "string", "minLength": 1, "description": "One sentence on why this task exists"]]]
         let links: [String: Any] = ["type": "array", "items": link, "maxItems": TaskValidator.maxLinks]
         let due: [String: Any] = ["type": "string", "description": "ISO 8601 date or date and time. In changes, null clears it."]
+        let askedAt: [String: Any] = ["type": "string",
+                                      "description": "ISO 8601: when the user asked the person in waiting_on. Defaults to when waiting_on was set."]
         let project: [String: Any] = ["type": "string",
                                       "description": "The id of the GTD project this task is a step of (task_projects_list). In changes, null takes it out."]
         let deferUntil: [String: Any] = ["type": "string",
@@ -86,12 +89,12 @@ package enum TaskMCP {
             tool("tasks_get", "Get one task in full, with its history.", id, required: ["id"]),
             tool("tasks_create", "Add a task. id is made from the title.\n\n" + guide,
                  ["title": ["type": "string", "maxLength": TaskValidator.maxTitle], "notes": ["type": "string"], "status": status,
-                  "origin": origin, "due": due, "links": links, "waiting_on": waitingOn, "labels": labels, "defer_until": deferUntil, "project": project],
+                  "origin": origin, "due": due, "links": links, "waiting_on": waitingOn, "labels": labels, "defer_until": deferUntil, "project": project, "asked_at": askedAt],
                  required: ["title", "origin"]),
             tool("tasks_update", "Change a task. Only the fields in changes are touched; links replaces the whole list; labels adds or overwrites keys and remove_labels removes keys, so omitted labels stay. note is required when the status changes.",
                  id.merging(["changes": ["type": "object", "properties": ["title": ["type": "string"], "notes": ["type": "string"],
                                                                           "status": status, "due": due, "links": links,
-                                                                          "waiting_on": waitingOn, "labels": labels, "defer_until": deferUntil, "project": project,
+                                                                          "waiting_on": waitingOn, "labels": labels, "defer_until": deferUntil, "project": project, "asked_at": askedAt,
                                                                           "remove_labels": ["type": "array", "items": ["type": "string"],
                                                                                             "description": "Label keys to remove"]]],
                              "note": note]) { a, _ in a },

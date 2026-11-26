@@ -77,8 +77,10 @@ package struct TaskItem: Identifiable, Equatable, Codable {
         sourceRef: String? = nil,
         labels: [String: String] = [:],
         deferUntil: Date? = nil,
-        project: String? = nil
+        project: String? = nil,
+        askedAt: Date? = nil
     ) {
+        self.askedAt = askedAt
         self.project = project
         self.deferUntil = deferUntil
         self.id = id
@@ -119,6 +121,8 @@ package struct TaskItem: Identifiable, Equatable, Codable {
     package var deferUntil: Date? = nil
     /// The id of the GTD project this task is a step of (`TaskProject`). Nil for a standalone task.
     package var project: String? = nil
+    /// When the user asked the person in `waitingOn`. Set when `waitingOn` is set, cleared with it; see `followUpDue`.
+    package var askedAt: Date? = nil
 
     /// Hidden until its defer date. A done task is never deferred.
     package func isDeferred(now: Date = Date()) -> Bool {

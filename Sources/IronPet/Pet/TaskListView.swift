@@ -434,6 +434,13 @@ private struct TaskRow: View {
             if let waiting = task.waitingLabel {
                 Text("·").accessibilityHidden(true)
                 Label(waiting, systemImage: "person.badge.clock").labelStyle(DueLabelStyle())
+                if task.followUpDue(now: now) {
+                    Text("·").accessibilityHidden(true)
+                    Label("Follow up", systemImage: "arrowshape.turn.up.right")
+                        .labelStyle(DueLabelStyle())
+                        .foregroundStyle(.orange)
+                        .help("Asked \(TaskTime.relative(task.askedAt ?? task.updated, now: now)); \(TaskFollowUp.workingDays) working days have passed")
+                }
             }
             if let due = task.dueLabel(now: now) {
                 Text("·").accessibilityHidden(true)

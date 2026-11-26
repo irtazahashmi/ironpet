@@ -861,6 +861,9 @@ enum PreviewRenderer {
         add("Rotate the Sentry token", .done, .user, ago: 2 * 3600)
         add("Answer Maya about the onboarding copy", .done, .meeting, ago: day + 3600)
         add("Remove the old feature flags", .done, .agent, ago: 3 * day)
+        if let deck = store.tasks.first(where: { $0.title == "Send the updated pricing deck" }) {
+            _ = try? store.update(deck.id, askedAt: today.addingTimeInterval(-9 * day), by: "agent:mcp")
+        }
         add("Learn to bake sourdough", .someday, .chat, ago: 5 * day)
         add("Renew the domain", .backlog, .user, ago: day)
         if let renew = store.tasks.first(where: { $0.title == "Renew the domain" }) {

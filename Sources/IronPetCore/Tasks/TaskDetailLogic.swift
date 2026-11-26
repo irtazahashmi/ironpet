@@ -127,6 +127,12 @@ package enum TaskEdits {
         try tasks.update(UpdateTaskRequest(id: id, due: due, clearDue: due == nil))
     }
 
+    /// The user asked again: the follow-up clock starts over now.
+    @MainActor @discardableResult
+    package static func markFollowedUp(_ id: String, in tasks: TasksAPI, now: Date = Date()) throws -> TaskItem {
+        try tasks.update(UpdateTaskRequest(id: id, askedAt: now, note: "Followed up by the user."))
+    }
+
     /// Makes the task a step of `project`, or takes it out with nil.
     @MainActor @discardableResult
     package static func setProject(_ project: String?, of id: String, in tasks: TasksAPI) throws -> TaskItem {
