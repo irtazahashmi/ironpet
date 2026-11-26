@@ -10,7 +10,7 @@ final class PhoneAgentRegistrationTests: XCTestCase {
 
     // MARK: S5
 
-    func testAPhoneAgentIsListedAsAnAgentOfTheNodeWithItsDeviceAndProvider() throws {
+    func testAPhoneAgentIsListedAsAnAgentOfTheNodeWithItsDeviceAndProvider() async throws {
         let registry = try registry()
         let record = try registry.registerDevice("dev_1", name: "Ghost on iPhone", provider: "anthropic", model: "claude-sonnet-5-5")
         XCTAssertEqual(registry.list().map(\.id), [AgentRegistry.chatAgentID, record.id])
@@ -22,7 +22,7 @@ final class PhoneAgentRegistrationTests: XCTestCase {
         XCTAssertTrue(record.enabled)
     }
 
-    func testRegisteringAgainUpdatesTheRecordOfThatDeviceInsteadOfAddingOne() throws {
+    func testRegisteringAgainUpdatesTheRecordOfThatDeviceInsteadOfAddingOne() async throws {
         let registry = try registry()
         let first = try registry.registerDevice("dev_1", name: "Ghost on iPhone", provider: "anthropic", model: nil)
         let second = try registry.registerDevice("dev_1", name: "Ghost on iPhone", provider: "openai", model: "gpt-5")
@@ -33,7 +33,7 @@ final class PhoneAgentRegistrationTests: XCTestCase {
         XCTAssertNotEqual(other.id, first.id)
     }
 
-    func testAPhoneAgentStartsNoProcessShowsNoPetAndOffersNoChatOnTheMac() throws {
+    func testAPhoneAgentStartsNoProcessShowsNoPetAndOffersNoChatOnTheMac() async throws {
         let registry = try registry()
         try registry.registerDevice("dev_1", name: "Ghost on iPhone", provider: "anthropic", model: nil)
         XCTAssertEqual(registry.enabledAgents().map(\.id), [AgentRegistry.chatAgentID])
@@ -46,14 +46,14 @@ final class PhoneAgentRegistrationTests: XCTestCase {
         supervisor.stopAll()
     }
 
-    func testAPhoneAgentCannotBeMadeTheActiveAgent() throws {
+    func testAPhoneAgentCannotBeMadeTheActiveAgent() async throws {
         let registry = try registry()
         let record = try registry.registerDevice("dev_1", name: "Ghost on iPhone", provider: "anthropic", model: nil)
         XCTAssertThrowsError(try registry.select(active: record.id))
         XCTAssertEqual(registry.activeAgentID, AgentRegistry.chatAgentID)
     }
 
-    func testUnpairingADeviceRemovesItsAgentAndLeavesTheOthers() throws {
+    func testUnpairingADeviceRemovesItsAgentAndLeavesTheOthers() async throws {
         let registry = try registry()
         try registry.registerDevice("dev_1", name: "Ghost on iPhone", provider: "anthropic", model: nil)
         let kept = try registry.registerDevice("dev_2", name: "Ghost on iPad", provider: "anthropic", model: nil)
@@ -63,7 +63,7 @@ final class PhoneAgentRegistrationTests: XCTestCase {
         XCTAssertEqual(registry.list().map(\.id), [AgentRegistry.chatAgentID], "agent 1 never belongs to a device")
     }
 
-    func testARecordThatHasNoDeviceDecodesAsAMacAgent() throws {
+    func testARecordThatHasNoDeviceDecodesAsAMacAgent() async throws {
         let json = #"{"id":"agent_x","number":2,"name":"X","agentCli":"claude","cliModels":{},"instructions":"","permissions":{}}"#
         XCTAssertNil(try JSONDecoder().decode(AgentRecord.self, from: Data(json.utf8)).deviceID)
     }
