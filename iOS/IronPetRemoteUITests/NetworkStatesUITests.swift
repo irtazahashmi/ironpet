@@ -50,7 +50,7 @@ final class NetworkStatesUITests: XCTestCase {
     }
 
     /// The error rows the screens used to show. None of them exists any more.
-    private var errorRows: [String] { ["agents-error", "tasks-error", "alerts-error", "automations-error", "meetings-error", "screen-error", "settings-error", "pet-error", "chat-error"] }
+    private var errorRows: [String] { ["agents-error", "inbox-error", "alerts-error", "automations-error", "meetings-error", "screen-error", "settings-error", "pet-error", "chat-error"] }
 
     // S1, S2
     func testTheStripShowsOnEveryTabAfterTheDelayAndNothingMoves() {
@@ -72,7 +72,7 @@ final class NetworkStatesUITests: XCTestCase {
         XCTAssertFalse(any("load-error").exists, "a screen that loaded keeps its data")
 
         let stripFrame = any("network-strip").frame
-        for tab in ["Pet", "Chat", "Tasks", "More"] {
+        for tab in ["Pet", "Chat", "Inbox", "More"] {
             openTab(tab)
             XCTAssertTrue(any("network-strip").waitForExistence(timeout: 5), "the strip shows on \(tab)")
             XCTAssertEqual(any("network-strip").frame, stripFrame, "the strip sits in the same place and has the same height on \(tab)")
@@ -163,21 +163,6 @@ final class NetworkStatesUITests: XCTestCase {
         waitUntilGone(waitingBubble(), "the clock goes")
     }
 
-    // S5
-    func testATaskWaitingToSyncShowsTheMark() {
-        launch(extra: ["--pending-sync-all"])
-        openTab("Tasks")
-        XCTAssertTrue(app.buttons["task-t-needs"].waitForExistence(timeout: 20))
-        XCTAssertTrue(app.staticTexts["Waiting to sync"].firstMatch.exists)
-    }
-
-    func testATaskWithNothingPendingShowsNoMark() {
-        launch()
-        openTab("Tasks")
-        XCTAssertTrue(app.buttons["task-t-needs"].waitForExistence(timeout: 20))
-        XCTAssertFalse(app.staticTexts["Waiting to sync"].exists)
-    }
-
     // S6: one screenshot of each state, light and dark, for the pull request.
     func testScreenshotsOfEveryStateInLightAndDark() {
         for dark in [false, true] {
@@ -189,7 +174,7 @@ final class NetworkStatesUITests: XCTestCase {
             }
             // Agents never loads in this launch, so it shows the full-page error.
             server.brokenRoutes = ["/v1/agents": 500]
-            launch(dark: dark, extra: ["--pending-sync-all"])
+            launch(dark: dark)
             openTab("Agents")
             XCTAssertTrue(any("load-error").waitForExistence(timeout: 20))
             attach("load-error", dark: dark)
@@ -197,9 +182,9 @@ final class NetworkStatesUITests: XCTestCase {
             app.buttons["load-error-retry"].tap()
             XCTAssertTrue(app.buttons["agent-s-needs"].waitForExistence(timeout: 20))
 
-            openTab("Tasks")
-            XCTAssertTrue(app.buttons["task-t-needs"].waitForExistence(timeout: 20))
-            attach("task-waiting-to-sync", dark: dark)
+            openTab("Inbox")
+            XCTAssertTrue(app.buttons["done-s-1"].waitForExistence(timeout: 20))
+            attach("inbox", dark: dark)
 
             openTab("Chat")
             let input = app.textViews["chat-input"]
@@ -224,9 +209,9 @@ final class NetworkStatesUITests: XCTestCase {
             server.stop()
             XCTAssertTrue(any("network-strip").waitForExistence(timeout: 20))
             attach("strip-agents", dark: dark)
-            openTab("Tasks")
+            openTab("Inbox")
             XCTAssertTrue(any("network-strip").waitForExistence(timeout: 5))
-            attach("strip-tasks", dark: dark)
+            attach("strip-inbox", dark: dark)
         }
     }
 }

@@ -233,7 +233,7 @@ final class AgentsAlertsTodayTests: XCTestCase {
 
     /// S8: the target mapping and the kind switch.
     func testTodayTargetsOpenTheRightTabAndTheKindSwitchesTheList() async throws {
-        XCTAssertEqual(AppTab.tab(for: TodayTarget(type: .task, id: "t")), .tasks)
+        XCTAssertEqual(AppTab.tab(for: TodayTarget(type: .task, id: "t")), .tasks, "an older Mac's task row opens the Inbox")
         XCTAssertEqual(AppTab.tab(for: TodayTarget(type: .session, id: "s")), .agents)
         XCTAssertEqual(AppTab.tab(for: TodayTarget(type: .alert, id: "a")), .more)
         XCTAssertEqual(AppTab.tab(for: TodayTarget(type: .meeting, id: "m")), .more)
@@ -244,7 +244,7 @@ final class AgentsAlertsTodayTests: XCTestCase {
         let model = TodayModel(client: client, events: events(client), onUnauthorized: {})
         await model.reload()
         XCTAssertEqual(model.today?.kind, "brief")
-        XCTAssertEqual(model.today?.sections.map(\.id), ["tasks", "agents", "alerts", "meetings"])
+        XCTAssertEqual(model.today?.sections.map(\.id), ["agents", "alerts", "meetings"])
         model.kind = .recap
         await waitUntil { model.today?.kind == "recap" }
         XCTAssertEqual(model.today?.sections.map(\.id), ["done"])

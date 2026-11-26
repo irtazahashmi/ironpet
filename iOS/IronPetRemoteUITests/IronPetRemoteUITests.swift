@@ -28,38 +28,22 @@ final class IronPetRemoteUITests: XCTestCase {
     }
 
     /// S1
-    func testPairingByLinkShowsTheTasksInTheirSections() {
+    func testPairingByLinkShowsTheInbox() {
         app.launch()
         paste(server.pairingLink)
-        openTab("Tasks")
+        openTab("Inbox")
 
-        let needs = app.staticTexts["section-needs-you"]
-        XCTAssertTrue(needs.waitForExistence(timeout: 20), "the Tasks tab opens after Allow")
-        XCTAssertTrue(app.staticTexts["section-suggestions"].exists)
-        XCTAssertTrue(app.staticTexts["Send the notes to Bo"].exists)
+        XCTAssertTrue(app.staticTexts["Send the notes to Bo"].waitForExistence(timeout: 20), "the Inbox opens after Allow")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Meeting'")).firstMatch.exists, "a row names its origin")
+        XCTAssertTrue(app.buttons["done-s-1"].exists)
+        XCTAssertTrue(app.buttons["remove-s-1"].exists)
+        XCTAssertFalse(app.buttons["section-done"].exists, "there is no task list")
 
-        // The list is lazy, so scroll until the next header is on screen. A row must sit below its own header and above the next one.
-        func header(_ id: String) -> XCUIElement { app.staticTexts["section-\(id)"] }
-        func row(_ id: String) -> XCUIElement { app.buttons["task-\(id)"] }
-        func reveal(_ element: XCUIElement) {
-            for _ in 0..<6 where !element.exists || !element.isHittable { app.swipeUp() }
-            XCTAssertTrue(element.exists, "\(element) is in the list")
-        }
-        let order = [("needs-you", "t-needs", "in-progress"), ("in-progress", "t-progress", "backlog"), ("backlog", "t-backlog", "waiting")]
-        for (name, id, next) in order {
-            reveal(header(next))
-            let item = row(id)
-            XCTAssertTrue(item.exists, "\(id) is listed")
-            XCTAssertGreaterThan(item.frame.minY, header(name).frame.minY, "\(id) sits below \(name)")
-            XCTAssertLessThan(item.frame.minY, header(next).frame.minY, "\(id) sits above \(next)")
-        }
-        reveal(row("t-waiting"))
-        XCTAssertGreaterThan(row("t-waiting").frame.minY, header("waiting").frame.minY)
-        let done = app.buttons["section-done"]
-        reveal(done)
-        XCTAssertFalse(row("t-done").exists, "Done starts collapsed")
-        done.tap()
-        reveal(row("t-done"))
+        app.buttons["done-s-1"].tap()
+        XCTAssertTrue(app.staticTexts["Send the notes to Bo"].waitForNonExistence(timeout: 10), "Done takes the item off the list")
+        app.buttons["remove-s-2"].tap()
+        XCTAssertTrue(app.staticTexts["Check the flaky build"].waitForNonExistence(timeout: 10), "Remove takes the item off the list")
+        XCTAssertTrue(app.staticTexts["Inbox is empty"].waitForExistence(timeout: 10))
     }
 
     /// Phase 2: the Pet tab with Today, Agents and Alerts, against the mock. The screenshots go to the test results.
@@ -119,7 +103,7 @@ final class IronPetRemoteUITests: XCTestCase {
         paste(server.pairingLink)
         XCTAssertTrue(app.staticTexts["The Mac denied this device."].waitForExistence(timeout: 20))
         XCTAssertTrue(app.buttons["pair-button"].exists, "still on the pairing screen")
-        XCTAssertFalse(app.staticTexts["section-needs-you"].exists)
+        XCTAssertFalse(app.tabBars.buttons["Inbox"].exists)
     }
 
     func testShowsWaitingForAllowUntilCancelled() {
@@ -133,19 +117,19 @@ final class IronPetRemoteUITests: XCTestCase {
     }
 
     /// S8, run by hand against a `--test-mode` Mac build: `TEST_RUNNER_IRONPET_REAL_LINK=<link> xcodebuild test ...`. Skipped without the link.
-    func testPairsWithARealMacAndAddsASuggestion() throws {
+    func testPairsWithARealMacAndFinishesAnInboxItem() throws {
         try XCTSkipIf(ProcessInfo.processInfo.environment["IRONPET_REAL_LINK"] == nil, "set TEST_RUNNER_IRONPET_REAL_LINK to run this against a Mac")
         let link = ProcessInfo.processInfo.environment["IRONPET_REAL_LINK"] ?? ""
         app.launch()
         paste(link)
-        openTab("Tasks")
-        let addButton = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'add-'")).firstMatch
-        XCTAssertTrue(addButton.waitForExistence(timeout: 60), "the Mac's suggestion is listed after Allow")
+        openTab("Inbox")
+        let doneButton = app.buttons.matching(NSPredicate(format: "identifier BEGINSWITH 'done-'")).firstMatch
+        XCTAssertTrue(doneButton.waitForExistence(timeout: 60), "the Mac's inbox item is listed after Allow")
         let shot = XCTAttachment(screenshot: app.screenshot())
         shot.name = "before-add"
         shot.lifetime = .keepAlways
-        addButton.tap()
-        XCTAssertTrue(app.staticTexts["section-backlog"].waitForExistence(timeout: 20), "the accepted suggestion became a backlog task")
+        doneButton.tap()
+        XCTAssertTrue(doneButton.waitForNonExistence(timeout: 20), "the finished item left the Inbox")
         let after = XCTAttachment(screenshot: app.screenshot())
         after.name = "after-add"
         after.lifetime = .keepAlways
@@ -180,8 +164,8 @@ final class IronPetRemoteUITests: XCTestCase {
         for _ in 0..<5 where !app.staticTexts["today-section-agents"].exists { app.swipeUp() }
         sleep(1)
         attach("real-today")
-        openTab("Tasks")
+        openTab("Inbox")
         sleep(2)
-        attach("real-tasks")
+        attach("real-inbox")
     }
 }

@@ -18,16 +18,16 @@ final class RecordSheetTests: XCTestCase {
     }
 
     func testAFailedLoadShowsTheMacsReason() async {
-        let model = RecordModel(id: "task_000000") { _ in
-            throw ClientError.api(status: 404, code: "not_found", message: "no record with id task_000000")
+        let model = RecordModel(id: "meeting_000000") { _ in
+            throw ClientError.api(status: 404, code: "not_found", message: "no record with id meeting_000000")
         }
         await model.load()
-        XCTAssertEqual(model.state, .failed("no record with id task_000000"))
+        XCTAssertEqual(model.state, .failed("no record with id meeting_000000"))
     }
 
     func testALinkOnlyOpensRecordLinks() throws {
         // The chat only hands the sheet ironpet:// record ids. A pairing link is not a record.
-        XCTAssertEqual(RecordLinks.id(from: try XCTUnwrap(RecordLinks.url(for: "task_9f3c1e"))), "task_9f3c1e")
+        XCTAssertEqual(RecordLinks.id(from: try XCTUnwrap(RecordLinks.url(for: "meeting_9f3c1e"))), "meeting_9f3c1e")
         XCTAssertNil(RecordLinks.id(from: try XCTUnwrap(URL(string: "ironpet://pair?u=https://192.168.1.2:8443&c=abc"))))
     }
 }

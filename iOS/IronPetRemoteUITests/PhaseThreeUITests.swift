@@ -42,7 +42,7 @@ final class PhaseThreeUITests: XCTestCase {
         pair()
         XCTAssertTrue(app.tabBars.buttons["Pet"].waitForExistence(timeout: 20))
         let names = app.tabBars.buttons.allElementsBoundByIndex.map(\.label)
-        XCTAssertEqual(names, ["Pet", "Chat", "Tasks", "Agents", "More"])
+        XCTAssertEqual(names, ["Pet", "Chat", "Inbox", "Agents", "More"])
         XCTAssertFalse(app.tabBars.buttons["Device"].exists)
         app.buttons["device-button"].tap()
         XCTAssertTrue(app.buttons["unpair-button"].waitForExistence(timeout: 10), "the Device screen opens from the gear")

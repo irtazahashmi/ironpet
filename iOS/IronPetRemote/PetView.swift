@@ -158,7 +158,7 @@ struct BubbleCard: View {
     }
 }
 
-/// The brief and the recap. A row that points at a task, an agent session or an alert switches to that tab.
+/// The brief and the recap. A row that points at an Inbox item, an agent session or an alert switches to that tab.
 struct TodayList: View {
     let model: TodayModel
     let open: (TodayTarget) -> Void

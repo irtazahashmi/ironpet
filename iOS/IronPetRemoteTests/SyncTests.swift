@@ -2,7 +2,7 @@ import XCTest
 import IronPetKit
 @testable import IronPetRemote
 
-/// A burst of events reads each screen once, and the Tasks list asks for done tasks only when its Done section is open.
+/// A burst of events reads each screen once.
 @MainActor
 final class SyncTests: XCTestCase {
     var server: MockIronPetServer!
@@ -49,25 +49,6 @@ final class SyncTests: XCTestCase {
         for _ in 0..<10 { _ = server.publish(RemoteEvent.bubbleShown) }
         await settle()
         XCTAssertEqual(server.count("GET /v1/bubbles") - before, 1, "a burst of bubble events reads the bubbles once")
-        model.stop()
-    }
-
-    func testTheTasksListLeavesDoneTasksOutUntilTheDoneSectionOpens() async {
-        let defaults = UserDefaults(suiteName: "sync-tasks-\(UUID().uuidString)")!
-        let c = client()
-        let model = TasksModel(client: c, events: events(c), defaults: defaults, onUnauthorized: {})
-        model.start()
-        await poll { model.loaded }
-        let first = server.requests.last { $0.path == "/v1/tasks" }
-        XCTAssertNotNil(first)
-        XCTAssertFalse(first?.query.contains("include_done") ?? true, "a collapsed list asks for open tasks only")
-        XCTAssertFalse(model.showsDone)
-        XCTAssertTrue(model.done.isEmpty)
-
-        await model.setShowsDone(true)
-        let opened = server.requests.last { $0.path == "/v1/tasks" }
-        XCTAssertTrue(opened?.query.contains("include_done=1") ?? false, "opening the section asks for the done tasks")
-        XCTAssertTrue(model.showsDone)
         model.stop()
     }
 }

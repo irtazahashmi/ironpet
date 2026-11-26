@@ -71,7 +71,7 @@ struct MemoryView: View {
     @ViewBuilder private func empty(_ list: RemoteMemoryList) -> some View {
         if model.query.isEmpty, model.filter == .all {
             ContentUnavailableView("No pages yet", systemImage: SharedSymbols.memory,
-                                   description: Text("Ghost writes a page for each person, project and tool it learns about from your chats, meetings and tasks."))
+                                   description: Text("Ghost writes a page for each person, project and tool it learns about from your chats, meetings and inbox."))
         } else if model.query.isEmpty {
             ContentUnavailableView("No \(model.filter.rawValue) yet", systemImage: SharedSymbols.memory)
         } else {
