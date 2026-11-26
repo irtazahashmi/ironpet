@@ -77,6 +77,12 @@ package enum TaskJSON {
         if let url = s.url { object["url"] = url.absoluteString }
         if let waitingOn = s.waitingOn { object["waiting_on"] = waitingOn }
         if let ref = s.sourceRef { object["source_ref"] = refValue(ref) }
+        if let clarify = s.clarify {
+            var proposal: [String: Any] = ["two_minute": clarify.twoMinute, "someday": clarify.someday]
+            if let context = clarify.context { proposal["context"] = context.rawValue }
+            if let area = clarify.area { proposal["area"] = area }
+            object["clarify"] = proposal
+        }
         return object
     }
 

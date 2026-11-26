@@ -173,6 +173,37 @@ public struct RemoteSuggestionUpdate: Codable, Equatable, Hashable, Sendable {
     public var headline: String { "Update: \(taskTitle)" }
 }
 
+/// How the task scan proposes to file a new task. Add applies it, so the phone shows it first.
+public struct RemoteSuggestionClarify: Codable, Equatable, Hashable, Sendable {
+    public var context: String?
+    public var area: String?
+    public var twoMinute: Bool
+    public var someday: Bool
+
+    enum CodingKeys: String, CodingKey {
+        case context, area, someday
+        case twoMinute = "two_minute"
+    }
+
+    public init(context: String? = nil, area: String? = nil, twoMinute: Bool = false, someday: Bool = false) {
+        self.context = context; self.area = area; self.twoMinute = twoMinute; self.someday = someday
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        context = try c.decodeIfPresent(String.self, forKey: .context)
+        area = try c.decodeIfPresent(String.self, forKey: .area)
+        twoMinute = try c.decodeIfPresent(Bool.self, forKey: .twoMinute) ?? false
+        someday = try c.decodeIfPresent(Bool.self, forKey: .someday) ?? false
+    }
+
+    /// `Phone · Health · 2 min · Someday`, the same wording as the Mac.
+    public var summary: String {
+        ([context.map { $0.prefix(1).uppercased() + $0.dropFirst() }, area, twoMinute ? "2 min" : nil, someday ? "Someday" : nil] as [String?])
+            .compactMap { $0 }.joined(separator: " · ")
+    }
+}
+
 public struct RemoteSuggestion: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var id: String
     public var title: String
@@ -188,9 +219,11 @@ public struct RemoteSuggestion: Codable, Equatable, Hashable, Identifiable, Send
     public var url: String?
     public var waitingOn: String?
     public var sourceRef: RemoteJSON?
+    /// The task scan's proposal. A phone that predates it ignores the key.
+    public var clarify: RemoteSuggestionClarify?
 
     enum CodingKeys: String, CodingKey {
-        case id, title, created, origin, due, notes, url, update
+        case id, title, created, origin, due, notes, url, update, clarify
         case originDetail = "origin_detail"
         case waitingOn = "waiting_on"
         case sourceRef = "source_ref"
@@ -198,8 +231,9 @@ public struct RemoteSuggestion: Codable, Equatable, Hashable, Identifiable, Send
 
     public init(id: String, title: String, created: Date = Date(timeIntervalSince1970: 1_700_000_000), origin: String = "meeting",
                 originDetail: String? = nil, due: String? = nil, notes: String = "", url: String? = nil, waitingOn: String? = nil,
-                sourceRef: RemoteJSON? = nil, update: RemoteSuggestionUpdate? = nil) {
+                sourceRef: RemoteJSON? = nil, update: RemoteSuggestionUpdate? = nil, clarify: RemoteSuggestionClarify? = nil) {
         self.update = update
+        self.clarify = clarify
         self.id = id; self.title = title; self.created = created; self.origin = origin; self.originDetail = originDetail
         self.due = due; self.notes = notes; self.url = url; self.waitingOn = waitingOn; self.sourceRef = sourceRef
     }
@@ -217,6 +251,7 @@ public struct RemoteSuggestion: Codable, Equatable, Hashable, Identifiable, Send
         waitingOn = try c.decodeIfPresent(String.self, forKey: .waitingOn)
         sourceRef = try c.decodeIfPresent(RemoteJSON.self, forKey: .sourceRef)
         update = try c.decodeIfPresent(RemoteSuggestionUpdate.self, forKey: .update)
+        clarify = try c.decodeIfPresent(RemoteSuggestionClarify.self, forKey: .clarify)
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -232,6 +267,7 @@ public struct RemoteSuggestion: Codable, Equatable, Hashable, Identifiable, Send
         try c.encodeIfPresent(url, forKey: .url)
         try c.encodeIfPresent(waitingOn, forKey: .waitingOn)
         try c.encodeIfPresent(sourceRef, forKey: .sourceRef)
+        try c.encodeIfPresent(clarify, forKey: .clarify)
     }
 }
 

@@ -134,6 +134,14 @@ package final class TaskStore {
                 try db.execute("ALTER TABLE task_items ADD COLUMN defer_until REAL")
             }
         },
+        // The task scan's clarify proposal on a new suggestion: context, area, two-minute and someday.
+        .init(581, "tasks: clarify proposals on suggestions") { db in
+            let existing = try TaskStore.columns(db, "task_suggestions")
+            for (column, type) in [("clarify_context", "TEXT"), ("clarify_area", "TEXT"), ("clarify_two_minute", "INTEGER"),
+                                   ("clarify_someday", "INTEGER")] where !existing.contains(column) {
+                try db.execute("ALTER TABLE task_suggestions ADD COLUMN \(column) \(type)")
+            }
+        },
     ]
 
     /// A source reference as stored: a JSON object, keys sorted.
@@ -439,7 +447,8 @@ package final class TaskStore {
             }
             added.append((draft.key, TaskSuggestion(id: id, title: title, due: draft.due, notes: draft.notes, url: draft.url,
                                                     origin: origin, created: time, waitingOn: waitingOn,
-                                                    sourceRef: sourceRef ?? draft.sourceRef ?? Self.refText(ref))))
+                                                    sourceRef: sourceRef ?? draft.sourceRef ?? Self.refText(ref),
+                                                    clarify: draft.clarify?.isEmpty == false ? draft.clarify : nil)))
         }
         guard !added.isEmpty else { return [] }
         do {
@@ -461,6 +470,14 @@ package final class TaskStore {
         return added.map(\.suggestion)
     }
 
+    /// The stored proposal, or nil when the row has none (every column empty).
+    private static func clarify(context: String?, area: String?, twoMinute: Int64?, someday: Int64?) -> TaskSuggestion.Clarify? {
+        guard twoMinute != nil || someday != nil || context != nil || area != nil else { return nil }
+        let clarify = TaskSuggestion.Clarify(context: context.flatMap(TaskContext.init(rawValue:)), area: area,
+                                             twoMinute: twoMinute == 1, someday: someday == 1)
+        return clarify.isEmpty ? nil : clarify
+    }
+
     private static func insert(_ s: TaskSuggestion, _ db: Database.Connection) throws {
         var meeting: String?, automation: String?, name: String?
         switch s.origin {
@@ -470,11 +487,13 @@ package final class TaskStore {
         }
         try db.execute("""
             INSERT INTO task_suggestions(id, title, due, notes, url, meeting, automation, automation_name, created, waiting_on, source_ref,
-                                         scan, update_task, update_title, update_note, update_done, update_waiting)
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                         scan, update_task, update_title, update_note, update_done, update_waiting,
+                                         clarify_context, clarify_area, clarify_two_minute, clarify_someday)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [s.id, s.title, s.due, s.notes, s.url?.absoluteString, meeting, automation, name, s.created.timeIntervalSince1970,
                   s.waitingOn, s.sourceRef, s.origin == .taskScan ? 1 : 0, s.update?.target, s.update?.targetTitle, s.update?.note,
-                  (s.update?.markDone ?? false) ? 1 : 0, s.update?.waitingOn])
+                  (s.update?.markDone ?? false) ? 1 : 0, s.update?.waitingOn,
+                  s.clarify?.context?.rawValue, s.clarify?.area, s.clarify.map { $0.twoMinute ? 1 : 0 }, s.clarify.map { $0.someday ? 1 : 0 }])
     }
 
     private func suggestedKeys(_ automation: String) -> Set<String> {
@@ -498,7 +517,7 @@ package final class TaskStore {
         package var status: String?
     }
 
-    /// Turns a suggestion into a backlog task, linked to its meeting folder or to the url the automation gave, and waiting
+    /// Turns a suggestion into a backlog (or, as the scan proposed, someday) task, linked to its meeting folder or to the url the automation gave, and waiting
     /// on the suggestion's owner if it has one. `note` goes to the new task's history.
     @discardableResult
     package func accept(_ suggestionID: String, overrides: Overrides = Overrides(), note: String? = nil, by: String = "user") throws -> TaskItem {
@@ -513,9 +532,11 @@ package final class TaskStore {
             if due == nil, let text = s.due { notes = "Due (from the meeting): \(text)" }
         }
         if let url = s.url { links.append(TaskLink(kind: .url, ref: url.absoluteString, label: nil)) }
-        let status = try overrides.status.map { try TaskValidator.status($0) } ?? .backlog
+        // The scan's clarify proposal is applied as filed: its labels, and someday instead of the backlog.
+        let status = try overrides.status.map { try TaskValidator.status($0) } ?? (s.clarify?.someday == true ? .someday : .backlog)
+        let labels = (try? TaskValidator.labels(s.clarify?.labels ?? [:])) ?? [:]
         var item = try create(title: overrides.title ?? s.title, notes: notes, status: status, source: s.source, due: due, links: links,
-                              waitingOn: s.waitingOn, sourceRef: s.sourceRef, by: by)
+                              waitingOn: s.waitingOn, sourceRef: s.sourceRef, labels: labels, by: by)
         if let note, !note.isEmpty { item = try update(item.id, note: note, by: by) }
         removeSuggestion(suggestionID)
         return item
@@ -671,7 +692,8 @@ package final class TaskStore {
                 }
                 let suggested = try db.rows("""
                     SELECT id, title, due, notes, url, meeting, automation, automation_name, created, waiting_on, source_ref,
-                           scan, update_task, update_title, update_note, update_done, update_waiting
+                           scan, update_task, update_title, update_note, update_done, update_waiting,
+                           clarify_context, clarify_area, clarify_two_minute, clarify_someday
                     FROM task_suggestions ORDER BY created, id
                     """).compactMap { row -> TaskSuggestion? in
                     guard let id = row[0] as? String, let title = row[1] as? String, let created = row[8] as? Double else { return nil }
@@ -693,7 +715,9 @@ package final class TaskStore {
                     return TaskSuggestion(id: id, title: title, due: row[2] as? String, notes: row[3] as? String ?? "",
                                           url: (row[4] as? String).flatMap(URL.init(string:)), origin: origin,
                                           created: Date(timeIntervalSince1970: created), waitingOn: row[9] as? String,
-                                          sourceRef: row[10] as? String, update: change)
+                                          sourceRef: row[10] as? String, update: change,
+                                          clarify: Self.clarify(context: row[17] as? String, area: row[18] as? String,
+                                                                twoMinute: row[19] as? Int64, someday: row[20] as? Int64))
                 }
                 return (items, suggested)
             }
