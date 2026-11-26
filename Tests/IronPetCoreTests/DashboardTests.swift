@@ -6,11 +6,11 @@ import IronPetKit
 final class DashboardTests: XCTestCase {
     private var root: URL!
 
-    override func setUp() {
+    override func setUp() async throws {
         root = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-dashboards-\(UUID().uuidString)")
     }
 
-    override func tearDown() {
+    override func tearDown() async throws {
         try? FileManager.default.removeItem(at: root)
     }
 
