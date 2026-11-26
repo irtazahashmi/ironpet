@@ -22,6 +22,8 @@ struct TaskListView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showDone = false
+    @State private var showSomeday = false
+    @State private var showDeferred = false
     @State private var message = ""
     @State private var highlighted: String?
     /// The id of the quick filter the list is narrowed by. Empty is the "All" chip. Saved per device, so it survives
@@ -165,6 +167,7 @@ struct TaskListView: View {
                 Divider()
             }
             let nothingShown = suggestionRows.isEmpty && columns.isEmpty
+                && (mode == .board || isNextActions || TaskBoard.deferred(tasks.all, filter: activeFilter, query: search).isEmpty)
             if content == .unavailable {
                 Spacer()
             } else if content == .empty {
@@ -199,6 +202,10 @@ struct TaskListView: View {
                                 ListGroupTitle(TaskColumn.waiting.title)
                                 ForEach(items) { row($0) }
                             }
+                            collapsible(TaskColumn.someday.title, columns[.someday] ?? [], open: $showSomeday,
+                                        show: "Show tasks put off to someday", hide: "Hide someday tasks")
+                            collapsible("Deferred", TaskBoard.deferred(tasks.all, filter: activeFilter, query: search), open: $showDeferred,
+                                        show: "Show tasks hidden until a later day", hide: "Hide deferred tasks")
                             doneSection(columns[.done] ?? [])
                         }
                     }
@@ -272,17 +279,22 @@ struct TaskListView: View {
     }
 
     @ViewBuilder private func doneSection(_ done: [TaskItem]) -> some View {
-        if !done.isEmpty {
+        collapsible("Done", done, open: $showDone, show: "Show tasks finished in the last 7 days", hide: "Hide finished tasks")
+    }
+
+    /// A group that starts closed: Someday, Deferred and Done, which the user looks at in a review rather than every day.
+    @ViewBuilder private func collapsible(_ title: String, _ items: [TaskItem], open: Binding<Bool>, show: String, hide: String) -> some View {
+        if !items.isEmpty {
             Button {
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) { showDone.toggle() }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) { open.wrappedValue.toggle() }
             } label: {
                 HStack(spacing: 4) {
-                    Text("DONE (\(done.count))")
+                    Text("\(title.uppercased()) (\(items.count))")
                         .font(.system(size: 10, weight: .semibold))
                         .tracking(0.6)
                     Image(systemName: SharedSymbols.chevron)
                         .font(.system(size: 8, weight: .bold))
-                        .rotationEffect(.degrees(showDone ? 90 : 0))
+                        .rotationEffect(.degrees(open.wrappedValue ? 90 : 0))
                 }
                 .foregroundStyle(.tertiary)
                 .padding(.horizontal, 10)
@@ -291,11 +303,11 @@ struct TaskListView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Done, \(done.count) \(done.count == 1 ? "task" : "tasks")")
-            .accessibilityValue(showDone ? "Expanded" : "Collapsed")
-            .help(showDone ? "Hide finished tasks" : "Show tasks finished in the last 7 days")
-            if showDone {
-                ForEach(done) { row($0) }
+            .accessibilityLabel("\(title), \(items.count) \(items.count == 1 ? "task" : "tasks")")
+            .accessibilityValue(open.wrappedValue ? "Expanded" : "Collapsed")
+            .help(open.wrappedValue ? hide : show)
+            if open.wrappedValue {
+                ForEach(items) { row($0) }
             }
         }
     }
@@ -318,6 +330,15 @@ struct TaskListView: View {
         focus.wrappedValue = nil
         nav.close()
         if task.status == .done { showDone = true }
+        if task.status == .someday {
+            showSomeday = true
+            if isNextActions { nav.open(id) }
+        }
+        if task.isDeferred() {
+            showDeferred = true
+            // The board and Next actions draw no Deferred group, so the task's page is the only place to show it.
+            if mode == .board || isNextActions { nav.open(id) }
+        }
         highlighted = id
         DispatchQueue.main.async {
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { proxy?.scrollTo(id, anchor: .center) }

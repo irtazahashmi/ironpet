@@ -127,6 +127,12 @@ package enum TaskEdits {
         try tasks.update(UpdateTaskRequest(id: id, due: due, clearDue: due == nil))
     }
 
+    /// Hides the task until `date`, or shows it again now with nil.
+    @MainActor @discardableResult
+    package static func setDeferUntil(_ date: Date?, of id: String, in tasks: TasksAPI) throws -> TaskItem {
+        try tasks.update(UpdateTaskRequest(id: id, deferUntil: date, clearDeferUntil: date == nil))
+    }
+
     /// Sets the context label, or removes it with nil.
     @MainActor @discardableResult
     package static func setContext(_ context: TaskContext?, of id: String, in tasks: TasksAPI) throws -> TaskItem {

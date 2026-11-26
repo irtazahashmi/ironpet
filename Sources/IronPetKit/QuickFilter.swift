@@ -61,7 +61,8 @@ public indirect enum QuickFilterNode: Equatable, Sendable {
 
     public static let maxDepth = 8
     public static let maxNodes = 60
-    static let statuses = ["backlog", "in_progress", "needs_you", "done"]
+    // An older phone that cannot read a status skips only that filter (`QuickFilter.chips` drops a node it cannot parse).
+    static let statuses = ["backlog", "in_progress", "needs_you", "someday", "done"]
 
     // MARK: Parsing
 

@@ -33,7 +33,10 @@ Call `tasks_list` first so you update an existing task instead of adding a dupli
 - `in_progress`: an agent or a PR is running or open. Say in the notes what you are waiting for.
 - `needs_you`: only the user can take the next step. The notes name the exact step, for example "Approve the PR at <url>".
 - `backlog`: only for work that needs a user decision before it can start. If no decision is needed, start the work and use `in_progress`.
+- `someday`: the user might do it one day but has not committed ("learn Rust", "visit Lisbon"). It is never a next action and the list keeps it folded away. Move it back to `backlog` when the user takes it up.
 - `done`: finished or no longer needed. Use `tasks_close` with a note that names the evidence. The note is required. Do not delete finished work.
+
+`defer_until` (an ISO 8601 date or time) hides a task until then: the tickler. Use it when the user says something cannot or should not start before a day ("renew the passport in March", "remind me after the release"). The task keeps its status and comes back on that day. `null` in `tasks_update` shows it again at once. A deferred task does not count as needing the user.
 
 `tasks_update` needs a `note` whenever the status changes, saying why. `tasks_suggestion_accept` and `tasks_suggestion_reject` need a `note` too. The tools refuse a missing or empty note.
 

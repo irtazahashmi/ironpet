@@ -83,7 +83,7 @@ struct TaskDetailView: View {
                     await model.edit(task.id, title: title, notes: notes)
                 }
             case .status:
-                NoteSheet(title: "Change status", prompt: "Say why the status changes", action: "Change", statuses: TaskStatus.allCases, initial: current.status) { note, status in
+                NoteSheet(title: "Change status", prompt: "Say why the status changes", action: "Change", statuses: TaskStatus.allCases.filter { $0 != .someday }, initial: current.status) { note, status in
                     await model.setStatus(task.id, status: status ?? current.status, note: note)
                 }
             }

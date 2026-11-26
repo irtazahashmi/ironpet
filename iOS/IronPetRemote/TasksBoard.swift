@@ -43,7 +43,8 @@ enum BoardColumn: String, CaseIterable, Identifiable {
         switch task.status {
         case .needsYou: return .needsYou
         case .inProgress: return .inProgress
-        case .backlog, .done: return .backlog
+        // The Mac sends someday tasks only when asked (`include_someday`), which this phone does not do yet.
+        case .backlog, .someday, .done: return .backlog
         }
     }
 }
