@@ -332,6 +332,10 @@ For example `{"kind":"pr","ref":"https://github.com/acme/app/pull/12","reason":"
 
 Call `tasks_list` first so you update an existing task instead of adding a duplicate. Link what the task is about (`links`: a PR or ticket URL, a file, the thread or session) so the next review can find it. Put the next step in `notes`.
 
+## Waiting for
+
+A task that waits on someone (`waiting_on`) records when the user asked them (`asked_at`, set when `waiting_on` is set; pass `asked_at` when the user says they asked earlier, such as "I mailed Ana on Monday"). After five working days the task has `follow_up_due: true`. Then propose a follow-up with `tasks_suggest`: title "Follow up with <name>: <task title>", a short message the user could send in `notes`, and the id `follow-up-<task id>-<asked_at day>` so the same follow-up is not proposed twice. Never send the message yourself. When the user says they followed up, set `asked_at` to that time.
+
 ## Projects
 
 A project is an outcome that takes more than one step ("Move house", "Launch the new site"), not a code folder. Create one with `task_projects_upsert` (`title`, an `outcome` that says what done looks like, `area`, `goal`, `review_days`) when the user describes such an outcome, and link its steps with `project` on `tasks_create` or `tasks_update`. `task_projects_list` gives each project's `next_actions`, `stalled` (active with no next action) and `due_for_review`. Every active project needs a next action: when one is stalled, propose its next step with `tasks_suggest` instead of inventing a task. Set `status` to `someday` or `done` when the user parks or finishes it, and `reviewed: true` after the user reviewed it. When you propose the next step of a stalled project with `tasks_suggest`, pass the project's id in `project`, so the task joins it when the user adds it. Projects need these tools: the `IronPet tasks` CLI has no project commands.

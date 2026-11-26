@@ -42,8 +42,10 @@ package struct CreateTaskRequest: Codable, Equatable {
         labels: [String: String] = [:],
         deferUntil: Date? = nil,
         project: String? = nil,
+        askedAt: Date? = nil,
         by: String = "user"
     ) {
+        self.askedAt = askedAt
         self.project = project
         self.title = title
         self.notes = notes
@@ -72,6 +74,8 @@ package struct CreateTaskRequest: Codable, Equatable {
     package var deferUntil: Date?
     /// The GTD project it is a step of.
     package var project: String?
+    /// When the user asked the person it waits on. Defaults to now when `waitingOn` is set.
+    package var askedAt: Date?
     /// Who is asking: `user`, `agent:mcp`, `agent:cli`. It goes to the task's history.
     package var by = "user"
 }
@@ -93,6 +97,7 @@ package struct UpdateTaskRequest: Codable, Equatable {
         clearDeferUntil: Bool = false,
         project: String? = nil,
         clearProject: Bool = false,
+        askedAt: Date? = nil,
         note: String? = nil,
         by: String = "user"
     ) {
@@ -100,6 +105,7 @@ package struct UpdateTaskRequest: Codable, Equatable {
         self.clearDeferUntil = clearDeferUntil ? true : nil
         self.project = project
         self.clearProject = clearProject ? true : nil
+        self.askedAt = askedAt
         self.id = id
         self.title = title
         self.notes = notes
@@ -135,6 +141,8 @@ package struct UpdateTaskRequest: Codable, Equatable {
     package var project: String?
     /// Takes the task out of its project. Optional for the same reason as `clearDeferUntil`.
     package var clearProject: Bool?
+    /// When the user asked; only applies while the task waits on someone.
+    package var askedAt: Date?
     /// Goes to the history only, to say why something changed.
     package var note: String?
     package var by = "user"
@@ -291,7 +299,7 @@ package final class TasksAPI {
         try run {
             try store.create(title: request.title, notes: request.notes, status: request.status, source: request.source, due: request.due,
                              links: request.links, waitingOn: request.waitingOn, sourceRef: request.sourceRef, labels: request.labels,
-                             deferUntil: request.deferUntil, project: request.project, by: request.by)
+                             deferUntil: request.deferUntil, project: request.project, askedAt: request.askedAt, by: request.by)
         }
     }
 
@@ -304,6 +312,7 @@ package final class TasksAPI {
                              removeLabels: request.removeLabels,
                              deferUntil: request.clearDeferUntil == true ? .some(nil) : request.deferUntil.map { .some($0) },
                              project: request.clearProject == true ? .some(nil) : request.project.map { .some($0) },
+                             askedAt: request.askedAt,
                              note: request.note, by: request.by)
         }
     }
