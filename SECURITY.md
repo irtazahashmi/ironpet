@@ -46,6 +46,8 @@ The Mac build checks `https://github.com/irtazahashmi/ironpet/releases/latest/do
 
 An `ironpet://<id>` link only opens a record in ironpet (a task, a notification, a meeting and so on). It runs no command and sends nothing. ironpet registers the `ironpet` scheme in its Info.plist; the pairing link `ironpet://pair?…` is not handled on the Mac.
 
+On the iPhone, a tapped record id asks the paired Mac for that record over the same authenticated connection (`GET /v1/records/:id`) and shows its fields in a sheet. The phone keeps nothing and sends nothing else; the Mac answers with what its own readers return for that kind.
+
 ## Files ironpet writes outside `~/.ironpet`
 
 | File | When | Undo |

@@ -694,6 +694,10 @@ final class RemoteServer {
             let id = Self.parameter(context, "id")
             return await self.resources(context) { try $0.agentRecord(id) }
         }
+        router.get("/v1/records/:id") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.resources(context) { try await $0.record(id) }
+        }
         router.post("/v1/agent-records") { [self] request, context in
             let body = try await Self.object(request, context)
             return await self.resources(context) { try $0.createAgentRecord(body) }
