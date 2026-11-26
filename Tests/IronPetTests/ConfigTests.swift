@@ -232,6 +232,16 @@ final class ConfigTests: XCTestCase {
         XCTAssertTrue(Config().tasks.meetingSuggestions)
     }
 
+    func testMeetingSuggestionBubblesAreOnByDefaultAndForAnOldFile() throws {
+        XCTAssertTrue(Config().tasks.meetingSuggestionBubbles)
+        try write(#"{"tasks":{"meetingSuggestions":false}}"#)
+        XCTAssertTrue(Config.load(from: file).config.tasks.meetingSuggestionBubbles)
+        try write(#"{"tasks":{"meetingSuggestionBubbles":false}}"#)
+        let tasks = Config.load(from: file).config.tasks
+        XCTAssertFalse(tasks.meetingSuggestionBubbles)
+        XCTAssertTrue(tasks.meetingSuggestions, "the work stays on")
+    }
+
     func testRetiredTaskKeysInAnOldFileAreIgnored() throws {
         try write(#"{"tasks":{"dueReminders":false,"keepDoneDays":9,"scan":false,"scanMinutes":60,"meetingSuggestions":false}}"#)
         let (config, error) = Config.load(from: file)

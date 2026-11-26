@@ -16,6 +16,10 @@ struct AutomationSettingsPage: View {
                         store.update { $0.automations.autoApprove = on }
                         if on { model.automations?.reviewApprovals() }
                     }))
+                Toggle("Show bubbles", isOn: Binding(
+                    get: { store.config.automations.autoApproveBubbles },
+                    set: { on in store.update { $0.automations.autoApproveBubbles = on } }))
+                    .disabled(!store.config.automations.autoApprove)
             } header: {
                 Text("Approval")
             } footer: {
