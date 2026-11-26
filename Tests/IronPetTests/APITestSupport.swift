@@ -6,15 +6,15 @@ import XCTest
 /// stores here as its namespace appears.
 @MainActor
 enum APITestSupport {
-    /// The API over in-memory stores. `now` is the clock the task store uses.
-    static func makeAPI(events: APIEventBus? = nil, now: @escaping () -> Date = Date.init,
+    /// The API over in-memory stores. `now` is the clock the task store uses, and `database` its database when a test shares one.
+    static func makeAPI(events: APIEventBus? = nil, now: @escaping () -> Date = Date.init, database: Database? = nil,
                         automations: [Automation] = [], clock: AutomationTestClock = AutomationTestClock(),
                         signals: SignalStore? = nil, bubbles: BubbleStore? = nil, notifications: NotificationStore? = nil, sessions: SessionStore? = nil, chat: ChatSession? = nil,
                         meeting: MeetingRecorder? = nil, meetingLibrary: MeetingLibrary? = nil, config: ConfigStore? = nil, speech: SpeechOutput? = nil, petAssets: PetAssets? = nil,
                         files: FileIntake? = nil, usage: UsageStore? = nil, agents: AgentRegistry? = nil,
                         configureAutomations: ((AutomationService) -> Void)? = nil) -> IronPetAPI {
         TestMemory.isolate()
-        let tasks = TaskStore(database: memoryDatabase(), now: now)
+        let tasks = TaskStore(database: database ?? memoryDatabase(), now: now)
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-api-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let paths = AutomationPaths(file: dir.appendingPathComponent("automations.json"), directory: dir.appendingPathComponent("automations"))

@@ -10,7 +10,7 @@ package enum AutomationDefaults {
     package static let dayRecapID = "day-recap"
     /// The automations that belong to this install, not to an agent: they are listed for every agent and run as they always have.
     /// The memory pass is not an automation, so it needs no entry.
-    package static let nodeLevelIDs: Set<String> = [morningBriefID, dayRecapID, mailCalendarID]
+    package static let nodeLevelIDs: Set<String> = Set(builtIns.map(\.id))
     package static let weekdays = ["mon", "tue", "wed", "thu", "fri"]
 
     /// The built-in morning brief: what needs the user today, at 09:00 on weekdays. Off until the user turns it on. A brief

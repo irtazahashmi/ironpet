@@ -25,6 +25,13 @@ package enum AgentPetSet {
         }
     }
 
+    /// The pet that shows the active highlight: the active agent's, and only while more than one pet is on screen, so a lone pet looks
+    /// as it always did. Nil when the active agent has no pet among `onScreen`, the agent ids of the pets shown.
+    package static func highlighted(active: String, onScreen: [String]) -> String? {
+        guard onScreen.count > 1, onScreen.contains(active) else { return nil }
+        return active
+    }
+
     /// What a click on an agent's pet opens: that agent's chat. Nil for an agent that has no pet on screen.
     package static func chatTarget(clicked agentID: String, in slots: [PetSlot]) -> String? {
         slots.contains { $0.agentID == agentID } ? agentID : nil

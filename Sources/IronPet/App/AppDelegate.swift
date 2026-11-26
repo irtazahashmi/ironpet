@@ -59,6 +59,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var supervisor: AgentSupervisor?
     var agentPets: AgentPets?
     var agentSessionTokens: [String: ChangeToken] = [:]
+    /// Follows the active agent, so the highlight moves when the user selects another pet.
+    var activeAgentToken: ChangeToken?
     private var capture: CaptureService?
     private var desktop: DesktopService?
     private var desktopApprovals: DesktopApprovals?
@@ -918,7 +920,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }, handler: { [weak self] in
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    self.showChat()
+                    self.showActiveChat()
                     self.chatModel.voice.shortcutPressed()
                 }
             })

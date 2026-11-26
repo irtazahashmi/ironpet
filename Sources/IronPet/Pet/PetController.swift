@@ -51,6 +51,13 @@ final class PetController: NSObject {
     /// A voice conversation's mood, which wins over agents, alerts and nudges while it runs.
     var voiceMood: () -> PetMood? = { nil }
     var onChatToggle: (() -> Void)?
+    /// Called when the user clicks this pet, so the app can make its agent the active one.
+    var onSelected: (() -> Void)?
+    /// True while this pet's agent is the active one and more than one pet is on screen.
+    var isHighlighted: Bool {
+        get { view.isHighlighted }
+        set { view.isHighlighted = newValue }
+    }
     /// "Ask Ghost" on an alert: open the chat with this prompt ready to send.
     var onAsk: ((String) -> Void)?
     var onCapture: ((_ region: Bool) -> Void)?
@@ -283,6 +290,7 @@ final class PetController: NSObject {
     /// A click on the pet's body always opens the chat, whatever needs attention.
     func handleClick() {
         lastActivity = Date()
+        onSelected?()
         if let onChatToggle {
             onChatToggle()
         } else if let builtWindow, builtWindow.isVisible, windowModel.section == .chat {
