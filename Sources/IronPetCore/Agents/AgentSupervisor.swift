@@ -139,7 +139,7 @@ package final class AgentSupervisor {
     /// Makes the running processes match the enabled agents. Safe to call at any time.
     package func reconcile() {
         guard !stopped else { return }
-        let wanted = Dictionary(records().filter(\.enabled).map { ($0.id, AgentLaunch($0)) }, uniquingKeysWith: { first, _ in first })
+        let wanted = Dictionary(records().filter { $0.enabled && !$0.isRemote }.map { ($0.id, AgentLaunch($0)) }, uniquingKeysWith: { first, _ in first })
         var changed = false
         for id in entries.keys where wanted[id] == nil {
             if !changed { changes.send(); changed = true }

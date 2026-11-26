@@ -14,9 +14,13 @@ public struct RemoteAgentRecord: Codable, Equatable, Hashable, Identifiable, Sen
     public var model: String?
     /// False for an agent the Mac has turned off. A Mac from before several agents leaves it out, and that means true.
     public var enabled: Bool
+    /// The paired device this agent runs on. Nil for an agent that runs on the Mac. A Mac from before phone agents leaves it out.
+    public var deviceID: String?
 
-    public init(id: String, number: Int = 1, name: String, pet: String? = nil, agentCli: String = "claude", model: String? = nil, enabled: Bool = true) {
+    public init(id: String, number: Int = 1, name: String, pet: String? = nil, agentCli: String = "claude", model: String? = nil, enabled: Bool = true,
+                deviceID: String? = nil) {
         self.id = id; self.number = number; self.name = name; self.pet = pet; self.agentCli = agentCli; self.model = model; self.enabled = enabled
+        self.deviceID = deviceID
     }
 
     public init(from decoder: Decoder) throws {
@@ -28,9 +32,13 @@ public struct RemoteAgentRecord: Codable, Equatable, Hashable, Identifiable, Sen
         agentCli = try c.decodeIfPresent(String.self, forKey: .agentCli) ?? ""
         model = try c.decodeIfPresent(String.self, forKey: .model)
         enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        deviceID = try c.decodeIfPresent(String.self, forKey: .deviceID)
     }
 
-    enum CodingKeys: String, CodingKey { case id, number, name, pet, agentCli, model, enabled }
+    enum CodingKeys: String, CodingKey { case id, number, name, pet, agentCli, model, enabled, deviceID = "deviceId" }
+
+    /// True for an agent that runs on a phone. The phone lists it but never opens a Mac chat with it.
+    public var runsOnPhone: Bool { deviceID != nil }
 
     /// Agent 1. The phone sends no `agentId` for it, which an older Mac also understands.
     public var isDefault: Bool { id == defaultAgentID }

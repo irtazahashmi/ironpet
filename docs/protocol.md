@@ -559,6 +559,8 @@ audio, or an area that is not on the wire yet.
 | `GET /v1/suggestions` | `inbox.list` |
 | `POST /v1/suggestions/:id/accept` | `inbox.done` |
 | `POST /v1/suggestions/:id/reject` | `inbox.remove` |
+| `POST /v1/suggestions` | none |
+| `PUT /v1/devices/me/agent` | none |
 | `GET /v1/screen/status` | none |
 | `GET /v1/screen/changes` | none |
 | `GET /v1/screen/captures/:id` | none |
@@ -666,3 +668,22 @@ A phone should not retry a timed-out chat read: the Mac is slow, and a retry ask
 - `ContractDocTests` fails when this page lacks an event, an `APIError` case, a facade, a method, or a `/v1` route.
 
 After a deliberate API change, run `UPDATE_GOLDENS=1 swift test --filter ContractGoldenTests`, read the diff of the fixtures, and update this page.
+
+## Phone agent routes
+
+The iPhone app runs its own agent loop and calls the Anthropic or OpenAI API from the phone. Two routes tie it to the Mac. Both need the
+device token. They are not RPC methods, because their meaning depends on the calling device.
+
+`POST /v1/suggestions` adds one inbox item that the phone's agent queued while the Mac was out of reach. The body is
+`{id, title, notes?, due?, url?}`. `id` is made on the phone when the agent adds the item (`phone-` and a UUID) and is sent with every
+delivery. It is the item's key, so the Mac adds an id it has not seen and ignores one it has, also after the user removed the item. The
+answer is `{added, id?}`. `added` is false for an id or a title the inbox already has, and `id` is the inbox item's own id when it was
+added. A title the Mac cannot store is `400` with the reason, and the phone stops sending that item. The item's source is `agent` and
+its reference names the device, as `iphone:<device id>`. The phone keeps a queue keyed by those ids, so a later device sync (issue #374)
+can take it over.
+
+`PUT /v1/devices/me/agent` registers the phone's agent as an agent of the Mac, or updates the one this device registered. The body is
+`{name, provider, model?}` with `provider` `anthropic` or `openai`. The answer is the agent record, with `deviceId` set to the calling
+device. `GET /v1/agent-records` lists it and `agents_list` returns it. The Mac starts no process for it, shows no pet for it, offers no
+chat with it and does not let it become the active agent. The record goes when the device is unpaired or revoked.
+

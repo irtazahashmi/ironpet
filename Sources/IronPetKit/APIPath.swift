@@ -8,6 +8,8 @@ public enum APIPath {
     /// The inbox. The routes keep the name they had when the inbox held suggestions for the task list, so a phone and a Mac on
     /// different versions still reach each other.
     public static let suggestions = "/v1/suggestions"
+    /// `PUT`: registers the agent on this phone as an agent of the Mac.
+    public static let deviceAgent = "/v1/devices/me/agent"
     /// Marks the item done.
     public static func acceptSuggestion(_ id: String) -> String { "/v1/suggestions/\(id)/accept" }
     /// Removes the item. The Mac calls it "reject".

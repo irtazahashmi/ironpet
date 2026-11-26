@@ -318,6 +318,15 @@ final class RemoteServer {
         router.get("/v1/suggestions") { [self] _, context in
             try await self.call(context) { try $0.suggestions() }
         }
+        router.post("/v1/suggestions") { [self] request, context in
+            let body = try await Self.object(request, context)
+            guard let device = context.device else { return Self.error(401, "unauthorized", "unauthorized") }
+            return try await self.call(context) { try $0.add(body, device: device.id) }
+        }
+        router.put("/v1/devices/me/agent") { [self] request, context in
+            let body = try await Self.object(request, context)
+            return await self.resources(context) { try $0.registerPhoneAgent(body) }
+        }
         router.post("/v1/suggestions/:id/accept") { [self] _, context in
             let id = Self.parameter(context, "id")
             return try await self.call(context) { try $0.accept(id) }

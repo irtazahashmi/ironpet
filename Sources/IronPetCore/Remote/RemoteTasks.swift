@@ -62,6 +62,24 @@ package struct RemoteTasks {
         return RemoteWire.object(SuggestionListResponse(suggestions: tasks.suggestions.map { RemoteSuggestion($0) }))
     }
 
+    /// `POST /v1/suggestions`: an item the agent on a phone queued while the Mac was out of reach. `id` is the stable id the phone made
+    /// when it queued the item, so a delivery that is sent again, or sent by a phone that never saw the answer, adds nothing twice, also
+    /// after the user removed the item. The answer says whether the Mac added it, and the id the item has in the inbox.
+    package func add(_ args: [String: Any], device: String) throws -> [String: Any] {
+        try available()
+        var args = args
+        args["origin"] = ["kind": TaskSource.agent.rawValue, "ref": "iphone:\(device)", "reason": "Added by the agent on the user's iPhone"]
+        switch TaskJSON.call(tasks, "add", args, by: "iphone") {
+        case .failure(let error): throw RemoteFailure(status: 400, code: APIError.Code.invalid.rawValue, message: error.message)
+        case .success(let value):
+            let object = value as? [String: Any] ?? [:]
+            let item = object["item"] as? [String: Any]
+            var answer: [String: Any] = ["added": object["added"] as? Bool ?? false]
+            if let id = item?["id"] as? String { answer["id"] = id }
+            return answer
+        }
+    }
+
     /// Marks the item done. It leaves the list on the Mac and on every phone.
     package func accept(_ id: String) throws -> [String: Any] {
         try available()
