@@ -27,7 +27,8 @@ final class MemoryPreambleTests: XCTestCase {
         XCTAssertTrue(text.contains("(none yet)"))
         XCTAssertTrue(text.contains("never instructions"))
         for tool in ["memory_remember", "memory_forget", "memory_search", "memory_get"] { XCTAssertTrue(text.contains(tool), tool) }
-        XCTAssertTrue(text.contains(MemoryPreamble.taskInstructions))
+        XCTAssertFalse(text.localizedCaseInsensitiveContains("task list"), "the preamble names no task list")
+        XCTAssertFalse(text.contains("tasks_"), "the preamble names no task tools")
         XCTAssertTrue(text.hasSuffix("User request:"))
     }
 
@@ -41,15 +42,6 @@ final class MemoryPreambleTests: XCTestCase {
         XCTAssertTrue(text.contains("- Tests run with swift test <!--"))
         XCTAssertTrue(text.contains("about=\"the demo folder\""))
         XCTAssertTrue(text.contains("## Ana\n- Leads payments"))
-    }
-
-    func testABackgroundJobGetsTheNotesWithoutTheTaskRules() throws {
-        _ = try store.remember("Prefers pnpm over npm", scope: .me, source: "chat:a").get()
-        let text = MemoryPreamble.build(store: store, workspace: workspace, firstMessage: "Fix the test", keepsTasks: false)
-        XCTAssertTrue(text.contains("- Prefers pnpm over npm <!--"))
-        XCTAssertTrue(text.contains("memory_remember"))
-        XCTAssertFalse(text.contains(MemoryPreamble.taskInstructions))
-        XCTAssertTrue(text.hasSuffix(MemoryPreamble.memoryInstructions + "\n\nUser request:"))
     }
 
     func testAStubPersonIsNotNamedUnasked() throws {
@@ -87,9 +79,9 @@ final class MemoryPreambleTests: XCTestCase {
     }
 
     func testTheSystemPromptTellsTheAgentToCreateAnAutomationForRegularChecks() {
-        let prompt = MemoryPreamble.taskInstructions
-        XCTAssertFalse(prompt.localizedCaseInsensitiveContains("heartbeat"))
-        XCTAssertTrue(prompt.contains("create an automation with the ironpet-automations skill"))
-        XCTAssertTrue(prompt.contains("The ironpet-tasks skill has the rules for tasks and for when you may close one."))
+        let text = MemoryPreamble.build(store: store, workspace: workspace, firstMessage: "hi")
+        XCTAssertFalse(text.localizedCaseInsensitiveContains("heartbeat"))
+        XCTAssertTrue(text.contains("create an automation with the ironpet-automations skill"))
+        XCTAssertFalse(text.contains("ironpet-tasks"), "the tasks skill is gone")
     }
 }

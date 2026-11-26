@@ -70,7 +70,7 @@ package struct RestartBackoff: Equatable, Sendable {
 
 /// Runs one agent process for each enabled agent. It starts the ones that are missing, stops the ones that were disabled or deleted,
 /// restarts the ones whose CLI, model or instructions changed, and restarts a crashed one after a growing delay without touching the
-/// others. The node owns one. Shared node services (the scheduler, screen capture, the memory pass and the task scan) are not agents
+/// others. The node owns one. Shared node services (the scheduler, screen capture, and the memory pass) are not agents
 /// and are not started here.
 @MainActor
 package final class AgentSupervisor {

@@ -182,15 +182,6 @@ package final class AutomationService {
                                 environment: CommandRunner.defaultEnvironment())
     }
 
-    /// Automations that app code defines and the engine runs, but that are not in `automations.json`, so the Automations list and the
-    /// automation tools never show them and a file edit cannot change them. The app sets them from its settings.
-    package var system: [Automation] = [] {
-        didSet { if system != oldValue { engine.set(store.automations + system) } }
-    }
-
-    /// Runs the task scan, one scan per call. Set by the app.
-    package var runTaskScan: (() async -> TaskScanner.Outcome)?
-
     private var pending: [String: AutomationEngine.Fire] = [:]
     private var announced: [String: String] = [:]
     private var running: Set<String> = []
@@ -212,7 +203,7 @@ package final class AutomationService {
         engine.onDone = { [weak self] automation in self?.deleteAfterRun(automation, reason: "the script returned done") }
         store.onChange = { [weak self] list in
             guard let self else { return }
-            engine.set(list + system)
+            engine.set(list)
             _ = engine.state.records.refs(.auto, list.map(\.id))
             reviewApprovals()
         }
@@ -248,7 +239,7 @@ package final class AutomationService {
         if let message = store.error { store.onInvalid?(message) }
         engine.restoreSnoozes()
         pruneLogs(force: true)
-        engine.state.prune(now: engine.env.now(), keeping: Set((store.automations + system).map(\.id)))
+        engine.state.prune(now: engine.env.now(), keeping: Set(store.automations.map(\.id)))
         reviewApprovals()
         engine.startStreams()
     }
@@ -483,21 +474,6 @@ package final class AutomationService {
             }
         case "prompt" where runsInChat(a):
             deliverToChat(a, fire: fire, values: values)
-        case AutomationDefaults.taskScanAction:
-            return runInBackground(a, done: fire.finished) { [self] in
-                guard let scan = runTaskScan else {
-                    record(a.id, "failed", "the task scan is not available")
-                    return
-                }
-                let outcome = await scan()
-                if let error = outcome.errors.first {
-                    record(a.id, "failed", error)
-                } else if outcome.skipped {
-                    record(a.id, "ok", "nothing new to read")
-                } else {
-                    record(a.id, "ok", "\(outcome.filed.count) suggested")
-                }
-            }
         case "digest":
             guard let kind = a.action.digest.flatMap(Brief.Kind.init(rawValue:)), let brief = digest(kind, a, fire.slot) else {
                 record(a.id, "failed", "the brief is not available")
@@ -798,10 +774,10 @@ package final class AutomationService {
     /// Offers what one run added, in one bubble.
     package var suggested: (_ added: [TaskSuggestion]) -> Void = { _ in }
 
-    /// Watcher text comes from outside, so it only becomes a suggestion the user adds or skips. The first run adds
+    /// Watcher text comes from outside, so it only becomes an inbox item the user marks done or removes. The first run adds
     /// them quietly, like alerts.
     private func suggestTasks(_ drafts: [TaskSuggestion.Draft], _ a: Automation, firstRun: Bool) {
-        guard let tasks else { return record(a.id, "failed", "suggest_task: the task list is not available") }
+        guard let tasks else { return record(a.id, "failed", "suggest_task: the inbox is not available") }
         let added = tasks.suggest(drafts, automation: a.id, name: a.name)
         if !added.isEmpty && !firstRun { suggested(added) }
     }

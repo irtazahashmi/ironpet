@@ -1,7 +1,7 @@
 import IronPetCore
 import SwiftUI
 
-/// What the detail panel of a task or suggestion shows. Only fields that have a value appear, so the view never draws an empty label.
+/// What the detail panel of an inbox item shows. Only fields that have a value appear, so the view never draws an empty label.
 struct TaskDetail: Equatable {
     struct Field: Equatable {
         var label: String
@@ -11,8 +11,6 @@ struct TaskDetail: Equatable {
     var fields: [Field] = []
     var notes = ""
     var links: [TaskLink] = []
-    var labels: [String: String] = [:]
-    var history: [TaskEvent] = []
 
     /// `{"ref": "...", "reason": "..."}` becomes Ref and Reason fields. Other objects list their keys, and plain text stays as it is.
     static func originFields(_ sourceRef: String?) -> [Field] {
@@ -27,34 +25,14 @@ struct TaskDetail: Equatable {
         }
     }
 
-    init(task: TaskItem, history: [TaskEvent], now: Date = Date(), calendar: Calendar = .current) {
-        fields.append(Field(label: "Status", value: task.status.title))
-        if let waiting = task.waitingLabel { fields.append(Field(label: "Waiting", value: waiting)) }
-        if let due = task.dueLabel(now: now, calendar: calendar) { fields.append(Field(label: "Due", value: due)) }
-        fields.append(Field(label: "Origin", value: task.source.rawValue))
-        fields += Self.originFields(task.sourceRef)
-        fields.append(Field(label: "Created", value: Self.time(task.created)))
-        fields.append(Field(label: "Updated", value: Self.time(task.updated)))
-        if let closed = task.closed { fields.append(Field(label: "Closed", value: Self.time(closed))) }
-        notes = task.notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        links = task.links
-        labels = task.labels
-        self.history = history
-    }
-
     init(suggestion: TaskSuggestion) {
-        if let update = suggestion.update {
-            fields.append(Field(label: "Task", value: update.targetTitle))
-            fields.append(Field(label: "Change", value: update.summary))
-        }
-        if let waiting = suggestion.waitingLabel { fields.append(Field(label: "Waiting", value: waiting)) }
         if let due = suggestion.due, !due.isEmpty { fields.append(Field(label: "Due", value: due)) }
         fields.append(Field(label: "Origin", value: suggestion.source.rawValue))
         fields.append(Field(label: "Origin name", value: suggestion.originLabel))
         fields += Self.originFields(suggestion.sourceRef)
-        fields.append(Field(label: "Created", value: Self.time(suggestion.created)))
+        fields.append(Field(label: "Arrived", value: Self.time(suggestion.created)))
         notes = suggestion.notes.trimmingCharacters(in: .whitespacesAndNewlines)
-        if let url = suggestion.url { links = [TaskLink(kind: .url, ref: url.absoluteString, label: nil)] }
+        links = suggestion.links
     }
 
     static func time(_ date: Date) -> String {
@@ -62,7 +40,7 @@ struct TaskDetail: Equatable {
     }
 }
 
-/// Everything stored about a suggestion, shown under its row. Notes render as markdown in selectable text, and links open only on a click.
+/// Everything stored about an inbox item. Notes render as markdown in selectable text, and links open only on a click.
 struct TaskDetailView: View {
     let detail: TaskDetail
     let onOpen: (TaskLink) -> Void
@@ -86,7 +64,7 @@ struct TaskDetailView: View {
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(Array(detail.links.enumerated()), id: \.offset) { _, link in
                             Button { onOpen(link) } label: {
-                                Label(link.label?.nilIfEmptyTrimmed ?? link.ref, systemImage: link.symbol)
+                                Label(TaskLinkRow(link: link).title, systemImage: link.symbol)
                                     .lineLimit(1)
                                     .truncationMode(.middle)
                             }
@@ -96,30 +74,11 @@ struct TaskDetailView: View {
                     }
                     .font(.caption)
                 }
-                if !detail.history.isEmpty {
-                    VStack(alignment: .leading, spacing: 2) {
-                        Text("History").font(.caption.weight(.semibold)).foregroundStyle(.secondary)
-                        ForEach(Array(detail.history.enumerated()), id: \.offset) { _, event in
-                            Text("\(TaskDetail.time(event.at)), \(event.by): \(event.detail)")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .textSelection(.enabled)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                    }
-                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.vertical, 4)
         }
         .frame(maxHeight: 260)
         .fixedSize(horizontal: false, vertical: true)
-    }
-}
-
-private extension String {
-    var nilIfEmptyTrimmed: String? {
-        let text = trimmingCharacters(in: .whitespaces)
-        return text.isEmpty ? nil : text
     }
 }

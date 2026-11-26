@@ -179,7 +179,7 @@ final class BackgroundUITests: XCTestCase {
     func testEveryTabShowsTheBackground() {
         server.pet = RemotePet(name: "Ghost", mood: "idle", badge: 0, tricks: [], background: "chatter")
         pair()
-        for tab in ["Pet", "Tasks", "Agents", "More"] {
+        for tab in ["Pet", "Inbox", "Agents", "More"] {
             app.tabBars.buttons[tab].tap()
             XCTAssertTrue(any("screen-background-chatter").waitForExistence(timeout: 10), "\(tab) shows the background")
             attach("tab-\(tab)")

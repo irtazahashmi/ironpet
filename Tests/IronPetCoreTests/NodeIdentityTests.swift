@@ -47,8 +47,6 @@ final class NodeIdentityTests: XCTestCase {
         let before = try Database(path: file, migrations: AppMigrations.all.filter { $0.version <= 551 })
         XCTAssertEqual(before.schemaVersion, 551)
         try before.write { db in
-            try db.execute("INSERT INTO task_items(id, title, notes, status, source, created, updated) VALUES('old-task', 'Old', '', 'backlog', 'chat', 1, 1)")
-            try db.execute("INSERT INTO task_events(task, at, by, kind, detail) VALUES('old-task', 1, 'chat', 'created', 'backlog: Old')")
             try db.execute("INSERT INTO memory_entities(id, type, name) VALUES('me', 'person', 'Me')")
             try db.execute("INSERT INTO memory_claims(entity, text, ref) VALUES('me', 'Likes tea', 'claim_abcdef')")
             try db.execute("INSERT INTO memory_changes(at, file, action, note, source) VALUES(1, 'me', 'add', 'Likes tea', 'chat')")
@@ -59,7 +57,7 @@ final class NodeIdentityTests: XCTestCase {
         let after = try Database(path: file, migrations: AppMigrations.all)
         XCTAssertEqual(after.schemaVersion, AppMigrations.latestVersion)
         XCTAssertNotNil(NodeIdentity.nodeID(in: after))
-        for (table, key) in [("task_items", "id"), ("task_events", "task"), ("memory_claims", "entity"), ("memory_changes", "file"),
+        for (table, key) in [("memory_claims", "entity"), ("memory_changes", "file"),
                              ("automation_runs", "automation"), ("notification_items", "id")] {
             XCTAssertEqual(try column(after, table, key).count, 1, "\(table) lost its row")
             XCTAssertEqual(try column(after, table, "node_id"), [nil], "\(table): an old row has no node")
@@ -74,34 +72,15 @@ final class NodeIdentityTests: XCTestCase {
         XCTAssertEqual(NodeIdentity.nodeID(in: try Database(path: file, migrations: AppMigrations.all)), first)
     }
 
-    func testADatabaseWithoutTheNodeTableHasNoNodeIdAndWritesStillWork() async throws {
+    func testADatabaseWithoutTheNodeTableHasNoNodeId() async throws {
         let database = try Database(path: nil, migrations: TaskStore.migrations)
         XCTAssertNil(NodeIdentity.nodeID(in: database))
-        let store = TaskStore(database: database, keepDoneDays: { 30 })
-        _ = try store.create(title: "No node", source: .chat, by: "chat")
-        XCTAssertEqual(try column(database, "task_items", "node_id"), [nil])
-        XCTAssertEqual(try column(database, "task_items", "agent_id"), [AgentID.default.rawValue])
+        let store = TaskStore(database: database)
+        store.suggest([("No node", nil, nil)], meeting: URL(fileURLWithPath: "/tmp/meetings/m"))
+        XCTAssertEqual(store.suggestions.map(\.title), ["No node"])
     }
 
     // MARK: Provenance on writes
-
-    func testTaskWritesRecordTheNodeAndTheAgent() async throws {
-        let database = try Database(path: nil, migrations: AppMigrations.all)
-        let node = try XCTUnwrap(NodeIdentity.nodeID(in: database))
-        let store = TaskStore(database: database, keepDoneDays: { 30 })
-        let task = try store.create(title: "Write it", source: .agent, by: "agent")
-        _ = try store.update(task.id, title: "Write it down", note: "started", by: "agent")
-        try store.close(task.id, by: "user")
-        XCTAssertEqual(try column(database, "task_items", "node_id"), [node])
-        XCTAssertEqual(try column(database, "task_items", "agent_id"), [AgentID.default.rawValue])
-        let nodes = try column(database, "task_events", "node_id")
-        XCTAssertGreaterThanOrEqual(nodes.count, 3)
-        XCTAssertTrue(nodes.allSatisfy { $0 == node }, "every task event names the node")
-        XCTAssertTrue(try column(database, "task_events", "agent_id").allSatisfy { $0 == AgentID.default.rawValue })
-        try store.delete(task.id, by: "user")
-        let deleted = try column(database, "task_events", "node_id", where: "kind = 'deleted'")
-        XCTAssertEqual(deleted, [node], "the delete is attributed too")
-    }
 
     func testMemoryWritesRecordTheNodeAndTheAgent() async throws {
         let database = try Database(path: nil, migrations: AppMigrations.all)
@@ -140,10 +119,10 @@ final class NodeIdentityTests: XCTestCase {
     // MARK: Ids across nodes
 
     func testNewIdsHaveTwelveDigitsAndOldOnesStillParse() async throws {
-        let made = RecordID.make(.task, taken: { _ in false })
+        let made = RecordID.make(.meeting, taken: { _ in false })
         XCTAssertEqual(RecordID.parse(made)?.hex.count, RecordID.newDigits)
         XCTAssertEqual(RecordID.newDigits, 12)
-        XCTAssertEqual(RecordID.parse("task_9f3c1e")?.kind, .task, "a six digit id from before still parses")
+        XCTAssertEqual(RecordID.parse("meeting_9f3c1e")?.kind, .meeting, "a six digit id from before still parses")
     }
 
     /// Many installs that never talk to each other each create records. No two ids may match, in any kind.
@@ -153,7 +132,7 @@ final class NodeIdentityTests: XCTestCase {
         for _ in 0..<60 {
             let node = try Database(path: nil, migrations: AppMigrations.all)
             let refs = RecordRefs(database: node)
-            for kind in [RecordKind.task, .job] {
+            for kind in [RecordKind.meeting, .job] {
                 let made = refs.refs(kind, (0..<120).map { "key-\($0)" })
                 XCTAssertEqual(made.count, 120)
                 total += made.count
@@ -161,23 +140,6 @@ final class NodeIdentityTests: XCTestCase {
             }
         }
         XCTAssertEqual(seen.count, total, "two nodes made the same id")
-    }
-
-    func testOldIdsStillResolveBesideNewOnes() async throws {
-        let database = try Database(path: file, migrations: AppMigrations.all.filter { $0.version <= 550 })
-        try database.write { db in
-            try db.execute("INSERT INTO task_items(id, title, notes, status, source, created, updated) VALUES('fix-login-bug', 'Fix login bug', '', 'backlog', 'chat', 1, 1)")
-        }
-        let upgraded = try Database(path: file, migrations: AppMigrations.all)
-        let refs = RecordRefs(database: upgraded)
-        let resolver = RecordResolver(refs: refs)
-        let oldRef = try XCTUnwrap(refs.ref(.task, "fix-login-bug"))
-        XCTAssertEqual(RecordID.parse(oldRef)?.hex.count, 6, "the ref made by the 551 backfill keeps its six digits")
-        let newRef = try XCTUnwrap(refs.ref(.task, "a-new-task"))
-        XCTAssertEqual(RecordID.parse(newRef)?.hex.count, 12)
-        XCTAssertEqual(try resolver.resolve(oldRef).get().key, "fix-login-bug")
-        XCTAssertEqual(try resolver.resolve("fix-login-bug").get().key, "fix-login-bug", "the slug still resolves")
-        XCTAssertEqual(try resolver.resolve(newRef).get().key, "a-new-task")
     }
 
     // MARK: The API

@@ -8,12 +8,6 @@ private enum BriefFixture {
     static func tuesday(hour: Int, minute: Int = 0) -> Date { AutomationTestClock.monday(plus: 1, hour: hour, minute: minute) }
     static var startOfTuesday: Date { calendar.startOfDay(for: tuesday(hour: 12)) }
 
-    static func task(_ id: String, _ status: TaskStatus = .backlog, due: Date? = nil, waitingOn: String? = nil,
-                     updated: Date = tuesday(hour: 7), closed: Date? = nil) -> TaskItem {
-        TaskItem(id: id, title: "Task \(id)", notes: "", status: status, source: .chat, due: due, links: [],
-                 created: tuesday(hour: 6), updated: updated, closed: closed, waitingOn: waitingOn)
-    }
-
     static func signal(_ id: String, _ label: String, mood: PetMood = .needsInput, minutes: Double = 10) -> Signal {
         Signal(id: id, title: "PR \(id)", subtitle: "you/repo #\(id)", url: URL(string: "https://example.com/\(id)"),
                date: tuesday(hour: 8).addingTimeInterval(-minutes * 60), label: label, symbol: "eye.fill", mood: mood, ask: nil)
@@ -38,32 +32,20 @@ final class BriefBuilderTests: XCTestCase {
 
     private func section(_ brief: Brief, _ id: String) -> [Brief.Item] { brief.sections.first { $0.id == id }?.items ?? [] }
 
-    func testTheBriefListsDueNeedsAlertsMeetingsAndWaitingAgents() {
+    func testTheBriefListsAlertsMeetingsAndWaitingAgents() {
         let input = BriefInput(
             now: F.tuesday(hour: 9), calendar: F.calendar,
-            tasks: [F.task("late", due: F.startOfTuesday.addingTimeInterval(-86_400)), F.task("today", due: F.startOfTuesday),
-                    F.task("later", due: F.startOfTuesday.addingTimeInterval(3 * 86_400)), F.task("ask", .needsYou),
-                    F.task("theirs", .needsYou, waitingOn: "Ana"), F.task("done", .done, due: F.startOfTuesday)],
             sessions: [F.session("wait", .needsInput), F.session("broke", .failed), F.session("ok", .done), F.session("run", .running)],
             alerts: [F.signal("1", "Changes requested"), F.signal("2", "Review requested"), F.signal("3", "CI failed"),
                      F.signal("4", "Approved", mood: .done)],
-            meetings: [BriefMeeting(id: "m", date: F.tuesday(hour: -9), preview: "Planning", openItems: ["Send notes", "Task ask."])])
+            meetings: [BriefMeeting(id: "m", date: F.tuesday(hour: -9), preview: "Planning", openItems: ["Send notes", "Book the room"])])
         let brief = BriefBuilder.brief(input)
 
-        XCTAssertEqual(section(brief, "due").map(\.target), [.task("late"), .task("today")])
-        XCTAssertEqual(section(brief, "needs").map(\.target), [.task("ask")])
+        XCTAssertEqual(brief.sections.map(\.id), ["alerts", "meetings", "agents"], "there are no task sections")
         XCTAssertEqual(section(brief, "alerts").map(\.id), ["alert:2", "alert:3", "alert:1"])
-        // An action item that matches an open task opens the task; the others open the meeting.
-        XCTAssertEqual(section(brief, "meetings").map(\.target), [.meeting("m"), .task("ask")])
+        XCTAssertEqual(section(brief, "meetings").map(\.target), [.meeting("m"), .meeting("m")])
         XCTAssertEqual(section(brief, "agents").map(\.title), ["wait", "broke"])
-        XCTAssertEqual(brief.lines, ["1 task due today, 1 overdue", "1 task needs you",
-                                     "1 review requested, 1 CI failed +1 more", "2 open action items from meetings"])
-    }
-
-    func testAMeetingItemThatIsAlreadyDoneIsLeftOut() {
-        let input = BriefInput(now: F.tuesday(hour: 9), calendar: F.calendar, tasks: [F.task("x", .done)],
-                               meetings: [BriefMeeting(id: "m", date: F.tuesday(hour: -2), preview: "", openItems: ["task x"])])
-        XCTAssertTrue(BriefBuilder.brief(input).isEmpty)
+        XCTAssertEqual(brief.lines, ["1 review requested, 1 CI failed +1 more", "2 open action items from meetings", "2 agents waiting for you"])
     }
 
     func testMondaysBriefReachesBackToFridayOnWeekdays() {
@@ -80,8 +62,6 @@ final class BriefBuilderTests: XCTestCase {
     func testTheRecapListsTodayOnlyAndAlwaysEndsWithStillOpen() {
         let input = BriefInput(
             now: F.tuesday(hour: 18), calendar: F.calendar,
-            tasks: [F.task("closed", .done, closed: F.tuesday(hour: 11)), F.task("old", .done, closed: F.tuesday(hour: -5)),
-                    F.task("ask", .needsYou), F.task("doing", .inProgress), F.task("later")],
             sessions: [F.session("wait", .needsInput)],
             alerts: [F.signal("1", "CI failed"), F.signal("2", "Approved", mood: .done)],
             meetings: [BriefMeeting(id: "sync", date: F.tuesday(hour: 10), preview: "Weekly sync", openItems: []),
@@ -93,37 +73,25 @@ final class BriefBuilderTests: XCTestCase {
         let recap = BriefBuilder.recap(input)
         XCTAssertEqual(section(recap, "agents").map(\.title), ["repo-c", "repo-b", "repo-a"])
         XCTAssertEqual(section(recap, "agents").first?.target, .session(id: "c", workspace: "/w/c", bundleID: "com.example.app"))
-        XCTAssertEqual(section(recap, "closed").map(\.target), [.task("closed")])
         XCTAssertEqual(section(recap, "resolved").map(\.target), [.alert(id: "9", url: nil)])
         XCTAssertEqual(section(recap, "meetings").map(\.target), [.meeting("sync")])
-        XCTAssertEqual(section(recap, "open").map(\.id), ["open:ask", "open:doing", "alert:1", "session:wait"])
-        XCTAssertEqual(recap.lines, ["Agents finished 2 turns, 1 failed", "1 task closed", "1 alert resolved",
-                                     "Still open: 2 tasks, 1 alert, 1 agent"])
-    }
-
-    func testDeferredTasksStayOutOfTheRecapsStillOpen() {
-        var hidden = F.task("hidden", .needsYou)
-        hidden.deferUntil = F.tuesday(hour: 48)
-        var later = F.task("later", .inProgress)
-        later.deferUntil = F.tuesday(hour: 48)
-        let input = BriefInput(now: F.tuesday(hour: 18), calendar: F.calendar, tasks: [hidden, later, F.task("ask", .needsYou)])
-        XCTAssertEqual(section(BriefBuilder.recap(input), "open").map(\.id), ["open:ask"])
+        XCTAssertEqual(section(recap, "open").map(\.id), ["alert:1", "session:wait"])
+        XCTAssertEqual(recap.lines, ["Agents finished 2 turns, 1 failed", "1 alert resolved", "1 meeting", "Still open: 1 alert, 1 agent"])
+        XCTAssertNil(recap.sections.first { $0.id == "closed" }, "there are no closed tasks to list")
     }
 
     func testARecapAfterMidnightCoversItsSlotsDay() {
         var input = BriefInput(now: F.tuesday(hour: 25), calendar: F.calendar,
-                               tasks: [F.task("closed", .done, closed: F.tuesday(hour: 11))],
                                activity: [F.turn("a", .sessionDone, at: F.tuesday(hour: 10))])
         XCTAssertTrue(BriefBuilder.recap(input).isEmpty, "without a day it recaps Wednesday so far")
         input.day = F.tuesday(hour: 18)
         let recap = BriefBuilder.recap(input)
         XCTAssertEqual(recap.window.start, F.startOfTuesday)
-        XCTAssertEqual(section(recap, "closed").map(\.target), [.task("closed")])
         XCTAssertEqual(section(recap, "agents").map(\.title), ["repo-a"])
     }
 
     func testAnEmptyDayIsEmpty() {
-        let input = BriefInput(now: F.tuesday(hour: 18), calendar: F.calendar, tasks: [F.task("later")])
+        let input = BriefInput(now: F.tuesday(hour: 18), calendar: F.calendar)
         XCTAssertTrue(BriefBuilder.brief(input).isEmpty)
         XCTAssertTrue(BriefBuilder.recap(input).isEmpty)
         XCTAssertEqual(BriefBuilder.recap(input).lines, [])
@@ -399,8 +367,8 @@ final class DigestAutomationTests: AutomationTestCase {
 
     private var nonEmpty: Brief {
         Brief(kind: .brief, window: DateInterval(start: F.startOfTuesday, end: F.tuesday(hour: 9)),
-              sections: [.init(id: "due", title: "Due", items: [.init(id: "due:x", symbol: "calendar", title: "X", target: .task("x"))])],
-              lines: ["1 task due today"])
+              sections: [.init(id: "meetings", title: "Meetings", items: [.init(id: "m:x", symbol: "person.2", title: "X", target: .meeting("x"))])],
+              lines: ["1 open action item from meetings"])
     }
 
     private func wired(_ automations: [Automation]) -> Rig {
@@ -447,7 +415,7 @@ final class DigestAutomationTests: AutomationTestCase {
         run(rig, minutes: 61)
         XCTAssertEqual(shown.map(\.kind), [.brief])
         XCTAssertEqual(shown.first?.manual, false)
-        XCTAssertTrue(history(rig, AutomationDefaults.morningBriefID).contains("fired: 1 task due today"))
+        XCTAssertTrue(history(rig, AutomationDefaults.morningBriefID).contains("fired: 1 open action item from meetings"))
     }
 
     func testAnEmptyScheduledBriefStaysQuietButRunNowShowsIt() async {
@@ -483,7 +451,7 @@ final class DigestAutomationTests: AutomationTestCase {
     func testValidation() {
         var a = AutomationDefaults.morningBrief()
         a.action.digest = "weekly"
-        XCTAssertTrue(AutomationValidator.validate(a).contains("action.digest must be one of brief, recap, review"))
+        XCTAssertTrue(AutomationValidator.validate(a).contains("action.digest must be one of brief, recap"))
         let (parsed, errors) = AutomationValidator.parseOne([
             "id": "poll-digest", "name": "x", "trigger": ["type": "poll", "minutes": 5, "source": ["type": "shell", "command": "true"]],
             "action": ["type": "digest", "digest": "brief"]])
@@ -499,9 +467,8 @@ final class BriefModelTests: XCTestCase {
     private typealias F = BriefFixture
 
     func testARecapOpenedForYesterdayStaysOnItUntilTheUserPicksAKind() throws {
-        let tasks = TaskStore(database: Database.open(path: nil, migrations: TaskStore.migrations).database)
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-brief-\(UUID().uuidString)")
-        let source = BriefSource(tasks: TasksAPI(store: tasks), sessions: SessionStore(), signals: SignalStore(), meetingsRoot: root,
+        let source = BriefSource(sessions: SessionStore(), signals: SignalStore(), meetingsRoot: root,
                                  activity: FixedBriefActivity(events: [F.turn("a", .sessionDone, at: F.tuesday(hour: 10))]))
         source.now = { F.tuesday(hour: 25) }
         source.calendar = F.calendar
@@ -522,28 +489,28 @@ final class BriefModelTests: XCTestCase {
 
     /// `PetController` calls `setVisible(false)` when the panel closes, which fires no onDisappear.
     func testAHiddenPageStopsRebuildingOnStoreChanges() throws {
-        let tasks = TaskStore(database: Database.open(path: nil, migrations: TaskStore.migrations).database)
-        let source = BriefSource(tasks: TasksAPI(store: tasks), sessions: SessionStore(), signals: SignalStore(),
+        let signals = SignalStore()
+        let source = BriefSource(sessions: SessionStore(), signals: signals,
                                  meetingsRoot: FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-brief-\(UUID().uuidString)"),
                                  activity: FixedBriefActivity(events: []))
         let model = BriefModel(source: TodayAPI(source: source))
-        func needs() -> Int { model.briefs[.brief]?.sections.first { $0.id == "needs" }?.items.count ?? 0 }
+        func alerts() -> Int { model.briefs[.brief]?.sections.first { $0.id == "alerts" }?.items.count ?? 0 }
         func settle() { RunLoop.main.run(until: Date().addingTimeInterval(0.7)) }
 
         model.setVisible(true)
-        _ = try tasks.create(title: "Visible", status: .needsYou, source: .chat, by: "user")
+        signals.add(F.signal("1", "CI failed"), notify: false)
         settle()
-        XCTAssertEqual(needs(), 1, "a visible page follows the stores")
+        XCTAssertEqual(alerts(), 1, "a visible page follows the stores")
 
         model.show(recapDay: Date().addingTimeInterval(-86_400))
         model.setVisible(false)
-        _ = try tasks.create(title: "Hidden", status: .needsYou, source: .chat, by: "user")
+        signals.add(F.signal("2", "CI failed"), notify: false)
         settle()
-        XCTAssertEqual(needs(), 1, "a hidden page does not rebuild")
+        XCTAssertEqual(alerts(), 1, "a hidden page does not rebuild")
         XCTAssertNil(model.recapDay)
 
         model.setVisible(true)
-        XCTAssertEqual(needs(), 2, "reopening rebuilds")
+        XCTAssertEqual(alerts(), 2, "reopening rebuilds")
     }
 }
 
@@ -571,7 +538,7 @@ final class BriefBubbleTests: XCTestCase {
     func testTheBubbleShowsTheLinesAndStaysUntilTheEndOfTheDay() {
         let now = F.tuesday(hour: 9)
         let brief = Brief(kind: .brief, window: DateInterval(start: now, end: now),
-                          sections: [.init(id: "due", title: "Due", items: [.init(id: "d", symbol: "calendar", title: "X", target: .task("x"))])],
+                          sections: [.init(id: "meetings", title: "Meetings", items: [.init(id: "d", symbol: "person.2", title: "X", target: .meeting("x"))])],
                           lines: ["a", "b", "c", "d", "e"])
         var opened = 0
         let bubble = Announcer.briefBubble(brief, automation: AutomationDefaults.morningBrief(), now: now, calendar: F.calendar) { opened += 1 }

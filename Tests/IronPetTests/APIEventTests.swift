@@ -8,17 +8,17 @@ final class APIEventTests: XCTestCase {
         let bus = APIEventBus()
         var seen: [APIEvent] = []
         bus.subscribe { seen.append($0) }
-        bus.publish(.tasksChanged, id: "a")
+        bus.publish(.agentsChanged, id: "a")
         bus.publish(.alertsChanged)
         XCTAssertEqual(seen.map(\.seq), [1, 2])
-        XCTAssertEqual(seen.map(\.kind), [.tasksChanged, .alertsChanged])
+        XCTAssertEqual(seen.map(\.kind), [.agentsChanged, .alertsChanged])
         XCTAssertEqual(seen.first?.id, "a")
         XCTAssertNil(seen.last?.id)
     }
 
     func testReconnectGetsMissedEventsThenLiveOnesWithoutRepeat() {
         let bus = APIEventBus()
-        bus.publish(.tasksChanged)
+        bus.publish(.agentsChanged)
         bus.publish(.chatItem)
         bus.publish(.settingsChanged)
         var seen: [Int] = []
@@ -30,7 +30,7 @@ final class APIEventTests: XCTestCase {
 
     func testSubscribingWithoutSeqSkipsHistory() {
         let bus = APIEventBus()
-        bus.publish(.tasksChanged)
+        bus.publish(.agentsChanged)
         var seen: [Int] = []
         bus.subscribe { seen.append($0.seq) }
         XCTAssertTrue(seen.isEmpty)
@@ -60,7 +60,7 @@ final class APIEventTests: XCTestCase {
 
     func testChatVersionCountsChatEventsAndSurvivesEviction() {
         let bus = APIEventBus(capacity: 2)
-        bus.publish(.tasksChanged)
+        bus.publish(.agentsChanged)
         XCTAssertEqual(bus.chatVersion, 0)
         for _ in 0..<5 { bus.publish(.chatItem, id: "same") }
         bus.publish(.chatState)
@@ -77,7 +77,7 @@ final class APIEventTests: XCTestCase {
 
     func testStreamedChatEventsKeepOneBufferedEventPerMessageAndLeaveOthersAlone() {
         let bus = APIEventBus(capacity: 30)
-        bus.publish(.tasksChanged, id: "t1")
+        bus.publish(.agentsChanged, id: "t1")
         var live = 0
         bus.subscribe { _ in live += 1 }
         for _ in 0..<1_000 { bus.publish(.chatItem, id: "reply") }
@@ -86,7 +86,7 @@ final class APIEventTests: XCTestCase {
         bus.publish(.chatState, id: "status")
         XCTAssertEqual(live, 1_003, "a live subscriber hears every event")
         let buffered = bus.replay(after: 0).events
-        XCTAssertEqual(buffered.map(\.kind), [.tasksChanged, .chatItem, .chatItem, .chatState])
+        XCTAssertEqual(buffered.map(\.kind), [.agentsChanged, .chatItem, .chatItem, .chatState])
         XCTAssertEqual(buffered.map(\.id), ["t1", "reply", "other", "status"])
         XCTAssertEqual(buffered.map(\.seq), buffered.map(\.seq).sorted(), "still in order")
         XCTAssertFalse(bus.replay(after: 0).gap)
@@ -150,16 +150,14 @@ final class APIStoreEventTests: XCTestCase {
         bus.subscribe { [unowned self] in seen.append($0) }
     }
 
-    func testTaskStorePublishesTasksAndSuggestions() throws {
-        let store = TaskStore(database: APITestSupport.memoryDatabase(), keepDoneDays: { 30 })
+    func testInboxStorePublishesSuggestionChanges() throws {
+        let store = TaskStore(database: APITestSupport.memoryDatabase())
         store.events = bus
-        let task = try store.create(title: "Write the plan", source: .user, by: "test")
-        try store.close(task.id, by: "test")
-        store.suggest([(title: "Send the notes", due: nil, waitingOn: nil)], meeting: URL(fileURLWithPath: "/tmp/meeting-a"))
-        XCTAssertEqual(seen.map(\.kind), [.tasksChanged, .tasksChanged, .suggestionsChanged])
-        XCTAssertEqual(seen.first?.id, task.id)
+        let added = store.suggest([(title: "Send the notes", due: nil, waitingOn: nil)], meeting: URL(fileURLWithPath: "/tmp/meeting-a"))
+        try store.done(try XCTUnwrap(added.first).id)
+        XCTAssertEqual(seen.map(\.kind), [.suggestionsChanged, .suggestionsChanged])
         XCTAssertNil(seen.last?.id)
-        XCTAssertEqual(seen.map(\.seq), [1, 2, 3])
+        XCTAssertEqual(seen.map(\.seq), [1, 2])
     }
 
     func testSignalStorePublishesAlerts() {

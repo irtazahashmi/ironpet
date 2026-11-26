@@ -5,7 +5,7 @@
       "request" : {
         "id" : 1,
         "jsonrpc" : "2.0",
-        "method" : "tasks.fly",
+        "method" : "inbox.fly",
         "params" : {
 
         }
@@ -14,9 +14,9 @@
         "error" : {
           "code" : -32601,
           "data" : {
-            "method" : "tasks.fly"
+            "method" : "inbox.fly"
           },
-          "message" : "no method \"tasks.fly\""
+          "message" : "no method \"inbox.fly\""
         },
         "id" : 1,
         "jsonrpc" : "2.0"
@@ -27,27 +27,19 @@
       "request" : {
         "id" : 2,
         "jsonrpc" : "2.0",
-        "method" : "tasks.create",
+        "method" : "inbox.add",
         "params" : {
-          "by" : "user",
-          "labels" : {
-
-          },
-          "links" : [
-
-          ],
-          "notes" : "",
-          "source" : "cli",
-          "status" : "backlog"
+          "kind" : "email",
+          "sourceRef" : "x"
         }
       },
       "response" : {
         "error" : {
           "code" : -32602,
           "data" : {
-            "field" : "title"
+            "field" : "draft"
           },
-          "message" : "params: title is missing"
+          "message" : "params: draft is missing"
         },
         "id" : 2,
         "jsonrpc" : "2.0"
@@ -58,9 +50,9 @@
       "request" : {
         "id" : 3,
         "jsonrpc" : "2.0",
-        "method" : "tasks.get",
+        "method" : "inbox.done",
         "params" : {
-          "id" : 7
+          "id" : 5
         }
       },
       "response" : {
@@ -80,7 +72,7 @@
       "request" : {
         "id" : 4,
         "jsonrpc" : "2.0",
-        "method" : "tasks.get",
+        "method" : "inbox.done",
         "params" : {
           "id" : "missing"
         }
@@ -91,42 +83,34 @@
           "data" : {
             "code" : "not_found"
           },
-          "message" : "no task with id \"missing\""
+          "message" : "no inbox item \"missing\""
         },
         "id" : 4,
         "jsonrpc" : "2.0"
       }
     },
     {
-      "name" : "invalid empty title",
+      "name" : "an empty title adds nothing",
       "request" : {
         "id" : 5,
         "jsonrpc" : "2.0",
-        "method" : "tasks.create",
+        "method" : "inbox.add",
         "params" : {
-          "by" : "user",
-          "labels" : {
-
+          "draft" : {
+            "key" : "k",
+            "notes" : "",
+            "title" : "   "
           },
-          "links" : [
-
-          ],
-          "notes" : "",
-          "source" : "cli",
-          "status" : "backlog",
-          "title" : "   "
+          "kind" : "email",
+          "sourceRef" : "x"
         }
       },
       "response" : {
-        "error" : {
-          "code" : -32002,
-          "data" : {
-            "code" : "invalid"
-          },
-          "message" : "title is empty"
-        },
         "id" : 5,
-        "jsonrpc" : "2.0"
+        "jsonrpc" : "2.0",
+        "result" : [
+
+        ]
       }
     },
     {

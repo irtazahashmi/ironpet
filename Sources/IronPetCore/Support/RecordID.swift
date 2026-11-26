@@ -2,10 +2,10 @@ import Foundation
 
 /// The kinds of record that have a public id. The prefix says what the record is, so any id can be resolved without knowing where it came from.
 package enum RecordKind: String, CaseIterable {
-    case screen, meeting, chat, msg, task, auto, run, job, notif, page, claim, filter
+    case screen, meeting, chat, msg, auto, run, job, notif, page, claim
 }
 
-/// A public id: the kind's prefix, an underscore and random lowercase hex digits, such as `task_9f3c1e5a07b2`. A new id has 12 digits
+/// A public id: the kind's prefix, an underscore and random lowercase hex digits, such as `meeting_9f3c1e5a07b2`. A new id has 12 digits
 /// (48 bits), so two installs that never talk to each other can both create records and still not collide. Ids made before that have
 /// six digits and stay valid, so `parse` accepts six or more. The digits never encode a title or a time, so an id never changes, and
 /// a new id gets one more digit only when every try collides.

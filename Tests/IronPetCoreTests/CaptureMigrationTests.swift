@@ -1,7 +1,7 @@
 import XCTest
 @testable import IronPetCore
 
-/// S6: the old capture tables go, the new ones exist, and task data from meetings and automations is intact.
+/// S6: the old capture tables go, the new ones exist, and inbox items from meetings and automations are intact.
 @MainActor
 final class CaptureMigrationTests: XCTestCase {
     /// The tables the per-app pipeline created in migrations 300 to 302, as they were.
@@ -24,7 +24,7 @@ final class CaptureMigrationTests: XCTestCase {
         Set(try database.read { try $0.rows("SELECT name FROM sqlite_master WHERE type IN ('table', 'view')") }.compactMap { $0[0] as? String })
     }
 
-    func testOldTablesAreDroppedNewOnesCreatedAndTaskDataKept() async throws {
+    func testOldTablesAreDroppedNewOnesCreatedAndInboxItemsKept() async throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-capture-migration-\(UUID().uuidString)/ironpet.db")
         addTeardownBlock { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
         let meeting = "/tmp/meetings/2026-11-17-0930"
@@ -44,7 +44,7 @@ final class CaptureMigrationTests: XCTestCase {
                 try db.execute("INSERT INTO task_suggestions(id, title, due, meeting, created) VALUES('send-deck', 'Send the deck', 'Friday', ?, 1)", [meeting])
                 try db.execute("""
                     INSERT INTO task_suggestions(id, title, notes, url, automation, automation_name, created, waiting_on, source_ref)
-                    VALUES('review-pr', 'Review PR 12', 'From the watcher', 'https://example.com/pr/12', 'prs', 'PRs', 2, 'Ana', '{"ref":"prs"}')
+                    VALUES('review-pr', 'Review PR 12', 'From the watcher', 'https://example.com/pr/12', 'prs', 'PRs', 2, NULL, '{"ref":"prs"}')
                     """)
                 try db.execute("INSERT INTO task_suggestions(id, title, capture, kind, quote, evidence, created) VALUES('from-screen', 'From the screen', 'fp', 'new_task', 'q', '[1]', 3)")
                 try db.execute("INSERT INTO task_suggestion_outcomes(send_log, suggestion, kind, title, outcome, at) VALUES(1, 'x', 'new_task', 'X', 'accepted', 0)")
@@ -59,11 +59,10 @@ final class CaptureMigrationTests: XCTestCase {
         }
         for made in ["capture_window", "capture", "capture_fts"] { XCTAssertTrue(names.contains(made), "\(made) is missing") }
 
-        let tasks = TaskStore(database: migrated, now: { Date(timeIntervalSince1970: 10) }, keepDoneDays: { 30 })
-        XCTAssertEqual(tasks.task("reply-to-sam")?.source, .capture, "a task a person was working on stays")
-        XCTAssertEqual(tasks.task("book")?.title, "Book the room")
+        let tasks = TaskStore(database: migrated, now: { Date(timeIntervalSince1970: 10) })
+        XCTAssertFalse(names.contains("task_items"), "the task list is gone")
         XCTAssertEqual(tasks.suggestions.map(\.id).sorted(), ["review-pr", "send-deck"], "meeting and automation suggestions stay, the screen one goes")
-        XCTAssertEqual(tasks.suggestions.first { $0.id == "review-pr" }?.waitingOn, "Ana")
+        XCTAssertNil(tasks.suggestions.first { $0.id == "review-pr" }?.waitingOn)
         XCTAssertEqual(tasks.suggestions.first { $0.id == "review-pr" }?.sourceRef, #"{"ref":"prs"}"#)
         let columns = try migrated.read { try $0.rows("PRAGMA table_info(task_suggestions)") }.compactMap { $0[1] as? String }
         for dropped in ["capture", "kind", "target", "changes", "diff", "quote", "evidence"] { XCTAssertFalse(columns.contains(dropped), dropped) }
@@ -78,7 +77,7 @@ final class CaptureMigrationTests: XCTestCase {
     func testAFreshDatabaseHasTheNewTablesOnly() async throws {
         let database = Database.open(path: nil, migrations: AppMigrations.all).database
         let names = try tables(database)
-        XCTAssertTrue(names.isSuperset(of: ["capture_window", "capture", "capture_fts", "task_items", "task_suggestions"]))
-        XCTAssertFalse(names.contains("capture_items") || names.contains("task_suggestion_outcomes"))
+        XCTAssertTrue(names.isSuperset(of: ["capture_window", "capture", "capture_fts", "task_suggestions"]))
+        XCTAssertFalse(names.contains("capture_items") || names.contains("task_suggestion_outcomes") || names.contains("task_items"))
     }
 }

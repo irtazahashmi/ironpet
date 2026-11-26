@@ -56,75 +56,7 @@ final class RemoteKitWireTests: XCTestCase {
         sessions.apply(HookEvent(source: .claude, name: name, payload: payload, origin: SessionOrigin(workspace: workspace)))
     }
 
-    // MARK: Tasks
-
-    func testTaskRoutesDecodeIntoKitTypesAndKeepTheirJSON() async throws {
-        let due = Date(timeIntervalSince1970: 1_900_000_000)
-        let item = try h.api.tasks.create(CreateTaskRequest(
-            title: "Review the contract", notes: "Check clause 4", status: .needsYou, source: .agent, due: due,
-            links: [TaskLink(kind: .url, ref: "https://example.com/c", label: "Contract"), TaskLink(kind: .file, ref: "/tmp/c.pdf")],
-            waitingOn: nil, sourceRef: nil, labels: ["team": "legal"], by: "test"))
-        let plain = try h.api.tasks.create(CreateTaskRequest(title: "Bare", source: .user))
-
-        let list = try await get("/v1/tasks?include_done=1")
-        let tasks = try lossless(TaskListResponse.self, list, "GET /v1/tasks").tasks
-        XCTAssertEqual(Set(tasks.map(\.id)), [item.id, plain.id])
-
-        let created = iso.string(from: item.created), updated = iso.string(from: item.updated)
-        let ref = try XCTUnwrap(h.api.tasks.task(item.id)?.ref, "a stored task has its public id")
-        let golden: [String: Any] = [
-            "id": item.id, "ref": ref, "title": "Review the contract", "notes": "Check clause 4", "status": "needs_you", "source": "agent",
-            "created": created, "updated": updated, "due": iso.string(from: due), "labels": ["team": "legal"],
-            "links": [["kind": "url", "ref": "https://example.com/c", "label": "Contract"], ["kind": "file", "ref": "/tmp/c.pdf"]],
-            "history": [["at": iso.string(from: h.api.tasks.history(item.id)[0].at), "by": "test", "kind": h.api.tasks.history(item.id)[0].kind.rawValue,
-                         "detail": h.api.tasks.history(item.id)[0].detail]],
-        ]
-        let detail = try await get("/v1/tasks/\(item.id)")
-        try lossless(RemoteTaskDetail.self, detail, "GET /v1/tasks/<id>")
-        XCTAssertEqual(detail.json as NSDictionary, golden as NSDictionary)
-
-        let bare = try await get("/v1/tasks/\(plain.id)")
-        XCTAssertEqual(Set(bare.json.keys), ["id", "ref", "title", "status", "source", "created", "updated", "history"], "empty fields stay off the wire")
-
-        let made = try await post("/v1/tasks", ["title": "From the phone", "notes": "n", "status": "in_progress", "due": "2030-01-02T03:04:05Z",
-                                                "links": [["kind": "url", "ref": "https://x.test"]], "labels": ["a": "b"], "waiting_on": "Ana"])
-        XCTAssertEqual(made.status, 201)
-        try lossless(RemoteTask.self, made, "POST /v1/tasks")
-        XCTAssertEqual(made.json["waiting_on"] as? String, "Ana")
-        let id = try XCTUnwrap(made.json["id"] as? String)
-        let changed = try await patch("/v1/tasks/\(id)", ["title": "Renamed", "note": "why"])
-        try lossless(RemoteTask.self, changed, "PATCH /v1/tasks/<id>")
-        XCTAssertEqual(changed.json["title"] as? String, "Renamed")
-        let closed = try await post("/v1/tasks/\(id)/close", ["note": "merged"])
-        try lossless(RemoteTask.self, closed, "POST /v1/tasks/<id>/close")
-        XCTAssertEqual(closed.json["status"] as? String, "done")
-        XCTAssertNotNil(closed.json["closed"])
-        let deleted = try await h.request("DELETE", "/v1/tasks/\(id)", token: token)
-        XCTAssertEqual(deleted.json as NSDictionary, ["deleted": id] as NSDictionary)
-    }
-
-    func testQuickFilterRoutesServeTheChipsAndRemoveOne() async throws {
-        // Filters live in config.json, so saving one fires settings.changed and the controller matches the server to the settings.
-        // Turn the remote API on at the port the harness listens on first, so that match leaves the server as it is.
-        let port = h.port
-        h.api.settings.update { $0.remote.enabled = true; $0.remote.port = port }
-        await h.controller.settled()
-        try h.api.tasks.upsertQuickFilter(id: nil, name: "Epic", query: ["label": ["project": "epic"]])
-        try h.api.tasks.upsertQuickFilter(id: nil, name: "Needs me", query: ["status": "needs_you"])
-        await h.controller.settled()
-        let none = try await h.request("GET", "/v1/task-filters")
-        XCTAssertEqual(none.status, 401, "device token auth, like the other routes")
-        let list = try await get("/v1/task-filters")
-        let decoded = try lossless(QuickFilterListResponse.self, list, "GET /v1/task-filters")
-        XCTAssertEqual(decoded.filters.map(\.name), ["Epic", "Needs me"])
-        XCTAssertNotNil(decoded.filters.first?.node)
-
-        let missing = try await h.request("DELETE", "/v1/task-filters/ghost", token: token)
-        XCTAssertEqual(missing.status, 404)
-        let removed = try await h.request("DELETE", "/v1/task-filters/epic", token: token)
-        XCTAssertEqual(removed.status, 200)
-        XCTAssertEqual(h.api.tasks.quickFilters.map(\.id), ["needs-me"])
-    }
+    // MARK: Inbox
 
     func testSuggestionRoutesDecodeIntoKitTypesAndKeepTheirJSON() async throws {
         h.api.tasks.suggest(SuggestTaskRequest(draft: .init(key: "k", title: "Review PR", due: nil), kind: .pr, sourceRef: "pr:1"))
@@ -138,10 +70,9 @@ final class RemoteKitWireTests: XCTestCase {
         XCTAssertEqual(wire["source_ref"] as? NSDictionary, ["pr": 2] as NSDictionary)
         XCTAssertEqual(wire["created"] as? String, iso.string(from: second.created))
 
-        let accepted = try await post("/v1/suggestions/\(second.id)/accept", ["title": "Send the notes"])
-        try lossless(RemoteTask.self, accepted, "POST /v1/suggestions/<id>/accept")
-        XCTAssertEqual(accepted.json["title"] as? String, "Send the notes")
-        XCTAssertEqual(accepted.json["source_ref"] as? NSDictionary, ["pr": 2] as NSDictionary, "the task keeps the origin the agent gave")
+        let accepted = try await post("/v1/suggestions/\(second.id)/accept")
+        try lossless(RemoteDone.self, accepted, "POST /v1/suggestions/<id>/accept")
+        XCTAssertEqual(accepted.json as NSDictionary, ["done": second.id] as NSDictionary)
         let first = try XCTUnwrap(h.api.tasks.suggestions.first { $0.title == "Review PR" })
         XCTAssertEqual((list.json["suggestions"] as? [[String: Any]])?.first { $0["id"] as? String == first.id }?["source_ref"] as? String, "pr:1")
         let rejected = try await post("/v1/suggestions/\(first.id)/reject")
@@ -219,8 +150,6 @@ final class RemoteKitWireTests: XCTestCase {
         XCTAssertEqual(ask.status, 200)
         XCTAssertNotNil(ask.json["outcome"] as? String)
 
-        _ = try h.api.tasks.create(CreateTaskRequest(title: "Review", notes: "", status: .needsYou, source: .user, due: nil, links: [],
-                                                     waitingOn: nil, sourceRef: nil, labels: [:], by: "test"))
         hook("UserPromptSubmit", session: "ask", payload: ["prompt": "Fix"])
         hook("Notification", session: "ask", payload: ["message": "Needs permission"])
         signals.add(Signal(id: "d", title: "Open", subtitle: "", url: URL(string: "https://example.com/d"), label: "Note", symbol: "bell", mood: .failed, ask: nil), notify: false)
@@ -231,7 +160,6 @@ final class RemoteKitWireTests: XCTestCase {
         }
         let brief = try lossless(RemoteToday.self, try await get("/v1/today?kind=brief"), "GET /v1/today")
         let targets = brief.sections.flatMap(\.items).map(\.target)
-        XCTAssertTrue(targets.contains { $0.type == .task })
         XCTAssertTrue(targets.contains { $0.type == .session })
         XCTAssertEqual(targets.first { $0.type == .alert }?.url, "https://example.com/d")
 

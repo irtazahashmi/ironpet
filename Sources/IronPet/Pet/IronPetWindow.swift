@@ -5,7 +5,7 @@ import SwiftUI
 
 /// A page of the ironpet window, in sidebar order.
 enum IronPetSection: String, CaseIterable, Identifiable {
-    case chat, agents, alerts, notifications, tasks, transcripts, screen, actions, automations, memory, today
+    case chat, agents, alerts, notifications, inbox, transcripts, screen, actions, automations, memory, today
 
     var id: String { rawValue }
 
@@ -15,7 +15,7 @@ enum IronPetSection: String, CaseIterable, Identifiable {
         case .agents: return "Agents"
         case .alerts: return "Alerts"
         case .notifications: return "Notifications"
-        case .tasks: return "Tasks"
+        case .inbox: return "Inbox"
         case .transcripts: return "Transcripts"
         case .screen: return "Screen"
         case .actions: return "Actions"
@@ -31,7 +31,7 @@ enum IronPetSection: String, CaseIterable, Identifiable {
         case .agents: return SharedSymbols.agents
         case .alerts: return SharedSymbols.alerts
         case .notifications: return "tray"
-        case .tasks: return SharedSymbols.tasks
+        case .inbox: return SharedSymbols.tasks
         case .transcripts: return SharedSymbols.meetings
         case .screen: return SharedSymbols.screen
         case .actions: return "sparkles"
@@ -72,15 +72,15 @@ enum IronPetSection: String, CaseIterable, Identifiable {
 
     /// The sections that show what a bubble would announce, so bubbles wait while one is open. The others leave them
     /// visible, so an approval is not missed while reading a transcript or editing an automation.
-    var hidesBubbles: Bool { [.chat, .agents, .alerts, .notifications, .tasks, .actions, .today].contains(self) }
+    var hidesBubbles: Bool { [.chat, .agents, .alerts, .notifications, .inbox, .actions, .today].contains(self) }
 
-    /// Agents that need the user win; otherwise alerts when there are some and no agent is working, then tasks that
-    /// wait on the user or on Add / Skip.
+    /// Agents that need the user win; otherwise alerts when there are some and no agent is working, then the Inbox when it
+    /// has items.
     @MainActor static func needingAttention(agents: AgentsAPI, alerts: AlertsAPI, tasks: TasksAPI) -> IronPetSection {
         if agents.sessions.contains(where: { $0.status == .needsInput || $0.status == .failed }) { return .agents }
         let idle = agents.sessions.allSatisfy { $0.status != .running }
         if !alerts.alerts.isEmpty, idle { return .alerts }
-        if idle, !tasks.suggestions.isEmpty || tasks.all.contains(where: \.needsUser) { return .tasks }
+        if idle, !tasks.suggestions.isEmpty { return .inbox }
         return .agents
     }
 }
@@ -114,8 +114,6 @@ final class IronPetWindowModel: ObservableObject {
     }
     /// The page Today shows: the morning brief or the recap.
     @Published var briefKind: Brief.Kind = .brief
-    /// A task or meeting a Today row opened. The Tasks and Transcripts pages show it, then clear it.
-    @Published var focusTask: String?
     /// A notification a bubble opened. The Notifications page expands it, then clears it.
     @Published var focusNotification: String?
     @Published var focusMeeting: String?
@@ -215,13 +213,13 @@ struct IronPetWindowView: View {
     @ObservedObject private var config = SettingsAPI.live
     @ObservedObject private var memoryModel = MemorySectionModel.shared
 
-    /// A source chip under a fact: open the chat, meeting, task or capture it came from.
+    /// A source chip under a fact: open the chat, meeting or capture it came from.
     private func openMemorySource(_ source: MemorySource) {
         switch source.kind {
         case .meeting:
             if let folder = source.target { model.focusMeeting = folder }
             model.section = .transcripts
-        case .task: model.section = .tasks
+        case .task: break
         case .screen: model.section = .screen
         case .automation: model.section = .automations
         case .chat: model.section = .chat
@@ -387,7 +385,7 @@ struct IronPetWindowView: View {
         case .agents: return agents.sessions.count
         case .alerts: return alerts.alerts.count
         case .notifications: return notifications.unread
-        case .tasks: return tasks.activeCount + tasks.suggestions.count
+        case .inbox: return tasks.suggestions.count
         default: return 0
         }
     }
@@ -404,9 +402,11 @@ struct IronPetWindowView: View {
                 case .alerts: AlertsSection(alerts: alerts, onAsk: actions.onAsk)
                 case .notifications:
                     NotificationsSection(model: notifications, focus: $model.focusNotification)
-                case .tasks:
-                    TaskListView(tasks: tasks, onTellGhost: actions.onTellGhost, onOpenThread: actions.onOpenThread,
-                                 onOpenSession: actions.onOpenSession, focus: $model.focusTask)
+                case .inbox:
+                    InboxView(tasks: tasks, onOpenMeeting: { folder in
+                        model.focusMeeting = folder
+                        model.section = .transcripts
+                    })
                 case .transcripts:
                     if let meetings {
                         TranscriptsView(meetings: meetings, focus: $model.focusMeeting)

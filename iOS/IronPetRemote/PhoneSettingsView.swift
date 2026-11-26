@@ -23,9 +23,8 @@ struct PhoneSettingsView: View {
                         Toggle("Pause reminders", isOn: binding(config.reminders.paused) { ["reminders": ["paused": $0]] })
                             .accessibilityIdentifier("reminders-paused")
                     }
-                    Section("Tasks") {
-                        Toggle("Remind me when a task is due", isOn: binding(config.tasks.dueReminders) { ["tasks": ["dueReminders": $0]] })
-                        Toggle("Suggest tasks after meetings", isOn: binding(config.tasks.meetingSuggestions) { ["tasks": ["meetingSuggestions": $0]] })
+                    Section("Inbox") {
+                        Toggle("Add follow-ups from meetings", isOn: binding(config.tasks.meetingSuggestions) { ["tasks": ["meetingSuggestions": $0]] })
                     }
                     if let voice { VoiceSettingsSection(voice: voice) }
                     Section("Ghost") {

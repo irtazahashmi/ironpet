@@ -68,14 +68,13 @@ struct TodayView: View {
 
     static func emptyDetail(_ kind: Brief.Kind) -> String {
         switch kind {
-        case .brief: return "Due tasks, alerts, open action items from meetings and agents waiting on you show up here."
-        case .recap: return "Finished agent turns, closed tasks, resolved alerts and meetings from today show up here."
-        case .review: return "The inbox, projects without a next action, follow-ups, someday ideas and your goals show up here."
+        case .brief: return "Alerts, action items from meetings and agents waiting on you show up here."
+        case .recap: return "Finished agent turns, resolved alerts and meetings from today show up here."
         }
     }
 }
 
-/// A row opens the task, session, alert or meeting it names in that section, which is its detail page.
+/// A row opens the session, alert or meeting it names in that section, which is its detail page.
 private struct BriefRow: View {
     let item: Brief.Item
     let onOpen: (Brief.Target) -> Void
@@ -113,7 +112,6 @@ private struct BriefRow: View {
 
     private var help: String {
         switch item.target {
-        case .task: return "Show in Tasks"
         case .session: return "Open the session"
         case .alert(_, let url): return url == nil ? "Show in Alerts" : "Open the link"
         case .meeting: return "Open the meeting"

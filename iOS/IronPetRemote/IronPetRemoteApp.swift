@@ -12,8 +12,6 @@ struct IronPetRemoteApp: App {
         // UI tests start from an unpaired app.
         if ProcessInfo.processInfo.arguments.contains("--reset-credentials") {
             store.delete()
-            UserDefaults.standard.removeObject(forKey: TasksViewMode.key)
-            UserDefaults.standard.removeObject(forKey: QuickFilterSelection.key)
         }
         #endif
         _model = State(initialValue: AppModel(store: store))
@@ -55,7 +53,7 @@ struct MainTabs: View {
     @State private var tab: AppTab = .pet
     @Environment(\.scenePhase) private var scenePhase
     @State private var network: NetworkHealth
-    @State private var tasks: TasksModel
+    @State private var inbox: InboxModel
     @State private var pet: PetModel
     @State private var chat: ChatModel
     @State private var chats: AgentChatsModel
@@ -85,12 +83,7 @@ struct MainTabs: View {
         let network = Self.makeNetwork()
         network.onPathReturned = { [events] in events.reconnectNow() }
         _network = State(initialValue: network)
-        // The last task list and the changes made offline live in a file in the app's own container, one per pairing.
-        let tasksModel = TasksModel(client: client, events: events, store: FileTaskSyncStore.forToken(client.token), network: network, onUnauthorized: unauthorized)
-        #if DEBUG
-        if ProcessInfo.processInfo.arguments.contains("--pending-sync-all") { tasksModel.debugAllPending = true }
-        #endif
-        _tasks = State(initialValue: tasksModel)
+        _inbox = State(initialValue: InboxModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
         _pet = State(initialValue: PetModel(client: client, events: events, cache: AssetCache(directory: Self.assetsDirectory), network: network, onUnauthorized: unauthorized))
         let chatModel = ChatModel(client: client, events: events, network: network, onUnauthorized: unauthorized)
         // Typed messages go over the same socket the events arrive on.
@@ -164,13 +157,8 @@ struct MainTabs: View {
                      petName: chats.currentRecord.flatMap { $0.isDefault ? nil : $0.displayName } ?? pet.pet?.name ?? "", agents: chats)
                 .id(chats.current.agentId ?? defaultAgentID)
                 .tabItem { Label("Chat", systemImage: AppTab.chat.symbol) }.badge(chats.waitingCount).tag(AppTab.chat)
-            TasksView(model: tasks, onAsk: { [chat] text in
-                // A task question goes to agent 1, so its chat is the one the tab shows.
-                chats.select(nil)
-                tab = .chat
-                Task { await chat.sendPrompt(text) }
-            })
-                .tabItem { Label("Tasks", systemImage: AppTab.tasks.symbol) }.tag(AppTab.tasks)
+            InboxView(model: inbox)
+                .tabItem { Label("Inbox", systemImage: AppTab.tasks.symbol) }.tag(AppTab.tasks)
             AgentsView(model: agents)
                 .tabItem { Label("Agents", systemImage: AppTab.agents.symbol) }.tag(AppTab.agents)
             MoreView(alerts: alerts, automations: automations, meetings: meetings, memory: memory, screen: screen, settings: phoneSettings, path: $morePath)
@@ -200,10 +188,10 @@ struct MainTabs: View {
         // A background changed on the Mac shows when the Chat tab opens.
         .onChange(of: tab) { _, next in if next == .chat { Task { await pet.reloadPet(applyMood: false); await chats.refresh() } } }
         // Leaving the tabs (unpair or a 401) must close the socket, which otherwise keeps reconnecting with the old token.
-        .onDisappear { [network, tasks, pet, chat, chats, today, agents, alerts, automations, meetings, memory, screen, phoneSettings, voice] in
+        .onDisappear { [network, inbox, pet, chat, chats, today, agents, alerts, automations, meetings, memory, screen, phoneSettings, voice] in
             voice.stop()
             network.stopPathMonitor()
-            tasks.stop(); pet.stop(); chat.stop(); chats.stop(); today.stop(); agents.stop(); alerts.stop(); automations.stop(); meetings.stop(); memory.stop(); screen.stop(); phoneSettings.stop()
+            inbox.stop(); pet.stop(); chat.stop(); chats.stop(); today.stop(); agents.stop(); alerts.stop(); automations.stop(); meetings.stop(); memory.stop(); screen.stop(); phoneSettings.stop()
             meetings.gate.lock()
             screen.gate.lock()
         }

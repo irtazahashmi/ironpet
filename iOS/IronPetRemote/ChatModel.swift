@@ -572,8 +572,7 @@ final class ChatModel: SocketModel {
         }
     }
 
-    /// Sends `text` as its own message and leaves the composer, its attachments and its reply as they are. The Tasks tab uses it for
-    /// the quick filter prompts. A failure shows on the message in the chat, with Retry.
+    /// Sends `text` as its own message and leaves the composer, its attachments and its reply as they are. A failure shows on the message in the chat, with Retry.
     func sendPrompt(_ text: String) async {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { return }

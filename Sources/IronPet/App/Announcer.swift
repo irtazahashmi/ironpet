@@ -210,18 +210,17 @@ final class Announcer {
     static let taskSuggestionsID = "task-suggestions"
 
     /// One info bubble for suggestions that just arrived from a meeting summary or a watcher: the count and the
-    /// first title, no buttons. They stay pending until resolved in the Tasks tab or over MCP. Nil when there are none.
+    /// first title, no buttons. They stay pending until resolved in the Inbox or over MCP. Nil when there are none.
     static func taskSuggestionsBubble(_ added: [TaskSuggestion], review: @escaping () -> Void = {}, now: Date = Date()) -> BubbleDraft? {
         guard let first = added.first else { return nil }
         let title: String
         switch first.origin {
         case .meeting: title = "From your meeting"
         case .automation(_, let name): title = name
-        case .taskScan: title = "Task scan"
         }
         let count = added.count
         return BubbleDraft(id: taskSuggestionsID, symbol: first.source.symbol, tint: .blue, title: title,
-                      body: "\(count) \(count == 1 ? "suggestion" : "suggestions") for review\n\(first.title)",
+                      body: "\(count) \(count == 1 ? "item" : "items") in your inbox\n\(first.title)",
                       onTap: review, expires: now.addingTimeInterval(20))
     }
 
@@ -230,9 +229,9 @@ final class Announcer {
         guard var bubble = Self.taskSuggestionsBubble(added, review: review), let first = added.first else { return }
         var source = NotificationItem.systemSource
         if case .automation(let id, _) = first.origin { source = id }
-        let lines = added.map { "- " + $0.headline }.joined(separator: "\n")
+        let lines = added.map { "- " + $0.title }.joined(separator: "\n")
         let draft = NotificationDraft(source: source, type: .other, title: bubble.title,
-                                      summary: "\(added.count) \(added.count == 1 ? "suggestion" : "suggestions") for review",
+                                      summary: "\(added.count) \(added.count == 1 ? "item" : "items") in your inbox",
                                       description: lines + "\n\nAdd or skip them in the Tasks section.")
         if let show = store(draft) { bubble.onTap = show }
         bubbles.show(bubble)
@@ -245,54 +244,6 @@ final class Announcer {
         guard let bubble = taskSuggestionsBubble(added, review: review) else { return false }
         store.show(bubble)
         return true
-    }
-
-    static let tasksDueID = WelcomeBack.tasksDueID
-
-    /// Open tasks that are due today or overdue. Stays until answered or closed, since it comes once per due date.
-    func tasksDue(_ tasks: [TaskItem], chime: Bool, done: @escaping () -> Void, snooze: @escaping () -> Void,
-                  open: @escaping () -> Void) {
-        guard !tasks.isEmpty else { return }
-        bubbles.show(Self.tasksDueBubble(tasks, now: Date(), done: done, snooze: snooze, open: open))
-        if chime { self.chime() }
-    }
-
-    static func tasksDueBubble(_ tasks: [TaskItem], now: Date, calendar: Calendar = .current, done: @escaping () -> Void,
-                               snooze: @escaping () -> Void, open: @escaping () -> Void) -> BubbleDraft {
-        let overdue = tasks.contains { TaskDue.kind($0, now: now, calendar: calendar) == .overdue }
-        let title: String
-        let subtitle: String?
-        let body: String?
-        if tasks.count == 1, let task = tasks.first {
-            switch TaskDue.kind(task, now: now, calendar: calendar) {
-            case .today: title = "Due today: \(task.title)"; subtitle = nil
-            case .now: title = "Due now: \(task.title)"; subtitle = task.due.map { "Due at \($0.formatted(date: .omitted, time: .shortened))" }
-            case .overdue: title = "Overdue: \(task.title)"; subtitle = task.dueLabel(now: now, calendar: calendar)
-            }
-            body = nil
-        } else {
-            title = "\(tasks.count) tasks due"
-            subtitle = nil
-            // The body shows 4 lines, so each task has to fit on one.
-            var lines = tasks.prefix(3).map { task in
-                let name = task.title.count > 30 ? String(task.title.prefix(29)) + "…" : task.title
-                let when: String
-                switch TaskDue.kind(task, now: now, calendar: calendar) {
-                case .today: when = "today"
-                case .now: when = "now"
-                case .overdue: when = "overdue"
-                }
-                return "• \(name) · \(when)"
-            }
-            if tasks.count > 3 { lines.append("and \(tasks.count - 3) more") }
-            body = lines.joined(separator: "\n")
-        }
-        let later = TaskDue.snoozesToTomorrow(tasks, calendar: calendar) ? "Remind tomorrow" : "Snooze 1 h"
-        return BubbleDraft(id: tasksDueID, symbol: overdue ? "calendar.badge.exclamationmark" : "calendar", tint: overdue ? .orange : .accent,
-                      title: title, subtitle: subtitle, body: body,
-                      actions: [.init("done", tasks.count == 1 ? "Done" : "All done", style: .primary, run: done),
-                                .init("snooze", later, run: snooze), .init("open", "Open", run: open)],
-                      onTap: open)
     }
 
     /// What happened while the user was away, one clickable line per kind of news.
@@ -351,10 +302,8 @@ final class Announcer {
             return (symbol, failing ? .red : .orange, n == 1 ? alertText(first) : "\(n) new alerts")
         case .alertResolved:
             return ("checkmark.seal.fill", .green, n == 1 ? "Cleared: " + alertText(first) : "\(n) alerts cleared")
-        case .taskDue:
-            return ("calendar", .accent, n == 1 ? "Task due: \(name)" : "\(n) tasks due")
         case .taskSuggested:
-            return (SharedSymbols.tasks, .accent, n == 1 ? "Suggested task: \(name)" : "\(n) suggested tasks")
+            return (SharedSymbols.tasks, .accent, n == 1 ? "New in your inbox: \(name)" : "\(n) new inbox items")
         case .meetingSummary:
             return ("doc.text.fill", .green, n == 1 ? "Meeting summary ready: \(name)" : "\(n) meeting summaries ready")
         case .chatFinished:
@@ -415,7 +364,7 @@ final class Announcer {
             expires = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))
         }
         return BubbleDraft(id: briefID(brief.kind), symbol: automation.presentation.symbol ?? brief.kind.symbol,
-                      tint: brief.kind == .brief ? .orange : brief.kind == .review ? .green : .indigo,
+                      tint: brief.kind == .brief ? .orange : .indigo,
                       title: automation.action.title ?? brief.kind.title, subtitle: (brief.kind == .recap ? brief.window.start : now).formatted(day),
                       body: brief.isEmpty ? "Nothing to report" : brief.lines.prefix(4).joined(separator: "\n"),
                       actions: [.init("open", "Open", style: .primary, run: open)], onTap: open, expires: expires)

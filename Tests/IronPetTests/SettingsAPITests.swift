@@ -29,15 +29,15 @@ final class SettingsAPITests: XCTestCase {
     }
 
     func testPatchGoesThroughTheSameClampingAsLoading() throws {
-        let result = try api.settings.patch(PatchSettingsRequest(patch: #"{"tasks": {"keepDoneDays": 9999}, "pet": {"name": "   "}, "speech": {"speed": 99}}"#))
-        XCTAssertEqual(result.tasks.keepDoneDays, 365)
+        let result = try api.settings.patch(PatchSettingsRequest(patch: #"{"tasks": {"meetingSuggestions": false}, "pet": {"name": "   "}, "speech": {"speed": 99}}"#))
+        XCTAssertFalse(result.tasks.meetingSuggestions)
         XCTAssertEqual(result.pet.name, Config.Pet().name, "a blank name falls back to the default")
         XCTAssertEqual(result.speech.speed, Config.Speech.speedRange.upperBound)
     }
 
     func testSwiftUpdateTakesTheSameValidation() {
-        api.settings.update { $0.tasks.keepDoneDays = 0 }
-        XCTAssertEqual(api.settings.config.tasks.keepDoneDays, 1)
+        api.settings.update { $0.pet.name = "   " }
+        XCTAssertEqual(api.settings.config.pet.name, Config.Pet().name)
     }
 
     func testAnUnknownKeyOrAWrongTypeChangesNothing() throws {
@@ -46,7 +46,7 @@ final class SettingsAPITests: XCTestCase {
             XCTAssertEqual(($0 as? APIError)?.code, .invalid)
             XCTAssertTrue(($0 as? APIError)?.message.contains("voice.nope") == true)
         }
-        XCTAssertThrowsError(try api.settings.patch(PatchSettingsRequest(patch: #"{"tasks": {"keepDoneDays": "many"}}"#))) {
+        XCTAssertThrowsError(try api.settings.patch(PatchSettingsRequest(patch: #"{"tasks": {"meetingSuggestions": "many"}}"#))) {
             XCTAssertEqual(($0 as? APIError)?.code, .invalid)
         }
         XCTAssertThrowsError(try api.settings.patch(PatchSettingsRequest(patch: "[1]"))) { XCTAssertEqual(($0 as? APIError)?.code, .invalid) }

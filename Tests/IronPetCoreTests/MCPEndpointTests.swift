@@ -7,7 +7,7 @@ final class MCPEndpointTests: XCTestCase {
 
     override func setUp() async throws {
         try await super.setUp()
-        tasks = TaskStore(database: Database.open(path: nil, migrations: AppMigrations.all).database, keepDoneDays: { 30 })
+        tasks = TaskStore(database: Database.open(path: nil, migrations: AppMigrations.all).database)
     }
 
     override func tearDown() async throws {
@@ -31,14 +31,14 @@ final class MCPEndpointTests: XCTestCase {
         return (text, result["isError"] as? Bool ?? false)
     }
 
-    func testToolsListHasAutomationAndTaskTools() async throws {
+    func testToolsListHasAutomationAndInboxTools() async throws {
         let reply = try await rpc("tools/list", tasks: nil)
         let tools = try XCTUnwrap((reply["result"] as? [String: Any])?["tools"] as? [[String: Any]])
         let names = Set(tools.compactMap { $0["name"] as? String })
         XCTAssertTrue(names.isSuperset(of: ["automations_list", "automations_create", "automations_run_now", "automations_history"]))
-        XCTAssertEqual(Set(names.filter { $0.hasPrefix("tasks_") }),
-                       ["tasks_list", "tasks_get", "tasks_create", "tasks_update", "tasks_close", "tasks_delete",
-                        "tasks_suggest", "tasks_suggestions_list", "tasks_suggestion_accept", "tasks_suggestion_reject"])
+        XCTAssertEqual(Set(names.filter { $0.hasPrefix("inbox_") }), ["inbox_list", "inbox_add", "inbox_done", "inbox_remove"])
+        XCTAssertEqual(names.filter { $0.hasPrefix("tasks_") || $0.hasPrefix("task_") || $0.hasPrefix("task_filters_") }, [],
+                       "the task list tools are gone")
         XCTAssertEqual(Set(names.filter { $0.hasPrefix("screen_") }), ["screen_search", "screen_window"], "the screen tools are listed for the chat agents")
         XCTAssertEqual(Set(names.filter { $0.hasPrefix("memory_") }), ["memory_remember", "memory_forget", "memory_merge", "memory_page", "memory_links", "memory_search", "memory_get"])
         for memory in tools where (memory["name"] as? String)?.hasPrefix("memory_") == true {
@@ -49,28 +49,27 @@ final class MCPEndpointTests: XCTestCase {
             XCTAssertEqual(schema?["type"] as? String, "object", "\(tool["name"] ?? "")")
             XCTAssertFalse((tool["description"] as? String ?? "").isEmpty)
         }
-        let create = try XCTUnwrap(tools.first { $0["name"] as? String == "tasks_create" })
-        XCTAssertTrue((create["description"] as? String ?? "").contains("needs_you"))
-        XCTAssertEqual((create["inputSchema"] as? [String: Any])?["required"] as? [String], ["title", "origin"])
+        let add = try XCTUnwrap(tools.first { $0["name"] as? String == "inbox_add" })
+        XCTAssertEqual((add["inputSchema"] as? [String: Any])?["required"] as? [String], ["id", "title", "origin"])
     }
 
-    func testInitializeMentionsAutomationsAndTasks() async throws {
+    func testInitializeMentionsAutomationsAndTheInbox() async throws {
         let reply = try await rpc("initialize", ["protocolVersion": "2025-06-18"], tasks: nil)
         let result = try XCTUnwrap(reply["result"] as? [String: Any])
         XCTAssertEqual(result["protocolVersion"] as? String, "2025-06-18")
         let instructions = result["instructions"] as? String ?? ""
         XCTAssertTrue(instructions.contains("automations"))
-        XCTAssertTrue(instructions.contains("task list"))
+        XCTAssertTrue(instructions.contains("inbox"))
+        XCTAssertFalse(instructions.contains("task list"))
     }
 
-    func testSuggestCreatesASuggestionAndRefusesIncompleteCalls() async throws {
+    func testAddCreatesAnItemAndRefusesIncompleteCalls() async throws {
         let origin: [String: Any] = ["kind": "email", "ref": "mail:abc", "reason": "Ana asked for a date"]
-        let made = try await tool("tasks_suggest", ["id": "mail:abc", "title": "Reply to Ana", "origin": origin], tasks: tasks)
+        let made = try await tool("inbox_add", ["id": "mail:abc", "title": "Reply to Ana", "origin": origin], tasks: tasks)
         XCTAssertFalse(made.isError, made.text)
         XCTAssertEqual(tasks.suggestions.map(\.title), ["Reply to Ana"])
-        XCTAssertEqual(tasks.tasks, [], "a suggestion is never a task")
         XCTAssertTrue(try XCTUnwrap(tasks.suggestions.first?.sourceRef).contains("Ana asked for a date"))
-        let again = try await tool("tasks_suggest", ["id": "mail:abc", "title": "Another title", "origin": origin], tasks: tasks)
+        let again = try await tool("inbox_add", ["id": "mail:abc", "title": "Another title", "origin": origin], tasks: tasks)
         XCTAssertFalse(again.isError, again.text)
         XCTAssertEqual(tasks.suggestions.count, 1, "same id is ignored")
 
@@ -78,64 +77,40 @@ final class MCPEndpointTests: XCTestCase {
                                 ("id", ["title": "No id", "origin": origin]),
                                 ("origin", ["id": "m3", "title": "No origin"]),
                                 ("origin.reason", ["id": "m4", "title": "No reason", "origin": ["kind": "email", "ref": "r"]])] {
-            let refused = try await tool("tasks_suggest", args, tasks: tasks)
+            let refused = try await tool("inbox_add", args, tasks: tasks)
             XCTAssertTrue(refused.isError, "missing \(missing): \(refused.text)")
         }
-        XCTAssertEqual(tasks.suggestions.count, 1, "refused calls create nothing")
+        XCTAssertEqual(tasks.suggestions.count, 1, "refused calls add nothing")
     }
 
-    func testCreateThenListRoundTripsThroughTheStore() async throws {
-        let created = try await tool("tasks_create", ["title": "Review the release notes", "notes": "Before Friday", "status": "in_progress",
-                                                      "links": [["kind": "url", "ref": "https://example.com/pr/1", "label": "PR"]],
-                                                      "origin": ["kind": "chat", "ref": "chat-1", "reason": "test"]], tasks: tasks)
-        XCTAssertFalse(created.isError, created.text)
-        XCTAssertTrue(created.text.contains("\"id\" : \"review-the-release-notes\""), created.text)
-        XCTAssertEqual(tasks.tasks.map(\.status), [.inProgress])
-        XCTAssertEqual(tasks.tasks.first?.links.first?.ref, "https://example.com/pr/1")
-        XCTAssertEqual(tasks.history("review-the-release-notes").first?.by, "agent:mcp")
-
-        let listed = try await tool("tasks_list", [:], tasks: tasks)
+    func testListDoneAndRemoveRoundTripThroughTheStore() async throws {
+        let origin: [String: Any] = ["kind": "chat", "ref": "chat-1", "reason": "test"]
+        _ = try await tool("inbox_add", ["id": "a", "title": "Review the release notes", "origin": origin], tasks: tasks)
+        _ = try await tool("inbox_add", ["id": "b", "title": "Book the room", "origin": origin], tasks: tasks)
+        let listed = try await tool("inbox_list", [:], tasks: tasks)
         XCTAssertFalse(listed.isError, listed.text)
         let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(listed.text.utf8)) as? [String: Any])
-        let items = try XCTUnwrap(object["tasks"] as? [[String: Any]])
-        XCTAssertEqual(items.map { $0["id"] as? String }, ["review-the-release-notes"])
-        XCTAssertEqual(items.first?["status"] as? String, "in_progress")
+        let items = try XCTUnwrap(object["items"] as? [[String: Any]])
+        XCTAssertEqual(items.compactMap { $0["title"] as? String }, ["Review the release notes", "Book the room"])
 
-        let closed = try await tool("tasks_close", ["id": "review-the-release-notes", "note": "Shipped"], tasks: tasks)
-        XCTAssertFalse(closed.isError, closed.text)
-        let open = try await tool("tasks_list", [:], tasks: tasks)
-        XCTAssertFalse(open.text.contains("review-the-release-notes"), "done tasks are left out by default")
+        let first = try XCTUnwrap(items.first?["id"] as? String)
+        let done = try await tool("inbox_done", ["id": first], tasks: tasks)
+        XCTAssertFalse(done.isError, done.text)
+        let second = try XCTUnwrap(items.last?["id"] as? String)
+        let removed = try await tool("inbox_remove", ["id": second, "note": "duplicate"], tasks: tasks)
+        XCTAssertFalse(removed.isError, removed.text)
+        XCTAssertEqual(tasks.suggestions, [])
+        let again = try await tool("inbox_done", ["id": first], tasks: tasks)
+        XCTAssertTrue(again.isError)
+        XCTAssertTrue(again.text.contains("no inbox item"), again.text)
     }
 
-    func testWaitingOnIsInTheSchemaAndRoundTrips() async throws {
-        let reply = try await rpc("tools/list", tasks: nil)
-        let tools = try XCTUnwrap((reply["result"] as? [String: Any])?["tools"] as? [[String: Any]])
-        func properties(_ name: String) -> [String: Any] {
-            let schema = tools.first { $0["name"] as? String == name }?["inputSchema"] as? [String: Any]
-            return schema?["properties"] as? [String: Any] ?? [:]
+    func testTheRetiredTaskToolsAreUnknown() async throws {
+        for name in ["tasks_list", "tasks_create", "tasks_suggest", "task_filters_list", "task_goals_upsert"] {
+            let reply = try await rpc("tools/call", ["name": name, "arguments": [:]], tasks: tasks)
+            XCTAssertNil(reply["result"], name)
+            XCTAssertEqual((reply["error"] as? [String: Any])?["code"] as? Int, -32602, name)
         }
-        XCTAssertNotNil(properties("tasks_create")["waiting_on"])
-        XCTAssertNotNil((properties("tasks_update")["changes"] as? [String: Any]).flatMap { $0["properties"] as? [String: Any] }?["waiting_on"])
-
-        let created = try await tool("tasks_create", ["title": "Send the deck", "waiting_on": "Ana", "origin": ["kind": "chat", "ref": "chat-1", "reason": "test"]], tasks: tasks)
-        XCTAssertFalse(created.isError, created.text)
-        XCTAssertEqual(tasks.task("send-the-deck")?.waitingOn, "Ana")
-        let got = try await tool("tasks_get", ["id": "send-the-deck"], tasks: tasks)
-        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: Data(got.text.utf8)) as? [String: Any])
-        XCTAssertEqual(object["waiting_on"] as? String, "Ana")
-
-        let cleared = try await tool("tasks_update", ["id": "send-the-deck", "changes": ["waiting_on": NSNull()]], tasks: tasks)
-        XCTAssertFalse(cleared.isError, cleared.text)
-        XCTAssertNil(tasks.task("send-the-deck")?.waitingOn)
-    }
-
-    func testStoreValidationErrorsReachTheAgent() async throws {
-        let bad = try await tool("tasks_create", ["title": "  ", "origin": ["kind": "chat", "ref": "chat-1", "reason": "test"]], tasks: tasks)
-        XCTAssertTrue(bad.isError)
-        XCTAssertEqual(bad.text, "title is empty")
-        let missing = try await tool("tasks_get", ["id": "nope"], tasks: tasks)
-        XCTAssertTrue(missing.isError)
-        XCTAssertTrue(missing.text.contains("no task"), missing.text)
     }
 
     func testUnknownToolIsAnInvalidParamsError() async throws {
@@ -147,9 +122,9 @@ final class MCPEndpointTests: XCTestCase {
     }
 
     func testToolsWithoutTheirStoreReportAnErrorInsteadOfFailing() async throws {
-        let task = try await tool("tasks_list", [:], tasks: nil)
-        XCTAssertTrue(task.isError)
-        XCTAssertTrue(task.text.contains("not available"), task.text)
+        let inbox = try await tool("inbox_list", [:], tasks: nil)
+        XCTAssertTrue(inbox.isError)
+        XCTAssertTrue(inbox.text.contains("not available"), inbox.text)
         let automation = try await tool("automations_list", [:], tasks: tasks)
         XCTAssertTrue(automation.isError)
         XCTAssertTrue(automation.text.contains("not available"), automation.text)
@@ -165,17 +140,5 @@ final class MCPEndpointTests: XCTestCase {
         XCTAssertEqual((unknown["error"] as? [String: Any])?["code"] as? Int, -32601)
         let ping = try await rpc("ping", tasks: tasks)
         XCTAssertNotNil(ping["result"] as? [String: Any])
-    }
-
-    func testTheHorizonToolsAreRoutedByTheirPrefix() async throws {
-        let area = try await tool("task_areas_upsert", ["title": "Work"], tasks: tasks)
-        XCTAssertFalse(area.isError, area.text)
-        let goal = try await tool("task_goals_upsert", ["title": "Ship 2.0", "area": "work"], tasks: tasks)
-        XCTAssertFalse(goal.isError, goal.text)
-        let result = try await tool("task_key_results_upsert", ["goal": "ship-2-0", "metric": "Features", "start": 0, "target": 8], tasks: tasks)
-        XCTAssertFalse(result.isError, result.text)
-        let listed = try await tool("task_goals_list", [:], tasks: tasks)
-        XCTAssertFalse(listed.isError, listed.text)
-        XCTAssertTrue(listed.text.contains("Ship 2.0") && listed.text.contains("Features"), listed.text)
     }
 }

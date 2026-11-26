@@ -42,7 +42,11 @@ final class AgentRegistryRealDatabaseTests: XCTestCase {
         XCTAssertGreaterThan(after.schemaVersion, versionBefore)
         let countsAfter = try tableCounts(after)
         var report = "schema \(versionBefore) -> \(after.schemaVersion)\n"
+        // Migration 590 drops the task tables and the task refs, and rebuilds the suggestions without the rows the tasks needed.
+        let changedOn590: Set<String> = ["task_items", "task_links", "task_events", "task_labels", "task_due_marks", "task_scan_cursors",
+                                         "task_projects", "task_areas", "task_goals", "task_key_results", "task_suggestions", "record_refs"]
         for table in counts.keys.sorted() {
+            if changedOn590.contains(table) { report += "\(table) \(counts[table] ?? -1) -> \(countsAfter[table] ?? -1) (migration 590)\n"; continue }
             XCTAssertEqual(countsAfter[table], counts[table], "\(table) changed its row count")
             report += "\(table) \(counts[table] ?? -1) -> \(countsAfter[table] ?? -1)\n"
         }

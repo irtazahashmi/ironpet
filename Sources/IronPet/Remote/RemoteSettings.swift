@@ -55,7 +55,7 @@ private struct RemoteSettingsBody: View {
             Toggle("Remote API", isOn: Binding(get: { config.enabled }, set: { on in store.update { $0.remote.enabled = on } }))
             LabeledContent("Status") { statusLabel }
         } footer: {
-            Text("Off by default. When on, ironpet listens on the network address you pick below over HTTPS, and on 127.0.0.1. A paired device with its own token can read and change your tasks, and anything else that reaches the port is refused without one. On a public Wi-Fi, others on that network can reach the pairing endpoint, so keep it off there. Turning it off closes the port and every open connection, and paired devices stay paired.")
+            Text("Off by default. When on, ironpet listens on the network address you pick below over HTTPS, and on 127.0.0.1. A paired device with its own token can read and change your Inbox, and anything else that reaches the port is refused without one. On a public Wi-Fi, others on that network can reach the pairing endpoint, so keep it off there. Turning it off closes the port and every open connection, and paired devices stay paired.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }

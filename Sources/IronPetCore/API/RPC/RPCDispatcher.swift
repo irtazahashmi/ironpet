@@ -43,7 +43,7 @@ package final class RPCDispatcher {
 
     package init(api: IronPetAPI) {
         self.api = api
-        registerTasks()
+        registerInbox()
         registerAlerts()
         registerAgents()
         registerAgentRecords()
@@ -242,20 +242,12 @@ package final class RPCDispatcher {
 
     // MARK: Areas
 
-    private func registerTasks() {
-        let tasks = api.tasks
-        add("tasks.list", "GET /v1/tasks", params: "TaskListRequest", result: "[TaskItem]") { (p: TaskListRequest) in tasks.list(p) }
-        add("tasks.get", "GET /v1/tasks/:id", params: "ID", result: "TaskWithHistory") { (p: ID) in try tasks.get(p.id) }
-        add("tasks.create", "POST /v1/tasks", params: "CreateTaskRequest", result: "TaskItem") { (p: CreateTaskRequest) in try tasks.create(p) }
-        add("tasks.update", "PATCH /v1/tasks/:id", params: "UpdateTaskRequest", result: "TaskItem") { (p: UpdateTaskRequest) in try tasks.update(p) }
-        add("tasks.close", "POST /v1/tasks/:id/close", params: "CloseTaskRequest", result: "TaskItem") { (p: CloseTaskRequest) in try tasks.close(p) }
-        addVoid("tasks.delete", "DELETE /v1/tasks/:id", params: "DeleteTaskRequest") { (p: DeleteTaskRequest) in try tasks.delete(p) }
-        add("tasks.suggestions", "GET /v1/suggestions", result: "[TaskSuggestion]") { tasks.suggestions }
-        add("tasks.suggest", "none", params: "SuggestTaskRequest", result: "[TaskSuggestion]") { (p: SuggestTaskRequest) in tasks.suggest(p) }
-        add("tasks.accept", "POST /v1/suggestions/:id/accept", params: "AcceptSuggestionRequest", result: "TaskItem") { (p: AcceptSuggestionRequest) in try tasks.accept(p) }
-        addVoid("tasks.acceptAll", "none") { tasks.acceptAll() }
-        addVoid("tasks.reject", "POST /v1/suggestions/:id/reject", params: "RejectSuggestionRequest") { (p: RejectSuggestionRequest) in try tasks.reject(p) }
-        addVoid("tasks.skip", "none", params: "ID") { (p: ID) in tasks.skip(p.id) }
+    private func registerInbox() {
+        let inbox = api.tasks
+        add("inbox.list", "GET /v1/suggestions", result: "[TaskSuggestion]") { inbox.suggestions }
+        add("inbox.add", "none", params: "SuggestTaskRequest", result: "[TaskSuggestion]") { (p: SuggestTaskRequest) in inbox.suggest(p) }
+        addVoid("inbox.done", "POST /v1/suggestions/:id/accept", params: "ID") { (p: ID) in try inbox.done(p.id) }
+        addVoid("inbox.remove", "POST /v1/suggestions/:id/reject", params: "RemoveSuggestionRequest") { (p: RemoveSuggestionRequest) in try inbox.remove(p) }
     }
 
     private func registerAlerts() {

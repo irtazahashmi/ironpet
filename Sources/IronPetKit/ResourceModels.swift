@@ -187,7 +187,8 @@ public struct AlertListResponse: Codable, Equatable, Sendable {
     public init(alerts: [RemoteAlert]) { self.alerts = alerts }
 }
 
-/// What a Today item opens. `task`, `session`, `alert` and `meeting` map to the Tasks, Agents, Alerts tabs and the Mac's transcripts.
+/// What a Today item opens. `session`, `alert` and `meeting` map to the Agents and Alerts tabs and the Mac's transcripts. This Mac never sends
+/// `task` any more; the case stays so a phone can still decode the brief of an older Mac, and opens the Inbox for it.
 public struct TodayTarget: Codable, Equatable, Hashable, Sendable {
     public enum Kind: String, Codable, Sendable { case task, session, alert, meeting }
     public var type: Kind
@@ -288,13 +289,13 @@ public struct RemoteDismissedCount: Codable, Equatable, Sendable {
     public init(dismissed: Int) { self.dismissed = dismissed }
 }
 
-/// `DELETE /v1/tasks/<id>`.
-public struct RemoteDeleted: Codable, Equatable, Sendable {
-    public var deleted: String
-    public init(deleted: String) { self.deleted = deleted }
+/// `POST /v1/suggestions/<id>/accept`: the inbox item is done and off the list.
+public struct RemoteDone: Codable, Equatable, Sendable {
+    public var done: String
+    public init(done: String) { self.done = done }
 }
 
-/// `POST /v1/suggestions/<id>/reject`.
+/// `POST /v1/suggestions/<id>/reject`: the inbox item was removed.
 public struct RemoteRejected: Codable, Equatable, Sendable {
     public var rejected: String
     public init(rejected: String) { self.rejected = rejected }

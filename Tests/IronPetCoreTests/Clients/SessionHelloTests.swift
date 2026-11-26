@@ -35,7 +35,7 @@ final class SessionHelloTests: XCTestCase {
         let clients = ClientRegistry()
         let session = SessionAPI(clients: clients, events: events) { ["tasks"] }
         let connection = RPCConnection(deviceID: "d", name: "n", kind: .cli, connection: .inProcess)
-        for _ in 0..<5 { events.publish(.tasksChanged) }
+        for _ in 0..<5 { events.publish(.agentsChanged) }
         XCTAssertFalse(try session.hello(hello(lastSeq: 5), connection: connection).gap, "the client has seen everything")
         XCTAssertFalse(try session.hello(hello(lastSeq: 2), connection: connection).gap, "events 3 to 5 are still held")
         XCTAssertTrue(try session.hello(hello(lastSeq: 1), connection: connection).gap, "event 2 is gone")

@@ -9,7 +9,6 @@ final class MemoryReflectorTests: XCTestCase {
     private var index: MemoryIndex!
     private var reflector: MemoryReflector!
     private var threads: [String: ChatThread] = [:]
-    private var tasks: [TaskItem] = []
     private var captures: [StoredCapture] = []
     private var posted: [Signal] = []
     private var prompts: [String] = []
@@ -37,7 +36,6 @@ final class MemoryReflectorTests: XCTestCase {
         reflector.now = { [unowned self] in clock }
         reflector.threads = { [unowned self] in threads[$0] }
         reflector.recentThreads = { [unowned self] in threads.values.sorted { $0.updatedAt > $1.updatedAt } }
-        reflector.tasks = { [unowned self] in tasks }
         reflector.captures = { [unowned self] in captures }
         reflector.post = { [unowned self] in posted.append($0) }
         reflector.digestAgent = { "claude" }
@@ -57,10 +55,6 @@ final class MemoryReflectorTests: XCTestCase {
     }
 
     private func notes(_ json: String) -> Result<String, MemoryReflector.RunError> { .success(json) }
-
-    private func task(_ id: String, _ title: String, notes: String = "") -> TaskItem {
-        TaskItem(id: id, title: title, notes: notes, status: .backlog, source: .user, links: [], created: clock, updated: clock)
-    }
 
     private func waitIdle() async {
         for _ in 0..<200 where reflector.running != nil || !reflector.queue.isEmpty { try? await Task.sleep(nanoseconds: 5_000_000) }
@@ -187,21 +181,7 @@ final class MemoryReflectorTests: XCTestCase {
         XCTAssertFalse(prompts[0].contains("<notes file=\"me.md\">"), "outside text is sent without the notes")
     }
 
-    // MARK: Tasks and the screen
-
-    func testTasksAreReadOnlyWhenNewOrChanged() async {
-        tasks = [task("1", "Renew the domain")]
-        answers = [notes(#"{"notes":[{"scope":"project","text":"Domain renewal is yearly."}],"links":[]}"#)]
-        await digest()
-        XCTAssertEqual(prompts.count, 1)
-        XCTAssertTrue(prompts[0].contains("- Renew the domain (backlog)"))
-        await digest()
-        XCTAssertEqual(prompts.count, 1, "an unchanged task is not read again")
-        tasks = [task("1", "Renew the domain", notes: "Due in March")]
-        await digest()
-        XCTAssertEqual(prompts.count, 2)
-        XCTAssertTrue(prompts[1].contains("Due in March"))
-    }
+    // MARK: The screen
 
     func testScreenTextIsOffByDefault() async {
         captures = [StoredCapture(id: 1, at: clock, app: "com.apple.Safari", appName: "Safari", window: "Docs", trigger: "timer", text: "Ana wrote the report")]

@@ -83,11 +83,9 @@ final class BubbleDataTests: XCTestCase {
     func testTheBuildersListNoControlWithoutAClosure() {
         let drafts = [
             Announcer.approvalBubble(id: UUID(), heading: "h", detail: "d", decide: { _ in }, openChat: {}, open: {}),
-            Announcer.tasksDueBubble([], now: Date(), done: {}, snooze: {}, open: {}),
         ]
         for draft in drafts { XCTAssertTrue(draft.handlers.covers(draft.bubble), draft.id) }
         XCTAssertEqual(drafts[0].bubble.actions.map(\.id), ["allow", "deny", "open-chat"])
-        XCTAssertEqual(drafts[1].bubble.actions.map(\.id), ["done", "snooze", "open"])
         XCTAssertTrue(drafts[0].bubble.tappable)
     }
 

@@ -299,7 +299,7 @@ final class RemoteChatTests: XCTestCase {
         let at = Date()
         for seq in 1...20 { throttle.push(APIEvent(seq: seq, at: at, kind: .chatItem, id: "a")) }
         throttle.push(APIEvent(seq: 21, at: at, kind: .chatItem, id: "b"))
-        throttle.push(APIEvent(seq: 22, at: at, kind: .tasksChanged, id: nil))
+        throttle.push(APIEvent(seq: 22, at: at, kind: .agentsChanged, id: nil))
         XCTAssertEqual(sent.map(\.seq), [1, 21, 22], "the first event of each message and other kinds pass at once")
         let deadline = Date().addingTimeInterval(10)
         while sent.count < 4, Date() < deadline { try await Task.sleep(for: .milliseconds(10)) }

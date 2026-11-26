@@ -66,6 +66,6 @@ extension BuiltInReviewsTests {
         XCTAssertFalse(AutomationDefaults.builtIns.contains { $0.id == "screen-review" })
         XCTAssertNil(Prompts.info("screen-review"))
         XCTAssertNil(Prompts.defaultText("screen-review"))
-        XCTAssertNotNil(Prompts.info("task-scan"))
+        for id in ["task-scan", "task-review", "task-instructions"] { XCTAssertNil(Prompts.info(id), id) }
     }
 }

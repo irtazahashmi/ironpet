@@ -279,33 +279,16 @@ final class WelcomeBackTests: XCTestCase {
         XCTAssertEqual(f.shown.count, 1)
     }
 
-    func testATaskDueBubbleOnScreenKeepsTasksOutOfTheSummary() throws {
-        let f = try fixture(live: .init(sessions: ["claude:1": .sessionDone, "claude:2": .sessionDone], dueTasks: ["renew"]))
-        awayAndBack(f) {
-            done(f, "claude:1"); done(f, "claude:2")
-            f.log.record(ActivityEvent(at: f.clock.now, kind: .taskDue, ref: "renew", title: "Renew"))
-            f.bubbles.show(BubbleDraft(id: Announcer.tasksDueID, symbol: "calendar", tint: .accent, title: "Due today: Renew"))
-        }
-        XCTAssertEqual(f.shown.first?.0.items.map(\.kind), [.sessionDone])
-        XCTAssertTrue(f.bubbles.bubbles.contains { $0.id == Announcer.tasksDueID })
-    }
-
     func testLiveStateComesFromTheStores() {
         var waiting = AgentSession(id: "codex:1", source: .codex)
         waiting.status = .needsInput
         var running = AgentSession(id: "pi:2", source: .pi)
         running.status = .running
         let signal = Signal(id: "a", title: "t", subtitle: "", url: nil, label: "CI failed", symbol: "x", mood: .failed)
-        let due = TaskItem(id: "due", title: "Due", notes: "", status: .backlog, source: .chat, due: start, links: [], created: start, updated: start, closed: nil)
-        var closed = due
-        closed = TaskItem(id: "closed", title: "Closed", notes: "", status: .done, source: .chat, due: start, links: [], created: start, updated: start, closed: start)
-        let later = TaskItem(id: "later", title: "Later", notes: "", status: .backlog, source: .chat, due: start.addingTimeInterval(86_400), links: [],
-                             created: start, updated: start, closed: nil)
         let suggestion = TaskSuggestion(id: "s", title: "S", origin: .meeting(URL(fileURLWithPath: "/m")), created: start)
-        let live = WelcomeBack.liveState(sessions: [waiting, running], signals: [signal], tasks: [due, closed, later], suggestions: [suggestion], now: start)
+        let live = WelcomeBack.liveState(sessions: [waiting, running], signals: [signal], suggestions: [suggestion], now: start)
         XCTAssertEqual(live.sessions, ["codex:1": .sessionNeedsInput])
         XCTAssertEqual(live.openAlerts, ["a"])
-        XCTAssertEqual(live.dueTasks, ["due"])
         XCTAssertEqual(live.waitingSuggestions, ["s"])
     }
 
@@ -328,7 +311,7 @@ final class WelcomeBackTests: XCTestCase {
         unanswered.status = .idle
         answered.status = .idle
         ended.status = .idle
-        let live = WelcomeBack.liveState(sessions: [unanswered, answered, ended], signals: [], tasks: [], suggestions: [],
+        let live = WelcomeBack.liveState(sessions: [unanswered, answered, ended], signals: [], suggestions: [],
                                          now: start.addingTimeInterval(45 * 60))
         XCTAssertEqual(live.idleSince, ["claude:1": start, "claude:2": start.addingTimeInterval(60)], "an ended session is not waiting")
         let digest = ActivityDigest.build(events: [asked, askedToo], window: DateInterval(start: start, duration: 3600), live: live)
@@ -340,7 +323,6 @@ final class WelcomeBackTests: XCTestCase {
         XCTAssertEqual(id(.sessionFailed, "claude:1"), "session:claude:1")
         XCTAssertEqual(id(.alertOpened, "automation:gh:1"), "signal:automation:gh:1")
         XCTAssertEqual(id(.automationBubble, "automation:gh:abcd1234"), "automation:gh:abcd1234")
-        XCTAssertEqual(id(.taskDue, "x"), Announcer.tasksDueID)
         XCTAssertEqual(id(.meetingSummary, "/m/summary.md"), "meeting-summary")
         XCTAssertEqual(id(.chatFinished, "chat"), "chat")
     }

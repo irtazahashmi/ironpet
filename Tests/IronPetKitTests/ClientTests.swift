@@ -56,62 +56,25 @@ final class ClientTests: XCTestCase {
 
     // MARK: Requests
 
-    func testTaskFiltersAreListedAndRemoved() async throws {
-        server.taskFilters = [QuickFilter(id: "epic", name: "Epic", query: .object(["labelExists": .string("project")]), order: 0),
-                              QuickFilter(id: "mine", name: "Mine", query: .object(["status": .string("needs_you")]), order: 1)]
-        let client = paired()
-        let filters = try await client.taskFilters()
-        XCTAssertEqual(filters.map(\.id), ["epic", "mine"])
-        try await client.deleteTaskFilter(id: "epic")
-        XCTAssertEqual(server.requests.map(\.line), ["GET /v1/task-filters", "DELETE /v1/task-filters/epic"])
-        XCTAssertEqual(server.taskFilters.map(\.id), ["mine"])
-    }
-
-    func testAnOlderMacAnswersTheFilterRouteWith404() async throws {
-        server.taskFiltersSupported = false
-        do { _ = try await paired().taskFilters(); XCTFail("expected 404") } catch {
-            guard case ClientError.api(let status, _, _) = error else { return XCTFail("\(error)") }
-            XCTAssertEqual(status, 404)
-        }
-    }
-
-    func testListsTasksWithTheToken() async throws {
-        let tasks = try await paired().tasks()
-        XCTAssertEqual(tasks.count, MockIronPetServer.sampleTasks.count)
+    func testListsTheInboxWithTheToken() async throws {
+        let items = try await paired().suggestions()
+        XCTAssertEqual(items.count, MockIronPetServer.sampleSuggestions.count)
         let request = try XCTUnwrap(server.requests.last)
         XCTAssertEqual(request.headers["authorization"], "Bearer \(server.token)")
-        XCTAssertEqual(request.query, "include_done=1")
+        XCTAssertEqual(request.line, "GET /v1/suggestions")
     }
 
     func testUnauthorizedWithAToken() async throws {
         server.tokenValid = false
-        do { _ = try await paired().tasks(); XCTFail("expected 401") } catch { XCTAssertEqual(error as? ClientError, .unauthorized) }
+        do { _ = try await paired().suggestions(); XCTFail("expected 401") } catch { XCTAssertEqual(error as? ClientError, .unauthorized) }
     }
 
-    func testAcceptRejectCloseAndNote() async throws {
+    func testDoneAndRemove() async throws {
         let client = paired()
-        _ = try await client.acceptSuggestion(id: "s-1")
+        try await client.acceptSuggestion(id: "s-1")
         try await client.rejectSuggestion(id: "s-2")
-        _ = try await client.closeTask(id: "t-needs", note: "done and checked")
-        _ = try await client.addNote(id: "t-backlog", note: "a note")
-        _ = try await client.setStatus(id: "t-backlog", status: .inProgress, note: "started")
-        XCTAssertEqual(server.requests.map(\.line), ["POST /v1/suggestions/s-1/accept", "POST /v1/suggestions/s-2/reject", "POST /v1/tasks/t-needs/close",
-                                                      "PATCH /v1/tasks/t-backlog", "PATCH /v1/tasks/t-backlog"])
-        XCTAssertEqual(server.requests[2].json["note"] as? String, "done and checked")
-        XCTAssertEqual(server.requests[4].json["status"] as? String, "in_progress")
-        XCTAssertEqual(server.requests[4].json["note"] as? String, "started")
-    }
-
-    func testSetWaitingOnSendsWaitingOnAndClearsItWithABlankName() async throws {
-        let client = paired()
-        _ = try await client.setWaitingOn(id: "t-backlog", name: "Ana")
-        _ = try await client.setWaitingOn(id: "t-backlog", name: nil, status: .needsYou, note: "back to me")
-        XCTAssertEqual(server.requests.map(\.line), ["PATCH /v1/tasks/t-backlog", "PATCH /v1/tasks/t-backlog"])
-        XCTAssertEqual(server.requests[0].json["waiting_on"] as? String, "Ana")
-        XCTAssertNil(server.requests[0].json["status"], "the status stays when none is given")
-        XCTAssertEqual(server.requests[1].json["waiting_on"] as? String, "")
-        XCTAssertEqual(server.requests[1].json["status"] as? String, "needs_you")
-        XCTAssertEqual(server.requests[1].json["note"] as? String, "back to me")
+        XCTAssertEqual(server.requests.map(\.line), ["POST /v1/suggestions/s-1/accept", "POST /v1/suggestions/s-2/reject"])
+        XCTAssertEqual(server.suggestions.count, MockIronPetServer.sampleSuggestions.count - 2)
     }
 
     // MARK: File previews
@@ -158,16 +121,16 @@ final class ClientTests: XCTestCase {
     }
 
     func testApiErrorKeepsTheMessage() async throws {
-        do { _ = try await paired().closeTask(id: "t-needs", note: ""); XCTFail("expected 400") } catch {
-            XCTAssertEqual(error as? ClientError, .api(status: 400, code: "invalid", message: "note is required"))
+        do { try await paired().acceptSuggestion(id: "gone"); XCTFail("expected 404") } catch {
+            XCTAssertEqual(error as? ClientError, .api(status: 404, code: "not_found", message: "no suggestion gone"))
         }
     }
 
-    func testTaskIdIsPercentEncodedExactlyOnce() async throws {
+    func testInboxIdIsPercentEncodedExactlyOnce() async throws {
         let client = paired()
-        let request = client.request("GET", APIPath.task("ask-süd-nord"))
-        XCTAssertTrue(request.url!.absoluteString.hasSuffix("/v1/tasks/ask-s%C3%BCd-nord"), request.url!.absoluteString)
-        let percent = client.request("GET", APIPath.task("50%-done"))
-        XCTAssertTrue(percent.url!.absoluteString.hasSuffix("/v1/tasks/50%25-done"), percent.url!.absoluteString)
+        let request = client.request("POST", APIPath.acceptSuggestion("ask-süd-nord"))
+        XCTAssertTrue(request.url!.absoluteString.hasSuffix("/v1/suggestions/ask-s%C3%BCd-nord/accept"), request.url!.absoluteString)
+        let percent = client.request("POST", APIPath.rejectSuggestion("50%-done"))
+        XCTAssertTrue(percent.url!.absoluteString.hasSuffix("/v1/suggestions/50%25-done/reject"), percent.url!.absoluteString)
     }
 }

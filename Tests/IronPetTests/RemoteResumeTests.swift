@@ -67,7 +67,7 @@ final class RemoteResumeTests: XCTestCase {
     func testAReconnectReplaysExactlyTheMissedEventsInOrderAndNothingElse() async throws {
         let store = MemoryResumeStore()
         let first = EventConnection(client: client, store: store)
-        for _ in 0..<3 { h.events.publish(.tasksChanged) }
+        for _ in 0..<3 { h.events.publish(.agentsChanged) }
         // The first connection applies the 3 events that exist, then the socket drops.
         let before = await collect(first, until: { _ in first.lastSeq == self.h.events.lastSeq && first.lastSeq != nil })
         XCTAssertEqual(before.first, .connected, "a first connection reads everything once")
@@ -77,7 +77,7 @@ final class RemoteResumeTests: XCTestCase {
         XCTAssertEqual(applied, h.events.lastSeq)
         XCTAssertEqual(store.load()?.epoch, h.events.epoch)
 
-        let missedKinds: [APIEventKind] = [.tasksChanged, .agentsChanged, .alertsChanged, .meetingsChanged]
+        let missedKinds: [APIEventKind] = [.agentsChanged, .agentsChanged, .alertsChanged, .meetingsChanged]
         for kind in missedKinds { h.events.publish(kind) }
 
         // A new connection is the phone after the drop, with only the stored resume point.
@@ -96,7 +96,7 @@ final class RemoteResumeTests: XCTestCase {
         let store = MemoryResumeStore((seq: h.events.lastSeq, epoch: h.events.epoch))
         let connection = EventConnection(client: client, store: store)
         let start = h.events.lastSeq
-        h.events.publish(.tasksChanged)
+        h.events.publish(.agentsChanged)
         let stream = connection.signals()
         var seen: [EventSignal] = []
         let reading = Task { @MainActor in
@@ -118,7 +118,7 @@ final class RemoteResumeTests: XCTestCase {
     // S2
     func testASeqOutsideTheBufferGetsOneResyncAndNoEvents() async throws {
         // 600 events push the first 100 out of the 500-entry buffer.
-        for _ in 0..<600 { h.events.publish(.tasksChanged) }
+        for _ in 0..<600 { h.events.publish(.agentsChanged) }
         let store = MemoryResumeStore((seq: 1, epoch: h.events.epoch))
         let connection = EventConnection(client: client, store: store)
         let signals = await collect(connection, until: { $0.contains(.resync) })
@@ -129,7 +129,7 @@ final class RemoteResumeTests: XCTestCase {
     }
 
     func testASeqFromAnEarlierLaunchOfTheMacGetsAResyncEvenWhenTheNumberFits() async throws {
-        for _ in 0..<5 { h.events.publish(.tasksChanged) }
+        for _ in 0..<5 { h.events.publish(.agentsChanged) }
         let store = MemoryResumeStore((seq: 2, epoch: "another-launch"))
         let connection = EventConnection(client: client, store: store)
         let signals = await collect(connection, until: { $0.contains(.resync) })

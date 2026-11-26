@@ -4,7 +4,7 @@ import Foundation
 /// tap opens the same record. The prefixes are `RecordKind` in IronPetCore; a test there keeps the two lists equal.
 public enum RecordLinks {
     public static let scheme = "ironpet"
-    public static let prefixes = ["screen", "meeting", "chat", "msg", "task", "auto", "run", "job", "notif", "page", "claim", "filter"]
+    public static let prefixes = ["screen", "meeting", "chat", "msg", "auto", "run", "job", "notif", "page", "claim"]
 
     /// An id stands alone: not inside a word, a path, a file name or a URL, and not followed by a dot and more text.
     private static let pattern: NSRegularExpression = {

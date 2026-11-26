@@ -1255,7 +1255,7 @@ final class AutomationScriptEngineTests: AutomationTestCase {
 
     func testSuggestTaskOnlyAddsSuggestionsWithOneBubblePerRun() async throws {
         let (rig, _) = rig(scripted())
-        let tasks = TaskStore(database: Database.open(path: nil, migrations: AppMigrations.all).database, keepDoneDays: { 30 })
+        let tasks = TaskStore(database: Database.open(path: nil, migrations: AppMigrations.all).database)
         var bubbles: [[TaskSuggestion]] = []
         rig.service.tasks = tasks
         rig.service.suggested = { bubbles.append($0) }
@@ -1266,7 +1266,6 @@ final class AutomationScriptEngineTests: AutomationTestCase {
         await rig.engine.pollNow("ci")
         XCTAssertEqual(tasks.suggestions.map(\.title), ["Reply to mail 1"])
         XCTAssertEqual(tasks.suggestions.first?.origin, .automation(id: "ci", name: "CI"))
-        XCTAssertTrue(tasks.tasks.isEmpty, "never a task without the user")
         XCTAssertTrue(bubbles.isEmpty, "the first run adds them quietly")
 
         actions = (1...12).map { suggestion(String($0)) } + [["type": "suggest_task", "title": "no id"]]
@@ -1283,11 +1282,11 @@ final class AutomationScriptEngineTests: AutomationTestCase {
         XCTAssertEqual(bubbles.count, 1, "nothing new, no bubble")
     }
 
-    func testSuggestTaskWithoutATaskListIsRecorded() async {
+    func testSuggestTaskWithoutAnInboxIsRecorded() async {
         let (rig, _) = rig(scripted())
         rig.engine.runScript = { _, _ in self.output([["type": "suggest_task", "id": "1", "title": "x"]]) }
         await rig.engine.pollNow("ci")
-        XCTAssertTrue(rig.engine.state.history("ci").contains { $0.output.contains("the task list is not available") })
+        XCTAssertTrue(rig.engine.state.history("ci").contains { $0.output.contains("the inbox is not available") })
     }
 
     func testScriptStateSurvivesARestart() async {

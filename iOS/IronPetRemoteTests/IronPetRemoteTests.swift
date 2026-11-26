@@ -92,7 +92,7 @@ final class PairingModelTests: XCTestCase {
 }
 
 @MainActor
-final class TasksModelTests: XCTestCase {
+final class InboxModelTests: XCTestCase {
     var server: MockIronPetServer!
     var unauthorized = 0
 
@@ -103,154 +103,111 @@ final class TasksModelTests: XCTestCase {
 
     override func tearDown() async throws { server.stop() }
 
-    func makeModel() -> TasksModel {
+    func makeModel() -> InboxModel {
         let client = IronPetClient(endpoint: ServerEndpoint(baseURL: server.baseURL), token: server.token)
         let events = EventConnection(client: client, backoff: .init(initial: .milliseconds(20), maximum: .milliseconds(100)))
-        return TasksModel(client: client, events: events, onUnauthorized: { [unowned self] in unauthorized += 1 })
+        return InboxModel(client: client, events: events, onUnauthorized: { [unowned self] in unauthorized += 1 })
     }
 
-    func testSectionsFollowTheMacsList() async {
+    func testTheInboxListsTheMacsItems() async {
         let model = makeModel()
         await model.reload()
-        await model.setShowsDone(true)
-        XCTAssertEqual(model.suggestions.map(\.id), ["s-1", "s-2"])
-        XCTAssertEqual(model.needsYou.map(\.id), ["t-needs"])
-        XCTAssertEqual(model.inProgress.map(\.id), ["t-progress"])
-        XCTAssertEqual(model.backlog.map(\.id), ["t-backlog"])
-        XCTAssertEqual(model.waiting.map(\.id), ["t-waiting"], "a task waiting on someone leaves Needs you")
-        XCTAssertEqual(model.done.map(\.id), ["t-done"])
+        XCTAssertEqual(model.items.map(\.id), ["s-1", "s-2"])
     }
 
-    // MARK: Board
+    func testRowsNameTheOriginAndLinkTheSource() {
+        let meeting = RemoteSuggestion(id: "m", title: "Send the notes", origin: "meeting", url: "https://example.com/meeting")
+        XCTAssertEqual(meeting.originLabel, "Meeting")
+        XCTAssertNil(meeting.sourceLink, "a meeting's source is a folder on the Mac")
+        let automation = RemoteSuggestion(id: "a", title: "Fix the build", origin: "automation", originDetail: "CI watcher", url: "https://example.com/pr/1")
+        XCTAssertEqual(automation.originLabel, "From CI watcher")
+        XCTAssertEqual(automation.sourceLink?.absoluteString, "https://example.com/pr/1")
+        XCTAssertNil(RemoteSuggestion(id: "f", title: "File", origin: "automation", url: "file:///Users/me/notes").sourceLink)
+        XCTAssertEqual(RemoteSuggestion(id: "x", title: "Old", origin: "task-scan").originLabel, "From an automation")
+    }
 
-    private func boardModel() async -> TasksModel {
-        var recent = server.tasks.first { $0.id == "t-done" }!
-        recent.closed = Date()
-        server.tasks = server.tasks.map { $0.id == "t-done" ? recent : $0 }
+    /// S6: an older Mac sends fields the phone no longer knows, and an origin it no longer uses.
+    func testAnOldMacsItemsDecodeAndIgnoreTheExtraKeys() throws {
+        let json = """
+        {"suggestions": [{
+          "id": "u-1", "title": "Reply from legal", "created": "2026-11-20T09:30:00Z", "origin": "task-scan", "origin_detail": "Task scan",
+          "update": {"task_id": "t-1", "task_title": "Reply from legal", "note": "Legal answered.", "status": "done"},
+          "clarify": {"kind": "project", "title": "Legal"}, "notes": "", "unknown_future_key": [1, 2]
+        }]}
+        """
+        let list = try WireJSON.makeDecoder().decode(SuggestionListResponse.self, from: Data(json.utf8))
+        XCTAssertEqual(list.suggestions.map(\.id), ["u-1"])
+        XCTAssertEqual(list.suggestions[0].origin, "task-scan")
+        XCTAssertEqual(list.suggestions[0].originLabel, "From Task scan")
+    }
+
+    /// S6: the Mac answers 404 (no inbox route), 501, an error, or something unreadable. The phone shows an empty Inbox and no banner.
+    func testAMacWithoutTheInboxRouteShowsAnEmptyInboxAndNoError() async {
+        for status in [404, 501, 500, 200] {
+            server.brokenRoutes = [APIPath.suggestions: status]
+            let model = makeModel()
+            await model.refresh()
+            XCTAssertTrue(model.items.isEmpty, "status \(status)")
+            XCTAssertTrue(model.loaded, "status \(status)")
+            XCTAssertFalse(model.showsLoadError, "status \(status)")
+            XCTAssertNil(model.errorMessage, "status \(status)")
+            XCTAssertFalse(model.network.stripVisible, "status \(status)")
+        }
+    }
+
+    func testDoneTakesTheItemOffTheListAndItStaysOffAfterAReload() async {
         let model = makeModel()
         await model.reload()
-        await model.setShowsDone(true)
-        return model
-    }
-
-    func testBoardColumnsHoldTheListGroupsAndOnlyRecentDoneTasks() async {
-        let model = await boardModel()
-        let columns = model.boardColumns
-        XCTAssertEqual(columns[.needsYou]?.map(\.id), ["t-needs"])
-        XCTAssertEqual(columns[.inProgress]?.map(\.id), ["t-progress"])
-        XCTAssertEqual(columns[.backlog]?.map(\.id), ["t-backlog"])
-        XCTAssertEqual(columns[.waiting]?.map(\.id), ["t-waiting"])
-        XCTAssertEqual(columns[.done]?.map(\.id), ["t-done"])
-        let old = RemoteTask(id: "old", title: "Old", status: .done, closed: Date().addingTimeInterval(-8 * 86_400))
-        XCTAssertNil(TasksModel.boardColumns([old])[.done], "a task closed 8 days ago is past the 7 day window")
-    }
-
-    func testDroppingOnAnotherColumnSendsTheStatus() async {
-        let model = await boardModel()
-        let outcome = await model.drop("t-progress", on: .needsYou)
-        XCTAssertEqual(outcome, .moved)
-        XCTAssertEqual(server.requests.filter { $0.line == "PATCH /v1/tasks/t-progress" }.count, 1)
-        XCTAssertEqual(server.requests.last { $0.method == "PATCH" }?.json["status"] as? String, "needs_you")
-        XCTAssertEqual(server.tasks.first { $0.id == "t-progress" }?.status, .needsYou)
-        XCTAssertEqual(model.boardColumns[.needsYou]?.map(\.id).sorted(), ["t-needs", "t-progress"])
-        let again = await model.drop("t-progress", on: .needsYou)
-        XCTAssertEqual(again, .unchanged)
-    }
-
-    func testDroppingOnWaitingAsksForANameAndHoldSendsIt() async {
-        let model = await boardModel()
-        let outcome = await model.drop("t-backlog", on: .waiting)
-        XCTAssertEqual(outcome, .needsName)
-        XCTAssertTrue(server.requests.filter { $0.method == "PATCH" }.isEmpty, "nothing is sent before a name is given")
-        let blank = await model.hold("t-backlog", name: "  ")
-        XCTAssertFalse(blank)
-        let held = await model.hold("t-backlog", name: "Ana")
-        XCTAssertTrue(held)
-        XCTAssertEqual(server.requests.last { $0.method == "PATCH" }?.json["waiting_on"] as? String, "Ana")
-        XCTAssertNil(server.requests.last { $0.method == "PATCH" }?.json["status"])
-        XCTAssertEqual(model.boardColumns[.waiting]?.map(\.id).sorted(), ["t-backlog", "t-waiting"])
-    }
-
-    func testDroppingAWaitingTaskElsewhereClearsWaitingOnInTheSameRequest() async {
-        let model = await boardModel()
-        let outcome = await model.drop("t-waiting", on: .inProgress)
-        XCTAssertEqual(outcome, .moved)
-        let patches = server.requests.filter { $0.method == "PATCH" }
-        XCTAssertEqual(patches.count, 1)
-        XCTAssertEqual(patches[0].json["waiting_on"] as? String, "")
-        XCTAssertEqual(patches[0].json["status"] as? String, "in_progress")
-        XCTAssertNil(server.tasks.first { $0.id == "t-waiting" }?.waitingOn)
-    }
-
-    func testDroppingOnDoneClosesTheTask() async {
-        let model = await boardModel()
-        let outcome = await model.drop("t-needs", on: .done)
-        XCTAssertEqual(outcome, .moved)
-        XCTAssertEqual(server.count("POST /v1/tasks/t-needs/close"), 1)
-        XCTAssertEqual(server.tasks.first { $0.id == "t-needs" }?.status, .done)
-        let waiting = await model.drop("t-waiting", on: .done)
-        XCTAssertEqual(waiting, .moved)
-        XCTAssertNil(server.tasks.first { $0.id == "t-waiting" }?.waitingOn)
-        XCTAssertEqual(server.tasks.first { $0.id == "t-waiting" }?.status, .done)
-    }
-
-    /// S5
-    func testAddSendsAcceptAndUpdatesTheList() async {
-        let model = makeModel()
-        await model.reload()
-        await model.add(model.suggestions[0])
+        await model.done(model.items[0])
         XCTAssertEqual(server.count("POST /v1/suggestions/s-1/accept"), 1)
-        XCTAssertEqual(model.suggestions.map(\.id), ["s-2"])
-        XCTAssertTrue(model.backlog.contains { $0.title == "Send the notes to Bo" })
+        XCTAssertEqual(model.items.map(\.id), ["s-2"])
+        await model.reload()
+        XCTAssertEqual(model.items.map(\.id), ["s-2"])
+        XCTAssertEqual(server.suggestions.map(\.id), ["s-2"])
     }
 
-    func testSkipSendsReject() async {
+    func testRemoveTakesTheItemOffTheListAndItStaysOffAfterAReload() async {
         let model = makeModel()
         await model.reload()
-        await model.skip(model.suggestions[1])
+        await model.remove(model.items[1])
         XCTAssertEqual(server.count("POST /v1/suggestions/s-2/reject"), 1)
-        XCTAssertEqual(model.suggestions.map(\.id), ["s-1"])
+        XCTAssertEqual(model.items.map(\.id), ["s-1"])
+        await model.reload()
+        XCTAssertEqual(model.items.map(\.id), ["s-1"])
     }
 
-    func testCloseNoteAndStatus() async throws {
+    func testAFailedChangePutsTheItemBackAndShowsTheReason() async {
         let model = makeModel()
         await model.reload()
-        let closed = await model.close("t-needs", note: "checked")
-        XCTAssertTrue(closed)
-        await model.setShowsDone(true)
-        XCTAssertTrue(model.done.contains { $0.id == "t-needs" })
-        let moved = await model.setStatus("t-backlog", status: .inProgress, note: "started")
-        XCTAssertTrue(moved)
-        XCTAssertTrue(model.inProgress.contains { $0.id == "t-backlog" })
-        let noted = await model.addNote("t-progress", note: "hello")
-        XCTAssertTrue(noted)
-        XCTAssertEqual(server.requests.last { $0.method == "PATCH" }?.json["note"] as? String, "hello")
+        server.brokenRoutes = [APIPath.acceptSuggestion("s-1"): 500]
+        await model.done(model.items[0])
+        XCTAssertEqual(model.items.map(\.id), ["s-1", "s-2"])
+        XCTAssertNotNil(model.errorMessage)
     }
 
-    /// S6
-    func testEventsReloadReconnectWithTheLastSeqAndResync() async {
+    func testSuggestionsChangedReloadsTheInboxAndAReconnectResumesFromTheLastSeq() async {
         let model = makeModel()
         model.start()
         defer { model.stop() }
         await waitUntil { self.server.openSocketCount == 1 && model.loaded }
-        let baseline = server.count("GET /v1/tasks")
+        let baseline = server.count("GET /v1/suggestions")
 
-        server.tasks = server.tasks + [RemoteTask(id: "t-new", title: "Added on the Mac", status: .backlog)]
-        let seq = server.publish("tasks.changed", id: "t-new")
-        await waitUntil { model.backlog.contains { $0.id == "t-new" } }
-        XCTAssertTrue(model.backlog.contains { $0.id == "t-new" }, "tasks.changed reloads the list")
-        XCTAssertGreaterThan(server.count("GET /v1/tasks"), baseline)
+        server.suggestions = server.suggestions + [RemoteSuggestion(id: "s-new", title: "Added on the Mac")]
+        let seq = server.publish(RemoteEvent.suggestionsChanged)
+        await waitUntil { model.items.contains { $0.id == "s-new" } }
+        XCTAssertTrue(model.items.contains { $0.id == "s-new" }, "suggestions.changed reloads the list")
+        XCTAssertGreaterThan(server.count("GET /v1/suggestions"), baseline)
 
         server.dropSockets()
         await waitUntil { self.server.socketURLs.count == 2 }
         XCTAssertEqual(server.socketURLs.last, "/v1/events?since=\(seq)", "the reconnect passes the last seq")
 
         await waitUntil { self.server.openSocketCount == 1 }
-        let beforeResync = server.count("GET /v1/tasks")
+        let beforeResync = server.count("GET /v1/suggestions")
         server.gapOnNextConnect = true
         server.dropSockets()
-        await waitUntil { self.server.count("GET /v1/tasks") > beforeResync }
-        XCTAssertGreaterThan(server.count("GET /v1/tasks"), beforeResync, "resync reloads through REST")
+        await waitUntil { self.server.count("GET /v1/suggestions") > beforeResync }
+        XCTAssertGreaterThan(server.count("GET /v1/suggestions"), beforeResync, "resync reloads through REST")
     }
 
     /// S7
@@ -259,7 +216,7 @@ final class TasksModelTests: XCTestCase {
         let app = AppModel(store: store)
         XCTAssertNotNil(app.device)
         let client = IronPetClient(endpoint: ServerEndpoint(baseURL: server.baseURL), token: server.token)
-        let model = TasksModel(client: client, onUnauthorized: { app.handleUnauthorized() })
+        let model = InboxModel(client: client, events: EventConnection(client: client), onUnauthorized: { app.handleUnauthorized() })
         server.tokenValid = false
         await model.reload()
         XCTAssertNil(store.load(), "the token is deleted")

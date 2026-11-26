@@ -21,7 +21,6 @@ package struct ActivityEvent: Equatable {
         package static let alertResolved = Kind("alert.resolved")
         package static let automationBubble = Kind("automation.bubble")
         package static let taskSuggested = Kind("task.suggested")
-        package static let taskDue = Kind("task.due")
         package static let meetingSummary = Kind("meeting.summary")
         package static let chatFinished = Kind("chat.finished")
 
@@ -123,12 +122,7 @@ extension ActivityEvent {
     }
 
     package static func taskSuggested(_ suggestion: TaskSuggestion, at: Date = Date()) -> ActivityEvent {
-        ActivityEvent(at: at, kind: .taskSuggested, ref: suggestion.id, title: suggestion.headline, detail: suggestion.originLabel)
-    }
-
-    package static func taskDue(_ task: TaskItem, at: Date = Date()) -> ActivityEvent {
-        ActivityEvent(at: at, kind: .taskDue, ref: task.id, title: task.title,
-                      extra: task.due.map { ["due": ISO8601DateFormatter().string(from: $0)] } ?? [:])
+        ActivityEvent(at: at, kind: .taskSuggested, ref: suggestion.id, title: suggestion.title, detail: suggestion.originLabel)
     }
 
     package static func meetingSummary(_ summary: URL, at: Date = Date()) -> ActivityEvent {

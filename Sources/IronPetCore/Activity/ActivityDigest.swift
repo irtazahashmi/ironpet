@@ -53,7 +53,7 @@ package struct ActivityDigest: Equatable {
                 return .session(id: event.ref, workspace: event.extra[Key.workspace], app: event.extra[Key.app], iterm: event.extra[Key.iterm])
             case .alertOpened, .alertResolved:
                 return single?.url.map(Target.url) ?? .alerts
-            case .taskSuggested, .taskDue:
+            case .taskSuggested:
                 return .tasks
             case .meetingSummary:
                 return single?.url.map(Target.file) ?? nil
@@ -74,14 +74,12 @@ package struct ActivityDigest: Equatable {
             idleSince: [String: Date] = [:],
             openAlerts: Set<String> = [],
             waitingSuggestions: Set<String> = [],
-            dueTasks: Set<String> = [],
             excluded: Set<ActivityEvent.Kind> = []
         ) {
             self.sessions = sessions
             self.idleSince = idleSince
             self.openAlerts = openAlerts
             self.waitingSuggestions = waitingSuggestions
-            self.dueTasks = dueTasks
             self.excluded = excluded
         }
 
@@ -92,9 +90,7 @@ package struct ActivityDigest: Equatable {
         package var idleSince: [String: Date] = [:]
         package var openAlerts: Set<String> = []
         package var waitingSuggestions: Set<String> = []
-        /// Open tasks that are due now or overdue.
-        package var dueTasks: Set<String> = []
-        /// Kinds the caller shows some other way, such as the task due bubble that is still on screen.
+        /// Kinds the caller shows some other way, such as a bubble that is still on screen.
         package var excluded: Set<ActivityEvent.Kind> = []
     }
 
@@ -106,12 +102,12 @@ package struct ActivityDigest: Equatable {
 
     /// Most urgent first. Kinds not listed come after these, in name order.
     package static let order: [ActivityEvent.Kind] = [
-        .sessionNeedsInput, .sessionFailed, .alertOpened, .sessionDone, .taskDue, .taskSuggested, .meetingSummary,
+        .sessionNeedsInput, .sessionFailed, .alertOpened, .sessionDone, .taskSuggested, .meetingSummary,
         .chatFinished, .automationBubble, .alertResolved,
     ]
 
     /// Groups the events of `window` by kind, keeps the latest event for each ref, and with `live` drops what is no longer
-    /// so: a session that was acknowledged or moved on, an alert that closed, a suggestion added or skipped, a task done.
+    /// so: a session that was acknowledged or moved on, an alert that closed, an inbox item marked done or removed.
     package static func build(events: [ActivityEvent], window: DateInterval, live: LiveState? = nil) -> ActivityDigest {
         var latest: [ActivityEvent.Kind: [String: ActivityEvent]] = [:]
         for event in events where event.at >= window.start && event.at < window.end {
@@ -143,7 +139,6 @@ package struct ActivityDigest: Equatable {
         switch event.kind {
         case .alertOpened: return live.openAlerts.contains(event.ref)
         case .taskSuggested: return live.waitingSuggestions.contains(event.ref)
-        case .taskDue: return live.dueTasks.contains(event.ref)
         default: return true
         }
     }

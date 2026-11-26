@@ -1,0 +1,214 @@
+{
+  "cases" : [
+    {
+      "name" : "empty list",
+      "request" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "method" : "inbox.list"
+      },
+      "response" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "result" : [
+
+        ]
+      }
+    },
+    {
+      "capture" : {
+        "inboxId" : "result[0].id"
+      },
+      "name" : "add",
+      "request" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "method" : "inbox.add",
+        "params" : {
+          "draft" : {
+            "key" : "mail-1",
+            "notes" : "",
+            "title" : "Reply to Sam"
+          },
+          "kind" : "email",
+          "sourceRef" : "{\"ref\":\"mail 1\",\"reason\":\"Sam asked\"}"
+        }
+      },
+      "response" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "result" : [
+          {
+            "created" : "<date>",
+            "id" : "$inboxId",
+            "notes" : "",
+            "origin" : {
+              "automation" : {
+                "id" : "agent:email",
+                "name" : "email agent"
+              }
+            },
+            "sourceRef" : "{\"ref\":\"mail 1\",\"reason\":\"Sam asked\"}",
+            "title" : "Reply to Sam"
+          }
+        ]
+      }
+    },
+    {
+      "name" : "list after add",
+      "request" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "method" : "inbox.list"
+      },
+      "response" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "result" : [
+          {
+            "created" : "<date>",
+            "id" : "$inboxId",
+            "notes" : "",
+            "origin" : {
+              "automation" : {
+                "id" : "agent:email",
+                "name" : "email agent"
+              }
+            },
+            "sourceRef" : "{\"ref\":\"mail 1\",\"reason\":\"Sam asked\"}",
+            "title" : "Reply to Sam"
+          }
+        ]
+      }
+    },
+    {
+      "name" : "add the same key again",
+      "request" : {
+        "id" : 4,
+        "jsonrpc" : "2.0",
+        "method" : "inbox.add",
+        "params" : {
+          "draft" : {
+            "key" : "mail-1",
+            "notes" : "",
+            "title" : "Reply to Sam"
+          },
+          "kind" : "email",
+          "sourceRef" : "x"
+        }
+      },
+      "response" : {
+        "id" : 4,
+        "jsonrpc" : "2.0",
+        "result" : [
+
+        ]
+      }
+    },
+    {
+      "name" : "done",
+      "request" : {
+        "id" : 5,
+        "jsonrpc" : "2.0",
+        "method" : "inbox.done",
+        "params" : {
+          "id" : "$inboxId"
+        }
+      },
+      "response" : {
+        "id" : 5,
+        "jsonrpc" : "2.0",
+        "result" : null
+      }
+    },
+    {
+      "name" : "list after done",
+      "request" : {
+        "id" : 6,
+        "jsonrpc" : "2.0",
+        "method" : "inbox.list"
+      },
+      "response" : {
+        "id" : 6,
+        "jsonrpc" : "2.0",
+        "result" : [
+
+        ]
+      }
+    },
+    {
+      "capture" : {
+        "inboxId" : "result[0].id"
+      },
+      "name" : "add another",
+      "request" : {
+        "id" : 7,
+        "jsonrpc" : "2.0",
+        "method" : "inbox.add",
+        "params" : {
+          "draft" : {
+            "key" : "pr-2",
+            "notes" : "",
+            "title" : "Review PR 2"
+          },
+          "kind" : "pr",
+          "sourceRef" : "pr 2"
+        }
+      },
+      "response" : {
+        "id" : 7,
+        "jsonrpc" : "2.0",
+        "result" : [
+          {
+            "created" : "<date>",
+            "id" : "$inboxId",
+            "notes" : "",
+            "origin" : {
+              "automation" : {
+                "id" : "agent:pr",
+                "name" : "pr agent"
+              }
+            },
+            "sourceRef" : "pr 2",
+            "title" : "Review PR 2"
+          }
+        ]
+      }
+    },
+    {
+      "name" : "remove",
+      "request" : {
+        "id" : 8,
+        "jsonrpc" : "2.0",
+        "method" : "inbox.remove",
+        "params" : {
+          "id" : "$inboxId",
+          "note" : "duplicate"
+        }
+      },
+      "response" : {
+        "id" : 8,
+        "jsonrpc" : "2.0",
+        "result" : null
+      }
+    },
+    {
+      "name" : "list after remove",
+      "request" : {
+        "id" : 9,
+        "jsonrpc" : "2.0",
+        "method" : "inbox.list"
+      },
+      "response" : {
+        "id" : 9,
+        "jsonrpc" : "2.0",
+        "result" : [
+
+        ]
+      }
+    }
+  ],
+  "seed" : [
+
+  ]
+}

@@ -174,7 +174,7 @@ enum AppTab: Hashable {
         }
     }
 
-    /// A task opens Tasks, a session Agents. An alert or a meeting opens More, on `MoreDestination.destination(for:)`.
+    /// A task (an older Mac still sends them) opens the Inbox, a session Agents. An alert or a meeting opens More, on `MoreDestination.destination(for:)`.
     static func tab(for target: TodayTarget) -> AppTab? {
         switch target.type {
         case .task: return .tasks
@@ -398,7 +398,7 @@ final class TodayModel: SocketModel {
 
     override func handle(_ event: RemoteEvent) async {
         switch event.kind {
-        case RemoteEvent.tasksChanged, RemoteEvent.agentsChanged, RemoteEvent.alertsChanged, "meetings.changed":
+        case RemoteEvent.suggestionsChanged, RemoteEvent.agentsChanged, RemoteEvent.alertsChanged, "meetings.changed":
             debouncer.run("today") { [weak self] in await self?.reload() }
         default: break
         }

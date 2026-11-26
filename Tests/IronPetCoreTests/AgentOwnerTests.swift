@@ -229,7 +229,6 @@ final class AgentOwnerTests: XCTestCase {
         XCTAssertEqual(try api.list(agentId: "agent_default").map(\.id), one.map(\.id))
         XCTAssertThrowsError(try api.list(agentId: "agent_nine")) { XCTAssertEqual(($0 as? APIError)?.code, .notFound) }
         for builtIn in AutomationDefaults.builtIns { XCTAssertNil(builtIn.ownerAgentID, "\(builtIn.id) has no owner") }
-        XCTAssertNil(AutomationDefaults.taskScan(minutes: 30).ownerAgentID)
     }
 
     func testTheAutomationToolsListAndCreateAsTheCallingAgent() async throws {

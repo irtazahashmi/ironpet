@@ -280,7 +280,7 @@ struct MemorySection: View {
         VStack(spacing: 8) {
             Image(systemName: SharedSymbolsMemory.symbol).font(.system(size: 22)).foregroundStyle(.tertiary)
             Text("No pages yet").font(.system(size: 12.5, weight: .medium))
-            Text("Ghost writes a page for each person, project and tool it learns about from your chats, meetings and tasks. Pages appear after the first learning pass.")
+            Text("Ghost writes a page for each person, project and tool it learns about from your chats and meetings. Pages appear after the first learning pass.")
                 .font(.caption).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 360)
             Button(action: onOpenSettings) { Label("Memory settings", systemImage: "gearshape") }
                 .controlSize(.small)

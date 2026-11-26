@@ -14,18 +14,18 @@ final class ContractGoldenTests: XCTestCase {
 
     func testEveryGoldenFileMatchesTheAPI() async throws {
         let names = try ContractFiles.fixtureNames()
-        XCTAssertGreaterThanOrEqual(names.count, 8, "one file per facade: tasks, alerts, agents, automations, chat, memory, settings, today")
+        XCTAssertGreaterThanOrEqual(names.count, 8, "one file per facade: inbox, alerts, agents, automations, chat, memory, settings, today")
         for name in names { try await run(name) }
     }
 
     func testEveryRequiredFacadeHasAReadAndAWrite() async throws {
         let reads: [String: Set<String>] = [
-            "tasks": ["tasks.list", "tasks.get"], "alerts": ["alerts.list", "alerts.get"], "agents": ["agents.list", "agents.get"],
+            "inbox": ["inbox.list"], "alerts": ["alerts.list", "alerts.get"], "agents": ["agents.list", "agents.get"],
             "automations": ["automations.list", "automations.get"], "chat": ["chat.status", "chat.messages"],
             "memory": ["memory.call"], "settings": ["settings.get"], "today": ["today.brief"],
         ]
         let writes: [String: Set<String>] = [
-            "tasks": ["tasks.create", "tasks.update", "tasks.close"], "alerts": ["alerts.dismiss"], "agents": ["agents.acknowledge"],
+            "inbox": ["inbox.add", "inbox.done", "inbox.remove"], "alerts": ["alerts.dismiss"], "agents": ["agents.acknowledge"],
             "automations": ["automations.create", "automations.setEnabled"], "chat": ["chat.send", "chat.setMode"],
             "memory": ["memory.call"], "settings": ["settings.patch"], "today": ["today.brief"],
         ]
@@ -42,19 +42,20 @@ final class ContractGoldenTests: XCTestCase {
 
     /// S4: a golden file that disagrees with the API fails, and the message names the method and the field.
     func testARenamedFieldIsReportedWithTheMethodAndTheField() async throws {
-        var file = try loadFile("tasks.json")
-        guard let index = file.cases.firstIndex(where: { Self.method(of: $0) == "tasks.create" }),
-              case .object(var response) = file.cases[index].response, case .object(var result)? = response["result"],
-              let title = result.removeValue(forKey: "title")
-        else { return XCTFail("tasks.json needs a tasks.create case with a title in its result") }
-        result["name"] = title
-        response["result"] = .object(result)
+        var file = try loadFile("inbox.json")
+        guard let index = file.cases.firstIndex(where: { Self.method(of: $0) == "inbox.list" && $0.name == "list after add" }),
+              case .object(var response) = file.cases[index].response, case .array(var items)? = response["result"],
+              case .object(var item)? = items.first, let title = item.removeValue(forKey: "title")
+        else { return XCTFail("inbox.json needs an inbox.list case named \"list after add\" with a title in its first item") }
+        item["name"] = title
+        items[0] = .object(item)
+        response["result"] = .array(items)
         file.cases[index].response = .object(response)
 
         let failures = try await failures(of: file)
         let message = try XCTUnwrap(failures.first)
-        XCTAssertTrue(message.contains("tasks.create"), message)
-        XCTAssertTrue(message.contains("response.result.name"), message)
+        XCTAssertTrue(message.contains("inbox.list"), message)
+        XCTAssertTrue(message.contains("response.result[0].name"), message)
         XCTAssertTrue(message.contains(#""title""#), message)
     }
 

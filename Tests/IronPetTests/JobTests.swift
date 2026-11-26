@@ -77,7 +77,6 @@ final class JobTests: XCTestCase {
     private var threads: URL!
     private var savedThreads: URL!
     private var database: Database!
-    private var tasks: TaskStore!
     private var agents: [FakeJobAgent] = []
     private var signals: SignalStore!
     private var permissions: BackgroundPermissions!
@@ -90,7 +89,6 @@ final class JobTests: XCTestCase {
         savedThreads = ThreadStore.directory
         ThreadStore.directory = threads
         database = Database.open(path: nil, migrations: TaskStore.migrations + JobService.migrations).database
-        tasks = TaskStore(database: database)
         agents = []
         signals = SignalStore()
         permissions = BackgroundPermissions(signals: signals, timeout: { 600 })
@@ -104,7 +102,7 @@ final class JobTests: XCTestCase {
     }
 
     private func service(max: Int = 3, configure: @escaping (FakeJobAgent) -> Void = { _ in }) -> JobService {
-        let service = JobService(database: database, tasks: tasks)
+        let service = JobService(database: database)
         service.currentAgent = { (AgentCatalog.all[0], "fast-model") }
         service.maxRunning = { max }
         service.preamble = { _ in "PREAMBLE" }
@@ -182,7 +180,7 @@ final class JobTests: XCTestCase {
         defer { ACPBackend.defaultMCPServers = saved }
         ACPBackend.defaultMCPServers = { [["name": "ironpet", "command": "/x", "args": ["mcp"], "env": [] as [JSON]], ["name": "other", "command": "/y"]] }
         let job = Job(id: "job-abc123", title: "Fix", prompt: "Fix it", folder: folder.path, agent: AgentCatalog.all[0].id, created: Date())
-        let backend = try XCTUnwrap(JobService(database: database, tasks: nil).makeAgent(AgentCatalog.all[0], job) as? ACPBackend)
+        let backend = try XCTUnwrap(JobService(database: database).makeAgent(AgentCatalog.all[0], job) as? ACPBackend)
         let env = try XCTUnwrap(backend.sessionMCPServers.first?["env"] as? [JSON])
         XCTAssertEqual(env.first { $0["name"] as? String == MCPEndpoint.scopeVariable }?["value"] as? String, "job")
         XCTAssertEqual(env.first { $0["name"] as? String == MCPEndpoint.callerVariable }?["value"] as? String, "job:job-abc123")
@@ -190,12 +188,9 @@ final class JobTests: XCTestCase {
         backend.shutdown()
     }
 
-    func testJobRunsTracksATaskAndSavesItsThread() async throws {
+    func testAJobRunSavesItsThread() async throws {
         let jobs = service()
         let job = try jobs.start(title: "Fix the flaky test", prompt: "Fix LoginTests.testRetry", folder: folder)
-        let task = try XCTUnwrap(job.task.flatMap(tasks.task))
-        XCTAssertEqual(task.status, .inProgress)
-        XCTAssertEqual(task.source, .agent)
 
         await until { jobs.job(job.id)?.state == .done }
         let done = try XCTUnwrap(jobs.job(job.id))
@@ -207,21 +202,18 @@ final class JobTests: XCTestCase {
         XCTAssertEqual(agents[0].turns.first?.workspace.path, folder.standardizedFileURL.path)
         XCTAssertTrue(agents[0].shutDown)
 
-        let closed = try XCTUnwrap(tasks.task(task.id))
-        XCTAssertEqual(closed.status, .done)
-        XCTAssertTrue(closed.links.contains { $0.kind == .thread && $0.ref == "session-1" })
         let thread = try XCTUnwrap(ThreadStore.load("session-1"))
         XCTAssertEqual(thread.job, job.id)
         XCTAssertEqual(thread.title, "Fix the flaky test")
         XCTAssertTrue(thread.items.contains { if case .assistant(let text) = $0.kind { text.hasPrefix("Fixed") } else { false } })
+        XCTAssertNil(job.json["task"], "a job is no longer tracked by a task")
     }
 
-    func testFailedJobMarksItsTaskNeedsYou() async throws {
+    func testAFailedJobKeepsItsError() async throws {
         let jobs = service { $0.error = "The agent crashed" }
         let job = try jobs.start(title: "Fix it", prompt: "Fix it", folder: folder)
         await until { jobs.job(job.id)?.state == .failed }
         XCTAssertEqual(jobs.job(job.id)?.error, "The agent crashed")
-        XCTAssertEqual(job.task.flatMap(tasks.task)?.status, .needsYou)
         XCTAssertEqual(jobs.job(job.id)?.agentSession?.status, .failed)
     }
 
@@ -246,7 +238,6 @@ final class JobTests: XCTestCase {
 
         try jobs.stop(second.id)
         XCTAssertEqual(jobs.job(second.id)?.state, .stopped)
-        XCTAssertEqual(second.task.flatMap(tasks.task)?.status, .done)
 
         try jobs.stop(first.id)
         await until { jobs.job(first.id)?.state == .stopped }
@@ -381,8 +372,6 @@ final class JobTests: XCTestCase {
         let job = try jobs.start(title: "Test", prompt: "Run the tests", folder: folder)
         await until { jobs.job(job.id)?.state == .done }
         XCTAssertEqual(agents[0].decisions.map(\.optionID), ["no"], "the agent's reject_once option")
-        let notes = tasks.history(try XCTUnwrap(jobs.job(job.id)?.task)).map(\.detail)
-        XCTAssertTrue(notes.contains("permission timed out: Bash"), "\(notes)")
         XCTAssertTrue(signals.signals.isEmpty)
     }
 
@@ -454,7 +443,6 @@ final class JobTests: XCTestCase {
         let relaunched = service()
         XCTAssertEqual(relaunched.job(job.id)?.state, .interrupted)
         XCTAssertNil(relaunched.job(job.id)?.agentSession)
-        XCTAssertEqual(job.task.flatMap(tasks.task)?.status, .backlog)
         agents[0].release()
     }
 
@@ -465,7 +453,6 @@ final class JobTests: XCTestCase {
         XCTAssertThrowsError(try jobs.start(title: "x", prompt: "x", folder: folder.appendingPathComponent("missing")))
         XCTAssertThrowsError(try jobs.start(title: String(repeating: "a", count: Job.titleLimit + 1), prompt: "x", folder: folder))
         XCTAssertTrue(jobs.jobs.isEmpty)
-        XCTAssertTrue(tasks.tasks.isEmpty)
     }
 
     func testJobRowsAnnounceOnceSurviveTheSweepAndStayAcknowledged() {

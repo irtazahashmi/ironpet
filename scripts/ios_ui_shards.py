@@ -19,7 +19,7 @@ SHARDS = [
     ["BackgroundUITests", "ChatTextSizeUITests", "ChatFileLinksUITests", "ChatSwipeReplyUITests", "ChatMenuKeyboardUITests",
      "ChatSelectionUITests"],
     # Shard 2 (27 tests)
-    ["PasteUITests", "QuickFilterUITests", "PhaseThreeUITests", "TasksBoardUITests", "TasksOfflineUITests", "ChatStreamingUITests", "ChatPagingUITests",
+    ["PasteUITests", "PhaseThreeUITests", "ChatStreamingUITests", "ChatPagingUITests",
      "ChatCacheUITests"],
     # Shard 3 (24 tests)
     ["IronPetRemoteUITests", "ChatParityUITests", "PhaseFourUITests", "PhaseFiveUITests",

@@ -75,13 +75,11 @@ package enum ActionItems {
         return lines.joined(separator: "\n")
     }
 
-    /// The suggestions for `TaskStore.suggest`: the user's own items, and other people's items marked `waiting: yes`, with
-    /// the owner as the person the user waits on.
+    /// The suggestions for `TaskStore.suggest`: the user's own items. Other people's items stay in the summary.
     package static func suggestions(_ markdown: String) -> [(title: String, due: String?, waitingOn: String?)] {
         parse(markdown).compactMap { item in
             guard let owner = item.owner else { return nil }
-            if owner.caseInsensitiveCompare("me") == .orderedSame { return (item.title, item.due, nil) }
-            return item.waiting ? (item.title, item.due, owner) : nil
+            return owner.caseInsensitiveCompare("me") == .orderedSame ? (item.title, item.due, nil) : nil
         }
     }
 

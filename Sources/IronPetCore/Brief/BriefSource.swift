@@ -6,7 +6,6 @@ import Foundation
 /// Gathers a brief's input from the app's stores and `~/.ironpet/meetings`, and builds it.
 @MainActor
 package final class BriefSource {
-    private let tasks: TasksAPI
     private let sessions: SessionStore
     private let signals: SignalStore
     private let meetingsRoot: URL
@@ -18,15 +17,13 @@ package final class BriefSource {
     /// Each summary's open action items, keyed by folder, kept until the file changes.
     private var summaries: [String: (modified: Date, items: [String])] = [:]
 
-    package init(tasks: TasksAPI, sessions: SessionStore, signals: SignalStore, meetingsRoot: URL = Paths.meetings,
+    package init(sessions: SessionStore, signals: SignalStore, meetingsRoot: URL = Paths.meetings,
          activity: BriefActivitySource? = nil) {
-        self.tasks = tasks
         self.sessions = sessions
         self.signals = signals
         self.meetingsRoot = meetingsRoot
         self.activity = activity
         forwarding = [
-            tasks.changes.observe { [weak self] in self?.changes.send() },
             sessions.changes.observe { [weak self] in self?.changes.send() },
             signals.changes.observe { [weak self] in self?.changes.send() },
         ]
@@ -43,10 +40,9 @@ package final class BriefSource {
         let since = BriefBuilder.meetingsSince(weekdays: weekdays, now: now, calendar: calendar)
         let today = DateInterval(start: min(calendar.startOfDay(for: day ?? now), now), end: now)
         let live = Array(sessions.sessions.values)
-        let input = BriefInput(now: now, calendar: calendar, day: day, tasks: tasks.items, sessions: live, alerts: signals.signals,
+        let input = BriefInput(now: now, calendar: calendar, day: day, sessions: live, alerts: signals.signals,
                                meetings: meetings(since: min(since, today.start), until: now),
-                               activity: activity?.briefActivity(in: today) ?? Self.finishedSessions(live, in: today),
-                               suggestions: tasks.suggestions, projects: tasks.projects, goals: tasks.goals, keyResults: tasks.keyResults)
+                               activity: activity?.briefActivity(in: today) ?? Self.finishedSessions(live, in: today))
         return BriefBuilder.build(kind, input, meetingsSince: since)
     }
 

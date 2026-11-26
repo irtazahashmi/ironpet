@@ -184,14 +184,10 @@ final class ActivityLogTests: XCTestCase {
         XCTAssertFalse(wall.countsKeyboardTime)
     }
 
-    func testTaskMeetingAndChatEvents() {
+    func testInboxMeetingAndChatEvents() {
         let suggestion = TaskSuggestion(id: "send-invoice", title: "Send the invoice", origin: .automation(id: "mail", name: "Mail watcher"), created: start)
         XCTAssertEqual(ActivityEvent.taskSuggested(suggestion).ref, "send-invoice")
         XCTAssertEqual(ActivityEvent.taskSuggested(suggestion).detail, "From Mail watcher")
-        let task = TaskItem(id: "renew", title: "Renew the domain", notes: "", status: .backlog, source: .chat, due: start, links: [],
-                            created: start, updated: start, closed: nil)
-        XCTAssertEqual(ActivityEvent.taskDue(task).ref, "renew")
-        XCTAssertNotNil(ActivityEvent.taskDue(task).extra["due"])
         let summary = URL(fileURLWithPath: "/Users/me/.ironpet/meetings/2026-11-17 10-00 Standup/summary.md")
         let meeting = ActivityEvent.meetingSummary(summary)
         XCTAssertEqual(meeting.title, "2026-11-17 10-00 Standup")

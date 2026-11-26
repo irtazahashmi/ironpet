@@ -43,7 +43,7 @@ final class ContractDocTests: XCTestCase {
     func testEveryFacadeHasASection() async throws {
         let files = try FileManager.default.contentsOfDirectory(atPath: ContractFiles.root.appendingPathComponent("Sources/IronPetCore/API").path)
         let facades = files.filter { $0.hasSuffix("API.swift") && $0 != "IronPetAPI.swift" }
-            .map { String($0.dropLast("API.swift".count)).lowercased() }.sorted()
+            .map { String($0.dropLast("API.swift".count)).lowercased() }.map { $0 == "tasks" ? "inbox" : $0 }.sorted()
         XCTAssertGreaterThanOrEqual(facades.count, 17)
         let missing = facades.filter { !doc.contains("### `\($0)`") }
         XCTAssertEqual(missing, [], "docs/protocol.md has no section for these facades")

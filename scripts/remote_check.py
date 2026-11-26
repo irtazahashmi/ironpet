@@ -3,11 +3,11 @@
 
   swift build && python3 scripts/remote_check.py [shots-dir]
 
-Pairs like a phone does (code, POST /v1/pair, Allow on the bubble through the test endpoint, poll), then lists tasks, accepts a
-suggestion, opens the event socket and revokes the device. That part runs against the loopback listener, as a `tailscale serve`
+Pairs like a phone does (code, POST /v1/pair, Allow on the bubble through the test endpoint, poll), then lists the Inbox, marks an
+item done, opens the event socket and revokes the device. That part runs against the loopback listener, as a `tailscale serve`
 front would reach it. Then it moves the listener to this Mac's Wi-Fi address and checks the HTTPS side: which sockets the app
 listens on (never a wildcard address), that the certificate's SHA-256 is the `f` of the pairing link, and, when this Mac can reach
-its own address, that pairing and `GET /v1/tasks` work over TLS with that certificate pinned and that another pin is refused.
+its own address, that pairing and `GET /v1/suggestions` work over TLS with that certificate pinned and that another pin is refused.
 It never touches ~/.ironpet or the installed app.
 """
 import base64
@@ -159,29 +159,26 @@ try:
     status, poll = remote("GET", f"/v1/pair/{pair['pairing_id']}", headers={"X-Pairing-Secret": pair["secret"]})
     token = poll.get("token")
     check("poll returns the token", poll.get("status") == "allowed" and bool(token))
-    check("no token without auth", remote("GET", "/v1/tasks")[0] == 401)
+    check("no token without auth", remote("GET", "/v1/suggestions")[0] == 401)
     control("POST", "/test/tasks/suggest", {"summary": "# Sync\n\n## Action items\n- [ ] Call the plumber (owner: Me)\n", "meeting": f"{ROOT}/meeting"})
-    status, tasks = remote("GET", "/v1/tasks", token=token)
-    check("GET /v1/tasks", status == 200 and "tasks" in tasks, str(status))
     status, sugg = remote("GET", "/v1/suggestions", token=token)
     items = sugg.get("suggestions", [])
-    check("a suggestion is listed", status == 200 and len(items) > 0, str(sugg)[:200])
+    check("an inbox item is listed", status == 200 and len(items) > 0, str(sugg)[:200])
     if items:
-        status, task = remote("POST", f"/v1/suggestions/{items[0]['id']}/accept", {}, token=token)
-        check("accept makes a task", status == 200 and task.get("title"), str(task)[:200])
-        status, detail = remote("GET", f"/v1/tasks/{task['id']}", token=token)
-        by = [e["by"] for e in detail.get("history", [])]
-        check("history names the device", any(b.startswith("remote:") for b in by), str(by))
+        status, done = remote("POST", f"/v1/suggestions/{items[0]['id']}/accept", {}, token=token)
+        check("accept marks the item done", status == 200 and done.get("done") == items[0]["id"], str(done)[:200])
+        status, left = remote("GET", "/v1/suggestions", token=token)
+        check("a done item leaves the list", status == 200 and all(i["id"] != items[0]["id"] for i in left.get("suggestions", [])), str(left)[:200])
     sock, line = open_socket(token)
     check("event socket upgrades", "101" in line, line)
     first = frames(sock, 1)
     check("socket says hello", first and first[0].get("kind") == "hello", str(first))
-    remote("POST", "/v1/tasks", {"title": "From the check"}, token=token)
+    control("POST", "/test/tasks/suggest", {"summary": "# Sync\n\n## Action items\n- [ ] Call the electrician (owner: Me)\n", "meeting": f"{ROOT}/meeting-2"})
     try:
         seen = frames(sock, 3, timeout=3)
     except socket.timeout:
         seen = []
-    check("socket carries tasks.changed", any(f.get("kind") == "tasks.changed" for f in seen), str(seen))
+    check("socket carries suggestions.changed", any(f.get("kind") == "suggestions.changed" for f in seen), str(seen))
     # Phase 3: the phone writes into the Mac's chat, and the stubbed agent answers without starting a real one.
     control("POST", "/test/chat/stub", {"answer": "Hello from the stub agent."})
     req = urllib.request.Request(f"http://127.0.0.1:{PORT}/v1/uploads", data=b"\x89PNG fake", method="POST",
@@ -208,7 +205,7 @@ try:
     print("NOTE devices.png written" if os.path.exists(f"{SHOTS}/devices.png") else "NOTE devices.png not written (no window server image); use --render-previews", flush=True)
     status, _ = remote("DELETE", "/v1/devices/me", token=token)
     check("revoke", status == 200)
-    check("revoked token gets 401", remote("GET", "/v1/tasks", token=token)[0] == 401)
+    check("revoked token gets 401", remote("GET", "/v1/suggestions", token=token)[0] == 401)
 
     # The Wi-Fi address: HTTPS on it, plain HTTP on loopback, and nothing on a wildcard address.
     ip = lan_address()
@@ -234,10 +231,10 @@ try:
             check("pair over TLS with the pin", status == 202, str(status))
             control("POST", "/test/automations/bubble", {"id": f"remote-pairing:{pair['pairing_id']}", "button": "Allow"})
             _, poll = tls_request(ip, "GET", f"/v1/pair/{pair['pairing_id']}", headers={"X-Pairing-Secret": pair["secret"]}, pin=code["fingerprint"])
-            status, tasks = tls_request(ip, "GET", "/v1/tasks", token=poll.get("token"), pin=code["fingerprint"])
-            check("GET /v1/tasks over TLS", status == 200 and "tasks" in tasks, str(status))
+            status, inbox = tls_request(ip, "GET", "/v1/suggestions", token=poll.get("token"), pin=code["fingerprint"])
+            check("GET /v1/suggestions over TLS", status == 200 and "suggestions" in inbox, str(status))
             try:
-                tls_request(ip, "GET", "/v1/tasks", pin="0" * 64)
+                tls_request(ip, "GET", "/v1/suggestions", pin="0" * 64)
                 check("another pin is refused", False)
             except ssl.SSLError:
                 check("another pin is refused", True)

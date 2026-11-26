@@ -35,8 +35,6 @@ package final class WelcomeBack {
     }
 
     package static let bubbleID = "welcome-back"
-    /// The id of the bubble that lists the tasks due today. `Announcer` shows it under this id.
-    package static let tasksDueID = "task-due"
     /// The daily brief's bubbles. A brief already says what is going on, so a summary right after it would repeat it.
     package static let digestPrefix = "digest:"
     package static let digestQuiet: TimeInterval = 30 * 60
@@ -84,8 +82,6 @@ package final class WelcomeBack {
         if bubbles.lastShown(prefix: Self.digestPrefix).map({ now.timeIntervalSince($0) < Self.digestQuiet }) == true { return }
         let events = log.events(in: window)
         var state = live()
-        // A task due bubble waits for Done or Snooze, so it keeps its own place.
-        if bubbles.bubbles.contains(where: { $0.id == Self.tasksDueID }) { state.excluded.insert(.taskDue) }
         let digest = ActivityDigest.build(events: events, window: window, live: state)
         lastDigest = digest
         guard !digest.isEmpty else { return }
@@ -105,7 +101,6 @@ package final class WelcomeBack {
         case .sessionNeedsInput, .sessionFailed, .sessionDone: return "session:\(event.ref)"
         case .alertOpened: return "signal:\(event.ref)"
         case .taskSuggested: return "task-suggestions"
-        case .taskDue: return Self.tasksDueID
         case .meetingSummary: return "meeting-summary"
         case .chatFinished: return "chat"
         default: return event.ref
@@ -113,7 +108,7 @@ package final class WelcomeBack {
     }
 
     /// The live state from the app's stores at `now`.
-    package static func liveState(sessions: [AgentSession], signals: [Signal], tasks: [TaskItem], suggestions: [TaskSuggestion], now: Date) -> ActivityDigest.LiveState {
+    package static func liveState(sessions: [AgentSession], signals: [Signal], suggestions: [TaskSuggestion], now: Date) -> ActivityDigest.LiveState {
         var sessionKinds: [String: ActivityEvent.Kind] = [:]
         var idleSince: [String: Date] = [:]
         for session in sessions {
@@ -127,7 +122,6 @@ package final class WelcomeBack {
             }
         }
         return ActivityDigest.LiveState(sessions: sessionKinds, idleSince: idleSince, openAlerts: Set(signals.map(\.id)),
-                                        waitingSuggestions: Set(suggestions.map(\.id)),
-                                        dueTasks: Set(tasks.filter { TaskDue.hasCome($0, now: now) }.map(\.id)))
+                                        waitingSuggestions: Set(suggestions.map(\.id)))
     }
 }

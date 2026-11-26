@@ -29,7 +29,6 @@ final class ActivityDigestTests: XCTestCase {
             event(.sessionDone, "claude:1", minute: 2),
             event(.sessionDone, "claude:1", minute: 9),
             event(.sessionDone, "cursor:2", minute: 5),
-            event(.taskDue, "renew", minute: 3),
             event(.sessionNeedsInput, "codex:3", minute: 4),
             event(.alertOpened, "ci", minute: 6),
             event(.init("task.handoff.done"), "x", minute: 7),
@@ -37,17 +36,17 @@ final class ActivityDigestTests: XCTestCase {
             event(.sessionFailed, "pi:4", minute: 8),
         ]
         let digest = ActivityDigest.build(events: events, window: window)
-        XCTAssertEqual(digest.items.map(\.kind.rawValue), ["session.needsInput", "session.failed", "alert.opened", "session.done", "task.due",
+        XCTAssertEqual(digest.items.map(\.kind.rawValue), ["session.needsInput", "session.failed", "alert.opened", "session.done",
                                                            "automation.bubble", "alert.resolved", "task.handoff.done"])
         let done = digest.items[3]
         XCTAssertEqual(done.events.map(\.ref), ["claude:1", "cursor:2"], "one per session, newest first")
         XCTAssertEqual(done.events.first?.at, start.addingTimeInterval(9 * 60))
-        XCTAssertEqual(digest.count, 9)
+        XCTAssertEqual(digest.count, 8)
     }
 
     func testWithoutLiveStateEverythingInTheWindowCounts() {
-        let events = [event(.sessionDone, "s"), event(.alertOpened, "a"), event(.taskSuggested, "t"), event(.taskDue, "d")]
-        XCTAssertEqual(ActivityDigest.build(events: events, window: window, live: nil).count, 4)
+        let events = [event(.sessionDone, "s"), event(.alertOpened, "a"), event(.taskSuggested, "t")]
+        XCTAssertEqual(ActivityDigest.build(events: events, window: window, live: nil).count, 3)
     }
 
     func testLiveStateDropsWhatTheUserAlreadyDealtWith() {
@@ -56,14 +55,13 @@ final class ActivityDigestTests: XCTestCase {
             event(.sessionNeedsInput, "answered"), event(.sessionNeedsInput, "waiting"),
             event(.alertOpened, "closed"), event(.alertOpened, "open"),
             event(.taskSuggested, "added"), event(.taskSuggested, "waiting-suggestion"),
-            event(.taskDue, "done-task"), event(.taskDue, "due-task"),
             event(.automationBubble, "news"), event(.meetingSummary, "meeting"),
         ]
         let live = ActivityDigest.LiveState(sessions: ["still-done": .sessionDone, "answered": .sessionDone, "waiting": .sessionNeedsInput],
-                                            openAlerts: ["open"], waitingSuggestions: ["waiting-suggestion"], dueTasks: ["due-task"])
+                                            openAlerts: ["open"], waitingSuggestions: ["waiting-suggestion"])
         let digest = ActivityDigest.build(events: events, window: window, live: live)
         XCTAssertEqual(Set(digest.items.flatMap { $0.events.map(\.ref) }),
-                       ["still-done", "waiting", "open", "waiting-suggestion", "due-task", "news", "meeting"])
+                       ["still-done", "waiting", "open", "waiting-suggestion", "news", "meeting"])
     }
 
     func testANeedsInputSessionSweptIdleWithoutAnAnswerIsStillWaiting() {
@@ -81,8 +79,8 @@ final class ActivityDigestTests: XCTestCase {
     }
 
     func testExcludedKindsAreLeftOut() {
-        let events = [event(.taskDue, "d"), event(.sessionDone, "s")]
-        let live = ActivityDigest.LiveState(sessions: ["s": .sessionDone], dueTasks: ["d"], excluded: [.taskDue])
+        let events = [event(.taskSuggested, "d"), event(.sessionDone, "s")]
+        let live = ActivityDigest.LiveState(sessions: ["s": .sessionDone], waitingSuggestions: ["d"], excluded: [.taskSuggested])
         XCTAssertEqual(ActivityDigest.build(events: events, window: window, live: live).items.map(\.kind), [.sessionDone])
     }
 
@@ -96,7 +94,7 @@ final class ActivityDigestTests: XCTestCase {
         let pr = URL(string: "https://github.com/x/y/pull/1")!
         XCTAssertEqual(ActivityDigest.build(events: [event(.alertOpened, "a", url: pr)], window: window).items.first?.target, .url(pr))
         XCTAssertEqual(ActivityDigest.build(events: [event(.alertOpened, "a", url: pr), event(.alertOpened, "b")], window: window).items.first?.target, .alerts)
-        XCTAssertEqual(ActivityDigest.build(events: [event(.taskDue, "t")], window: window).items.first?.target, .tasks)
+        XCTAssertEqual(ActivityDigest.build(events: [event(.taskSuggested, "t")], window: window).items.first?.target, .tasks)
         let file = URL(fileURLWithPath: "/m/summary.md")
         XCTAssertEqual(ActivityDigest.build(events: [event(.meetingSummary, "m", url: file)], window: window).items.first?.target, .file(file))
         XCTAssertEqual(ActivityDigest.build(events: [event(.chatFinished, "chat")], window: window).items.first?.target, .chat)

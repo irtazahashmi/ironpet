@@ -174,7 +174,6 @@ package struct RemoteResources {
     /// What a Today item opens, with the alert's `url` when it has one. The app maps the type to a tab.
     package static func target(_ target: Brief.Target) -> TodayTarget {
         switch target {
-        case .task(let id): return TodayTarget(type: .task, id: id)
         case .session(let id, _, _, _): return TodayTarget(type: .session, id: id)
         case .alert(let id, let url): return TodayTarget(type: .alert, id: id, url: url?.absoluteString)
         case .meeting(let id): return TodayTarget(type: .meeting, id: id)

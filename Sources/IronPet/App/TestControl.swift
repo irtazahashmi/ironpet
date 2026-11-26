@@ -365,15 +365,14 @@ final class TestControl {
             return tasksSnapshot()
         case ("POST", "/test/tasks/reset"):
             guard let store = tasks else { return Self.encode(["ok": false, "error": "no task store"]) }
-            for item in store.tasks { try? store.delete(item.id, by: "test") }
-            for suggestion in store.suggestions { store.skip(suggestion.id) }
+            for suggestion in store.suggestions { try? store.remove(suggestion.id, note: nil) }
             return tasksSnapshot()
         case ("POST", "/test/tasks/suggest"):
             return suggestTasks(body)
         case ("POST", "/test/tasks/accept-all"):
             guard let store = tasks else { return Self.encode(["ok": false, "error": "no task store"]) }
-            // The Tasks tab's Add all. The suggestions bubble has no buttons.
-            store.acceptAll()
+            // Marks every inbox item done. The suggestions bubble has no buttons.
+            for suggestion in store.suggestions { try? store.done(suggestion.id) }
             return tasksSnapshot()
         case ("POST", "/test/remote/code"):
             guard let remote else { return Self.encode(["ok": false, "error": "no remote API"]) }
@@ -506,7 +505,6 @@ final class TestControl {
             case .thread(let id): job = "thread:\(id)"
             case .meeting(let folder, _): job = "meeting:\(folder.path)"
             case .automation(let id, _, _, _): job = "automation:\(id)"
-            case .tasks: job = "tasks"
             case .screen: job = "screen"
             case .merge(let entity, _): job = "merge:\(entity)"
             case .resort: job = "resort"
@@ -616,11 +614,6 @@ final class TestControl {
         guard let store = tasks else { return Self.encode(["ok": false, "error": "no task store"]) }
         return Self.encode([
             "ok": true,
-            "tasks": store.ordered.map { item -> [String: Any] in
-                var object = TaskJSON.json(item)
-                object["history"] = store.history(item.id).map(TaskJSON.json)
-                return object
-            },
             "suggestions": store.suggestions.map(Self.json),
         ])
     }
@@ -650,7 +643,6 @@ final class TestControl {
     static func json(_ brief: Brief) -> [String: Any] {
         func target(_ t: Brief.Target) -> [String: Any] {
             switch t {
-            case .task(let id): return ["type": "task", "id": id]
             case .session(let id, let workspace, let bundleID, let iterm):
                 return ["type": "session", "id": id, "workspace": workspace ?? "", "bundleID": bundleID ?? "", "iterm": iterm ?? ""]
             case .alert(let id, let url): return ["type": "alert", "id": id, "url": url?.absoluteString ?? ""]
@@ -670,9 +662,6 @@ final class TestControl {
                                      "meeting": suggestion.meeting?.path ?? NSNull(), "url": suggestion.url?.absoluteString ?? NSNull(),
                                      "waiting_on": suggestion.waitingOn ?? NSNull()]
         if case .automation(let id, let name) = suggestion.origin { object["automation"] = ["id": id, "name": name] }
-        if suggestion.origin == .taskScan { object["origin"] = "task-scan" }
-        if let update = suggestion.update { object["update"] = ["task": update.target, "summary": update.summary] }
-        if let clarify = TaskJSON.json(suggestion)["clarify"] { object["clarify"] = clarify }
         return object
     }
 

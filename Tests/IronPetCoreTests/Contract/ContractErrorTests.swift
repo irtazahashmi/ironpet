@@ -23,7 +23,7 @@ final class ContractErrorTests: XCTestCase {
         let noMethod = try await response(#"{"jsonrpc":"2.0","id":4}"#, rig)
         XCTAssertEqual(noMethod.id, .null)
         XCTAssertEqual(noMethod.error?.code, -32600)
-        let oldVersion = try await response(#"{"jsonrpc":"1.0","id":5,"method":"tasks.list"}"#, rig)
+        let oldVersion = try await response(#"{"jsonrpc":"1.0","id":5,"method":"inbox.list"}"#, rig)
         XCTAssertEqual(oldVersion.id, .int(5))
         XCTAssertEqual(oldVersion.error?.code, -32600)
     }
@@ -95,9 +95,9 @@ final class ContractErrorTests: XCTestCase {
             XCTAssertEqual(note.method, kind.rawValue)
             XCTAssertEqual(note.params, .object(["seq": .int(7), "at": .string("2026-11-06T21:20:00Z"), "id": .string("abc")]))
         }
-        let bare = RPCDispatcher.notification(for: APIEvent(seq: 8, at: at, kind: .tasksChanged, id: nil))
+        let bare = RPCDispatcher.notification(for: APIEvent(seq: 8, at: at, kind: .agentsChanged, id: nil))
         XCTAssertEqual(bare.params, .object(["seq": .int(8), "at": .string("2026-11-06T21:20:00Z")]))
         let line = String(decoding: RPCDispatcher.encode(bare), as: UTF8.self)
-        XCTAssertEqual(line, #"{"jsonrpc":"2.0","method":"tasks.changed","params":{"at":"2026-11-06T21:20:00Z","seq":8}}"#)
+        XCTAssertEqual(line, #"{"jsonrpc":"2.0","method":"agents.changed","params":{"at":"2026-11-06T21:20:00Z","seq":8}}"#)
     }
 }

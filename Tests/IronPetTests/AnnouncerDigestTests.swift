@@ -29,9 +29,8 @@ final class AnnouncerDigestTests: XCTestCase {
         XCTAssertEqual(text([event(.alertOpened, "a"), event(.alertOpened, "b"), event(.alertOpened, "c")]), "3 new alerts")
         XCTAssertEqual(text([event(.alertResolved, "a", title: "Fix login", detail: "irtaza/ironpet #84", extra: ["label": "CI failed"])]),
                        "Cleared: CI failed: irtaza/ironpet #84")
-        XCTAssertEqual(text([event(.taskDue, "t", title: "Renew the domain")]), "Task due: Renew the domain")
-        XCTAssertEqual(text([event(.taskDue, "t"), event(.taskDue, "u")]), "2 tasks due")
-        XCTAssertEqual(text([event(.taskSuggested, "a"), event(.taskSuggested, "b"), event(.taskSuggested, "c")]), "3 suggested tasks")
+        XCTAssertEqual(text([event(.taskSuggested, "a", title: "Send the deck")]), "New in your inbox: Send the deck")
+        XCTAssertEqual(text([event(.taskSuggested, "a"), event(.taskSuggested, "b"), event(.taskSuggested, "c")]), "3 new inbox items")
         XCTAssertEqual(text([event(.meetingSummary, "/m/summary.md", title: "2026-11-17 10-00 Standup")]),
                        "Meeting summary ready: 2026-11-17 10-00 Standup")
         XCTAssertEqual(text([event(.chatFinished, "chat", title: "Ghost finished your task")]), "Ghost finished your task")
@@ -42,14 +41,14 @@ final class AnnouncerDigestTests: XCTestCase {
     }
 
     func testAtMostFiveLinesWithTheRestCounted() {
-        let kinds: [ActivityEvent.Kind] = [.sessionNeedsInput, .sessionFailed, .alertOpened, .sessionDone, .taskDue, .taskSuggested, .meetingSummary]
+        let kinds: [ActivityEvent.Kind] = [.sessionNeedsInput, .sessionFailed, .alertOpened, .sessionDone, .taskSuggested, .meetingSummary]
         var events = kinds.map { event($0, $0.rawValue) }
         events.append(event(.taskSuggested, "second"))
         let digest = ActivityDigest.build(events: events, window: window)
         let bubble = Announcer.digestBubble(digest, id: "welcome-back", title: "Welcome back", subtitle: nil, petName: "Ghost",
                                             open: { _ in }, showAll: {})
         XCTAssertEqual(bubble.lines.count, 5)
-        XCTAssertEqual(bubble.lines.last?.text, "and 4 more", "task due, two suggestions and the meeting")
+        XCTAssertEqual(bubble.lines.last?.text, "and 3 more", "two suggestions and the meeting")
         let fits = Announcer.digestBubble(ActivityDigest.build(events: Array(events.prefix(5)), window: window), id: "x", title: "t",
                                           subtitle: nil, petName: "Ghost", open: { _ in }, showAll: {})
         XCTAssertEqual(fits.lines.count, 5)

@@ -41,7 +41,7 @@ final class ContractRig {
                                         items: [], agent: "claude", agentId: Self.secondAgentID))
         }
         let now = { ContractRig.epoch }
-        let tasks = TaskStore(database: Self.memoryDatabase(), now: now, keepDoneDays: { 30 })
+        let tasks = TaskStore(database: Self.memoryDatabase(), now: now)
         let paths = AutomationPaths(file: directory.appendingPathComponent("automations.json"), directory: directory.appendingPathComponent("automations"))
         let store = AutomationStore(paths: paths, defaults: { [] }, watch: false)
         let engine = AutomationEngine(env: AutomationEngine.Environment(now: now, calendar: Self.calendar))

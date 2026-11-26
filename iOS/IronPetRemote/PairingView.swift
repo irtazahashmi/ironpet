@@ -55,7 +55,7 @@ struct PairingView: View {
             Text("Your Mac's pet, on your phone")
                 .font(.title2.weight(.semibold))
                 .multilineTextAlignment(.center)
-            Text("Pair once, then check moods, chat, tasks and alerts from anywhere on your network.")
+            Text("Pair once, then check moods, chat, your inbox and alerts from anywhere on your network.")
                 .font(.subheadline)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)

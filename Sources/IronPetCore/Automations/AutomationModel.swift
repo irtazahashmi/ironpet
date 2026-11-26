@@ -266,7 +266,7 @@ package struct Automation: Codable, Equatable, Identifiable {
     /// (`AutomationDefaults.nodeLevelIDs`).
     package var agentId: String?
 
-    /// The owning agent's id, or nil for a node-level automation (task review, task scan, morning brief, day recap, mail and calendar),
+    /// The owning agent's id, or nil for a node-level automation (morning brief, day recap, mail and calendar),
     /// which no agent owns. A missing `agentId` is agent 1.
     package var ownerAgentID: String? {
         AutomationDefaults.nodeLevelIDs.contains(id) ? nil : AgentOwner.id(agentId)

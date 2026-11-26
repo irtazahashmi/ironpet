@@ -14,17 +14,17 @@ final class ChangeSignalStoreTests: XCTestCase {
     }
 
     // S3
-    func testTaskStoreAndTasksAPI() throws {
+    func testInboxStoreAndTasksAPI() throws {
         let store = TaskStore(database: APITestSupport.memoryDatabase())
         let api = TasksAPI(store: store)
         var storeCount = 0, apiCount = 0, titlesWhenFired: [Int] = []
-        let a = store.changes.observe { storeCount += 1; titlesWhenFired.append(store.tasks.count) }
+        let a = store.changes.observe { storeCount += 1; titlesWhenFired.append(store.suggestions.count) }
         let b = api.changes.observe { apiCount += 1 }
-        _ = try store.create(title: "Write the report", source: .user, by: "user")
+        store.suggest([("Write the report", nil, nil)], meeting: URL(fileURLWithPath: "/tmp/meetings/m"))
         XCTAssertGreaterThan(storeCount, 0)
         XCTAssertEqual(apiCount, storeCount, "the facade forwards every store change")
-        XCTAssertEqual(titlesWhenFired.first, 0, "the signal fires before the task is in the list")
-        XCTAssertEqual(api.items.count, 1)
+        XCTAssertEqual(titlesWhenFired.first, 0, "the signal fires before the item is in the list")
+        XCTAssertEqual(api.suggestions.count, 1)
         withExtendedLifetime((a, b)) {}
     }
 
@@ -142,7 +142,7 @@ final class ChangeSignalStoreTests: XCTestCase {
         let api = TasksAPI(store: store)
         var fired = 0
         let subscription = api.objectWillChange.sink { fired += 1 }
-        _ = try? store.create(title: "One", source: .user, by: "user")
+        store.suggest([("One", nil, nil)], meeting: URL(fileURLWithPath: "/tmp/meetings/m"))
         XCTAssertGreaterThan(fired, 0)
         withExtendedLifetime(subscription) {}
     }

@@ -40,21 +40,16 @@ package struct RemoteFailure: Error, Equatable {
     }
 }
 
-/// The task and suggestion routes, as calls on `IronPetAPI`. They take JSON objects with the same keys as the MCP tools and the
-/// `IronPet tasks` command (snake_case, ISO 8601 dates), and answer with the `IronPetKit` types the phone decodes. The device is the author, so each task event says `remote:<device id>`.
+/// The inbox routes, as calls on `IronPetAPI`. They answer with the `IronPetKit` types the phone decodes. The route paths keep the
+/// `suggestions` name, so a phone and a Mac that are on different versions still reach each other: `accept` marks an item done and
+/// `reject` removes it.
 @MainActor
 package struct RemoteTasks {
-    package init(api: IronPetAPI, by: String, ledger: RemoteTaskLedger? = nil) {
+    package init(api: IronPetAPI) {
         self.api = api
-        self.by = by
-        self.ledger = ledger ?? RemoteTaskLedger()
     }
 
     package let api: IronPetAPI
-    /// `remote:<device id>`, written to the history of every change.
-    package let by: String
-    /// Dedupes the changes that carry a `client_id`. The server shares one across requests.
-    package let ledger: RemoteTaskLedger
 
     private var tasks: TasksAPI { api.tasks }
 
@@ -62,161 +57,34 @@ package struct RemoteTasks {
         if let reason = tasks.unavailable { throw RemoteFailure(status: 503, code: "unavailable", message: DatabaseNotice.toolError(reason)) }
     }
 
-    // MARK: Tasks
-
-    /// A task in a single-task answer (get, create, update, close, accept). No phone asks for `someday` there yet, and one built
-    /// before it cannot decode it, so it goes out as `backlog`; the task on the Mac keeps its status.
-    static func single(_ item: TaskItem) -> RemoteTask {
-        var task = RemoteTask(item)
-        if task.status == .someday { task.status = .backlog }
-        return task
-    }
-
-    /// `status` (comma separated or repeated), `include_done`, `include_someday` and `label` (`key:value`, repeated).
-    package func list(query: [String: [String]]) throws -> [String: Any] {
-        try available()
-        var request = TaskListRequest()
-        let given: [String] = query["status"] ?? []
-        var statuses: [String] = []
-        for value in given { statuses += value.split(separator: ",").map(String.init) }
-        if !statuses.isEmpty { request.statuses = try statuses.map { try TaskValidator.status($0) } }
-        request.includeDone = ["1", "true"].contains(query["include_done"]?.first ?? "")
-        var labels: [String: Any] = [:]
-        for pair in query["label"] ?? [] {
-            guard let colon = pair.firstIndex(of: ":") else { throw RemoteFailure.invalid("label must be key:value") }
-            labels[String(pair[..<colon])] = String(pair[pair.index(after: colon)...])
-        }
-        request.labels = try TaskValidator.labels(labels)
-        // A phone built before `someday` existed fails to decode the whole list when one task has it, so it is sent only
-        // to a client that asks (`include_someday`) or names the status.
-        let someday = ["1", "true"].contains(query["include_someday"]?.first ?? "") || request.statuses?.contains(.someday) == true
-        let listed = tasks.list(request).filter { someday || $0.status != .someday }
-        return RemoteWire.object(TaskListResponse(tasks: listed.map { RemoteTask($0) }))
-    }
-
-    package func get(_ id: String) throws -> [String: Any] {
-        try available()
-        let detail = try tasks.get(id)
-        return RemoteWire.object(RemoteTaskDetail(task: Self.single(detail.task), history: detail.history.map { RemoteTaskEvent($0) }))
-    }
-
-    /// The phone's id for one change. A change sent twice with the same id applies once and answers the same both times.
-    private func clientID(_ args: [String: Any]) throws -> String? {
-        guard let raw = args["client_id"], !(raw is NSNull) else { return nil }
-        guard let text = raw as? String else { throw RemoteFailure.invalid("client_id must be a string") }
-        return text
-    }
-
-    /// `base_updated` is the `updated` time of the copy the phone edited. When the task changed on the Mac since, the change is refused
-    /// with 409 and the phone decides field by field what still applies. Times compare to the second, the precision of the wire.
-    private func checkBase(_ args: [String: Any], against task: TaskItem) throws {
-        guard let raw = args["base_updated"], !(raw is NSNull) else { return }
-        guard let text = raw as? String, let base = Self.time(text) else { throw RemoteFailure.invalid("base_updated must be an ISO 8601 time") }
-        if Int(base.timeIntervalSince1970) != Int(task.updated.timeIntervalSince1970) {
-            throw RemoteFailure(status: 409, code: APIError.Code.conflict.rawValue, message: "the task changed on the Mac since the phone read it")
-        }
-    }
-
-    private static func time(_ text: String) -> Date? {
-        if let date = ISO8601DateFormatter().date(from: text) { return date }
-        let fractional = ISO8601DateFormatter()
-        fractional.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
-        return fractional.date(from: text)
-    }
-
-    package func create(_ args: [String: Any]) throws -> [String: Any] {
-        try available()
-        return try ledger.once(device: by, clientID: try clientID(args)) { try createOnce(args) }
-    }
-
-    private func createOnce(_ args: [String: Any]) throws -> [String: Any] {
-        let status = try args["status"].map { $0 is NSNull ? TaskStatus.backlog : try TaskValidator.status($0) } ?? .backlog
-        let item = try tasks.create(CreateTaskRequest(
-            title: try TaskValidator.title(args["title"]), notes: try TaskValidator.notes(args["notes"]), status: status,
-            source: try TaskValidator.source(args["source"], default: .user), due: try TaskValidator.due(args["due"]),
-            links: try TaskValidator.links(args["links"]), waitingOn: try TaskValidator.waitingOn(args["waiting_on"]),
-            sourceRef: nil, labels: try TaskValidator.labels(args["labels"]), by: by))
-        return RemoteWire.object(Self.single(item))
-    }
-
-    package func update(_ id: String, _ args: [String: Any]) throws -> [String: Any] {
-        try available()
-        return try ledger.once(device: by, clientID: try clientID(args)) { try updateOnce(id, args) }
-    }
-
-    private func updateOnce(_ id: String, _ args: [String: Any]) throws -> [String: Any] {
-        let current = try tasks.get(id).task
-        try checkBase(args, against: current)
-        var request = UpdateTaskRequest(id: current.id, by: by)
-        request.title = try args["title"].map { try TaskValidator.title($0) }
-        request.notes = try args["notes"].map { try TaskValidator.notes($0) }
-        request.status = try args["status"].map { try TaskValidator.status($0) }
-        if args.keys.contains("due") {
-            request.due = try TaskValidator.due(args["due"])
-            request.clearDue = request.due == nil
-        }
-        request.links = try args["links"].map { try TaskValidator.links($0) }
-        request.labels = try TaskValidator.labels(args["labels"])
-        request.removeLabels = try TaskValidator.labelKeys(args["remove_labels"])
-        if args.keys.contains("waiting_on") { request.waitingOn = try TaskValidator.waitingOn(args["waiting_on"]) ?? "" }
-        request.note = try args["note"].map { try TaskValidator.notes($0) }
-        return RemoteWire.object(Self.single(try tasks.update(request)))
-    }
-
-    /// Closing needs a note that says what shows the task is done, as it does for an agent.
-    package func close(_ id: String, _ args: [String: Any]) throws -> [String: Any] {
-        try available()
-        return try ledger.once(device: by, clientID: try clientID(args)) { try closeOnce(id, args) }
-    }
-
-    private func closeOnce(_ id: String, _ args: [String: Any]) throws -> [String: Any] {
-        let target = try tasks.get(id).task
-        try checkBase(args, against: target)
-        let note = try TaskJSON.requiredNote(args["note"], for: "say what shows the task is done")
-        return RemoteWire.object(Self.single(try tasks.close(CloseTaskRequest(id: target.id, note: note, by: by))))
-    }
-
-    package func delete(_ id: String) throws -> [String: Any] {
-        try available()
-        let item = try tasks.get(id).task
-        try tasks.delete(DeleteTaskRequest(id: item.id, by: by))
-        return RemoteWire.object(RemoteDeleted(deleted: item.id))
-    }
-
-    // MARK: Quick filters
-
-    /// The saved filters in chip order. They live in `config.json`, so they are served even when the task database is unavailable.
-    package func filters() -> [String: Any] {
-        RemoteWire.object(QuickFilterListResponse(filters: tasks.quickFilters))
-    }
-
-    /// Removing is the one change the phone makes itself. Adding and editing go through the chat agent.
-    package func deleteFilter(_ id: String) throws -> [String: Any] {
-        try tasks.deleteQuickFilter(id)
-        return RemoteWire.object(RemoteDeleted(deleted: id))
-    }
-
-    // MARK: Suggestions
-
     package func suggestions() throws -> [String: Any] {
         try available()
         return RemoteWire.object(SuggestionListResponse(suggestions: tasks.suggestions.map { RemoteSuggestion($0) }))
     }
 
-    package func accept(_ id: String, _ args: [String: Any]) throws -> [String: Any] {
+    /// Marks the item done. It leaves the list on the Mac and on every phone.
+    package func accept(_ id: String) throws -> [String: Any] {
         try available()
-        var request = AcceptSuggestionRequest(id: id, by: by)
-        if let raw = args["title"], !(raw is NSNull) { request.title = try TaskValidator.title(raw) }
-        if let raw = args["due"], !(raw is NSNull) { request.due = try TaskValidator.due(raw) }
-        if let raw = args["notes"], !(raw is NSNull) { request.notes = try TaskValidator.notes(raw) }
-        if let raw = args["status"], !(raw is NSNull) { request.status = try TaskValidator.status(raw) }
-        request.note = try args["note"].map { try TaskValidator.notes($0) }
-        return RemoteWire.object(Self.single(try tasks.accept(request)))
+        try tasks.done(id)
+        return RemoteWire.object(RemoteDone(done: id))
     }
 
     package func reject(_ id: String, _ args: [String: Any]) throws -> [String: Any] {
         try available()
-        try tasks.reject(RejectSuggestionRequest(id: id, note: try args["note"].map { try TaskValidator.notes($0) }, by: by))
+        try tasks.remove(RemoveSuggestionRequest(id: id, note: try args["note"].map { try TaskValidator.notes($0) }))
         return RemoteWire.object(RemoteRejected(rejected: id))
+    }
+}
+
+extension RemoteSuggestion {
+    package init(_ suggestion: TaskSuggestion) {
+        let origin: String, detail: String
+        switch suggestion.origin {
+        case .meeting(let folder): origin = "meeting"; detail = folder.path
+        case .automation(let id, let name): origin = "automation"; detail = "\(name) (\(id))"
+        }
+        self.init(id: suggestion.id, title: suggestion.title, created: suggestion.created, origin: origin, originDetail: detail, due: suggestion.due,
+                  notes: suggestion.notes, url: suggestion.url?.absoluteString, waitingOn: suggestion.waitingOn,
+                  sourceRef: suggestion.sourceRef.map { RemoteJSON(reference: $0) })
     }
 }

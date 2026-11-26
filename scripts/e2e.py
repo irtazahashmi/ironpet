@@ -496,7 +496,7 @@ class RestoredConfig:
 
 def background_permission():
     """A job whose agent asks raises an alert with the job and the command. Nobody answers, so after jobs.permissionTimeoutMinutes
-    (set to its 1 minute minimum, the shortest the app allows) the alert goes, the agent is rejected and the job's task notes it.
+    (set to its 1 minute minimum, the shortest the app allows) the alert goes and the agent is rejected.
     No test endpoint lists the buttons of the alert's bubble, so the agent's options are checked on the chat card above."""
     with RestoredConfig():
         relaunch(test_mode=True)
@@ -534,11 +534,9 @@ def background_permission():
             return
         gone = wait_for(lambda: alert() is None, 120)
         waited = time.time() - asked_at
-        task = next((t for t in call("GET", "/test/tasks")["tasks"] if t.get("source_ref") == job_id), {})
-        noted = [e["detail"] for e in task.get("history", []) if "permission timed out" in e["detail"]]
-        record("S10 with nobody answering, the alert clears after the timeout, the agent is rejected and the job notes it",
-               bool(gone) and waited >= 50 and os.path.isdir(os.path.join(WS, "junk")) and bool(noted),
-               f"alert_cleared={bool(gone)} after={waited:.0f}s junk_kept={os.path.isdir(os.path.join(WS, 'junk'))} notes={noted}")
+        record("S10 with nobody answering, the alert clears after the timeout, the agent is rejected",
+               bool(gone) and waited >= 50 and os.path.isdir(os.path.join(WS, "junk")),
+               f"alert_cleared={bool(gone)} after={waited:.0f}s junk_kept={os.path.isdir(os.path.join(WS, 'junk'))}")
         call("POST", "/mcp", {"jsonrpc": "2.0", "id": 2, "method": "tools/call", "params": {"name": "jobs_stop", "arguments": {"id": job_id}}})
     relaunch(test_mode=True)
 
@@ -1239,7 +1237,7 @@ def scenario_voice_mode():
     """Voice mode with a silent microphone and voice: the conversation loop, goodbye, Wispr mode, and one real
     front-desk turn that starts a voice job which "cancel that" stops inside its hold, so the job's agent never runs."""
     threads = f"{ROOT}/threads"
-    with PreservedUserState(), PreservedTasks():
+    with PreservedUserState(), PreservedDatabase():
         before = set(os.listdir(threads)) if os.path.isdir(threads) else set()
         try:
             voice_mode_checks()
@@ -1637,37 +1635,21 @@ def scenario_meeting_system_audio():
             set_dark_mode(dark)
 
 
-# MARK: tasks
+# MARK: database backup
 
-TASKS_AGENT = os.environ.get("IRONPET_E2E_AGENT", "cursor")
-TASKS_DB = f"{ROOT}/ironpet.db"
-TASKS_DB_BACKUP = "/tmp/ironpet-e2e-tasks.db"
-TASKS_MEETING = "/tmp/ironpet-e2e-meeting"
-TASKS_SUMMARY = """# Weekly sync
-
-## Summary
-We went through the release.
-
-## Decisions
-- Ship on Friday.
-
-## Action items
-- [ ] Send the invoice to finance (owner: Me, due: 2026-11-20)
-- [ ] Update the changelog (owner: Me)
-- [ ] Prepare two more screenshots (owner: Them)
-- [ ] review PR 42 (owner: Me)
-"""
+APP_DB = f"{ROOT}/ironpet.db"
+APP_DB_BACKUP = "/tmp/ironpet-e2e-db.db"
 
 
-class PreservedTasks:
-    """Backs up ironpet.db (tasks share it with automation state and usage) and puts it back on exit, because the
-    scenario deletes every task. sqlite3's online backup is consistent while the app has the database open in WAL mode."""
+class PreservedDatabase:
+    """Backs up ironpet.db (it holds automation state, usage and the Inbox) and puts it back on exit, because the
+    scenario writes rows to it. sqlite3's online backup is consistent while the app has the database open in WAL mode."""
 
     def __enter__(self):
         import sqlite3
-        self.existed = os.path.exists(TASKS_DB)
+        self.existed = os.path.exists(APP_DB)
         if self.existed:
-            source, target = sqlite3.connect(TASKS_DB), sqlite3.connect(TASKS_DB_BACKUP)
+            source, target = sqlite3.connect(APP_DB), sqlite3.connect(APP_DB_BACKUP)
             source.backup(target)
             source.close()
             target.close()
@@ -1677,111 +1659,12 @@ class PreservedTasks:
         subprocess.run(["pkill", "-f", f"{APP}/Contents/MacOS/IronPet"])
         time.sleep(1.5)
         for suffix in ("", "-wal", "-shm"):
-            if os.path.exists(TASKS_DB + suffix):
-                os.remove(TASKS_DB + suffix)
+            if os.path.exists(APP_DB + suffix):
+                os.remove(APP_DB + suffix)
         if self.existed:
-            shutil.move(TASKS_DB_BACKUP, TASKS_DB)
-        shutil.rmtree(TASKS_MEETING, ignore_errors=True)
+            shutil.move(APP_DB_BACKUP, APP_DB)
         relaunch(test_mode=True)
         return False
-
-
-def tasks_state():
-    return call("GET", "/test/tasks")
-
-
-def run_task_turn(prompt, new_chat):
-    """One chat turn. Cards for the task tools are allowed, anything else is denied."""
-    body = {"prompt": prompt}
-    if new_chat:
-        body.update({"newChat": True, "backend": TASKS_AGENT, "workspace": WS})
-    call("POST", "/test/chat", body)
-    cards = []
-    c = wait_approval_or_end(240)
-    while c and c["approvals"]:
-        title = c["approvals"][0]["title"]
-        cards.append(title)
-        call("POST", "/test/approve", {"allow": "tasks" in title.lower()})
-        c = wait_approval_or_end(240)
-    return c, cards
-
-
-def scenario_tasks():
-    """Tasks: the chat agent creates and closes a task, the CLI adds one, meeting action items become suggestions."""
-    with PreservedTasks():
-        reset = call("POST", "/test/tasks/reset")
-        if not reset.get("ok"):
-            return record("Tasks: test endpoints answer", False, reset.get("error", ""))
-        record("Tasks: reset leaves no tasks or suggestions", not reset["tasks"] and not reset["suggestions"])
-
-        # Chat: create.
-        fresh_workspace()
-        end, cards = run_task_turn("Add a task to call the dentist tomorrow. Only create the task, nothing else.", new_chat=True)
-        tasks = tasks_state()["tasks"]
-        dentist = [t for t in tasks if "dentist" in t["title"].lower()]
-        record(f"Tasks: {TASKS_AGENT} creates one open task from chat",
-               end and end["state"] == "done" and len(tasks) == 1 and len(dentist) == 1 and dentist[0]["status"] != "done",
-               f"state={end and end['state']} cards={cards} tasks={[(t['title'], t['status'], t['source']) for t in tasks]}")
-
-        # Chat: close, in the same thread.
-        end, cards = run_task_turn("I called the dentist, appointment is Tuesday at 21:00. Close that task.", new_chat=False)
-        closed = next((t for t in tasks_state()["tasks"] if dentist and t["id"] == dentist[0]["id"]), None)
-        kinds = [e["kind"] for e in (closed or {}).get("history", [])]
-        record("Tasks: the agent closes it with a note in its history",
-               bool(closed) and closed["status"] == "done" and ("closed" in kinds or "note" in kinds),
-               f"state={end and end['state']} cards={cards} status={closed and closed['status']} history={kinds}")
-
-        # CLI against the running app.
-        env = {**os.environ, "IRONPET_ROOT": ROOT}
-        cli = subprocess.run([f"{APP}/Contents/MacOS/IronPet", "tasks", "add", "Review PR 42", "--url", "https://example.com/pr/42",
-                              "--origin-kind", "pr", "--origin-ref", "https://example.com/pr/42", "--reason", "e2e check of the CLI"],
-                             capture_output=True, text=True, timeout=20, env=env)
-        try:
-            added = json.loads(cli.stdout)
-        except ValueError:
-            added = {}
-        listed = subprocess.run([f"{APP}/Contents/MacOS/IronPet", "tasks", "list"], capture_output=True, text=True, timeout=20, env=env)
-        task = next((t for t in tasks_state()["tasks"] if t["title"] == "Review PR 42"), None)
-        # The origin's kind becomes the task's source, and its ref and reason the source reference.
-        record("Tasks: `IronPet tasks add` creates a task with its origin and URL",
-               cli.returncode == 0 and added.get("source") == "pr" and bool(task) and task["source"] == "pr"
-               and task.get("source_ref", {}).get("ref") == "https://example.com/pr/42"
-               and any(l["kind"] == "url" and l["ref"] == "https://example.com/pr/42" for l in task.get("links", [])),
-               f"exit={cli.returncode} source={task and task['source']} source_ref={task and task.get('source_ref')} err={cli.stderr.strip()[:120]!r}")
-        record("Tasks: `IronPet tasks list` shows it", listed.returncode == 0 and "Review PR 42" in listed.stdout,
-               f"exit={listed.returncode} err={listed.stderr.strip()[:120]!r}")
-
-        # Meeting action items: the user's and the ones they wait on, and none that is already a task.
-        os.makedirs(TASKS_MEETING, exist_ok=True)
-        open(f"{TASKS_MEETING}/summary.md", "w").write(TASKS_SUMMARY)
-        suggested = call("POST", "/test/tasks/suggest", {"summary": TASKS_SUMMARY, "meeting": TASKS_MEETING})
-        created = {s["title"]: s for s in suggested.get("created", [])}
-        record("Tasks: a summary suggests owned items that are not tasks yet, others' as waiting on",
-               set(created) == {"Send the invoice to finance", "Update the changelog", "Prepare two more screenshots"}
-               and created["Send the invoice to finance"]["due"] == "2026-11-20"
-               and created["Send the invoice to finance"]["waiting_on"] is None
-               and created["Prepare two more screenshots"]["waiting_on"] == "Them"
-               and all(s["meeting"] == TASKS_MEETING for s in created.values()),
-               f"created={list(created)} suggestions={[s['title'] for s in suggested.get('suggestions', [])]}")
-        bubble = next((b for b in suggested.get("bubbles", []) if b["id"] == "task-suggestions" and not b["buttons"]), None)
-        record("Tasks: the app's summary path shows one info bubble without buttons", suggested.get("appPath") and bool(bubble),
-               f"appPath={suggested.get('appPath')} bubbles={[(b['title'], b['buttons']) for b in suggested.get('bubbles', [])]}")
-
-        accepted = call("POST", "/test/tasks/accept-all")
-        from_meeting = [t for t in accepted["tasks"] if t["title"] in created]
-        record("Tasks: Add all makes backlog tasks from the meeting, linked to its folder",
-               len(from_meeting) == 3 and not accepted["suggestions"]
-               and next((t for t in from_meeting if t["title"] == "Prepare two more screenshots"), {}).get("waiting_on") == "Them"
-               and all(t["status"] == "backlog" and t["source"] == "meeting"
-                       and any(l["kind"] == "file" and l["ref"] == TASKS_MEETING for l in t.get("links", [])) for t in from_meeting),
-               f"tasks={[(t['title'], t['status'], t['source']) for t in from_meeting]}")
-
-        call("POST", "/test/tasks/reset")
-
-
-# `tasks add` needs an origin and `tasks done` a note (TaskStore.call).
-E2E_ORIGIN = ("--origin-kind", "user", "--origin-ref", "e2e", "--reason", "Added by scripts/e2e.py")
-E2E_DONE_NOTE = ("--note", "Closed by scripts/e2e.py")
 
 
 # MARK: screen capture
@@ -1871,7 +1754,7 @@ def scenario_welcome_back():
     """Welcome back: two agents finish while the user is away (a stand-in idle time, no real waiting), one summary
     bubble replaces their bubbles on return; switched off, nothing is summarized. Runs no agent; puts config.json and
     ironpet.db back, so the fake sessions leave no rows in the activity log."""
-    with PreservedUserState(), PreservedTasks():
+    with PreservedUserState(), PreservedDatabase():
         relaunch(test_mode=True)
         state = call("POST", "/test/presence", {"idle": None, "tick": True})
         if not state.get("ok"):
@@ -1971,14 +1854,13 @@ def fired_count(automation):
 
 
 def scenario_brief():
-    """Daily brief: built from local data only (no agent), Run now shows the bubble, Open shows Today, rows open their task
-    or meeting, the recap lists a closed task, and a scheduled slot fires once."""
+    """Daily brief: built from local data only (no agent), Run now shows the bubble, Open shows Today, rows open their
+    meeting, and a scheduled slot fires once."""
     # A fresh launch, so the automation test clock starts at the real time.
     relaunch(test_mode=True)
     stamp = time.strftime("%Y-%m-%d-%H%M", time.localtime(time.time() - 120))
     meeting = f"{ROOT}/meetings/{stamp}-97"
-    with PreservedTasks(), PreservedAutomations(meeting):
-        call("POST", "/test/tasks/reset")
+    with PreservedDatabase(), PreservedAutomations(meeting):
         for automation in ("morning-brief", "day-recap"):
             code, detail = ironpet_cli("automations", "get", automation)
             detail = detail or {}
@@ -1989,21 +1871,15 @@ def scenario_brief():
         state = wait_for(lambda: (lambda w: w if not w.get("todayShown") else None)(call("GET", "/test/window")), 5) or call("GET", "/test/window")
         record("Brief: Today is not in the sidebar while both are off", not state.get("todayShown"), f"window={state}")
 
-        yesterday = time.strftime("%Y-%m-%d", time.localtime(time.time() - 86_400))
-        _, late = ironpet_cli("tasks", "add", "E2E overdue task", "--due", yesterday, *E2E_ORIGIN)
-        _, ask = ironpet_cli("tasks", "add", "E2E needs you task", "--status", "needs_you", *E2E_ORIGIN)
-        late_id, ask_id = (late or {}).get("id", ""), (ask or {}).get("id", "")
         os.makedirs(meeting, exist_ok=True)
         open(f"{meeting}/summary.md", "w").write(BRIEF_SUMMARY)
         folder = os.path.basename(meeting)
 
         brief = call("POST", "/test/digest", {"kind": "brief"})
-        due = [i["target"].get("id") for i in brief_items(brief, "due")]
-        needs = [i["target"].get("id") for i in brief_items(brief, "needs")]
         meeting_items = [i for i in brief_items(brief, "meetings") if i["target"].get("id") == folder]
-        record("Brief: it lists the overdue task, the task that needs you and only my open action item",
-               late_id in due and ask_id in needs and [i["title"] for i in meeting_items] == ["Send the e2e brief notes"],
-               f"due={due} needs={needs} meeting={[i['title'] for i in meeting_items]} lines={brief.get('lines')}")
+        record("Brief: it lists only my open action item",
+               [i["title"] for i in meeting_items] == ["Send the e2e brief notes"],
+               f"meeting={[i['title'] for i in meeting_items]} lines={brief.get('lines')}")
 
         ironpet_cli("automations", "resume", "morning-brief")
         state = wait_for(lambda: (lambda w: w if w.get("todayShown") else None)(call("GET", "/test/window")), 5) or {}
@@ -2011,8 +1887,8 @@ def scenario_brief():
 
         code, _ = ironpet_cli("automations", "run", "morning-brief")
         bubble = wait_for(lambda: brief_bubble("brief"), 5)
-        record("Brief: Run now shows the brief bubble with an Open button and the overdue line",
-               code == 0 and bool(bubble) and bubble["buttons"] == ["Open"] and "overdue" in bubble["body"],
+        record("Brief: Run now shows the brief bubble with an Open button",
+               code == 0 and bool(bubble) and bubble["buttons"] == ["Open"],
                f"exit={code} bubble={bubble}")
         shot("brief-bubble")
 
@@ -2022,19 +1898,8 @@ def scenario_brief():
                state.get("section") == "today" and state.get("briefKind") == "brief" and not brief_bubble("brief"), f"window={state}")
         shot("brief-today")
 
-        opened = call("POST", "/test/today/open", {"kind": "brief", "item": f"due:{late_id}"})
-        record("Brief: a task row opens the Tasks page on that task",
-               opened.get("ok") and opened.get("section") == "tasks" and opened.get("focusTask") in (late_id, ""), f"window={opened}")
         opened = call("POST", "/test/today/open", {"kind": "brief", "item": f"meeting:{folder}:0"})
         record("Brief: a meeting row opens Transcripts", opened.get("ok") and opened.get("section") == "transcripts", f"window={opened}")
-
-        ironpet_cli("tasks", "done", late_id, *E2E_DONE_NOTE)
-        recap = call("POST", "/test/digest", {"kind": "recap"})
-        closed = [i["target"].get("id") for i in brief_items(recap, "closed")]
-        held = [i["target"].get("id") for i in brief_items(recap, "meetings")]
-        record("Recap: it lists the task closed today and today's meeting, and ends with what is still open",
-               late_id in closed and folder in held and (recap.get("lines") or [""])[-1].startswith("Still open"),
-               f"closed={closed} meetings={held} lines={recap.get('lines')}")
 
         # A slot one minute ahead, reached by moving the automation clock: it fires once, and not again on the next tick.
         if time.localtime().tm_hour == 23 and time.localtime().tm_min >= 55:
@@ -2048,7 +1913,6 @@ def scenario_brief():
             call("POST", "/test/automations/advance", {"seconds": 30})
             record("Brief: a scheduled slot fires once", fired_count("morning-brief") == before + 1,
                    f"slot={slot} fired_before={before} fired_after={fired_count('morning-brief')}")
-        call("POST", "/test/tasks/reset")
 
 
 MEMORY_AGENT = os.environ.get("IRONPET_E2E_AGENT", "claude")
@@ -2057,7 +1921,7 @@ MEMORY_BACKUP = "/tmp/ironpet-e2e-memory"
 MEMORY_WORKTREE = "/tmp/ironpet-e2e-ws-worktree"
 
 
-class PreservedMemory(PreservedTasks):
+class PreservedMemory(PreservedDatabase):
     """Also backs up the memory folder and config.json, and puts them back after the app has quit, then rebuilds the notes' index."""
 
     def __enter__(self):
@@ -2172,7 +2036,7 @@ SCENARIOS = {"cursor": scenario_cursor, "cursor-session": scenario_cursor_sessio
              "notification": scenario_notification_approval, "mcp": scenario_mcp,
              "sentry": scenario_sentry_mcp, "setup": scenario_setup, "settings": scenario_settings,
              "voice": scenario_voice, "voice-mode": scenario_voice_mode, "voice-key": scenario_voice_key, "speech": scenario_speech, "meeting": scenario_meeting,
-             "meeting-system": scenario_meeting_system_audio, "tasks": scenario_tasks, "screen": scenario_screen,
+             "meeting-system": scenario_meeting_system_audio, "screen": scenario_screen,
              "welcome-back": scenario_welcome_back, "brief": scenario_brief, "memory": scenario_memory}
 
 # Need MCP servers signed in with cursor-agent: "mcp" a Langfuse MCP (its write is denied, so nothing is created),
@@ -2184,7 +2048,6 @@ SCENARIOS = {"cursor": scenario_cursor, "cursor-session": scenario_cursor_sessio
 # Screen & System Audio Recording granted to IronPet and plays a sentence with afplay.
 # "screen" feeds synthetic captures in and calls the screen_* MCP tools, so it reads no screen and starts no agent; it puts ironpet.db and
 # config.json back afterwards.
-# "tasks" runs two short turns on $IRONPET_E2E_AGENT (default cursor) and puts ironpet.db back afterwards.
 # "welcome-back" posts synthetic Claude hook events and a stand-in idle time, so it runs no agent; it puts config.json and ironpet.db back.
 # "brief" starts no agent; it puts ironpet.db and automations.json back afterwards.
 # "voice-mode" opens no microphone and plays no audio; it runs one front-desk turn on the chat's agent (its fastest model)

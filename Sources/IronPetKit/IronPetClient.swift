@@ -120,16 +120,6 @@ public final class IronPetClient: @unchecked Sendable {
         try decode(type, from: try await perform(request("GET", path, query: query)))
     }
 
-    private func send<T: Decodable>(_ type: T.Type, _ method: String, _ path: String, body: [String: String] = [:]) async throws -> T {
-        let data = try JSONSerialization.data(withJSONObject: body)
-        return try decode(type, from: try await perform(request(method, path, body: data)))
-    }
-
-    private func sendJSON<T: Decodable>(_ type: T.Type, _ method: String, _ path: String, body: [String: Any]) async throws -> T {
-        let data = try JSONSerialization.data(withJSONObject: body)
-        return try decode(type, from: try await perform(request(method, path, body: data)))
-    }
-
     // MARK: Pairing
 
     public func pair(_ body: PairRequest) async throws -> PairAccepted {
@@ -148,66 +138,19 @@ public final class IronPetClient: @unchecked Sendable {
     /// Unpairs this device on the Mac.
     public func revokeSelf() async throws { _ = try await perform(request("DELETE", APIPath.deviceMe)) }
 
-    // MARK: Tasks and suggestions
+    // MARK: Inbox
 
-    public func tasks(includeDone: Bool = true) async throws -> [RemoteTask] {
-        try await get(TaskListResponse.self, APIPath.tasks, query: includeDone ? [URLQueryItem(name: "include_done", value: "1")] : []).tasks
-    }
-
-    public func taskFilters() async throws -> [QuickFilter] { try await get(QuickFilterListResponse.self, APIPath.taskFilters).filters }
-
-    public func deleteTaskFilter(id: String) async throws { _ = try await perform(request("DELETE", APIPath.taskFilter(id))) }
-
-    public func task(id: String) async throws -> RemoteTaskDetail { try await get(RemoteTaskDetail.self, APIPath.task(id)) }
-
+    /// The inbox. A Mac older than this build answers its own list, and one that has no such route answers 404, which the caller shows as empty.
     public func suggestions() async throws -> [RemoteSuggestion] { try await get(SuggestionListResponse.self, APIPath.suggestions).suggestions }
 
-    public func acceptSuggestion(id: String) async throws -> RemoteTask { try await send(RemoteTask.self, "POST", APIPath.acceptSuggestion(id)) }
+    /// Marks the item done. The Mac answers with the item's id, or with the task an older Mac made of it. Neither is read.
+    public func acceptSuggestion(id: String) async throws {
+        _ = try await perform(request("POST", APIPath.acceptSuggestion(id), body: Data("{}".utf8)))
+    }
 
+    /// Removes the item.
     public func rejectSuggestion(id: String) async throws {
         _ = try await perform(request("POST", APIPath.rejectSuggestion(id), body: Data("{}".utf8)))
-    }
-
-    /// The three change calls take the phone's `clientID` for the change and `baseUpdated`, the `updated` time of the copy it edited.
-    /// The Mac applies a `clientID` once, and answers 409 when the task changed after `baseUpdated`. An older Mac ignores both.
-    public func closeTask(id: String, note: String, clientID: String? = nil, baseUpdated: Date? = nil) async throws -> RemoteTask {
-        try await sendJSON(RemoteTask.self, "POST", APIPath.closeTask(id), body: change(["note": note], clientID, baseUpdated))
-    }
-
-    public func addNote(id: String, note: String) async throws -> RemoteTask {
-        try await send(RemoteTask.self, "PATCH", APIPath.task(id), body: ["note": note])
-    }
-
-    public func setStatus(id: String, status: TaskStatus, note: String, clientID: String? = nil, baseUpdated: Date? = nil) async throws -> RemoteTask {
-        try await sendJSON(RemoteTask.self, "PATCH", APIPath.task(id), body: change(["status": status.rawValue, "note": note], clientID, baseUpdated))
-    }
-
-    /// Changes the title, the notes, or both. A nil field stays as it is.
-    public func editTask(id: String, title: String?, notes: String?, clientID: String? = nil, baseUpdated: Date? = nil) async throws -> RemoteTask {
-        var body: [String: Any] = [:]
-        if let title { body["title"] = title }
-        if let notes { body["notes"] = notes }
-        return try await sendJSON(RemoteTask.self, "PATCH", APIPath.task(id), body: change(body, clientID, baseUpdated))
-    }
-
-    public func createTask(title: String, notes: String = "", status: TaskStatus = .backlog, clientID: String? = nil) async throws -> RemoteTask {
-        try await sendJSON(RemoteTask.self, "POST", APIPath.tasks, body: change(["title": title, "notes": notes, "status": status.rawValue], clientID, nil))
-    }
-
-    private func change(_ fields: [String: Any], _ clientID: String?, _ baseUpdated: Date?) -> [String: Any] {
-        var body = fields
-        if let clientID { body["client_id"] = clientID }
-        if let baseUpdated { body["base_updated"] = ISO8601DateFormatter().string(from: baseUpdated) }
-        return body
-    }
-
-    /// Names who holds the task, or clears that with a nil or blank `name`. A `status` in the same call changes it in the same update.
-    /// The Mac has taken `waiting_on` on `PATCH /v1/tasks/:id` since the route was added, so an older Mac accepts this too.
-    public func setWaitingOn(id: String, name: String?, status: TaskStatus? = nil, note: String = "") async throws -> RemoteTask {
-        var body = ["waiting_on": name ?? ""]
-        if let status { body["status"] = status.rawValue }
-        if !note.isEmpty { body["note"] = note }
-        return try await send(RemoteTask.self, "PATCH", APIPath.task(id), body: body)
     }
 
     // MARK: Pet, bubbles, agents, alerts, today

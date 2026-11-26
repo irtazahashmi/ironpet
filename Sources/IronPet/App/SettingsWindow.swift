@@ -309,30 +309,6 @@ private struct GeneralSettings: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
-                Toggle("Remind me when a task is due", isOn: Binding(
-                    get: { store.config.tasks.dueReminders }, set: { on in store.update { $0.tasks.dueReminders = on } }))
-            } header: {
-                Text("Tasks")
-            } footer: {
-                Text("\(store.config.pet.name) says once when an open task is due today or overdue, with Done, Snooze and Open. Pause reminders holds these too.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section {
-                Toggle("Look for tasks in chats, meetings and the screen", isOn: Binding(
-                    get: { store.config.tasks.scan }, set: { on in store.update { $0.tasks.scan = on } }))
-                Stepper(value: Binding(get: { store.config.tasks.scanMinutes }, set: { value in store.update { $0.tasks.scanMinutes = value } }),
-                        in: Config.Tasks.scanMinutesRange, step: 15) {
-                    Text("Every \(store.config.tasks.scanMinutes) minutes")
-                }
-                .disabled(!store.config.tasks.scan)
-                Toggle("Also read the text captured from the screen", isOn: Binding(
-                    get: { store.config.tasks.scanScreen }, set: { on in store.update { $0.tasks.scanScreen = on } }))
-                    .disabled(!store.config.tasks.scan || !store.config.screenCapture.enabled)
-            } footer: {
-                Text("Each scan sends only what is new to the pet that already had it: a chat to its own pet, a meeting to the pet that summarized it. The pet can only answer. It suggests new tasks and changes to open tasks (done, who you wait on, a note), and nothing changes until you press Add or Accept in the Tasks section. The screen needs screen capture turned on. Add your own schedule under Automations if you want a different one.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
-            Section {
                 Picker("Open sessions in", selection: Binding(get: { store.config.openIn },
                                                               set: { value in store.update { $0.openIn = value } })) {
                     Text("Auto (the app that started the session)").tag(Editors.auto)
@@ -828,10 +804,10 @@ private struct MeetingSettings: View {
                 }
             }
             Section {
-                Toggle("Suggest action items as tasks", isOn: Binding(
+                Toggle("Add meeting action items to the Inbox", isOn: Binding(
                     get: { store.config.tasks.meetingSuggestions }, set: { on in store.update { $0.tasks.meetingSuggestions = on } }))
             } footer: {
-                Text("After a summary, \(store.config.pet.name) offers the items marked as yours, and the ones someone else owns as tasks you're waiting on. Nothing is added until you choose.")
+                Text("After a summary, \(store.config.pet.name) offers the items marked as yours as Inbox items. You mark each one done or remove it.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {

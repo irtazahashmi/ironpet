@@ -3,7 +3,6 @@ import SwiftUI
 import XCTest
 @testable import IronPet
 @testable import IronPetCore
-import enum IronPetKit.QuickFilterNode
 
 @MainActor
 final class ListScreenTests: XCTestCase {
@@ -57,24 +56,16 @@ final class ListScreenTests: XCTestCase {
         XCTAssertEqual(NotificationsModel.filter(items, query: "STAND").map(\.id), ["1"])
     }
 
-    func testTasksCombineTheQuickFilterAndTheSearch() {
-        let merge = QuickFilterNode.label(key: "merge", value: "auto")
+    func testInboxSearchLooksAtTheTitleAndTheNotes() {
         let now = Date()
-        func task(_ id: String, _ title: String, notes: String, labels: [String: String]) -> TaskItem {
-            TaskItem(id: id, title: title, notes: notes, status: .backlog, source: .chat, due: nil, links: [],
-                     created: now, updated: now, closed: nil, labels: labels)
-        }
-        let a = task("a", "Ship the release", notes: "tag it", labels: ["merge": "auto"])
-        let b = task("b", "Write docs", notes: "release notes", labels: [:])
-        XCTAssertTrue(TaskListView.matches(a, filter: nil, query: ""))
-        XCTAssertTrue(TaskListView.matches(a, filter: merge, query: "RELEASE"))
-        XCTAssertFalse(TaskListView.matches(b, filter: merge, query: "release"), "the search matches, the filter does not")
-        XCTAssertTrue(TaskListView.matches(b, filter: nil, query: "release"), "notes count as the description")
-        XCTAssertFalse(TaskListView.matches(a, filter: merge, query: "docs"), "the filter matches, the search does not")
+        let item = TaskSuggestion(id: "a", title: "Ship the release", notes: "tag it", origin: .meeting(URL(fileURLWithPath: "/m")), created: now)
+        XCTAssertTrue(ListSearch.matches("RELEASE", in: [item.title, item.notes]))
+        XCTAssertTrue(ListSearch.matches("tag", in: [item.title, item.notes]), "notes count as the description")
+        XCTAssertFalse(ListSearch.matches("docs", in: [item.title, item.notes]))
     }
 
     func testTodayDropsSectionsThatHaveNoMatchingItem() {
-        let items = [Brief.Item(id: "1", symbol: "checklist", title: "Pay rent", subtitle: nil, target: .task("1")),
+        let items = [Brief.Item(id: "1", symbol: "checklist", title: "Pay rent", subtitle: nil, target: .meeting("1")),
                      Brief.Item(id: "2", symbol: "bell", title: "CI failed", subtitle: "ironpet", target: .alert(id: "2", url: nil))]
         let sections = [Brief.Section(id: "s1", title: "Tasks", items: [items[0]]), Brief.Section(id: "s2", title: "Alerts", items: [items[1]])]
         XCTAssertEqual(TodayView.filter(sections, query: "ironpet").map(\.id), ["s2"])
@@ -156,7 +147,7 @@ final class ListScreenTests: XCTestCase {
     /// The file that defines each section's view. A new list section goes here, and fails until it builds on `ListScreen`.
     private static let sectionFiles: [IronPetSection: String] = [
         .agents: "Pet/WindowSections.swift", .alerts: "Pet/WindowSections.swift",
-        .notifications: "Notifications/NotificationsSection.swift", .tasks: "Pet/TaskListView.swift",
+        .notifications: "Notifications/NotificationsSection.swift", .inbox: "Pet/InboxView.swift",
         .transcripts: "Meeting/TranscriptsView.swift", .screen: "Capture/ScreenSection.swift", .actions: "Pet/WindowSections.swift",
         .automations: "App/AutomationsSettings.swift", .memory: "Pet/MemorySection.swift", .today: "Pet/TodayView.swift",
     ]
@@ -176,7 +167,5 @@ final class ListScreenTests: XCTestCase {
         }
         let window = try String(contentsOf: Self.sources.appendingPathComponent("Pet/IronPetWindow.swift"), encoding: .utf8)
         XCTAssertFalse(window.contains(".pageHeader(IronPetSection."), "the window wraps a section in its own header")
-        let tasks = try String(contentsOf: Self.sources.appendingPathComponent("Pet/TaskListView.swift"), encoding: .utf8)
-        XCTAssertFalse(tasks.contains("labelFilterBar"), "the label filter is back in the body")
     }
 }
