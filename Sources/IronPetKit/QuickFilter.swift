@@ -61,7 +61,8 @@ public indirect enum QuickFilterNode: Equatable, Sendable {
 
     public static let maxDepth = 8
     public static let maxNodes = 60
-    static let statuses = ["backlog", "in_progress", "needs_you", "done"]
+    // An older phone that cannot read a status skips only that filter (`QuickFilter.chips` drops a node it cannot parse).
+    static let statuses = ["backlog", "in_progress", "needs_you", "someday", "done"]
 
     // MARK: Parsing
 
@@ -229,6 +230,24 @@ public struct QuickFilter: Codable, Equatable, Identifiable, Sendable {
 
     /// The query as compact JSON with sorted keys, for a prompt.
     public var queryText: String { query.compactText }
+}
+
+/// Chips the app adds itself. They are not stored, so the user cannot edit, move or remove them, and the agent never
+/// writes them. Their ids and names are reserved, so a saved filter cannot take them.
+public enum BuiltInQuickFilters {
+    public static let nextActionsID = "next-actions"
+
+    /// Open tasks (backlog, in progress, needs you) that nobody else holds.
+    static let nextActionsQuery = #"{"and":[{"status":["backlog","in_progress","needs_you"]},{"waitingOn":null}]}"#
+
+    public static let all: [QuickFilter] = [
+        QuickFilter(id: nextActionsID, name: "Next actions", query: (try? JSONDecoder().decode(RemoteJSON.self, from: Data(nextActionsQuery.utf8))) ?? .null, order: -1),
+    ]
+
+    public static func isBuiltIn(_ id: String) -> Bool { all.contains { $0.id == id } }
+
+    /// A name a saved filter may not take, compared without regard to case.
+    public static func isReservedName(_ name: String) -> Bool { all.contains { $0.name.caseInsensitiveCompare(name) == .orderedSame } }
 }
 
 /// The body of `GET /v1/task-filters`.

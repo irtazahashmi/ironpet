@@ -75,4 +75,11 @@ final class PairingLinkTests: XCTestCase {
         XCTAssertThrowsError(try PairingLink(parsing: "ironpet://pair?u=ftp://a&c=b")) { XCTAssertEqual($0 as? PairingLink.ParseError, .badAddress) }
         XCTAssertThrowsError(try PairingLink(parsing: "ironpet://pair?u=http://a&c=b&f=zz")) { XCTAssertEqual($0 as? PairingLink.ParseError, .badFingerprint) }
     }
+
+    func testADeferredTaskDoesNotNeedTheUserOnThePhone() {
+        var task = RemoteTask(id: "a", title: "Renew", status: .needsYou)
+        XCTAssertTrue(task.needsUser)
+        task.deferUntil = Date().addingTimeInterval(86_400)
+        XCTAssertFalse(task.needsUser)
+    }
 }

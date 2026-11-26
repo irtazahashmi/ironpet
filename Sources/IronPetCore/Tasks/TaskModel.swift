@@ -7,6 +7,8 @@ package enum TaskStatus: String, CaseIterable, Codable {
     case backlog
     case inProgress = "in_progress"
     case needsYou = "needs_you"
+    /// Not committed to: maybe later. Never a next action; looked at in the weekly review.
+    case someday
     case done
 
     package var title: String {
@@ -14,6 +16,7 @@ package enum TaskStatus: String, CaseIterable, Codable {
         case .backlog: return "Backlog"
         case .inProgress: return "In progress"
         case .needsYou: return "Needs you"
+        case .someday: return "Someday"
         case .done: return "Done"
         }
     }
@@ -71,8 +74,10 @@ package struct TaskItem: Identifiable, Equatable, Codable {
         closed: Date? = nil,
         waitingOn: String? = nil,
         sourceRef: String? = nil,
-        labels: [String: String] = [:]
+        labels: [String: String] = [:],
+        deferUntil: Date? = nil
     ) {
+        self.deferUntil = deferUntil
         self.id = id
         self.title = title
         self.notes = notes
@@ -107,8 +112,19 @@ package struct TaskItem: Identifiable, Equatable, Codable {
     /// The public `task_<hex>` id (see `RecordID`). `TaskStore` fills it in when it reads the task; nil for a value that did not come from the store.
     package var ref: String? = nil
 
-    /// Only the user can take the next step. A task waiting on someone else never counts, whatever its status.
-    package var needsUser: Bool { status == .needsYou && waitingOn == nil }
+    /// The tickler: the task stays out of the list until this moment (a plain date is local midnight). Nil shows it now.
+    package var deferUntil: Date? = nil
+
+    /// Hidden until its defer date. A done task is never deferred.
+    package func isDeferred(now: Date = Date()) -> Bool {
+        guard status != .done, let deferUntil else { return false }
+        return deferUntil > now
+    }
+
+    /// Only the user can take the next step. A task waiting on someone else, or deferred to a later day, never counts.
+    package var needsUser: Bool { needsUser(now: Date()) }
+
+    package func needsUser(now: Date) -> Bool { status == .needsYou && waitingOn == nil && !isDeferred(now: now) }
 }
 
 /// One line of a task's history: created, a status change, a note, closed. Nothing is overwritten, so a task the agent
@@ -334,6 +350,30 @@ package struct TaskError: Error, LocalizedError, Equatable {
     package var errorDescription: String? { message }
 }
 
+/// Where a task can be done (GTD contexts). Kept as the `context` label, and only these values are accepted.
+package enum TaskContext: String, CaseIterable {
+    case mac, phone, calls, errands, agent, home
+
+    package static let key = "context"
+
+    package var title: String { rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
+
+    /// The value in lower case, or an error that lists the allowed ones.
+    package static func checked(_ raw: String) throws -> String {
+        let value = raw.lowercased()
+        guard TaskContext(rawValue: value) != nil else {
+            throw TaskError(message: "context must be one of \(allCases.map(\.rawValue).joined(separator: ", "))")
+        }
+        return value
+    }
+
+    /// The context the labels name, or nil when there is none or it is not one of the six. Values stored before the
+    /// check existed may have another case or spaces, so they are read the way the check would store them.
+    package static func of(_ labels: [String: String]) -> TaskContext? {
+        labels[key].flatMap { TaskContext(rawValue: $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) }
+    }
+}
+
 /// Labels as one line, `a=1, b=2`, keys sorted.
 package enum TaskLabels {
     package static func describe(_ labels: [String: String]) -> String {
@@ -382,11 +422,12 @@ package enum TaskValidator {
             if let string = rawValue as? String { text = string }
             else if let number = rawValue as? NSNumber { text = "\(number)" }
             else { throw TaskError(message: "label \"\(key)\" must have a string value") }
-            let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            var clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !clean.isEmpty else { throw TaskError(message: "label \"\(key)\" has an empty value") }
             guard !clean.contains("\n"), clean.count <= maxLabelValue else {
                 throw TaskError(message: "label \"\(key)\" must be one line of at most \(maxLabelValue) characters")
             }
+            if key == TaskContext.key { clean = try TaskContext.checked(clean) }
             result[key] = clean
         }
         return result
@@ -442,15 +483,16 @@ package enum TaskValidator {
     }
 
     /// ISO 8601 with a time (`2026-11-20T15:30:00+01:00`) or a plain date (`2026-11-20`, local midnight). Null clears it.
-    package static func due(_ value: Any?) throws -> Date? {
+    /// `field` names the argument in the error, `due` or `defer_until`.
+    package static func due(_ value: Any?, field: String = "due") throws -> Date? {
         guard let value, !(value is NSNull) else { return nil }
-        guard let raw = value as? String else { throw TaskError(message: "due must be an ISO 8601 date") }
+        guard let raw = value as? String else { throw TaskError(message: "\(field) must be an ISO 8601 date") }
         if let date = ISO8601DateFormatter().date(from: raw) { return date }
         let day = DateFormatter()
         day.locale = Locale(identifier: "en_US_POSIX")
         day.dateFormat = "yyyy-MM-dd"
         if let date = day.date(from: raw) { return date }
-        throw TaskError(message: "due \"\(raw)\" is not an ISO 8601 date such as 2026-11-20 or 2026-11-20T15:30:00+01:00")
+        throw TaskError(message: "\(field) \"\(raw)\" is not an ISO 8601 date such as 2026-11-20 or 2026-11-20T15:30:00+01:00")
     }
 
     package static func links(_ value: Any?) throws -> [TaskLink] {
