@@ -36,12 +36,14 @@ package enum QuickFilterValidator {
         }
     }
 
-    package static func name(_ value: Any?) throws -> String {
+    /// `keeping` is the current name of the filter being edited: a saved filter that already has a reserved name may keep it.
+    package static func name(_ value: Any?, keeping: String? = nil) throws -> String {
         guard let raw = value as? String else { throw TaskError(message: "name must be a string") }
         let name = raw.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " ")
         guard !name.isEmpty else { throw TaskError(message: "name is empty") }
         guard name.count <= maxName else { throw TaskError(message: "name is longer than \(maxName) characters") }
         guard name.caseInsensitiveCompare(allName) != .orderedSame else { throw TaskError(message: "\"\(allName)\" is the chip that shows every task; pick another name") }
+        guard !BuiltInQuickFilters.isReservedName(name) || keeping?.caseInsensitiveCompare(name) == .orderedSame else { throw TaskError(message: "\"\(name)\" is a built-in chip; pick another name") }
         return name
     }
 
@@ -75,12 +77,28 @@ extension TasksAPI {
         quickFilterStorage.sorted { ($0.order, $0.name.lowercased(), $0.id) < ($1.order, $1.name.lowercased(), $1.id) }
     }
 
-    package func quickFilter(_ id: String) -> QuickFilter? { quickFilterStorage.first { $0.id == id } }
+    /// A saved filter, or a built-in chip, by id.
+    package func quickFilter(_ id: String) -> QuickFilter? {
+        quickFilterStorage.first { $0.id == id } ?? builtInQuickFilters.first { $0.id == id }
+    }
+
+    /// Whether the list groups the selection by context. Only the built-in Next actions chip does; a saved filter that uses its id is a plain filter.
+    package func groupsByContext(_ selection: String?) -> Bool {
+        selection == BuiltInQuickFilters.nextActionsID && builtInQuickFilters.contains { $0.id == BuiltInQuickFilters.nextActionsID }
+    }
+
+    /// The built-in chips to show. One whose id or name a saved filter already has is left out, so a filter the user saved
+    /// before the chip existed keeps working and is not shadowed.
+    package var builtInQuickFilters: [QuickFilter] {
+        BuiltInQuickFilters.all.filter { builtIn in
+            !quickFilterStorage.contains { $0.id == builtIn.id || $0.name.caseInsensitiveCompare(builtIn.name) == .orderedSame }
+        }
+    }
 
     /// Adds a filter, or replaces the one with this id. Nothing is stored when the query or the name is invalid.
     @discardableResult
     package func upsertQuickFilter(id: String?, name: Any?, query: Any?) throws -> QuickFilter {
-        let name = try QuickFilterValidator.name(name)
+        let name = try QuickFilterValidator.name(name, keeping: id.flatMap { id in quickFilterStorage.first { $0.id == id }?.name })
         let parsed = try QuickFilterValidator.query(query)
         var filters = quickFilters
         if let clash = filters.first(where: { $0.name.caseInsensitiveCompare(name) == .orderedSame && $0.id != id }) {
@@ -93,7 +111,9 @@ extension TasksAPI {
             saved = filters[index]
         } else {
             guard filters.count < QuickFilterValidator.maxFilters else { throw APIError.invalid("at most \(QuickFilterValidator.maxFilters) quick filters") }
-            let taken = Set(filters.map(\.id))
+            if let id, BuiltInQuickFilters.isBuiltIn(id) { throw APIError.invalid("\"\(id)\" is a built-in quick filter and cannot be saved under that id") }
+            // Built-in ids count as taken, so a generated id never clashes with one.
+            let taken = Set(filters.map(\.id)).union(BuiltInQuickFilters.all.map(\.id))
             if let id, taken.contains(id) { throw APIError.invalid("a quick filter with id \"\(id)\" already exists") }
             saved = QuickFilter(id: id ?? QuickFilterValidator.makeID(from: name, taken: taken), name: name, query: parsed.json,
                                 order: (filters.map(\.order).max() ?? -1) + 1)

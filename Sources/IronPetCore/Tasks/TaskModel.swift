@@ -334,6 +334,30 @@ package struct TaskError: Error, LocalizedError, Equatable {
     package var errorDescription: String? { message }
 }
 
+/// Where a task can be done (GTD contexts). Kept as the `context` label, and only these values are accepted.
+package enum TaskContext: String, CaseIterable {
+    case mac, phone, calls, errands, agent, home
+
+    package static let key = "context"
+
+    package var title: String { rawValue.prefix(1).uppercased() + rawValue.dropFirst() }
+
+    /// The value in lower case, or an error that lists the allowed ones.
+    package static func checked(_ raw: String) throws -> String {
+        let value = raw.lowercased()
+        guard TaskContext(rawValue: value) != nil else {
+            throw TaskError(message: "context must be one of \(allCases.map(\.rawValue).joined(separator: ", "))")
+        }
+        return value
+    }
+
+    /// The context the labels name, or nil when there is none or it is not one of the six. Values stored before the
+    /// check existed may have another case or spaces, so they are read the way the check would store them.
+    package static func of(_ labels: [String: String]) -> TaskContext? {
+        labels[key].flatMap { TaskContext(rawValue: $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()) }
+    }
+}
+
 /// Labels as one line, `a=1, b=2`, keys sorted.
 package enum TaskLabels {
     package static func describe(_ labels: [String: String]) -> String {
@@ -382,11 +406,12 @@ package enum TaskValidator {
             if let string = rawValue as? String { text = string }
             else if let number = rawValue as? NSNumber { text = "\(number)" }
             else { throw TaskError(message: "label \"\(key)\" must have a string value") }
-            let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
+            var clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !clean.isEmpty else { throw TaskError(message: "label \"\(key)\" has an empty value") }
             guard !clean.contains("\n"), clean.count <= maxLabelValue else {
                 throw TaskError(message: "label \"\(key)\" must be one line of at most \(maxLabelValue) characters")
             }
+            if key == TaskContext.key { clean = try TaskContext.checked(clean) }
             result[key] = clean
         }
         return result

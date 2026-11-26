@@ -133,7 +133,7 @@ struct TaskDetailPage: View {
 
     private func chips(_ task: TaskItem) -> some View {
         HStack(spacing: 8) {
-            if let project = task.projectLabel { Chip(text: project, tint: .purple) }
+            if let area = task.areaLabel { Chip(text: area, tint: .purple) }
             Chip(text: task.waitingLabel ?? task.status.title, tint: .orange)
             if let key = task.links.lazy.compactMap({ TaskLinkRow(link: $0).pullRequestKey }).first { Chip(text: key, tint: .gray) }
         }
@@ -147,6 +147,23 @@ struct TaskDetailPage: View {
         .pickerStyle(.menu)
         .fixedSize()
         .accessibilityLabel("Status")
+    }
+
+    /// Where the task can be done. "None" removes the label.
+    private func contextPicker(_ task: TaskItem) -> some View {
+        let current = TaskContext.of(task.labels)
+        return Picker("Context", selection: Binding(get: { current }, set: { changeContext(to: $0) })) {
+            Text("None").tag(TaskContext?.none)
+            ForEach(TaskContext.allCases, id: \.self) { Text($0.title).tag(TaskContext?.some($0)) }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .fixedSize()
+        .accessibilityLabel("Context")
+    }
+
+    private func changeContext(to context: TaskContext?) {
+        attempt { _ = try TaskEdits.setContext(context, of: id, in: tasks) }
     }
 
     private func changeStatus(to status: TaskStatus, _ task: TaskItem) {
@@ -236,9 +253,11 @@ struct TaskDetailPage: View {
                 }
             }
             Divider()
-            SummaryRow(label: "Project", symbol: "house") {
-                if let project = task.projectLabel {
-                    Text(project).textSelection(.enabled)
+            SummaryRow(label: "Context", symbol: "location") { contextPicker(task) }
+            Divider()
+            SummaryRow(label: "Area", symbol: "house") {
+                if let area = task.areaLabel {
+                    Text(area).textSelection(.enabled)
                 } else {
                     NoneWithSetLabel(others: otherLabels, own: task.labels) { key, value in
                         TaskLabelEditing.add(key: key, value: value, to: id, in: tasks)
@@ -404,7 +423,7 @@ private struct NoneWithSetLabel: View {
             Button("Set") { shown = true }
                 .buttonStyle(.link)
                 .popover(isPresented: $shown, arrowEdge: .bottom) {
-                    LabelPopover(others: others, own: own, initialKey: "project", onAdd: onAdd) { shown = false }
+                    LabelPopover(others: others, own: own, initialKey: "area", onAdd: onAdd) { shown = false }
                 }
         }
     }

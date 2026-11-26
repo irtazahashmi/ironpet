@@ -2,6 +2,7 @@ import AppKit
 import enum IronPetKit.SharedTheme
 import enum IronPetKit.SharedSymbols
 import IronPetCore
+import enum IronPetKit.BuiltInQuickFilters
 import struct IronPetKit.QuickFilter
 import enum IronPetKit.QuickFilterPrompt
 import enum IronPetKit.QuickFilterNode
@@ -97,19 +98,26 @@ struct TaskListView: View {
 
     /// Clears a saved filter that was deleted while the app was closed, so the list shows All and the stored value goes.
     private func dropStaleFilter() {
-        if selectedFilter != nil, QuickFilterSelection.valid(selectedFilter, in: tasks.quickFilters) == nil { selectedFilter = nil }
+        if selectedFilter != nil, QuickFilterSelection.valid(selectedFilter, in: shownChips) == nil { selectedFilter = nil }
     }
+
+    /// The built-in chips first, then the saved ones, in the order the bar shows them.
+    private var shownChips: [QuickFilter] { tasks.builtInQuickFilters + QuickFilter.chips(tasks.quickFilters) }
+
+    private var isNextActions: Bool { tasks.groupsByContext(selectedFilter) }
 
     private var removingShown: Binding<Bool> {
         Binding(get: { removingFilter != nil }, set: { if !$0 { removingFilter = nil } })
     }
 
     /// The chosen filter's query, or nil for "All". A filter that was removed or that this build cannot read counts as "All".
-    private var activeFilter: QuickFilterNode? { selectedFilter.flatMap { tasks.quickFilter($0)?.node } }
+    private var activeFilter: QuickFilterNode? {
+        selectedFilter.flatMap { tasks.quickFilter($0)?.node }
+    }
 
     /// The chip to highlight. A filter the agent removed meanwhile leaves "All" highlighted, which is what the list shows.
     private var shownFilter: Binding<String?> {
-        Binding(get: { selectedFilter.flatMap { id in QuickFilter.chips(tasks.quickFilters).contains { $0.id == id } ? id : nil } },
+        Binding(get: { selectedFilter.flatMap { id in shownChips.contains { $0.id == id } ? id : nil } },
                 set: { selectedFilter = $0 })
     }
 
@@ -149,7 +157,7 @@ struct TaskListView: View {
             let content = Self.content(unavailable: tasks.unavailable != nil, isEmpty: tasks.suggestions.isEmpty && tasks.all.isEmpty)
             let columns = Self.columns(tasks.all, filter: activeFilter, query: search)
             if content == .list || !tasks.quickFilters.isEmpty {
-                QuickFilterBar(filters: QuickFilter.chips(tasks.quickFilters), selection: shownFilter,
+                QuickFilterBar(filters: QuickFilter.chips(tasks.quickFilters), builtIn: tasks.builtInQuickFilters, selection: shownFilter,
                                onAdd: { filterRequest = .add },
                                onEdit: { filterRequest = .edit($0) },
                                onRemove: { removingFilter = $0 },
@@ -177,18 +185,22 @@ struct TaskListView: View {
                 ScrollViewReader { proxy in
                     ListScroll {
                         suggestions
-                        ForEach([TaskColumn.needsYou, .inProgress, .backlog], id: \.self) { column in
-                            let items = columns[column] ?? []
-                            if !items.isEmpty {
-                                ListGroupTitle(column.title)
+                        if isNextActions {
+                            nextActionGroups(columns)
+                        } else {
+                            ForEach([TaskColumn.needsYou, .inProgress, .backlog], id: \.self) { column in
+                                let items = columns[column] ?? []
+                                if !items.isEmpty {
+                                    ListGroupTitle(column.title)
+                                    ForEach(items) { row($0) }
+                                }
+                            }
+                            if let items = columns[.waiting], !items.isEmpty {
+                                ListGroupTitle(TaskColumn.waiting.title)
                                 ForEach(items) { row($0) }
                             }
+                            doneSection(columns[.done] ?? [])
                         }
-                        if let items = columns[.waiting], !items.isEmpty {
-                            ListGroupTitle(TaskColumn.waiting.title)
-                            ForEach(items) { row($0) }
-                        }
-                        doneSection(columns[.done] ?? [])
                     }
                     .onAppear { reveal(focus.wrappedValue, proxy) }
                     .onChange(of: focus.wrappedValue) { reveal(focus.wrappedValue, proxy) }
@@ -247,6 +259,15 @@ struct TaskListView: View {
                               onOpen: open(_:),
                               onShow: { suggestionNav.open(suggestion.id) })
             }
+        }
+    }
+
+    /// The Next actions list: the open tasks under a heading for each context. The chip already leaves out done and waiting tasks.
+    @ViewBuilder private func nextActionGroups(_ columns: [TaskColumn: [TaskItem]]) -> some View {
+        let open = [TaskColumn.needsYou, .inProgress, .backlog].flatMap { columns[$0] ?? [] }
+        ForEach(NextActions.groups(open)) { group in
+            ListGroupTitle(group.title)
+            ForEach(group.tasks) { row($0) }
         }
     }
 
