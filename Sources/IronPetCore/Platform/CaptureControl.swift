@@ -21,6 +21,8 @@ package protocol CaptureControl: AnyObject, Sendable {
     func searchCaptures(_ query: String, app: String?, since: Date?, until: Date?, limit: Int) -> [CaptureHit]
     /// The text stored for one capture. Nil when it was deleted.
     func captureText(_ id: Int64) -> String?
+    /// The capture's public `screen_` id. Nil where captures have no ids.
+    func captureRef(_ id: Int64) -> String?
     func seenApps() -> [(bundleId: String, name: String, captures: Int)]
     /// The MCP tools `screen_search` and `screen_window`, which read loose JSON arguments.
     func callTool(_ name: String, _ args: [String: Any]) -> Result<Any, ScreenMCP.Failure>
@@ -32,6 +34,8 @@ package protocol CaptureControl: AnyObject, Sendable {
 
 extension CaptureControl {
     package var isSupported: Bool { true }
+
+    package func captureRef(_ id: Int64) -> String? { nil }
 
     /// An adapter that does not take captures from other clients says so.
     package func ingest(_ captures: [ClientCapture]) throws -> ScreenIngestResult {

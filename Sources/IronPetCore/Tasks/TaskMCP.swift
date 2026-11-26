@@ -14,6 +14,7 @@ package enum TaskMCP {
         - needs_you: only the user can take the next step (a decision, a review, a login, a reply). Say what they need to do in the note.
         - someday: the user may do it one day but has not committed to it. It is never a next action.
         - done: finished or no longer needed. Close it with tasks_close and a note rather than deleting it.
+        A task waiting on someone has asked_at; follow_up_due is true once \(TaskFollowUp.workingDays) working days have passed, the time to propose a follow-up.
         defer_until hides a task until that day (the tickler), for something that cannot or should not start before then. null shows it again.
         waiting_on names the person the user is waiting on (a meeting action item someone else owns). Those tasks are shown apart and \
         never count as needing the user. Clear it (null) once the next step is the user's again.
@@ -71,6 +72,10 @@ package enum TaskMCP {
         let links: [String: Any] = ["type": "array", "items": link, "maxItems": TaskValidator.maxLinks]
         let due: [String: Any] = ["type": "string", "description": "ISO 8601 date or date and time. In changes, null clears it."]
         let assignee: [String: Any] = ["type": "string", "description": "An agent id, or \"user\" (or an empty string) for the user. In changes, \"user\" hands the task back to the user."]
+        let askedAt: [String: Any] = ["type": "string",
+                                      "description": "ISO 8601: when the user asked the person in waiting_on. Defaults to when waiting_on was set."]
+        let project: [String: Any] = ["type": "string",
+                                      "description": "The id of the GTD project this task is a step of (task_projects_list). In changes, null takes it out."]
         let deferUntil: [String: Any] = ["type": "string",
                                          "description": "ISO 8601 date or date and time. The task stays out of the list until then. In changes, null shows it again."]
         let waitingOn: [String: Any] = ["type": "string", "maxLength": TaskValidator.maxWaitingOn,
@@ -89,12 +94,12 @@ package enum TaskMCP {
             tool("tasks_get", "Get one task in full, with its history.", id, required: ["id"]),
             tool("tasks_create", "Add a task. id is made from the title.\n\n" + guide,
                  ["title": ["type": "string", "maxLength": TaskValidator.maxTitle], "notes": ["type": "string"], "status": status,
-                  "origin": origin, "due": due, "links": links, "waiting_on": waitingOn, "labels": labels, "defer_until": deferUntil, "assignee": assignee],
+                  "origin": origin, "due": due, "links": links, "waiting_on": waitingOn, "labels": labels, "defer_until": deferUntil, "project": project, "asked_at": askedAt, "assignee": assignee],
                  required: ["title", "origin"]),
             tool("tasks_update", "Change a task. Only the fields in changes are touched; links replaces the whole list; labels adds or overwrites keys and remove_labels removes keys, so omitted labels stay. note is required when the status changes.",
                  id.merging(["changes": ["type": "object", "properties": ["title": ["type": "string"], "notes": ["type": "string"],
                                                                           "status": status, "due": due, "links": links,
-                                                                          "waiting_on": waitingOn, "labels": labels, "defer_until": deferUntil, "assignee": assignee,
+                                                                          "waiting_on": waitingOn, "labels": labels, "defer_until": deferUntil, "project": project, "asked_at": askedAt, "assignee": assignee,
                                                                           "remove_labels": ["type": "array", "items": ["type": "string"],
                                                                                             "description": "Label keys to remove"]]],
                              "note": note]) { a, _ in a },
@@ -106,6 +111,7 @@ package enum TaskMCP {
                   "title": ["type": "string", "maxLength": TaskSuggestion.Draft.maxTitle], "notes": ["type": "string", "maxLength": TaskSuggestion.Draft.maxNotes],
                   "due": ["type": "string", "description": "Date, YYYY-MM-DD. Dropped if it does not parse."],
                   "url": ["type": "string", "description": "http(s) link to the thing. Dropped if it does not parse."],
+                  "project": ["type": "string", "description": "A project id: the task joins that project when the user adds it. Use it for the next step of a stalled project."],
                   "origin": origin],
                  required: ["id", "title", "origin"]),
             tool("tasks_suggestion_accept", "Accept a suggestion: creates the task, or applies the update or close to its target task. Pass title, due, notes or status to change what is applied. note is kept in the task's history.",
@@ -122,6 +128,29 @@ package enum TaskMCP {
             tool("task_filters_delete", "Delete a quick filter. Tasks are not touched.", id, required: ["id"]),
             tool("task_filters_reorder", "Set the order of the chips: the ids listed go first, in this order; others keep their order after them.",
                  ["ids": ["type": "array", "items": ["type": "string"]]], required: ["ids"]),
+            tool("task_projects_list", "List the user's GTD projects (outcomes that take more than one step, not code folders), active and someday unless status says otherwise. Each has its next_actions (open tasks nobody else holds, not deferred), stalled (active with no next action) and due_for_review. Keep every active project moving: when one is stalled, propose its next step with tasks_suggest.",
+                 ["status": ["type": "string", "enum": TaskProject.Status.allCases.map(\.rawValue)]]),
+            tool("task_projects_upsert", "Create a GTD project (leave out id), or change the one id names; an unknown id is refused. Link tasks to it with tasks_create or tasks_update (project). reviewed: true records that the user reviewed it now.",
+                 ["id": ["type": "string", "description": "Leave out to create; the id is made from the title."],
+                  "title": ["type": "string", "maxLength": TaskProjectValidator.maxTitle],
+                  "outcome": ["type": "string", "description": "What done looks like, in one sentence."],
+                  "area": ["type": "string"], "goal": ["type": "string", "description": "A goal id from task_goals_list; null clears it."],
+                  "status": ["type": "string", "enum": TaskProject.Status.allCases.map(\.rawValue)],
+                  "review_days": ["type": "integer", "minimum": 1, "maximum": TaskProjectValidator.maxReviewDays],
+                  "reviewed": ["type": "boolean"]]),
+            tool("task_goals_list", "List the user's areas of focus and active goals (include_closed adds achieved and dropped ones). Each goal has its key_results (start, target, current, progress 0 to 1), its overall progress and the ids of the projects that serve it. Vision and purpose are not here: they are memory notes.",
+                 ["include_closed": ["type": "boolean"]]),
+            tool("task_goals_upsert", "Create a goal (leave out id) or change one. A goal is what the user wants to reach in the next year or two; link projects to it by setting their goal to its id with task_projects_upsert.",
+                 ["id": ["type": "string"], "title": ["type": "string", "maxLength": TaskProjectValidator.maxTitle], "why": ["type": "string"],
+                  "area": ["type": "string", "description": "An area id; null clears it."],
+                  "status": ["type": "string", "enum": TaskGoal.Status.allCases.map(\.rawValue)], "due": due]),
+            tool("task_areas_upsert", "Create an area of focus (leave out id), such as Health or Sales, or change one.",
+                 ["id": ["type": "string"], "title": ["type": "string", "maxLength": TaskProjectValidator.maxTitle], "notes": ["type": "string"]]),
+            tool("task_key_results_upsert", "Add a key result to a goal (goal, metric, start, target; current starts at start) or change one by id, most often its current value. Ask the user for numbers you cannot read from a source.",
+                 ["id": ["type": "string"], "goal": ["type": "string"], "metric": ["type": "string"], "start": ["type": "number"],
+                  "target": ["type": "number"], "current": ["type": "number"], "unit": ["type": "string"], "due": due,
+                  "source": ["type": "string", "description": "Where the current value comes from, such as a URL"]]),
+            tool("task_key_results_delete", "Delete a key result that was wrong or a duplicate. Asks the user first.", id, required: ["id"]),
             tool("tasks_delete", "Delete a task that should never have existed. Prefer tasks_close for finished work.", id, required: ["id"]),
         ]
     }

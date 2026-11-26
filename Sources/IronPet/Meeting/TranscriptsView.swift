@@ -110,6 +110,7 @@ struct TranscriptsView: View {
                     VStack(alignment: .leading, spacing: 16) {
                         VStack(alignment: .leading, spacing: 10) {
                             Text(Self.title(meeting)).font(.system(size: 20, weight: .bold)).textSelection(.enabled)
+                            if let ref = meetings.ref(meeting) { RecordIDLine(ref: ref) }
                             // At the narrowest window the Ask label would be cut, so it falls back to its icon.
                             ViewThatFits(in: .horizontal) {
                                 toolbar(meeting, askLabel: true)

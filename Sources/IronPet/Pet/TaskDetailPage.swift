@@ -128,6 +128,7 @@ struct TaskDetailPage: View {
                 .accessibilityLabel("Task title")
             Text("Created \(TaskDetail.time(task.created))")
                 .font(.system(size: 12)).foregroundStyle(.secondary)
+            if let ref = task.ref { RecordIDLine(ref: ref) }
         }
     }
 
@@ -164,6 +165,19 @@ struct TaskDetailPage: View {
         .pickerStyle(.menu)
         .fixedSize()
         .accessibilityLabel("Status")
+    }
+
+    /// The GTD project the task is a step of. Lists the active projects, and the task's own even when it is not active.
+    private func projectPicker(_ task: TaskItem) -> some View {
+        let shown = tasks.projects.filter { $0.status == .active || $0.id == task.project }
+        return Picker("Project", selection: Binding(get: { task.project }, set: { new in attempt { _ = try TaskEdits.setProject(new, of: id, in: tasks) } })) {
+            Text("None").tag(String?.none)
+            ForEach(shown) { Text($0.title).tag(String?.some($0.id)) }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .fixedSize()
+        .accessibilityLabel("Project")
     }
 
     /// Where the task can be done. "None" removes the label.
@@ -270,6 +284,11 @@ struct TaskDetailPage: View {
             Divider()
             SummaryRow(label: "Waiting on", symbol: "person.badge.clock") {
                 if task.waitingOn != nil || editingWaiting {
+                    if task.followUpDue(now: Date()) {
+                        Button("Followed up") { attempt { _ = try TaskEdits.markFollowedUp(id, in: tasks) } }
+                            .controlSize(.small)
+                            .help("You asked again today: start the \(TaskFollowUp.workingDays) working days over")
+                    }
                     TextField("Waiting on", text: $waiting)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 180)
@@ -284,6 +303,8 @@ struct TaskDetailPage: View {
             }
             Divider()
             SummaryRow(label: "Context", symbol: "location") { contextPicker(task) }
+            Divider()
+            SummaryRow(label: "Project", symbol: "folder") { projectPicker(task) }
             Divider()
             SummaryRow(label: "Area", symbol: "house") {
                 if let area = task.areaLabel {

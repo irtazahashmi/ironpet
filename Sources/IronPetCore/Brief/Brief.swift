@@ -12,12 +12,36 @@ package struct Brief: Equatable, Codable {
     }
 
     package enum Kind: String, CaseIterable, Identifiable, Codable {
-        case brief, recap
+        case brief, recap, review
         package var id: String { rawValue }
-        package var title: String { self == .brief ? "Morning brief" : "Today's recap" }
-        package var pickerTitle: String { self == .brief ? "Brief" : "Recap" }
-        package var symbol: String { self == .brief ? "sun.max.fill" : "moon.stars.fill" }
-        package var emptyText: String { self == .brief ? "Nothing needs you this morning." : "Quiet day: nothing finished or closed today." }
+        package var title: String {
+            switch self {
+            case .brief: return "Morning brief"
+            case .recap: return "Today's recap"
+            case .review: return "Weekly review"
+            }
+        }
+        package var pickerTitle: String {
+            switch self {
+            case .brief: return "Brief"
+            case .recap: return "Recap"
+            case .review: return "Review"
+            }
+        }
+        package var symbol: String {
+            switch self {
+            case .brief: return "sun.max.fill"
+            case .recap: return "moon.stars.fill"
+            case .review: return "checklist"
+            }
+        }
+        package var emptyText: String {
+            switch self {
+            case .brief: return "Nothing needs you this morning."
+            case .recap: return "Quiet day: nothing finished or closed today."
+            case .review: return "Nothing to review: the inbox is empty and every project has a next action."
+            }
+        }
     }
 
     /// What a row opens.
@@ -146,8 +170,16 @@ package struct BriefInput {
         sessions: [AgentSession] = [],
         alerts: [Signal] = [],
         meetings: [BriefMeeting] = [],
-        activity: [BriefActivity] = []
+        activity: [BriefActivity] = [],
+        suggestions: [TaskSuggestion] = [],
+        projects: [TaskProject] = [],
+        goals: [TaskGoal] = [],
+        keyResults: [TaskKeyResult] = []
     ) {
+        self.suggestions = suggestions
+        self.projects = projects
+        self.goals = goals
+        self.keyResults = keyResults
         self.now = now
         self.calendar = calendar
         self.day = day
@@ -167,6 +199,11 @@ package struct BriefInput {
     package var alerts: [Signal] = []
     package var meetings: [BriefMeeting] = []
     package var activity: [BriefActivity] = []
+    /// For the weekly review and the goal alignment score.
+    package var suggestions: [TaskSuggestion] = []
+    package var projects: [TaskProject] = []
+    package var goals: [TaskGoal] = []
+    package var keyResults: [TaskKeyResult] = []
 }
 
 package enum BriefBuilder {
@@ -184,7 +221,11 @@ package enum BriefBuilder {
     }
 
     package static func build(_ kind: Brief.Kind, _ input: BriefInput, meetingsSince: Date? = nil) -> Brief {
-        kind == .brief ? brief(input, meetingsSince: meetingsSince) : recap(input)
+        switch kind {
+        case .brief: return brief(input, meetingsSince: meetingsSince)
+        case .recap: return recap(input)
+        case .review: return review(input)
+        }
     }
 
     // MARK: Brief
@@ -223,7 +264,7 @@ package enum BriefBuilder {
         let waiting = waitingSessions(input.sessions)
         let waitingItems = waiting.map(sessionItem)
 
-        let sections = [
+        var sections = [
             Brief.Section(id: "due", title: "Due", items: dueItems),
             Brief.Section(id: "needs", title: "Needs you", items: needsItems),
             Brief.Section(id: "alerts", title: "Alerts", items: alertItems),
@@ -243,6 +284,10 @@ package enum BriefBuilder {
         if !alerts.isEmpty { lines.append(alertLine(alerts)) }
         if !meetingItems.isEmpty { lines.append("\(count(meetingItems.count, "open action item")) from meetings") }
         if !waiting.isEmpty { lines.append("\(count(waiting.count, "agent")) waiting for you") }
+        // How much of the last week served a goal, once the user has one. Only next to other news, so a quiet brief stays empty.
+        if sections.contains(where: { !$0.items.isEmpty }), let alignment = GoalAlignment.section(GoalAlignment.score(input, in: DateInterval(start: now.addingTimeInterval(-7 * 86_400), end: now))) {
+            sections.append(alignment)
+        }
         return Brief(kind: .brief, window: DateInterval(start: min(since, now), end: now), sections: sections, lines: Array(lines.prefix(4)))
     }
 
@@ -285,7 +330,7 @@ package enum BriefBuilder {
                                                      title: $0.title, subtitle: $0.status.title, target: .task($0.id)) }
             + stillAlerts.map(alertItem) + stillAgents.map(sessionItem)
 
-        let sections = [
+        var sections = [
             Brief.Section(id: "agents", title: "Agents", items: turnItems),
             Brief.Section(id: "closed", title: "Tasks closed", items: closedItems),
             Brief.Section(id: "resolved", title: "Alerts resolved", items: resolvedItems),
@@ -311,6 +356,9 @@ package enum BriefBuilder {
         // "Still open" always makes it into the bubble.
         lines = Array(lines.prefix(open.isEmpty ? 4 : 3))
         if !open.isEmpty { lines.append("Still open: " + open.joined(separator: ", ")) }
+        if sections.contains(where: { !$0.items.isEmpty }), let alignment = GoalAlignment.section(GoalAlignment.score(input, in: window)) {
+            sections.append(alignment)
+        }
         return Brief(kind: .recap, window: window, sections: sections, lines: lines)
     }
 

@@ -30,6 +30,16 @@ package enum AutomationDefaults {
                    note: "What agents finished, tasks closed, alerts resolved, meetings held and what is still open. Built from data on this Mac; no agent runs.")
     }
 
+    package static let weeklyReviewID = "weekly-review"
+
+    /// The built-in weekly review: GTD's review prepared from data on this Mac, Fridays at 15:00. Off until the user turns it on.
+    package static func weeklyReview(enabled: Bool = false) -> Automation {
+        Automation(id: weeklyReviewID, name: "Weekly review", enabled: enabled,
+                   trigger: .init(type: "daily", times: ["15:00"], weekdays: ["fri"], catchUpMinutes: 240),
+                   action: .init(type: "digest", digest: "review"), presentation: .init(symbol: "checklist"), createdBy: "user",
+                   note: "The inbox to clarify, projects without a next action, follow-ups, what comes back next week, someday ideas, goals and how much of the week served them. Built from data on this Mac; no agent runs.")
+    }
+
     package static let taskReviewID = "task-review"
 
     /// The built-in task review: every 20 minutes of clock time, in its own agent session that reports to the chat. Its prompt is
@@ -76,7 +86,7 @@ package enum AutomationDefaults {
     }
 
     /// Every built-in, added to the file when its id is missing.
-    package static var builtIns: [Automation] { [morningBrief(), dayRecap(), taskReview(), mailCalendar()] }
+    package static var builtIns: [Automation] { [morningBrief(), dayRecap(), weeklyReview(), taskReview(), mailCalendar()] }
 
     /// The `gh` binary, which the GitHub script runs.
     package static var ghExecutable: URL? {

@@ -170,6 +170,12 @@ enum PreviewRenderer {
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks-light", scheme: .light)
         // Tall enough to show the folded groups at the end: Someday, Deferred and Done.
         render(list(sessions, tasks: tasks, on: .tasks, height: 1200), to: dir, "tasks-all-groups")
+        // The Projects view: next actions per project, and a stalled one.
+        TaskViewMode.projects.save()
+        render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks-projects")
+        TaskViewMode.goals.save()
+        render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks-goals")
+        TaskViewMode.list.save()
         // The Next actions chip, selected: the open tasks grouped under their contexts.
         QuickFilterSelection.save(BuiltInQuickFilters.nextActionsID)
         render(list(sessions, tasks: tasks, on: .tasks, height: 1000), to: dir, "tasks-next-actions")
@@ -205,6 +211,7 @@ enum PreviewRenderer {
         render(today(.brief, brief), to: dir, "today-brief")
         render(today(.brief, brief), to: dir, "today-brief-light", scheme: .light)
         render(today(.recap, brief), to: dir, "today-recap")
+        render(today(.review, brief), to: dir, "today-review")
         render(today(.brief, BriefModel(briefs: [])), to: dir, "today-empty")
 
         renderUsage(to: dir)
@@ -830,6 +837,7 @@ enum PreviewRenderer {
 
     private static func sampleTasks() -> TasksAPI {
         var clock = Date()
+        // The app's migrations, not only the task store's, so each sample task gets its public id as in the app.
         let database = Database.open(path: nil, migrations: AppMigrations.all).database
         let store = TaskStore(database: database, now: { clock })
         // A second agent, so the tasks can show who they are assigned to.
@@ -861,11 +869,39 @@ enum PreviewRenderer {
         add("Rotate the Sentry token", .done, .user, ago: 2 * 3600)
         add("Answer Maya about the onboarding copy", .done, .meeting, ago: day + 3600)
         add("Remove the old feature flags", .done, .agent, ago: 3 * day)
+        if let deck = store.tasks.first(where: { $0.title == "Send the updated pricing deck" }) {
+            _ = try? store.update(deck.id, askedAt: today.addingTimeInterval(-9 * day), by: "agent:mcp")
+        }
         add("Learn to bake sourdough", .someday, .chat, ago: 5 * day)
         add("Renew the domain", .backlog, .user, ago: day)
         if let renew = store.tasks.first(where: { $0.title == "Renew the domain" }) {
             _ = try? store.update(renew.id, deferUntil: .some(today.addingTimeInterval(10 * day)), by: "agent:mcp")
         }
+        if let launch = try? store.upsertProject(id: nil, title: "Ship release 2.4", outcome: "2.4 is in the App Store", area: "Work", goal: nil,
+                                                  status: nil, reviewDays: 7) {
+            for title in ["Write the release notes for 2.4", "Fix the flaky login test"] {
+                if let task = store.tasks.first(where: { $0.title == title }) { _ = try? store.update(task.id, project: .some(launch.id), by: "agent:mcp") }
+            }
+        }
+        _ = try? store.upsertProject(id: nil, title: "Move to the new office", outcome: "The team works from Kalasatama", area: "Work",
+                                     goal: nil, status: nil, reviewDays: nil)
+        if let work = try? store.upsertArea(id: nil, title: "Work", notes: nil),
+           let grow = try? store.upsertGoal(id: nil, title: "Grow the app to 10k users", why: "Enough to go full time", area: .some(work.id),
+                                            status: nil, due: nil) {
+            _ = try? store.upsertKeyResult(id: nil, goal: grow.id, metric: "Weekly active users", start: 2_000, target: 10_000, current: 6_400,
+                                           unit: .some("users"), due: nil, source: nil)
+            _ = try? store.upsertKeyResult(id: nil, goal: grow.id, metric: "App Store rating", start: 3.9, target: 4.6, current: 4.4,
+                                           unit: nil, due: nil, source: nil)
+            if let launch = store.projects.first(where: { $0.title == "Ship release 2.4" }) {
+                _ = try? store.upsertProject(id: launch.id, title: nil, outcome: nil, area: nil, goal: .some(grow.id), status: nil, reviewDays: nil)
+            }
+        }
+        if let health = try? store.upsertArea(id: nil, title: "Health", notes: nil),
+           let run = try? store.upsertGoal(id: nil, title: "Run a half marathon", why: "", area: .some(health.id), status: nil, due: nil) {
+            _ = try? store.upsertKeyResult(id: nil, goal: run.id, metric: "Longest run", start: 5, target: 21, current: 12, unit: .some("km"),
+                                           due: nil, source: nil)
+        }
+        _ = try? store.upsertProject(id: nil, title: "Learn Rust", outcome: "", area: "Growth", goal: nil, status: .someday, reviewDays: nil)
         for (title, context) in [("Make the settings page work on mobile", "phone"), ("Fix the flaky login test", "mac"),
                                  ("Upgrade the docs site to Node 20", "agent")] {
             if let task = store.tasks.first(where: { $0.title == title }) {

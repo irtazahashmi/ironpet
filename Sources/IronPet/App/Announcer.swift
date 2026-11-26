@@ -415,7 +415,7 @@ final class Announcer {
             expires = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now))
         }
         return BubbleDraft(id: briefID(brief.kind), symbol: automation.presentation.symbol ?? brief.kind.symbol,
-                      tint: brief.kind == .brief ? .orange : .indigo,
+                      tint: brief.kind == .brief ? .orange : brief.kind == .review ? .green : .indigo,
                       title: automation.action.title ?? brief.kind.title, subtitle: (brief.kind == .recap ? brief.window.start : now).formatted(day),
                       body: brief.isEmpty ? "Nothing to report" : brief.lines.prefix(4).joined(separator: "\n"),
                       actions: [.init("open", "Open", style: .primary, run: open)], onTap: open, expires: expires)

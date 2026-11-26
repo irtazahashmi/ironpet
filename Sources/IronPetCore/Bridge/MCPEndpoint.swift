@@ -142,6 +142,14 @@ package enum MCPEndpoint {
                 case .failure(let error): return toolResult(error.message, isError: true)
                 }
             }
+            // GTD's projects and horizons: `task_projects_list` runs `projects_list`, and so on.
+            if let prefix = ["task_projects_", "task_goals_", "task_areas_", "task_key_results_"].first(where: name.hasPrefix) {
+                guard let tasks else { return toolResult("ironpet's task list is not available right now", isError: true) }
+                switch TaskJSON.call(tasks, String(prefix.dropFirst("task_".count)) + String(name.dropFirst(prefix.count)), arguments, by: "agent:mcp") {
+                case .success(let value): return toolResult(text(value), isError: false)
+                case .failure(let error): return toolResult(error.message, isError: true)
+                }
+            }
             if name.hasPrefix("task_filters_") {
                 guard let tasks else { return toolResult("ironpet's task list is not available right now", isError: true) }
                 switch TaskJSON.call(tasks, "filters_" + String(name.dropFirst("task_filters_".count)), arguments, by: "agent:mcp") {

@@ -158,7 +158,8 @@ struct TaskListView: View {
             }
             let content = Self.content(unavailable: tasks.unavailable != nil, isEmpty: tasks.suggestions.isEmpty && tasks.all.isEmpty)
             let columns = Self.columns(tasks.all, filter: activeFilter, query: search)
-            if content == .list || !tasks.quickFilters.isEmpty {
+            // Quick filters narrow tasks, not projects, so the Projects view has no chips.
+            if mode != .projects, mode != .goals, content == .list || !tasks.quickFilters.isEmpty {
                 QuickFilterBar(filters: QuickFilter.chips(tasks.quickFilters), builtIn: tasks.builtInQuickFilters, selection: shownFilter,
                                onAdd: { filterRequest = .add },
                                onEdit: { filterRequest = .edit($0) },
@@ -170,6 +171,14 @@ struct TaskListView: View {
                 && (mode == .board || isNextActions || TaskBoard.deferred(tasks.all, filter: activeFilter, query: search).isEmpty)
             if content == .unavailable {
                 Spacer()
+            } else if mode == .goals {
+                TaskGoalsView(tasks: tasks, search: search)
+                    .onAppear { reveal(focus.wrappedValue, nil) }
+                    .onChange(of: focus.wrappedValue) { reveal(focus.wrappedValue, nil) }
+            } else if mode == .projects {
+                TaskProjectsView(tasks: tasks, search: search, onOpenTask: { nav.open($0) })
+                    .onAppear { reveal(focus.wrappedValue, nil) }
+                    .onChange(of: focus.wrappedValue) { reveal(focus.wrappedValue, nil) }
             } else if content == .empty {
                 EmptyState(symbol: SharedSymbols.tasks, title: "No tasks yet",
                            detail: "Ask \(petName) to keep track of something, or finish a meeting.")
@@ -252,8 +261,8 @@ struct TaskListView: View {
         .pickerStyle(.segmented)
         .labelsHidden()
         .fixedSize()
-        .accessibilityLabel("Show tasks as a list or a board")
-        .help("Show the tasks as a list or as a board of columns")
+        .accessibilityLabel("Show the tasks as a list, as a board of columns, grouped by project, or your goals")
+        .help("Show the tasks as a list, as a board of columns, grouped by project, or your goals")
     }
 
     @ViewBuilder private var suggestions: some View {
@@ -329,6 +338,8 @@ struct TaskListView: View {
         guard let id, let task = tasks.task(id) else { return }
         focus.wrappedValue = nil
         nav.close()
+        // The Projects view lists projects, not tasks, so the task's page is where it shows.
+        if mode == .projects || mode == .goals { nav.open(id); return }
         if task.status == .done { showDone = true }
         if task.status == .someday {
             showSomeday = true
@@ -432,6 +443,13 @@ private struct TaskRow: View {
             if let waiting = task.waitingLabel {
                 Text("·").accessibilityHidden(true)
                 Label(waiting, systemImage: "person.badge.clock").labelStyle(DueLabelStyle())
+                if task.followUpDue(now: now) {
+                    Text("·").accessibilityHidden(true)
+                    Label("Follow up", systemImage: "arrowshape.turn.up.right")
+                        .labelStyle(DueLabelStyle())
+                        .foregroundStyle(.orange)
+                        .help("Asked \(TaskTime.relative(task.askedAt ?? task.updated, now: now)); \(TaskFollowUp.workingDays) working days have passed")
+                }
             }
             if let due = task.dueLabel(now: now) {
                 Text("·").accessibilityHidden(true)

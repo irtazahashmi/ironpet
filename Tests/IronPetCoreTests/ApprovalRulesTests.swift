@@ -56,11 +56,15 @@ final class ApprovalRulesTests: XCTestCase {
     }
 
     func testQuickFilterToolsAllowedButDeleteAsks() {
-        for tool in ["task_filters_list", "task_filters_upsert", "task_filters_reorder"] {
+        for tool in ["task_filters_list", "task_filters_upsert", "task_filters_reorder", "task_projects_list", "task_projects_upsert", "task_goals_list", "task_goals_upsert", "task_areas_upsert", "task_key_results_upsert"] {
             XCTAssertEqual(policy(ACPToolCall(id: "1", title: "mcp__ironpet__\(tool)", kind: "other")), .allow, tool)
         }
         if case .allow = policy(ACPToolCall(id: "1", title: "mcp__ironpet__task_filters_delete", kind: "other")) { XCTFail("deleting a filter must ask") }
         if case .allow = policy(ACPToolCall(id: "1", title: "mcp__other__task_filters_upsert", kind: "other")) { XCTFail("another server must ask") }
+        for tool in ["task_projects_upsert", "task_goals_list", "task_goals_upsert", "task_areas_upsert", "task_key_results_upsert"] {
+            if case .allow = policy(ACPToolCall(id: "1", title: "mcp__other__\(tool)", kind: "other")) { XCTFail("another server must ask: \(tool)") }
+        }
+        if case .allow = policy(ACPToolCall(id: "1", title: "mcp__ironpet__task_key_results_delete", kind: "other")) { XCTFail("deleting a key result must ask") }
     }
 
     func testOwnTaskWritesAllowedButDeleteAndOtherServersAsk() {

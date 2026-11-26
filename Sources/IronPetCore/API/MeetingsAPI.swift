@@ -161,6 +161,9 @@ package final class MeetingsAPI {
     /// The ids of meetings are kept in the app's database. Set by the API owner once the database is open.
     package var records: RecordRefs?
 
+    /// The meeting's public `meeting_` id, for its detail page.
+    package func ref(_ meeting: MeetingRecord) -> String? { records.flatMap { MeetingIdentity.ref(folder: meeting.folder, records: $0) } }
+
     package func get(_ id: String) throws -> MeetingInfo {
         guard let info = list().first(where: { $0.id == id }) else { throw APIError.notFound("no meeting with id \"\(id)\"") }
         return info
