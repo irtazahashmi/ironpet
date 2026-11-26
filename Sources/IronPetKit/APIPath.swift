@@ -5,15 +5,12 @@ public enum APIPath {
     public static let pair = "/v1/pair"
     public static func pairStatus(_ id: String) -> String { "/v1/pair/\(id)" }
     public static let deviceMe = "/v1/devices/me"
-    public static let tasks = "/v1/tasks"
-    public static func task(_ id: String) -> String { "/v1/tasks/\(id)" }
-    public static func closeTask(_ id: String) -> String { "/v1/tasks/\(id)/close" }
-    /// Saved quick filters for the task list. A Mac older than this feature answers 404, and the phone then shows no chips.
-    public static let taskFilters = "/v1/task-filters"
-    public static func taskFilter(_ id: String) -> String { "/v1/task-filters/\(id)" }
+    /// The inbox. The routes keep the name they had when the inbox held suggestions for the task list, so a phone and a Mac on
+    /// different versions still reach each other.
     public static let suggestions = "/v1/suggestions"
+    /// Marks the item done.
     public static func acceptSuggestion(_ id: String) -> String { "/v1/suggestions/\(id)/accept" }
-    /// The Mac calls Skip "reject".
+    /// Removes the item. The Mac calls it "reject".
     public static func rejectSuggestion(_ id: String) -> String { "/v1/suggestions/\(id)/reject" }
     public static let events = "/v1/events"
     /// The voice socket: audio from the phone, transcripts and spoken replies from the Mac.
@@ -29,7 +26,7 @@ public enum APIPath {
     /// The agents as records (`agent.list`, `agent.get`). `/v1/agents` above is the coding-agent sessions.
     public static let agentRecords = "/v1/agent-records"
     public static func agentRecord(_ id: String) -> String { "/v1/agent-records/\(id)" }
-    /// The record a public id in chat names (`ironpet://task_9f3c1e`).
+    /// The record a public id in chat names (`ironpet://meeting_9f3c1e`).
     public static func record(_ id: String) -> String { "/v1/records/\(id)" }
     public static let alerts = "/v1/alerts"
     public static let dismissAllAlerts = "/v1/alerts/dismiss-all"

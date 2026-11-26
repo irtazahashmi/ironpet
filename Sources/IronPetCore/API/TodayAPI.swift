@@ -14,13 +14,13 @@ package struct BriefRequest: Codable, Equatable {
     package var day: Date?
 }
 
-/// The morning brief and the day's recap, built from tasks, agent sessions, alerts and meetings.
+/// The morning brief and the day's recap, built from agent sessions, alerts and meetings.
 @MainActor
 package final class TodayAPI {
     private let source: BriefSource
 
-    package init(tasks: TasksAPI, sessions: SessionStore, signals: SignalStore, meetingsRoot: URL = Paths.meetings) {
-        source = BriefSource(tasks: tasks, sessions: sessions, signals: signals, meetingsRoot: meetingsRoot)
+    package init(sessions: SessionStore, signals: SignalStore, meetingsRoot: URL = Paths.meetings) {
+        source = BriefSource(sessions: sessions, signals: signals, meetingsRoot: meetingsRoot)
     }
 
     /// Wraps a source built elsewhere, for previews and tests.

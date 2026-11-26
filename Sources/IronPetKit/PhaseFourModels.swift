@@ -193,10 +193,8 @@ public struct RemoteConfig: Codable, Equatable, Sendable {
 
     public struct Tasks: Codable, Equatable, Sendable {
         public var meetingSuggestions: Bool
-        public var dueReminders: Bool
-        public var keepDoneDays: Int
-        public init(meetingSuggestions: Bool = true, dueReminders: Bool = true, keepDoneDays: Int = 30) {
-            self.meetingSuggestions = meetingSuggestions; self.dueReminders = dueReminders; self.keepDoneDays = keepDoneDays
+        public init(meetingSuggestions: Bool = true) {
+            self.meetingSuggestions = meetingSuggestions
         }
     }
 

@@ -21,7 +21,7 @@ package struct RemotePhoneSettings {
     package static let allowed: Set<String> = {
         var keys: Set<String> = [
             "pet.name", "pet.sprite", "reminders.paused", "reminders.idleResetMinutes", "reminders.snoozeMinutes",
-            "tasks.dueReminders", "tasks.keepDoneDays", "tasks.meetingSuggestions", "welcomeBack.enabled",
+            "tasks.meetingSuggestions", "welcomeBack.enabled",
             "speech.enabled", "speech.voice", "chat.background",
         ]
         for item in ["water", "stretch", "eyes"] { keys.insert("reminders.\(item).enabled"); keys.insert("reminders.\(item).minutes") }
@@ -38,7 +38,7 @@ package struct RemotePhoneSettings {
             pet: .init(name: c.pet.name, sprite: nil),
             reminders: .init(paused: c.reminders.paused, water: reminder(c.reminders.water), stretch: reminder(c.reminders.stretch),
                              eyes: reminder(c.reminders.eyes), idleResetMinutes: c.reminders.idleResetMinutes, snoozeMinutes: c.reminders.snoozeMinutes),
-            tasks: .init(meetingSuggestions: c.tasks.meetingSuggestions, dueReminders: c.tasks.dueReminders, keepDoneDays: c.tasks.keepDoneDays),
+            tasks: .init(meetingSuggestions: c.tasks.meetingSuggestions),
             welcomeBack: .init(enabled: c.welcomeBack.enabled), speech: .init(enabled: c.speech.enabled, voice: c.speech.voice),
             chat: .init(background: c.chat.background), screenCapture: .init(enabled: c.screenCapture.enabled), meetings: .init(enabled: c.meetings.enabled)))
     }

@@ -1,9 +1,8 @@
 import Foundation
 
 /// What changed. A client that gets one of these reads the area again through the API. The event carries an id
-/// only when one thing changed (a task id, an alert id), so every event stays small and has no private text in it.
+/// only when one thing changed (an alert id), so every event stays small and has no private text in it.
 package enum APIEventKind: String, Codable, CaseIterable {
-    case tasksChanged = "tasks.changed"
     case suggestionsChanged = "suggestions.changed"
     case chatItem = "chat.item"
     case chatState = "chat.state"

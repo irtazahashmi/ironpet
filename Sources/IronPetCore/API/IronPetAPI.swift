@@ -122,7 +122,7 @@ package final class IronPetAPI {
         stores.tasks.events = events
         stores.automations.store.events = events
         stores.automations.registry = stores.agents
-        tasks = TasksAPI(store: stores.tasks, config: stores.config)
+        tasks = TasksAPI(store: stores.tasks)
         automations = AutomationsAPI(service: stores.automations)
         stores.signals.events = events
         stores.bubbles.events = events
@@ -152,7 +152,7 @@ package final class IronPetAPI {
         pet = PetAPI(settings: settings, assets: stores.petAssets)
         voice = VoiceAPI(speech: stores.speech, settings: settings)
         pet.events = events
-        today = TodayAPI(tasks: tasks, sessions: stores.sessions, signals: stores.signals)
+        today = TodayAPI(sessions: stores.sessions, signals: stores.signals)
         if let usageStore = stores.usage {
             usage = UsageAPI(store: usageStore)
             if usageStore === UsageStore.shared { UsageAPI.live = usage }
@@ -175,7 +175,7 @@ package final class IronPetAPI {
 
     /// The facades `session.hello` reports: the ones a client can call now. `memory` and `screen` join once they are attached.
     private var servedFacades: [String] {
-        var names = ["agents", "alerts", "automations", "bubbles", "chat", "meetings", "node", "notifications", "session", "settings", "tasks", "today"]
+        var names = ["agents", "alerts", "automations", "bubbles", "chat", "meetings", "node", "notifications", "inbox", "session", "settings", "today"]
         if agentRecords != nil { names.append("agentrecords") }
         if memory != nil { names.append("memory") }
         if screen != nil { names.append("screen") }

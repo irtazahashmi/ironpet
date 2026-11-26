@@ -57,8 +57,8 @@ public struct RecordDetails: Equatable, Sendable {
     private static let identity: Set<String> = ["kind", "ref", "key"]
 
     private static let kindNames: [String: String] = [
-        "screen": "Capture", "notif": "Notification", "meeting": "Meeting", "chat": "Chat", "msg": "Message", "task": "Task",
-        "auto": "Automation", "run": "Run", "job": "Job", "page": "Memory page", "claim": "Memory claim", "filter": "Quick filter",
+        "screen": "Capture", "notif": "Notification", "meeting": "Meeting", "chat": "Chat", "msg": "Message",
+        "auto": "Automation", "run": "Run", "job": "Job", "page": "Memory page", "claim": "Memory claim",
     ]
 
     /// One JSON value the sheet can show. Numbers that are whole print without a decimal point; `true` and `false` print as yes and no.
