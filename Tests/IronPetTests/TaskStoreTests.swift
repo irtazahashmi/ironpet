@@ -168,6 +168,7 @@ final class TaskStoreTests: XCTestCase {
 
         try add(["id": "mail:1", "title": "Different"])
         XCTAssertEqual(store.suggestions.count, 1, "same id")
+        XCTAssertEqual(store.suggestions.first?.title, "Different", "the same id while the item is in the inbox updates it")
         try store.remove(first.id)
         try add(["id": "mail:1", "title": long])
         XCTAssertEqual(store.suggestions.count, 0, "same id after a removal")
@@ -189,8 +190,8 @@ final class TaskStoreTests: XCTestCase {
     func testNoTwoMigrationsShareAVersionAndTheNewOneComesAfterEveryOldOne() {
         let versions = AppMigrations.all.map(\.version)
         XCTAssertEqual(versions.count, Set(versions).count)
-        XCTAssertEqual(TaskStore.migrations.map(\.version).max(), 590)
-        XCTAssertEqual(AppMigrations.latestVersion, 590)
+        XCTAssertEqual(TaskStore.migrations.map(\.version).max(), 591)
+        XCTAssertEqual(AppMigrations.latestVersion, 591)
     }
 
     // MARK: Migration 590 (S1)
@@ -233,6 +234,6 @@ final class TaskStoreTests: XCTestCase {
 
     func testAFreshDatabaseHasNoTaskTables() throws {
         let tables = try database.read { try $0.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'task%'") }.compactMap { $0[0] as? String }
-        XCTAssertEqual(Set(tables), ["task_suggestions", "task_suggestion_keys"])
+        XCTAssertEqual(Set(tables), ["task_suggestions", "task_suggestion_keys", "task_suggestion_sources", "task_suggestion_resolved"])
     }
 }

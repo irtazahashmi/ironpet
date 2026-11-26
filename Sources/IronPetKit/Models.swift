@@ -8,6 +8,18 @@ public struct TaskLink: Codable, Equatable, Hashable, Sendable {
     public init(kind: String, ref: String, label: String? = nil) { self.kind = kind; self.ref = ref; self.label = label }
 }
 
+/// One place an inbox item came from. An item that was merged lists each.
+public struct RemoteSource: Codable, Equatable, Hashable, Sendable {
+    public var kind: String
+    public var ref: String
+    public var url: String?
+    public var label: String?
+
+    public init(kind: String, ref: String, url: String? = nil, label: String? = nil) {
+        self.kind = kind; self.ref = ref; self.url = url; self.label = label
+    }
+}
+
 public struct RemoteSuggestion: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var id: String
     public var title: String
@@ -21,9 +33,11 @@ public struct RemoteSuggestion: Codable, Equatable, Hashable, Identifiable, Send
     public var url: String?
     public var waitingOn: String?
     public var sourceRef: RemoteJSON?
+    /// Every place the item came from. An older Mac sends none, and the phone falls back to `url`.
+    public var sources: [RemoteSource]
 
     enum CodingKeys: String, CodingKey {
-        case id, title, created, origin, due, notes, url
+        case id, title, created, origin, due, notes, url, sources
         case originDetail = "origin_detail"
         case waitingOn = "waiting_on"
         case sourceRef = "source_ref"
@@ -31,7 +45,8 @@ public struct RemoteSuggestion: Codable, Equatable, Hashable, Identifiable, Send
 
     public init(id: String, title: String, created: Date = Date(timeIntervalSince1970: 1_700_000_000), origin: String = "meeting",
                 originDetail: String? = nil, due: String? = nil, notes: String = "", url: String? = nil, waitingOn: String? = nil,
-                sourceRef: RemoteJSON? = nil) {
+                sourceRef: RemoteJSON? = nil, sources: [RemoteSource] = []) {
+        self.sources = sources
         self.id = id; self.title = title; self.created = created; self.origin = origin; self.originDetail = originDetail
         self.due = due; self.notes = notes; self.url = url; self.waitingOn = waitingOn; self.sourceRef = sourceRef
     }
@@ -48,6 +63,7 @@ public struct RemoteSuggestion: Codable, Equatable, Hashable, Identifiable, Send
         url = try c.decodeIfPresent(String.self, forKey: .url)
         waitingOn = try c.decodeIfPresent(String.self, forKey: .waitingOn)
         sourceRef = try c.decodeIfPresent(RemoteJSON.self, forKey: .sourceRef)
+        sources = try c.decodeIfPresent([RemoteSource].self, forKey: .sources) ?? []
     }
 
     public func encode(to encoder: Encoder) throws {
@@ -62,6 +78,7 @@ public struct RemoteSuggestion: Codable, Equatable, Hashable, Identifiable, Send
         try c.encodeIfPresent(url, forKey: .url)
         try c.encodeIfPresent(waitingOn, forKey: .waitingOn)
         try c.encodeIfPresent(sourceRef, forKey: .sourceRef)
+        if !sources.isEmpty { try c.encode(sources, forKey: .sources) }
     }
 }
 

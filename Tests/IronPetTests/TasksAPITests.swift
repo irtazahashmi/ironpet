@@ -31,9 +31,10 @@ final class TasksAPITests: XCTestCase {
 
     func testAnItemWithTheSameKeyOrTitleIsAddedOnce() {
         add("a", "Review the PR")
-        add("a", "Another title")
         add("b", "Review the PR")
-        XCTAssertEqual(api.tasks.suggestions.count, 1)
+        XCTAssertEqual(api.tasks.suggestions.count, 1, "a title that is already there is not added")
+        add("a", "Another title")
+        XCTAssertEqual(api.tasks.suggestions.map(\.title), ["Another title"], "the same key updates the item")
     }
 
     func testDoneTakesTheItemOffTheListAndCreatesNothingElse() throws {

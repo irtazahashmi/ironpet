@@ -25,7 +25,7 @@ final class ContractGoldenTests: XCTestCase {
             "memory": ["memory.call"], "settings": ["settings.get"], "today": ["today.brief"],
         ]
         let writes: [String: Set<String>] = [
-            "inbox": ["inbox.add", "inbox.done", "inbox.remove"], "alerts": ["alerts.dismiss"], "agents": ["agents.acknowledge"],
+            "inbox": ["inbox.add", "inbox.done", "inbox.remove", "inbox.resolve"], "alerts": ["alerts.dismiss"], "agents": ["agents.acknowledge"],
             "automations": ["automations.create", "automations.setEnabled"], "chat": ["chat.send", "chat.setMode"],
             "memory": ["memory.call"], "settings": ["settings.patch"], "today": ["today.brief"],
         ]

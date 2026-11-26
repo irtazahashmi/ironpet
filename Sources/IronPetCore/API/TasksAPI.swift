@@ -28,6 +28,17 @@ package struct RemoveSuggestionRequest: Codable, Equatable {
     package var note: String?
 }
 
+/// Takes an inbox item off the list because its source settled it. `id` is the item's id, or the id the agent added it under.
+package struct ResolveSuggestionRequest: Codable, Equatable {
+    package init(id: String, reason: String) {
+        self.id = id
+        self.reason = reason
+    }
+
+    package var id: String
+    package var reason: String
+}
+
 /// The inbox: items waiting for the user to mark them done or remove them. The one way a client reads or changes them.
 ///
 /// This is an `ObservableObject` on Apple platforms, so a SwiftUI view can redraw when the list changes. The list itself is read through the
@@ -55,10 +66,30 @@ package final class TasksAPI {
     /// Every item, oldest first.
     package var suggestions: [TaskSuggestion] { store.suggestions }
 
-    /// The item that was added, or none when it was a repeat or the title is already in the inbox.
+    /// The item the request ended up in: a new item, an item that took the new text, or an item that gained a source. None when it
+    /// was ignored (the id's item is gone, or the title is already in the inbox).
     @discardableResult
     package func suggest(_ request: SuggestTaskRequest) -> [TaskSuggestion] {
         store.suggest(request.draft, agent: request.kind, sourceRef: request.sourceRef)
+    }
+
+    /// `suggest` with what happened to the request.
+    package func file(_ request: SuggestTaskRequest) -> SuggestFiling {
+        store.file(request.draft, agent: request.kind, sourceRef: request.sourceRef).first ?? SuggestFiling(change: .ignored("nothing was filed"))
+    }
+
+    /// Items that left the list because their source settled them, newest first, with the reason.
+    package func resolved(limit: Int = 100) -> [ResolvedSuggestion] { store.resolved(limit: limit) }
+
+    /// Takes the item off the list and keeps the reason. The id is an item id or the id an agent added the item under.
+    @discardableResult
+    package func resolve(_ request: ResolveSuggestionRequest) throws -> ResolvedSuggestion {
+        try run {
+            guard let item = store.item(named: request.id, scopes: store.agentScopes) else {
+                throw TaskError(message: "no inbox item \"\(request.id)\"")
+            }
+            return try store.resolve(item.id, reason: request.reason)
+        }
     }
 
     /// Takes the item off the list. Nothing else is created.

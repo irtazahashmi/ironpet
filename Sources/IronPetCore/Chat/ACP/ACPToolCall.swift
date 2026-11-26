@@ -127,7 +127,7 @@ package enum ApprovalRules {
     /// read the stored, redacted captures. The `memory_*` tools write claims in `ironpet.db`, and `memory_forget` only moves them to a
     /// page's history, so none of them can lose anything, except `memory_merge`, which deletes the merged pages for good and so still asks.
     /// Of the assistant tools, those that start, steer or stop a job still ask.
-    package static let ownTaskTools: Set<String> = Set(["inbox_list", "inbox_add", "inbox_done", "inbox_remove",
+    package static let ownTaskTools: Set<String> = Set(["inbox_list", "inbox_add", "inbox_done", "inbox_remove", "inbox_resolve",
                                          "screen_search", "screen_window", RecordMCP.name]).union(plainNamedTools)
 
     /// Tools whose names are plain enough (`memory_forget`, `status_overview`) to belong to another server.

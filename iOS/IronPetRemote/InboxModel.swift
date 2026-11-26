@@ -71,3 +71,25 @@ extension RemoteSuggestion {
         return link
     }
 }
+
+/// A page an inbox item came from, with the word on its link.
+struct SourceLink: Identifiable, Equatable {
+    var label: String
+    var url: URL
+    var id: String { url.absoluteString }
+}
+
+extension RemoteSuggestion {
+    /// One link for each source that has a web page. An item merged from a meeting and a mail has a link for the mail. A Mac that sends
+    /// no source list gives the single `sourceLink`.
+    var sourceLinks: [SourceLink] {
+        var links: [SourceLink] = []
+        for source in sources {
+            guard let raw = source.url, let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased()),
+                  !links.contains(where: { $0.url == url }) else { continue }
+            links.append(SourceLink(label: source.label ?? url.host ?? raw, url: url))
+        }
+        if links.isEmpty, let link = sourceLink { links.append(SourceLink(label: link.host ?? link.absoluteString, url: link)) }
+        return links
+    }
+}
