@@ -556,7 +556,7 @@ package final class EntityMemoryStore: MemoryStore {
     package func move(_ moves: [Move], source: String) -> Int {
         var moved = 0
         for move in moves {
-            guard move.scope.namedType != nil, let name = MemoryNote.personName(move.entity),
+            guard move.scope.namedType != nil, !WorkItemGuard.isWorkItem(move.entity), let name = MemoryNote.personName(move.entity),
                   case .success(let target) = named(move.scope.namedType ?? .project, name) else { continue }
             let at = now()
             let outcome = try? database.write { db -> (claim: MemoryClaim, from: String)? in
@@ -829,6 +829,9 @@ package final class EntityMemoryStore: MemoryStore {
             }
         case .project, .org, .topic, .tool:
             let type = scope.namedType ?? .project
+            if WorkItemGuard.isWorkItem(entity) {
+                return .failure(MemoryError(message: "a ticket, issue or PR is not a page; file the note on the project it belongs to and keep the reference in the note"))
+            }
             if let name = MemoryNote.personName(entity) { return named(type, name) }
             guard scope == .project else {
                 return .failure(MemoryError(message: "a note about \(type.label.lowercased()) needs its name in entity"))
