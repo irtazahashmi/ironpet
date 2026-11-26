@@ -56,11 +56,12 @@ final class ApprovalRulesTests: XCTestCase {
     }
 
     func testQuickFilterToolsAllowedButDeleteAsks() {
-        for tool in ["task_filters_list", "task_filters_upsert", "task_filters_reorder"] {
+        for tool in ["task_filters_list", "task_filters_upsert", "task_filters_reorder", "task_projects_list", "task_projects_upsert"] {
             XCTAssertEqual(policy(ACPToolCall(id: "1", title: "mcp__ironpet__\(tool)", kind: "other")), .allow, tool)
         }
         if case .allow = policy(ACPToolCall(id: "1", title: "mcp__ironpet__task_filters_delete", kind: "other")) { XCTFail("deleting a filter must ask") }
         if case .allow = policy(ACPToolCall(id: "1", title: "mcp__other__task_filters_upsert", kind: "other")) { XCTFail("another server must ask") }
+        if case .allow = policy(ACPToolCall(id: "1", title: "mcp__other__task_projects_upsert", kind: "other")) { XCTFail("another server must ask") }
     }
 
     func testOwnTaskWritesAllowedButDeleteAndOtherServersAsk() {

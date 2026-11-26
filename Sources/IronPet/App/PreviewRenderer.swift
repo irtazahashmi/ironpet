@@ -170,6 +170,10 @@ enum PreviewRenderer {
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks-light", scheme: .light)
         // Tall enough to show the folded groups at the end: Someday, Deferred and Done.
         render(list(sessions, tasks: tasks, on: .tasks, height: 1200), to: dir, "tasks-all-groups")
+        // The Projects view: next actions per project, and a stalled one.
+        TaskViewMode.projects.save()
+        render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks-projects")
+        TaskViewMode.list.save()
         // The Next actions chip, selected: the open tasks grouped under their contexts.
         QuickFilterSelection.save(BuiltInQuickFilters.nextActionsID)
         render(list(sessions, tasks: tasks, on: .tasks, height: 1000), to: dir, "tasks-next-actions")
@@ -862,6 +866,15 @@ enum PreviewRenderer {
         if let renew = store.tasks.first(where: { $0.title == "Renew the domain" }) {
             _ = try? store.update(renew.id, deferUntil: .some(today.addingTimeInterval(10 * day)), by: "agent:mcp")
         }
+        if let launch = try? store.upsertProject(id: nil, title: "Ship release 2.4", outcome: "2.4 is in the App Store", area: "Work", goal: nil,
+                                                  status: nil, reviewDays: 7) {
+            for title in ["Write the release notes for 2.4", "Fix the flaky login test"] {
+                if let task = store.tasks.first(where: { $0.title == title }) { _ = try? store.update(task.id, project: .some(launch.id), by: "agent:mcp") }
+            }
+        }
+        _ = try? store.upsertProject(id: nil, title: "Move to the new office", outcome: "The team works from Kalasatama", area: "Work",
+                                     goal: nil, status: nil, reviewDays: nil)
+        _ = try? store.upsertProject(id: nil, title: "Learn Rust", outcome: "", area: "Growth", goal: nil, status: .someday, reviewDays: nil)
         for (title, context) in [("Make the settings page work on mobile", "phone"), ("Fix the flaky login test", "mac"),
                                  ("Upgrade the docs site to Node 20", "agent")] {
             if let task = store.tasks.first(where: { $0.title == title }) {

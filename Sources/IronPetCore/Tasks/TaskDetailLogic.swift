@@ -127,6 +127,12 @@ package enum TaskEdits {
         try tasks.update(UpdateTaskRequest(id: id, due: due, clearDue: due == nil))
     }
 
+    /// Makes the task a step of `project`, or takes it out with nil.
+    @MainActor @discardableResult
+    package static func setProject(_ project: String?, of id: String, in tasks: TasksAPI) throws -> TaskItem {
+        try tasks.update(UpdateTaskRequest(id: id, project: project, clearProject: project == nil))
+    }
+
     /// Hides the task until `date`, or shows it again now with nil.
     @MainActor @discardableResult
     package static func setDeferUntil(_ date: Date?, of id: String, in tasks: TasksAPI) throws -> TaskItem {

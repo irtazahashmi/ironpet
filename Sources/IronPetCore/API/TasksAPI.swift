@@ -41,8 +41,10 @@ package struct CreateTaskRequest: Codable, Equatable {
         sourceRef: String? = nil,
         labels: [String: String] = [:],
         deferUntil: Date? = nil,
+        project: String? = nil,
         by: String = "user"
     ) {
+        self.project = project
         self.title = title
         self.notes = notes
         self.status = status
@@ -68,6 +70,8 @@ package struct CreateTaskRequest: Codable, Equatable {
     package var labels: [String: String] = [:]
     /// Keeps the task out of the list until then.
     package var deferUntil: Date?
+    /// The GTD project it is a step of.
+    package var project: String?
     /// Who is asking: `user`, `agent:mcp`, `agent:cli`. It goes to the task's history.
     package var by = "user"
 }
@@ -87,11 +91,15 @@ package struct UpdateTaskRequest: Codable, Equatable {
         removeLabels: [String] = [],
         deferUntil: Date? = nil,
         clearDeferUntil: Bool = false,
+        project: String? = nil,
+        clearProject: Bool = false,
         note: String? = nil,
         by: String = "user"
     ) {
         self.deferUntil = deferUntil
         self.clearDeferUntil = clearDeferUntil ? true : nil
+        self.project = project
+        self.clearProject = clearProject ? true : nil
         self.id = id
         self.title = title
         self.notes = notes
@@ -124,6 +132,9 @@ package struct UpdateTaskRequest: Codable, Equatable {
     /// Shows the task again now. `deferUntil` is ignored when this is true. Optional, so a request from a client that
     /// predates it still decodes.
     package var clearDeferUntil: Bool?
+    package var project: String?
+    /// Takes the task out of its project. Optional for the same reason as `clearDeferUntil`.
+    package var clearProject: Bool?
     /// Goes to the history only, to say why something changed.
     package var note: String?
     package var by = "user"
@@ -280,7 +291,7 @@ package final class TasksAPI {
         try run {
             try store.create(title: request.title, notes: request.notes, status: request.status, source: request.source, due: request.due,
                              links: request.links, waitingOn: request.waitingOn, sourceRef: request.sourceRef, labels: request.labels,
-                             deferUntil: request.deferUntil, by: request.by)
+                             deferUntil: request.deferUntil, project: request.project, by: request.by)
         }
     }
 
@@ -292,6 +303,7 @@ package final class TasksAPI {
                              links: request.links, waitingOn: request.waitingOn.map { .some($0) }, addLabels: request.labels,
                              removeLabels: request.removeLabels,
                              deferUntil: request.clearDeferUntil == true ? .some(nil) : request.deferUntil.map { .some($0) },
+                             project: request.clearProject == true ? .some(nil) : request.project.map { .some($0) },
                              note: request.note, by: request.by)
         }
     }
@@ -352,3 +364,22 @@ extension TasksAPI: ObservableObject {
     package nonisolated var objectWillChange: ObservableObjectPublisher { changes.objectWillChange }
 }
 #endif
+
+// MARK: Projects
+
+extension TasksAPI {
+    package var projects: [TaskProject] { store.projects }
+
+    package func project(_ id: String) -> TaskProject? { store.project(id) }
+
+    package func nextActions(of project: String, now: Date = Date()) -> [TaskItem] { store.nextActions(of: project, now: now) }
+
+    package func stalledProjects(now: Date = Date()) -> [TaskProject] { store.stalledProjects(now: now) }
+
+    @discardableResult
+    package func upsertProject(id: String?, title: String?, outcome: String? = nil, area: String?? = nil, goal: String?? = nil,
+                               status: TaskProject.Status? = nil, reviewDays: Int?? = nil, markReviewed: Bool = false) throws -> TaskProject {
+        try store.upsertProject(id: id, title: title, outcome: outcome, area: area, goal: goal, status: status, reviewDays: reviewDays,
+                                markReviewed: markReviewed)
+    }
+}
