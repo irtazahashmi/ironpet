@@ -225,7 +225,8 @@ final class Announcer {
     }
 
     /// Replaces the previous one, so a run shows one bubble however many suggestions it stored.
-    func taskSuggestions(_ added: [TaskSuggestion], review: @escaping () -> Void = {}) {
+    /// With `bubble` false the notification is still stored and only the popup and chime are skipped.
+    func taskSuggestions(_ added: [TaskSuggestion], review: @escaping () -> Void = {}, bubble showBubble: Bool = true) {
         guard var bubble = Self.taskSuggestionsBubble(added, review: review), let first = added.first else { return }
         var source = NotificationItem.systemSource
         if case .automation(let id, _) = first.origin { source = id }
@@ -234,6 +235,7 @@ final class Announcer {
                                       summary: "\(added.count) \(added.count == 1 ? "item" : "items") in your inbox",
                                       description: lines + "\n\nAdd or skip them in the Tasks section.")
         if let show = store(draft) { bubble.onTap = show }
+        guard showBubble else { return }
         bubbles.show(bubble)
         chime()
     }

@@ -215,7 +215,7 @@ package final class AutomationService {
     }
 
     /// Stores the notice as a notification, then shows its bubble. Pressing Done on the bubble marks the notification read.
-    private func post(_ notice: AutomationNotice) {
+    private func post(_ notice: AutomationNotice, bubble: Bool = true) {
         var notice = notice
         if let stored = notifications?.add(NotificationDraft(notice: notice)) {
             let id = stored.id
@@ -231,7 +231,7 @@ package final class AutomationService {
                 return button
             }
         }
-        self.notice(notice)
+        if bubble { self.notice(notice) }
     }
 
     /// Call once `notice` and the other outputs are set: reports a bad file and asks about automations waiting for approval.
@@ -323,6 +323,8 @@ package final class AutomationService {
 
     /// Whether commands, scripts and prompts an agent writes are approved without asking. Set from the settings.
     package var autoApproveEnabled: () -> Bool = { false }
+    /// Whether the "Auto-approved" bubble shows. Off still records the notification.
+    package var autoApproveBubblesEnabled: () -> Bool = { true }
 
     /// Asks about every enabled automation whose command or prompt is new and not the user's own.
     /// With auto-approve on, it approves them instead, through the same `approve` as the Approve button.
@@ -335,7 +337,7 @@ package final class AutomationService {
                 approve(a.id)
                 post(AutomationNotice(id: "automation-auto-approved:\(a.id)", symbol: "checkmark.shield.fill", tint: .info,
                                         title: "Auto-approved \"\(a.name)\"", subtitle: "Created by \(a.createdBy).", expires: 15,
-                                        notificationType: .other))
+                                        notificationType: .other), bubble: autoApproveBubblesEnabled())
                 continue
             }
             let hash = AutomationState.hash(a.riskText ?? "")

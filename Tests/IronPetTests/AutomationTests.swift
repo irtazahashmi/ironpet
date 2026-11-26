@@ -581,6 +581,32 @@ final class AutomationApprovalTests: AutomationTestCase {
         await until("the run") { ran == ["echo hi"] }
     }
 
+    func testAutoApproveWithBubblesOffStillApprovesAndRecordsButShowsNoBubble() async {
+        let rig = makeRig()
+        rig.service.autoApproveEnabled = { true }
+        rig.service.autoApproveBubblesEnabled = { false }
+        let database = Database.open(path: nil, migrations: AppMigrations.all).database
+        let notifications = NotificationStore(database: database)
+        rig.service.notifications = notifications
+        await createShell(rig)
+        XCTAssertFalse(rig.service.needsApproval(rig.store.automations[0]), "still approved")
+        XCTAssertNil(rig.notices.last("automation-auto-approved:sh"), "no bubble")
+        XCTAssertTrue(notifications.list().contains { $0.title == "Auto-approved \"Shell\"" }, "still recorded")
+    }
+
+    func testAutoApproveBubbleShowsAgainWhenTheSwitchIsTurnedBackOn() async {
+        let rig = makeRig()
+        rig.service.autoApproveEnabled = { true }
+        var bubbles = false
+        rig.service.autoApproveBubblesEnabled = { bubbles }
+        await createShell(rig)
+        XCTAssertNil(rig.notices.last("automation-auto-approved:sh"))
+        bubbles = true
+        _ = await rig.service.call("create", ["id": "sh2", "name": "Second", "trigger": ["type": "interval", "minutes": 5, "clock": "wall"],
+                                              "action": ["type": "shell", "command": "echo two"]], by: "agent:mcp")
+        XCTAssertEqual(rig.notices.last("automation-auto-approved:sh2")?.title, "Auto-approved \"Second\"")
+    }
+
     func testAutoApproveApprovesAnAgentUpdate() async {
         let rig = makeRig()
         rig.service.autoApproveEnabled = { true }
@@ -1842,6 +1868,15 @@ final class AutomationAgentTests: AutomationTestCase {
         XCTAssertFalse(loaded.automations.autoApprove, "an old config without the key loads as off")
         try #"{"automations":{"autoApprove":true}}"#.write(to: file, atomically: true, encoding: .utf8)
         XCTAssertTrue(Config.load(from: file).config.automations.autoApprove)
+    }
+
+    func testAutoApproveBubblesAreOnByDefaultAndForAnOldConfig() throws {
+        XCTAssertTrue(Config().automations.autoApproveBubbles)
+        let file = dir.appendingPathComponent("config.json")
+        try #"{"automations":{"autoApprove":true}}"#.write(to: file, atomically: true, encoding: .utf8)
+        XCTAssertTrue(Config.load(from: file).config.automations.autoApproveBubbles)
+        try #"{"automations":{"autoApproveBubbles":false}}"#.write(to: file, atomically: true, encoding: .utf8)
+        XCTAssertFalse(Config.load(from: file).config.automations.autoApproveBubbles)
     }
 }
 

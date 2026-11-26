@@ -13,6 +13,7 @@
         "result" : {
           "automations" : {
             "autoApprove" : false,
+            "autoApproveBubbles" : true,
             "autoFix" : true,
             "keptThreads" : 50,
             "logRetentionDays" : 14,
@@ -128,6 +129,7 @@
             "voice" : "am_puck"
           },
           "tasks" : {
+            "meetingSuggestionBubbles" : true,
             "meetingSuggestions" : true
           },
           "telegram" : {
@@ -187,6 +189,7 @@
         "result" : {
           "automations" : {
             "autoApprove" : false,
+            "autoApproveBubbles" : true,
             "autoFix" : true,
             "keptThreads" : 50,
             "logRetentionDays" : 14,
@@ -302,6 +305,7 @@
             "voice" : "am_puck"
           },
           "tasks" : {
+            "meetingSuggestionBubbles" : true,
             "meetingSuggestions" : true
           },
           "telegram" : {
@@ -358,6 +362,7 @@
         "result" : {
           "automations" : {
             "autoApprove" : false,
+            "autoApproveBubbles" : true,
             "autoFix" : true,
             "keptThreads" : 50,
             "logRetentionDays" : 14,
@@ -473,6 +478,7 @@
             "voice" : "am_puck"
           },
           "tasks" : {
+            "meetingSuggestionBubbles" : true,
             "meetingSuggestions" : true
           },
           "telegram" : {
