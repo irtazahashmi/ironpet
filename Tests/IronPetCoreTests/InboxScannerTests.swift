@@ -298,7 +298,7 @@ final class InboxScannerTests: XCTestCase {
 
 @MainActor
 final class InboxScanCursorTests: XCTestCase {
-    func testACursorIsKeptPerKeyAndSurvivesReopeningTheDatabase() throws {
+    func testACursorIsKeptPerKeyAndSurvivesReopeningTheDatabase() async throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-scan-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
