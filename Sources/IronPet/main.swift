@@ -4,12 +4,15 @@ import SwiftUI
 
 Log.fallbackSink = OSLogLog()
 
-// `IronPet automations …`, `IronPet notifications …`, `IronPet memory …` and `IronPet mcp` talk to the running app and never open a window.
+// `IronPet automations …`, `IronPet notifications …`, `IronPet inbox …`, `IronPet memory …` and `IronPet mcp` talk to the running app and never open a window.
 if CommandLine.arguments.dropFirst().first == "automations" {
     exit(AutomationCLI.run(Array(CommandLine.arguments.dropFirst(2))))
 }
 if CommandLine.arguments.dropFirst().first == "notifications" {
     exit(NotificationCLI.run(Array(CommandLine.arguments.dropFirst(2))))
+}
+if CommandLine.arguments.dropFirst().first == "inbox" {
+    exit(InboxCLI.run(Array(CommandLine.arguments.dropFirst(2))))
 }
 if CommandLine.arguments.dropFirst().first == "memory" {
     exit(MemoryCLI.run(Array(CommandLine.arguments.dropFirst(2))))

@@ -209,6 +209,9 @@ package enum MCPEndpoint {
             case "/notifications":
                 guard let api = notifications() else { return respond("503 Service Unavailable", Data()) }
                 result = NotificationMCP.handleCLI(body, api: api)
+            case "/inbox":
+                guard let api = tasks() else { return respond("503 Service Unavailable", Data()) }
+                result = TaskMCP.handleCLI(body, api: api)
             case "/memory":
                 guard let api = memory() else { return respond("503 Service Unavailable", Data()) }
                 result = MemoryMCP.handleCLI(body, api: api)

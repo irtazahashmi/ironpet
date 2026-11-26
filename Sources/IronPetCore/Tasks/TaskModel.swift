@@ -24,6 +24,20 @@ package enum TaskSource: String, CaseIterable, Codable {
     package static let originKinds: [TaskSource] = [.chat, .agent, .meeting, .capture, .automation, .email, .pr, .user]
 }
 
+/// One note added to an inbox item, after it was created.
+package struct InboxNote: Equatable {
+    package init(at: Date, by: String, text: String) {
+        self.at = at
+        self.by = by
+        self.text = text
+    }
+
+    package var at: Date
+    /// Who added it: `cli`, `agent:mcp` or `user`.
+    package var by: String
+    package var text: String
+}
+
 /// Something an inbox item points at: the meeting it came from or a web page.
 package struct TaskLink: Equatable, Codable {
     package init(kind: Kind, ref: String, label: String? = nil) {
@@ -128,6 +142,15 @@ package struct TaskSuggestion: Identifiable, Equatable, Codable {
         case .meeting: return .meeting
         case .automation: return .automation
         }
+    }
+
+    /// The source a reader filters by. An item an agent or the CLI added keeps its kind (`email`, `pr`, `cli`), which the store
+    /// records in the automation id as `agent:<kind>`.
+    package var originKind: TaskSource {
+        if case .automation(let id, _) = origin, id.hasPrefix("agent:"), let kind = TaskSource(rawValue: String(id.dropFirst("agent:".count))) {
+            return kind
+        }
+        return source
     }
 
     /// "Meeting", or "From" and the automation's name.
