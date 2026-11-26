@@ -29,13 +29,13 @@ final class ActiveAgentTests: XCTestCase {
 
     // MARK: S1, selecting and keeping the choice
 
-    func testAgentOneIsActiveUntilAnotherIsSelected() throws {
+    func testAgentOneIsActiveUntilAnotherIsSelected() async throws {
         let registry = try memoryRegistry()
         try registry.create(name: "Bunny", agentCli: "claude")
         XCTAssertEqual(registry.activeAgentID, AgentOwner.defaultID)
     }
 
-    func testSelectingAnAgentMakesItActiveAndItSurvivesARestart() throws {
+    func testSelectingAnAgentMakesItActiveAndItSurvivesARestart() async throws {
         var registry: AgentRegistry? = try openRegistry()
         let bunny = try XCTUnwrap(registry?.create(name: "Bunny", agentCli: "claude"))
         try registry?.select(active: bunny.id)
@@ -45,7 +45,7 @@ final class ActiveAgentTests: XCTestCase {
         XCTAssertEqual(reopened.activeAgentID, bunny.id, "a new registry over the same file reads the stored choice")
     }
 
-    func testSelectingAgentOneAgainMovesBack() throws {
+    func testSelectingAgentOneAgainMovesBack() async throws {
         let registry = try memoryRegistry()
         let bunny = try registry.create(name: "Bunny", agentCli: "claude")
         try registry.select(active: bunny.id)
@@ -53,7 +53,7 @@ final class ActiveAgentTests: XCTestCase {
         XCTAssertEqual(registry.activeAgentID, AgentOwner.defaultID)
     }
 
-    func testSelectingAnUnknownOrDisabledAgentThrowsAndKeepsTheChoice() throws {
+    func testSelectingAnUnknownOrDisabledAgentThrowsAndKeepsTheChoice() async throws {
         let registry = try memoryRegistry()
         let bunny = try registry.create(name: "Bunny", agentCli: "claude")
         let owl = try registry.create(name: "Owl", agentCli: "claude")
@@ -64,7 +64,7 @@ final class ActiveAgentTests: XCTestCase {
         XCTAssertEqual(registry.activeAgentID, bunny.id)
     }
 
-    func testSelectingTheActiveAgentAnnouncesNothing() throws {
+    func testSelectingTheActiveAgentAnnouncesNothing() async throws {
         let registry = try memoryRegistry()
         let bunny = try registry.create(name: "Bunny", agentCli: "claude")
         try registry.select(active: bunny.id)
@@ -77,7 +77,7 @@ final class ActiveAgentTests: XCTestCase {
 
     // MARK: S2, falling back to agent 1
 
-    func testDisablingTheActiveAgentMakesAgentOneActiveAndEnablingItAgainDoesNotBringItBack() throws {
+    func testDisablingTheActiveAgentMakesAgentOneActiveAndEnablingItAgainDoesNotBringItBack() async throws {
         let registry = try memoryRegistry()
         let bunny = try registry.create(name: "Bunny", agentCli: "claude")
         try registry.select(active: bunny.id)
@@ -87,7 +87,7 @@ final class ActiveAgentTests: XCTestCase {
         XCTAssertEqual(registry.activeAgentID, AgentOwner.defaultID, "the choice was forgotten, not hidden")
     }
 
-    func testDeletingTheActiveAgentMakesAgentOneActive() throws {
+    func testDeletingTheActiveAgentMakesAgentOneActive() async throws {
         let registry = try memoryRegistry()
         let bunny = try registry.create(name: "Bunny", agentCli: "claude")
         try registry.select(active: bunny.id)
@@ -95,7 +95,7 @@ final class ActiveAgentTests: XCTestCase {
         XCTAssertEqual(registry.activeAgentID, AgentOwner.defaultID)
     }
 
-    func testDisablingAnotherAgentKeepsTheActiveOne() throws {
+    func testDisablingAnotherAgentKeepsTheActiveOne() async throws {
         let registry = try memoryRegistry()
         let bunny = try registry.create(name: "Bunny", agentCli: "claude")
         let owl = try registry.create(name: "Owl", agentCli: "claude")
@@ -104,13 +104,13 @@ final class ActiveAgentTests: XCTestCase {
         XCTAssertEqual(registry.activeAgentID, bunny.id)
     }
 
-    func testAStoredIdNoAgentHasIsAgentOneAtStartup() throws {
+    func testAStoredIdNoAgentHasIsAgentOneAtStartup() async throws {
         let database = try Database(path: nil, migrations: AppMigrations.all)
         try database.write { try $0.execute("INSERT INTO agent_active(id, agent_id) VALUES(1, 'agent_gone')") }
         XCTAssertEqual(AgentRegistry(database: database).activeAgentID, AgentOwner.defaultID)
     }
 
-    func testTheChoiceChangeIsAnnouncedBeforeADisableMovesIt() throws {
+    func testTheChoiceChangeIsAnnouncedBeforeADisableMovesIt() async throws {
         let registry = try memoryRegistry()
         let bunny = try registry.create(name: "Bunny", agentCli: "claude")
         try registry.select(active: bunny.id)
@@ -128,7 +128,7 @@ final class ActiveAgentTests: XCTestCase {
                    makeSession: { ChatSession(restore: false, agentID: $0) })
     }
 
-    func testOnlyTheActiveAgentSpeaksAndSelectingAnotherMovesSpeech() throws {
+    func testOnlyTheActiveAgentSpeaksAndSelectingAnotherMovesSpeech() async throws {
         let registry = try memoryRegistry()
         let bunny = try registry.create(name: "Bunny", agentCli: "claude")
         let hub = chats(registry)
@@ -145,7 +145,7 @@ final class ActiveAgentTests: XCTestCase {
         XCTAssertFalse(hub.speaksReplies(bunny.id))
     }
 
-    func testAnActiveAgentWithNoRunningChatLeavesSpeechAndVoiceWithAgentOne() throws {
+    func testAnActiveAgentWithNoRunningChatLeavesSpeechAndVoiceWithAgentOne() async throws {
         let registry = try memoryRegistry()
         let bunny = try registry.create(name: "Bunny", agentCli: "claude")
         try registry.select(active: bunny.id)
@@ -155,7 +155,7 @@ final class ActiveAgentTests: XCTestCase {
         XCTAssertFalse(hub.speaksReplies(bunny.id))
     }
 
-    func testWithOnlyAgentOneItIsActiveAndSpeaks() throws {
+    func testWithOnlyAgentOneItIsActiveAndSpeaks() async throws {
         let hub = chats(try memoryRegistry())
         XCTAssertEqual(hub.activeAgentID, AgentOwner.defaultID)
         XCTAssertTrue(hub.speaksReplies(AgentOwner.defaultID))
@@ -167,7 +167,7 @@ final class ActiveAgentTests: XCTestCase {
 
     // MARK: S5, the highlight
 
-    func testExactlyOnePetIsHighlightedAndOnlyWithSeveralPets() {
+    func testExactlyOnePetIsHighlightedAndOnlyWithSeveralPets() async {
         let both = [AgentOwner.defaultID, "agent_b"]
         XCTAssertEqual(AgentPetSet.highlighted(active: AgentOwner.defaultID, onScreen: both), AgentOwner.defaultID)
         XCTAssertEqual(AgentPetSet.highlighted(active: "agent_b", onScreen: both), "agent_b")
