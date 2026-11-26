@@ -190,8 +190,8 @@ final class TaskStoreTests: XCTestCase {
     func testNoTwoMigrationsShareAVersionAndTheNewOneComesAfterEveryOldOne() {
         let versions = AppMigrations.all.map(\.version)
         XCTAssertEqual(versions.count, Set(versions).count)
-        XCTAssertEqual(TaskStore.migrations.map(\.version).max(), 591)
-        XCTAssertEqual(AppMigrations.latestVersion, 591)
+        XCTAssertEqual(TaskStore.migrations.map(\.version).max(), 592)
+        XCTAssertEqual(AppMigrations.latestVersion, 592)
     }
 
     // MARK: Migration 590 (S1)
@@ -234,6 +234,6 @@ final class TaskStoreTests: XCTestCase {
 
     func testAFreshDatabaseHasNoTaskTables() throws {
         let tables = try database.read { try $0.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name LIKE 'task%'") }.compactMap { $0[0] as? String }
-        XCTAssertEqual(Set(tables), ["task_suggestions", "task_suggestion_keys", "task_suggestion_sources", "task_suggestion_resolved"])
+        XCTAssertEqual(Set(tables), ["task_suggestions", "task_suggestion_keys", "task_suggestion_sources", "task_suggestion_resolved", "task_suggestion_notes"])
     }
 }

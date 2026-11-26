@@ -175,10 +175,16 @@ package final class TaskStore {
             let hasRefs = try db.rows("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'record_refs'")
             if !hasRefs.isEmpty { try db.execute("DELETE FROM record_refs WHERE kind IN ('task', 'filter')") }
         },
+        // Notes added to an inbox item by the user, the CLI or an agent. They are append-only and go when the item does.
+        .init(591, "inbox: notes on an item", sql: """
+            CREATE TABLE IF NOT EXISTS task_suggestion_notes(id INTEGER PRIMARY KEY AUTOINCREMENT, item TEXT NOT NULL, at REAL NOT NULL,
+                                                             by TEXT NOT NULL, text TEXT NOT NULL);
+            CREATE INDEX IF NOT EXISTS task_suggestion_notes_by_item ON task_suggestion_notes(item, id);
+            """),
         // An item lists every place it came from, so a mail about a meeting's item adds a source instead of a second item. Each row gets
         // its one source from its origin and url. A key remembers the item it made, so the same id arriving again updates that item
         // while it is in the inbox. A resolved item keeps its reason here after it leaves the list.
-        .init(591, "inbox: sources, key to item, resolved items") { db in
+        .init(592, "inbox: sources, key to item, resolved items") { db in
             try db.script("""
                 CREATE TABLE IF NOT EXISTS task_suggestion_sources(suggestion TEXT NOT NULL, position INTEGER NOT NULL, kind TEXT NOT NULL,
                                                                    ref TEXT NOT NULL, url TEXT, label TEXT,
@@ -212,6 +218,8 @@ package final class TaskStore {
 
     /// Called after any change.
     package var onChange: (() -> Void)?
+    /// Called with the items a call added, after they are stored. Not called when a launch loads the items already there.
+    package var onAdded: (([TaskSuggestion]) -> Void)?
     /// Where changes are published for API clients: `suggestions.changed`.
     package weak var events: APIEventBus?
 
@@ -396,6 +404,8 @@ package final class TaskStore {
         }
         reload()
         didChange()
+        let added = filings.compactMap { $0.change == .added ? $0.item : nil }
+        if !added.isEmpty { onAdded?(added) }
         return filings
     }
 
@@ -544,14 +554,46 @@ package final class TaskStore {
     package var agentScopes: [String] { TaskSource.originKinds.map { "agent:\($0.rawValue)" } }
 
     private func removeSuggestion(_ id: String) {
-        try? database.write {
-            try $0.execute("DELETE FROM task_suggestions WHERE id = ?", [id])
-            try $0.execute("DELETE FROM task_suggestion_sources WHERE suggestion = ?", [id])
+        try? database.write { db in
+            try db.execute("DELETE FROM task_suggestions WHERE id = ?", [id])
+            try db.execute("DELETE FROM task_suggestion_sources WHERE suggestion = ?", [id])
+            try db.execute("DELETE FROM task_suggestion_notes WHERE item = ?", [id])
             // The keys stay, so the same id arriving again is ignored. They stop naming the item, so a later item that gets the
             // same id is not changed by an old key.
-            try $0.execute("UPDATE task_suggestion_keys SET item = NULL WHERE item = ?", [id])
+            try db.execute("UPDATE task_suggestion_keys SET item = NULL WHERE item = ?", [id])
         }
         reload()
+        didChange()
+    }
+
+    // MARK: Notes
+
+    /// The notes on an item, oldest first.
+    package func notes(for suggestionID: String) -> [InboxNote] {
+        let rows = (try? database.read { db in
+            try db.rows("SELECT at, by, text FROM task_suggestion_notes WHERE item = ? ORDER BY id", [suggestionID])
+        }) ?? []
+        return rows.compactMap { row in
+            guard let at = row[0] as? Double, let by = row[1] as? String, let text = row[2] as? String else { return nil }
+            return InboxNote(at: Date(timeIntervalSince1970: at), by: by, text: text)
+        }
+    }
+
+    /// Adds a note to an item. The text is cleaned like any text from outside and must not be empty.
+    package func addNote(_ suggestionID: String, text: String, by: String) throws {
+        guard suggestions.contains(where: { $0.id == suggestionID }) else { throw TaskError(message: "no inbox item \"\(suggestionID)\"") }
+        var clean = TaskSuggestion.Draft.clean(text, limit: TaskValidator.maxNotes, newlines: true)
+        while clean.utf8.count > TaskValidator.maxNotes { clean.removeLast() }
+        guard !clean.isEmpty else { throw TaskError(message: "the note is empty") }
+        let time = now()
+        do {
+            try database.write { db in
+                try db.execute("INSERT INTO task_suggestion_notes(item, at, by, text) VALUES(?, ?, ?, ?)",
+                               [suggestionID, time.timeIntervalSince1970, by, clean])
+            }
+        } catch {
+            throw TaskError(message: "could not save the note: \(error.localizedDescription)")
+        }
         didChange()
     }
 

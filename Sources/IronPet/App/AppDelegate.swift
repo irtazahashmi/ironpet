@@ -357,7 +357,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             spawner: platform.processes))
         engine.timing = { [config] in
             let r = config.config.reminders
-            return .init(paused: r.paused, idleResetMinutes: r.idleResetMinutes, snoozeMinutes: r.snoozeMinutes)
+            return .init(idleResetMinutes: r.idleResetMinutes, snoozeMinutes: r.snoozeMinutes)
         }
         // The app's one database. Features add their migrations to this list, in version order.
         let database = Database.open(path: Paths.root.appendingPathComponent("ironpet.db"), migrations: AppMigrations.all).database
@@ -367,6 +367,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let tasks = TaskStore(database: database)
         taskStore = tasks
         let service = AutomationService(store: store, engine: engine, database: database)
+        tasks.onAdded = { [weak service] items in service?.inboxItemsAdded(items) }
         let notificationStore = NotificationStore(database: database)
         // Agent 1 takes over the chat settings an older build kept in UserDefaults and config.json, once, before anything reads them.
         let agentRegistry = AgentRegistry(database: database)
@@ -1726,7 +1727,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return item
     }
 
-    /// Every automation with a switch, plus the pause for all reminders.
+    /// Every automation with a switch.
     private func automationsMenuItem() -> NSMenuItem {
         let submenu = NSMenu()
         for a in automations.store.automations {
@@ -1737,10 +1738,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             submenu.addItem(item)
         }
         submenu.addItem(.separator())
-        let pause = NSMenuItem(title: "Pause reminders", action: #selector(toggleReminderPause), keyEquivalent: "")
-        pause.state = config.config.reminders.paused ? .on : .off
-        pause.target = self
-        submenu.addItem(pause)
         let logs = NSMenuItem(title: "Show logs…", action: #selector(showAutomationLogs), keyEquivalent: "")
         logs.target = self
         submenu.addItem(logs)
@@ -1760,10 +1757,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     @objc private func toggleAutomation(_ sender: NSMenuItem) {
         guard let id = sender.representedObject as? String else { return }
         try? automations.store.update(id) { $0.enabled.toggle() }
-    }
-
-    @objc private func toggleReminderPause() {
-        config.update { $0.reminders.paused.toggle() }
     }
 
     @objc private func toggleMCPSharing() {

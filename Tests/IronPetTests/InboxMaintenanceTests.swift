@@ -241,10 +241,10 @@ final class InboxMaintenanceTests: XCTestCase {
         XCTAssertEqual(store.resolved().first?.sources.first?.kind, .meeting)
     }
 
-    // MARK: Migration 591
+    // MARK: Migration 592
 
-    func testMigration591GivesEveryExistingRowItsOneSourceAndKeepsTheKeys() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-591-\(UUID().uuidString)")
+    func testMigration592GivesEveryExistingRowItsOneSourceAndKeepsTheKeys() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-592-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let file = dir.appendingPathComponent("ironpet.db")
@@ -274,7 +274,7 @@ final class InboxMaintenanceTests: XCTestCase {
     }
 
     func testAnOlderBuildRefusesTheNewDatabase() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-591-old-\(UUID().uuidString)")
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-592-old-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let file = dir.appendingPathComponent("ironpet.db")

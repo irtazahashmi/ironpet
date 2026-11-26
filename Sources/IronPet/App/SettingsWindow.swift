@@ -159,6 +159,7 @@ struct SettingsView: View {
         Page(tag: "general", title: "General", symbol: SharedSymbols.settings),
         Page(tag: "memory", title: "Memory", symbol: SharedSymbols.memory),
         Page(tag: "prompts", title: "Prompts", symbol: "text.bubble"),
+        Page(tag: "automations", title: "Automations", symbol: "clock.arrow.2.circlepath"),
         Page(tag: "integrations", title: "Integrations", symbol: "puzzlepiece.extension"),
         Page(tag: "voice", title: "Voice", symbol: SharedSymbols.microphone),
         Page(tag: "meetings", title: "Meetings", symbol: "person.2.wave.2"),
@@ -214,6 +215,7 @@ struct SettingsView: View {
         switch model.tab {
         case "memory": MemorySettings(model: model)
         case "prompts": PromptsSettings(model: model)
+        case "automations": AutomationSettingsPage(model: model)
         case "integrations": IntegrationsSettings(telegram: model.telegram)
         case "voice": VoiceSettings(model: model)
         case "meetings": MeetingSettings(model: model)
@@ -269,7 +271,7 @@ private struct GeneralSettings: View {
         let minutes = Int(store.config.reminders.idleResetMinutes)
         return "When you come back after \(minutes) minute\(minutes == 1 ? "" : "s") away, \(store.config.pet.name) sums up what happened in one "
             + "bubble instead of the ones you missed. Built from what ironpet already knows on this Mac; nothing is sent anywhere. "
-            + "The away time is set under Automations → Timing."
+            + "The away time is set under Settings → Automations."
     }
 
     var body: some View {

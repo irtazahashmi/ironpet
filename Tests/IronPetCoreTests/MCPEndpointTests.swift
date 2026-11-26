@@ -36,7 +36,7 @@ final class MCPEndpointTests: XCTestCase {
         let tools = try XCTUnwrap((reply["result"] as? [String: Any])?["tools"] as? [[String: Any]])
         let names = Set(tools.compactMap { $0["name"] as? String })
         XCTAssertTrue(names.isSuperset(of: ["automations_list", "automations_create", "automations_run_now", "automations_history"]))
-        XCTAssertEqual(Set(names.filter { $0.hasPrefix("inbox_") }), ["inbox_list", "inbox_add", "inbox_done", "inbox_remove", "inbox_resolve"])
+        XCTAssertEqual(Set(names.filter { $0.hasPrefix("inbox_") }), ["inbox_list", "inbox_get", "inbox_note", "inbox_add", "inbox_done", "inbox_remove", "inbox_resolve"])
         XCTAssertEqual(names.filter { $0.hasPrefix("tasks_") || $0.hasPrefix("task_") || $0.hasPrefix("task_filters_") }, [],
                        "the task list tools are gone")
         XCTAssertEqual(Set(names.filter { $0.hasPrefix("screen_") }), ["screen_search", "screen_window"], "the screen tools are listed for the chat agents")

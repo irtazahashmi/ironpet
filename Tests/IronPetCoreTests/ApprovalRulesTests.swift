@@ -56,7 +56,7 @@ final class ApprovalRulesTests: XCTestCase {
     }
 
     func testInboxToolsOfTheIronpetServerAreAllowedButOtherServersAsk() {
-        for tool in ["inbox_list", "inbox_add", "inbox_done", "inbox_remove"] {
+        for tool in ["inbox_list", "inbox_get", "inbox_note", "inbox_add", "inbox_done", "inbox_remove"] {
             XCTAssertEqual(policy(ACPToolCall(id: "1", title: "mcp__ironpet__\(tool)", kind: "other", rawInput: ["title": "x"])), .allow, tool)
             XCTAssertEqual(policy(ACPToolCall(id: "1", title: tool, kind: "other")), .allow, "bare \(tool)")
             if case .allow = policy(ACPToolCall(id: "1", title: "mcp__other__\(tool)", kind: "other")) { XCTFail("another server must ask: \(tool)") }
