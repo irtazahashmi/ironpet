@@ -22,7 +22,7 @@ package struct JobError: Error, LocalizedError {
 
 /// Runs background jobs: at most `maxRunning` at once, the rest in line. Each job gets its own agent process in its
 /// folder. the agent's own mode decides what it asks. A request that is not a read or another call ironpet always allows waits for Allow
-/// in a bubble. A task tracks every job, the transcript is saved as a thread, and the state is kept in `ironpet.db`, so
+/// in a bubble. The transcript is saved as a thread, and the state is kept in `ironpet.db`, so
 /// a job that was running when ironpet quit shows as interrupted on the next launch.
 @MainActor
 package final class JobService: ObservableObject {
@@ -39,8 +39,6 @@ package final class JobService: ObservableObject {
     package static var retention: TimeInterval { TimeInterval(ConfigStore.shared.config.jobs.retentionDays * 86_400) }
     /// Jobs kept in memory for `jobs_list`, newest first.
     package static let listed = 50
-    /// Who job changes are recorded as in a task's history.
-    package static let taskAuthor = "agent:job"
     /// A job started by voice waits this long after the pet has said what it started, so "cancel that" stops it before it
     /// has done anything.
     package static let voiceHold: TimeInterval = 5
@@ -76,7 +74,7 @@ package final class JobService: ObservableObject {
     /// The text a job's first turn starts with, before the request.
     package var preamble: (Job) -> String = { job in
         JobService.instructions(job) + "\n\n"
-            + MemoryPreamble.build(store: EntityMemoryStore.shared, workspace: URL(fileURLWithPath: job.folder), firstMessage: job.prompt, keepsTasks: false)
+            + MemoryPreamble.build(store: EntityMemoryStore.shared, workspace: URL(fileURLWithPath: job.folder), firstMessage: job.prompt)
     }
     /// Where a request from a job waits for an answer: an alert, the Mac's bubble and notification, Telegram and the phone. The app
     /// replaces it with the shared one.
@@ -92,7 +90,6 @@ package final class JobService: ObservableObject {
     package var voiceHoldLimit = JobService.voiceHoldLimit
 
     private let database: Database
-    private let tasks: TaskStore?
     private let now: () -> Date
     private var runs: [String: Run] = [:]
     /// Jobs started by voice in this run of the app. Not stored: after a restart they are interrupted anyway.
@@ -118,9 +115,8 @@ package final class JobService: ObservableObject {
     /// The public ids of jobs, kept in the same database.
     package var records: RecordRefs { RecordRefs(database: database) }
 
-    package init(database: Database, tasks: TaskStore?, now: @escaping () -> Date = Date.init) {
+    package init(database: Database, now: @escaping () -> Date = Date.init) {
         self.database = database
-        self.tasks = tasks
         self.now = now
         prune()
         interruptLeftovers()
@@ -171,7 +167,7 @@ package final class JobService: ObservableObject {
         unreleased.remove(id)
     }
 
-    /// Starts a job in `folder`, or queues it when `maxRunning` jobs already run. Creates its task at once. A job from
+    /// Starts a job in `folder`, or queues it when `maxRunning` jobs already run. A job from
     /// voice mode is held until `releaseVoiceHolds` and `voiceHoldSeconds` after it.
     @discardableResult
     package func start(title: String, prompt: String, folder: URL, fromVoice: Bool = false) throws -> Job {
@@ -186,13 +182,8 @@ package final class JobService: ObservableObject {
             throw JobError(message: "\(folder.path) is not a folder")
         }
         guard let (agent, model) = currentAgent() else { throw JobError(message: "no agent is available to run the job") }
-        var job = Job(id: Job.makeID(), title: title, prompt: prompt, folder: folder.standardizedFileURL.path, agent: agent.id,
+        let job = Job(id: Job.makeID(), title: title, prompt: prompt, folder: folder.standardizedFileURL.path, agent: agent.id,
                       model: model, created: now())
-        if let tasks {
-            let task = try? tasks.create(title: title, notes: "Background job \(job.id) in \(folder.lastPathComponent).",
-                                         status: .inProgress, source: .agent, sourceRef: job.id, by: Self.taskAuthor)
-            job.task = task?.id
-        }
         if fromVoice { holdForVoice(job.id) }
         jobs.insert(job, at: 0)
         trim()
@@ -229,9 +220,6 @@ package final class JobService: ObservableObject {
             job.started = nil
             job.ended = nil
         }
-        if let task = job.task, tasks?.task(task)?.status != .inProgress {
-            _ = try? tasks?.update(task, status: .inProgress, note: "Follow-up: \(String(message.prefix(200)))", by: Self.taskAuthor)
-        }
         if fromVoice { holdForVoice(id) }
         pump()
         return self.job(id) ?? job
@@ -249,7 +237,7 @@ package final class JobService: ObservableObject {
         } else {
             pendingFollowUps[id] = nil
             release(id)
-            finish(id, state: .stopped, note: "Stopped before it started.")
+            finish(id, state: .stopped)
         }
         return self.job(id) ?? job
     }
@@ -345,7 +333,7 @@ package final class JobService: ObservableObject {
         runs[id] = nil
         let answer = run.transcript.answer
         if run.stopRequested {
-            finish(id, state: .stopped, note: "Stopped by the user.")
+            finish(id, state: .stopped)
         } else if case .some(.some(let error)) = outcome {
             finish(id, state: .failed, error: error)
         } else {
@@ -373,7 +361,6 @@ package final class JobService: ObservableObject {
             switch event {
             case .session(let session):
                 update(id) { $0.thread = session }
-                linkTask(id, thread: session)
                 saveThread(id, run: run)
             case .toolStarted, .toolUpdated:
                 if let step = run.transcript.lastStep, job(id)?.lastStep != step { update(id) { $0.lastStep = step } }
@@ -408,10 +395,7 @@ package final class JobService: ObservableObject {
                     job.state = .running
                     job.waitingFor = nil
                 }
-            }, timedOut: { [weak self] line in
-                guard let self, let task = self.job(id)?.task else { return }
-                _ = try? tasks?.update(task, status: nil, note: line, by: Self.taskAuthor)
-            })
+            }, timedOut: { _ in })
             update(id) { job in
                 job.state = .needsApproval
                 job.waitingFor = title
@@ -422,7 +406,7 @@ package final class JobService: ObservableObject {
     /// Raises a job's waiting requests again, say after their bubble was closed without an answer.
     package func showApprovals(_ id: String) { permissions.reshow(owner: id) }
 
-    private func finish(_ id: String, state: JobState, summary: String? = nil, error: String? = nil, note: String? = nil) {
+    private func finish(_ id: String, state: JobState, summary: String? = nil, error: String? = nil) {
         update(id) { job in
             job.state = state
             job.ended = self.now()
@@ -430,23 +414,6 @@ package final class JobService: ObservableObject {
             job.summary = summary ?? (state == .done ? job.summary : nil)
             job.error = error
         }
-        guard let job = job(id), let task = job.task, let tasks, tasks.task(task) != nil else { return }
-        switch state {
-        case .done:
-            _ = try? tasks.close(task, note: "Job finished" + (summary.map { ": \($0)" } ?? "."), by: Self.taskAuthor)
-        case .failed:
-            _ = try? tasks.update(task, status: .needsYou, note: "Job failed: \(error ?? "unknown error")", by: Self.taskAuthor)
-        case .stopped:
-            _ = try? tasks.close(task, note: note ?? "Stopped.", by: Self.taskAuthor)
-        default:
-            break
-        }
-    }
-
-    private func linkTask(_ id: String, thread: String) {
-        guard let job = job(id), let task = job.task, let item = tasks?.task(task),
-              !item.links.contains(where: { $0.kind == .thread && $0.ref == thread }) else { return }
-        _ = try? tasks?.update(task, links: item.links + [TaskLink(kind: .thread, ref: thread, label: "Job transcript")], by: Self.taskAuthor)
     }
 
     private func saveThread(_ id: String, run: Run) {
@@ -467,20 +434,13 @@ package final class JobService: ObservableObject {
         onChange(job)
     }
 
-    /// A job that was queued or running when ironpet quit has no process any more. Its task goes back to the backlog.
+    /// A job that was queued or running when ironpet quit has no process any more.
     private func interruptLeftovers() {
         let active = JobState.allCases.filter(\.isActive).map(\.rawValue)
         let marks = Array(repeating: "?", count: active.count).joined(separator: ", ")
-        let tasks = (try? database.read { db in
-            try db.rows("SELECT task FROM jobs WHERE state IN (\(marks)) AND task IS NOT NULL", active)
-        })?.compactMap { $0[0] as? String } ?? []
         try? database.write { db in
             try db.execute("UPDATE jobs SET state = ?, ended = ? WHERE state IN (\(marks))",
                            [JobState.interrupted.rawValue, now().timeIntervalSince1970] + active)
-        }
-        for task in tasks where self.tasks?.task(task)?.status == .inProgress {
-            _ = try? self.tasks?.update(task, status: .backlog, note: "ironpet quit while this job was running. Ask Ghost to run it again.",
-                                        by: Self.taskAuthor)
         }
     }
 
@@ -501,10 +461,10 @@ package final class JobService: ObservableObject {
         do {
             try database.write { db in
                 try db.execute("""
-                    INSERT OR REPLACE INTO jobs(id, title, prompt, folder, agent, model, thread, task, state, last_step, summary, error,
+                    INSERT OR REPLACE INTO jobs(id, title, prompt, folder, agent, model, thread, state, last_step, summary, error,
                                                 created, started, ended)
-                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, [job.id, job.title, job.prompt, job.folder, job.agent, job.model, job.thread, job.task, job.state.rawValue,
+                    VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, [job.id, job.title, job.prompt, job.folder, job.agent, job.model, job.thread, job.state.rawValue,
                           job.lastStep, job.summary, job.error, job.created.timeIntervalSince1970,
                           job.started?.timeIntervalSince1970, job.ended?.timeIntervalSince1970])
             }
@@ -516,19 +476,19 @@ package final class JobService: ObservableObject {
     private func load() -> [Job] {
         let rows = (try? database.read { db in
             try db.rows("""
-                SELECT id, title, prompt, folder, agent, model, thread, task, state, last_step, summary, error, created, started, ended
+                SELECT id, title, prompt, folder, agent, model, thread, state, last_step, summary, error, created, started, ended
                 FROM jobs ORDER BY created DESC LIMIT ?
                 """, [Self.listed])
         }) ?? []
         return rows.compactMap { row in
             guard let id = row[0] as? String, let title = row[1] as? String, let prompt = row[2] as? String, let folder = row[3] as? String,
-                  let agent = row[4] as? String, let state = (row[8] as? String).flatMap(JobState.init(rawValue:)),
-                  let created = row[12] as? Double else { return nil }
+                  let agent = row[4] as? String, let state = (row[7] as? String).flatMap(JobState.init(rawValue:)),
+                  let created = row[11] as? Double else { return nil }
             func date(_ value: Any?) -> Date? { (value as? Double).map(Date.init(timeIntervalSince1970:)) }
             return Job(id: id, title: title, prompt: prompt, folder: folder, agent: agent, model: row[5] as? String,
-                       thread: row[6] as? String, task: row[7] as? String, state: state, lastStep: row[9] as? String,
-                       summary: row[10] as? String, error: row[11] as? String, created: Date(timeIntervalSince1970: created),
-                       started: date(row[13]), ended: date(row[14]))
+                       thread: row[6] as? String, state: state, lastStep: row[8] as? String,
+                       summary: row[9] as? String, error: row[10] as? String, created: Date(timeIntervalSince1970: created),
+                       started: date(row[12]), ended: date(row[13]))
         }
     }
 

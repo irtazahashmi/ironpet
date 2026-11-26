@@ -5,9 +5,7 @@ extension TaskLink {
     package var symbol: String {
         switch kind {
         case .url: return "safari"
-        case .file: return "folder"
-        case .thread: return SharedSymbols.chat
-        case .session: return "arrow.up.forward.app"
+        case .meeting: return SharedSymbols.meetings
         }
     }
 
@@ -16,9 +14,7 @@ extension TaskLink {
         let name = label?.trimmingCharacters(in: .whitespaces).nilIfEmpty
         switch kind {
         case .url: return "Open \(name ?? URL(string: ref)?.host ?? "link")"
-        case .file: return "Show \(name ?? (ref as NSString).lastPathComponent) in Finder"
-        case .thread: return "Open \(name ?? "chat thread")"
-        case .session: return "Open \(name ?? "agent session")"
+        case .meeting: return "Open \(name ?? "meeting")"
         }
     }
 }

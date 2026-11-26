@@ -1,7 +1,7 @@
 import Foundation
 
 /// The background pass that learns from what Ghost saw. Once an hour the digest reads what is new since the last one: each chat's
-/// messages, each meeting summary written since, the task list, the screen captures when `memory.learnFromScreen` is on, and any page
+/// messages, each meeting summary written since, the screen captures when `memory.learnFromScreen` is on, and any page
 /// with more claims than `memory.maxClaimsPerEntity`, which it merges. An automation's final answer is read when it arrives. Each run
 /// sends only what is new to one agent, with the notes Ghost already has, and saves what the agent names through `MemoryStore`. One run
 /// at a time.
@@ -26,8 +26,6 @@ package final class MemoryReflector {
         case meeting(URL, agent: String)
         /// Only the run's final answer, never the item text an automation fetched. `agent` is the one that ran it.
         case automation(id: String, name: String, answer: String, agent: String)
-        /// The tasks that are new or changed since the last digest.
-        case tasks(agent: String)
         /// The screen captures since the last digest.
         case screen(agent: String)
         /// The oldest facts of one page that holds more than `memory.maxClaimsPerEntity`, merged into fewer.
@@ -76,10 +74,9 @@ package final class MemoryReflector {
     package var now: () -> Date = Date.init
     package var threads: (String) -> ChatThread? = ThreadStore.load
     package var recentThreads: () -> [ChatThread] = { ThreadStore.recent(limit: 50, automationLimit: 0) }
-    package var tasks: () -> [TaskItem] = { [] }
     /// Newest first, as `CaptureStore.recent` returns them.
     package var captures: () -> [StoredCapture] = { [] }
-    /// The chat's agent, which reads tasks, screen text and merges when `memory.reflectAgent` is not set.
+    /// The chat's agent, which reads screen text and merges when `memory.reflectAgent` is not set.
     package var digestAgent: () -> String? = { nil }
     package var petName: () -> String = { ConfigStore.shared.config.pet.name }
     /// Shows a question in the alerts, such as which of two people a name means.
@@ -128,10 +125,9 @@ package final class MemoryReflector {
         }
         for meeting in pendingMeetings { enqueue(.meeting(meeting.folder, agent: meeting.agent)) }
         pendingMeetings = []
-        // Tasks, screen text and merges go to the chat's agent: it already reads the tasks and the captures through its tools. Under a picked
+        // Screen text and merges go to the chat's agent: it already reads the captures through its tools. Under a picked
         // agent they go only when that is the chat's agent, since `reader(for:)` skips other text.
         guard let agent = digestReaderAgent(), config.reader(for: agent) != nil else { return }
-        if !changedTasks().isEmpty { enqueue(.tasks(agent: agent)) }
         if config.learnFromScreen, !freshCaptures().isEmpty { enqueue(.screen(agent: agent)) }
         for entity in store.entities() where store.claims(of: entity.id).count > config.maxClaimsPerEntity {
             enqueue(.merge(entity: entity.id, agent: agent))
@@ -187,7 +183,7 @@ package final class MemoryReflector {
         }
     }
 
-    /// The agent that reads tasks, screen text and merges: the chat's agent. Nil when no chat has an agent yet.
+    /// The agent that reads screen text and merges: the chat's agent. Nil when no chat has an agent yet.
     package func digestReaderAgent() -> String? {
         digestAgent()
     }
@@ -231,20 +227,10 @@ package final class MemoryReflector {
         ReflectionReading.transcript(messages, petName: petName(), maxInput: Self.maxInput)
     }
 
-    /// The tasks whose title, notes or status differ from what the last digest saw, with the stamp to store for each.
-    private func changedTasks() -> [(task: TaskItem, stamp: String)] {
-        tasks().compactMap { task in
-            let stamp = Self.stamp("\(task.title)\n\(task.notes)\n\(task.status)")
-            return index.cursor(Self.taskKey(task.id))?.item == stamp ? nil : (task, stamp)
-        }
-    }
-
     /// The screen captures newer than the last digest read, newest first.
     private func freshCaptures() -> [StoredCapture] {
         ReflectionReading.freshCaptures(captures(), after: index.cursor(Self.screenKey)?.item)
     }
-
-    private static func taskKey(_ id: String) -> String { "task:" + id }
 
     private static func stamp(_ text: String) -> String { ReflectionReading.stamp(text) }
 
@@ -255,7 +241,7 @@ package final class MemoryReflector {
         /// The agent that already had this text.
         let agent: String
         let project: ProjectKey?
-        /// Meeting summaries, automation answers, tasks and screen text hold what other people wrote or saw. They may not write `me.md`.
+        /// Meeting summaries, automation answers and screen text hold what other people wrote or saw. They may not write `me.md`.
         let outside: Bool
         /// The cursors to move once the run succeeds, or when there is nothing to read.
         let cursors: [(key: String, item: String)]
@@ -281,20 +267,6 @@ package final class MemoryReflector {
         case .automation(let id, let name, let answer, let agent):
             return Input(text: String(answer.prefix(Self.maxInput)), kind: "the answer \(petName()) gave in the automation \"\(name)\"",
                          source: "automation:" + id, agent: agent, project: nil, outside: true, cursors: [])
-        case .tasks(let agent):
-            // Whole tasks only, newest first, so a long list is read in part and the rest is read by a later digest.
-            var lines: [String] = [], cursors: [(key: String, item: String)] = [], used = 0
-            for (task, stamp) in changedTasks() {
-                let notes = task.notes.trimmingCharacters(in: .whitespacesAndNewlines)
-                let line = "- \(task.title) (\(task.status))" + (notes.isEmpty ? "" : ": \(notes)")
-                if used + line.count > Self.maxInput { break }
-                lines.append(line)
-                cursors.append((key: Self.taskKey(task.id), item: stamp))
-                used += line.count + 1
-            }
-            guard !lines.isEmpty else { return nil }
-            return Input(text: lines.joined(separator: "\n"), kind: "the user's task list, the tasks that are new or changed",
-                         source: "tasks", agent: agent, project: nil, outside: true, cursors: cursors)
         case .screen(let agent):
             // A job queued before the switch was turned off must not read the screen after it.
             guard config().learnFromScreen else { return nil }

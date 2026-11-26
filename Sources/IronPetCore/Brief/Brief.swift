@@ -12,41 +12,36 @@ package struct Brief: Equatable, Codable {
     }
 
     package enum Kind: String, CaseIterable, Identifiable, Codable {
-        case brief, recap, review
+        case brief, recap
         package var id: String { rawValue }
         package var title: String {
             switch self {
             case .brief: return "Morning brief"
             case .recap: return "Today's recap"
-            case .review: return "Weekly review"
             }
         }
         package var pickerTitle: String {
             switch self {
             case .brief: return "Brief"
             case .recap: return "Recap"
-            case .review: return "Review"
             }
         }
         package var symbol: String {
             switch self {
             case .brief: return "sun.max.fill"
             case .recap: return "moon.stars.fill"
-            case .review: return "checklist"
             }
         }
         package var emptyText: String {
             switch self {
             case .brief: return "Nothing needs you this morning."
             case .recap: return "Quiet day: nothing finished or closed today."
-            case .review: return "Nothing to review: the inbox is empty and every project has a next action."
             }
         }
     }
 
     /// What a row opens.
     package enum Target: Equatable, Codable {
-        case task(String)
         /// A watched agent session. `workspace`, `bundleID` and `iterm` reopen it once the session has ended.
         case session(id: String, workspace: String?, bundleID: String?, iterm: String? = nil)
         case alert(id: String, url: URL?)
@@ -166,24 +161,14 @@ package struct BriefInput {
         now: Date,
         calendar: Calendar = .current,
         day: Date? = nil,
-        tasks: [TaskItem] = [],
         sessions: [AgentSession] = [],
         alerts: [Signal] = [],
         meetings: [BriefMeeting] = [],
-        activity: [BriefActivity] = [],
-        suggestions: [TaskSuggestion] = [],
-        projects: [TaskProject] = [],
-        goals: [TaskGoal] = [],
-        keyResults: [TaskKeyResult] = []
+        activity: [BriefActivity] = []
     ) {
-        self.suggestions = suggestions
-        self.projects = projects
-        self.goals = goals
-        self.keyResults = keyResults
         self.now = now
         self.calendar = calendar
         self.day = day
-        self.tasks = tasks
         self.sessions = sessions
         self.alerts = alerts
         self.meetings = meetings
@@ -194,16 +179,10 @@ package struct BriefInput {
     package var calendar: Calendar = .current
     /// The day the recap covers, from its start to `now`. Nil is the day of `now`.
     package var day: Date? = nil
-    package var tasks: [TaskItem] = []
     package var sessions: [AgentSession] = []
     package var alerts: [Signal] = []
     package var meetings: [BriefMeeting] = []
     package var activity: [BriefActivity] = []
-    /// For the weekly review and the goal alignment score.
-    package var suggestions: [TaskSuggestion] = []
-    package var projects: [TaskProject] = []
-    package var goals: [TaskGoal] = []
-    package var keyResults: [TaskKeyResult] = []
 }
 
 package enum BriefBuilder {
@@ -224,7 +203,6 @@ package enum BriefBuilder {
         switch kind {
         case .brief: return brief(input, meetingsSince: meetingsSince)
         case .recap: return recap(input)
-        case .review: return review(input)
         }
     }
 
@@ -233,61 +211,29 @@ package enum BriefBuilder {
     package static func brief(_ input: BriefInput, meetingsSince: Date? = nil) -> Brief {
         let now = input.now, calendar = input.calendar
         let since = meetingsSince ?? self.meetingsSince(weekdays: nil, now: now, calendar: calendar)
-        let open = input.tasks.filter { $0.status != .done }
-        let endOfToday = calendar.date(byAdding: .day, value: 1, to: calendar.startOfDay(for: now)) ?? now
-
-        let due = open.filter { task in task.due.map { $0 < endOfToday } ?? false }.sorted { ($0.due!, $0.id) < ($1.due!, $1.id) }
-        let overdue = due.filter { $0.isOverdue(now: now, calendar: calendar) }
-        let dueItems = due.map { task in
-            Brief.Item(id: "due:\(task.id)", symbol: task.isOverdue(now: now, calendar: calendar) ? "calendar.badge.exclamationmark" : "calendar",
-                       title: task.title, subtitle: task.dueLabel(now: now, calendar: calendar), target: .task(task.id))
-        }
-        let dueIDs = Set(due.map(\.id))
-        let needsYou = open.filter { $0.needsUser(now: now) && !dueIDs.contains($0.id) }.sorted { $0.updated > $1.updated }
-        let needsItems = needsYou.map { Brief.Item(id: "needs:\($0.id)", symbol: "person.fill.questionmark", title: $0.title,
-                                                   subtitle: "Needs you", target: .task($0.id)) }
-
         let alerts = orderedAlerts(actionable(input.alerts))
         let alertItems = alerts.map(alertItem)
 
-        let done = input.tasks.filter { $0.status == .done }.map { ActionItems.normalized($0.title) }
-        let openTasks = Dictionary(open.map { (ActionItems.normalized($0.title), $0.id) }, uniquingKeysWith: { first, _ in first })
         var meetingItems: [Brief.Item] = []
         for meeting in input.meetings.filter({ $0.date >= since && $0.date <= now }).sorted(by: { $0.date < $1.date }) {
-            for (index, text) in meeting.openItems.enumerated() where !done.contains(ActionItems.normalized(text)) {
-                let target: Brief.Target = openTasks[ActionItems.normalized(text)].map { .task($0) } ?? .meeting(meeting.id)
+            for (index, text) in meeting.openItems.enumerated() {
                 meetingItems.append(.init(id: "meeting:\(meeting.id):\(index)", symbol: SharedSymbols.meetings, title: text,
-                                          subtitle: meetingLabel(meeting, now: now, calendar: calendar), target: target))
+                                          subtitle: meetingLabel(meeting, now: now, calendar: calendar), target: .meeting(meeting.id)))
             }
         }
 
         let waiting = waitingSessions(input.sessions)
         let waitingItems = waiting.map(sessionItem)
 
-        var sections = [
-            Brief.Section(id: "due", title: "Due", items: dueItems),
-            Brief.Section(id: "needs", title: "Needs you", items: needsItems),
+        let sections = [
             Brief.Section(id: "alerts", title: "Alerts", items: alertItems),
             Brief.Section(id: "meetings", title: "From recent meetings", items: meetingItems),
             Brief.Section(id: "agents", title: "Agents waiting", items: waitingItems),
         ]
         var lines: [String] = []
-        if !due.isEmpty {
-            let today = due.count - overdue.count
-            switch (today, overdue.count) {
-            case (0, let late): lines.append("\(count(late, "task")) overdue")
-            case (let t, 0): lines.append("\(count(t, "task")) due today")
-            case (let t, let late): lines.append("\(count(t, "task")) due today, \(late) overdue")
-            }
-        }
-        if !needsYou.isEmpty { lines.append("\(count(needsYou.count, "task")) \(needsYou.count == 1 ? "needs" : "need") you") }
         if !alerts.isEmpty { lines.append(alertLine(alerts)) }
         if !meetingItems.isEmpty { lines.append("\(count(meetingItems.count, "open action item")) from meetings") }
         if !waiting.isEmpty { lines.append("\(count(waiting.count, "agent")) waiting for you") }
-        // How much of the last week served a goal, once the user has one. Only next to other news, so a quiet brief stays empty.
-        if sections.contains(where: { !$0.items.isEmpty }), let alignment = GoalAlignment.section(GoalAlignment.score(input, in: DateInterval(start: now.addingTimeInterval(-7 * 86_400), end: now))) {
-            sections.append(alignment)
-        }
         return Brief(kind: .brief, window: DateInterval(start: min(since, now), end: now), sections: sections, lines: Array(lines.prefix(4)))
     }
 
@@ -307,9 +253,6 @@ package enum BriefBuilder {
                        target: .session(id: event.ref, workspace: event.workspace, bundleID: event.bundleID, iterm: event.iterm))
         }
 
-        let closed = input.tasks.filter { task in task.status == .done && task.closed.map(window.contains) == true }.sorted { $0.closed! > $1.closed! }
-        let closedItems = closed.map { Brief.Item(id: "closed:\($0.id)", symbol: "checkmark.circle", title: $0.title, subtitle: "Done", target: .task($0.id)) }
-
         let resolved = today.filter { $0.kind == .alertResolved }
         let resolvedItems = resolved.enumerated().map { index, event in
             Brief.Item(id: "resolved:\(event.ref):\(index)", symbol: "checkmark.seal.fill", title: event.title,
@@ -322,17 +265,12 @@ package enum BriefBuilder {
                        subtitle: meetingLabel(m, now: now, calendar: calendar), target: .meeting(m.id))
         }
 
-        let stillTasks = input.tasks.filter { $0.waitingOn == nil && !$0.isDeferred(now: now) && ($0.status == .needsYou || $0.status == .inProgress) }
-            .sorted { ($0.status == .needsYou ? 0 : 1, $0.updated) < ($1.status == .needsYou ? 0 : 1, $1.updated) }
         let stillAlerts = orderedAlerts(actionable(input.alerts))
         let stillAgents = waitingSessions(input.sessions)
-        let stillItems = stillTasks.map { Brief.Item(id: "open:\($0.id)", symbol: $0.status == .needsYou ? "person.fill.questionmark" : "arrow.triangle.2.circlepath",
-                                                     title: $0.title, subtitle: $0.status.title, target: .task($0.id)) }
-            + stillAlerts.map(alertItem) + stillAgents.map(sessionItem)
+        let stillItems = stillAlerts.map(alertItem) + stillAgents.map(sessionItem)
 
-        var sections = [
+        let sections = [
             Brief.Section(id: "agents", title: "Agents", items: turnItems),
-            Brief.Section(id: "closed", title: "Tasks closed", items: closedItems),
             Brief.Section(id: "resolved", title: "Alerts resolved", items: resolvedItems),
             Brief.Section(id: "meetings", title: "Meetings", items: meetingItems),
             Brief.Section(id: "open", title: "Still open", items: stillItems),
@@ -346,25 +284,20 @@ package enum BriefBuilder {
             case (let d, let f): lines.append("Agents finished \(count(d, "turn")), \(f) failed")
             }
         }
-        if !closed.isEmpty { lines.append("\(count(closed.count, "task")) closed") }
         if !resolved.isEmpty { lines.append("\(count(resolved.count, "alert")) resolved") }
         if !meetings.isEmpty { lines.append(count(meetings.count, "meeting")) }
         var open: [String] = []
-        if !stillTasks.isEmpty { open.append(count(stillTasks.count, "task")) }
         if !stillAlerts.isEmpty { open.append(count(stillAlerts.count, "alert")) }
         if !stillAgents.isEmpty { open.append(count(stillAgents.count, "agent")) }
         // "Still open" always makes it into the bubble.
         lines = Array(lines.prefix(open.isEmpty ? 4 : 3))
         if !open.isEmpty { lines.append("Still open: " + open.joined(separator: ", ")) }
-        if sections.contains(where: { !$0.items.isEmpty }), let alignment = GoalAlignment.section(GoalAlignment.score(input, in: window)) {
-            sections.append(alignment)
-        }
         return Brief(kind: .recap, window: window, sections: sections, lines: lines)
     }
 
     // MARK: Parts
 
-    /// "1 task", "3 tasks".
+    /// "1 alert", "3 alerts".
     package static func count(_ n: Int, _ noun: String) -> String { "\(n) \(noun)\(n == 1 ? "" : "s")" }
 
     private static let labelOrder = ["Review requested", "CI failed", "Changes requested"]

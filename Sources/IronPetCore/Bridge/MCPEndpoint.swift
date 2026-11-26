@@ -50,8 +50,8 @@ package enum MCPEndpoint {
     }
 
     package static let instructions = """
-        Create and manage ironpet automations (reminders, watchers and scheduled jobs) and keep ironpet's task list: \
-        what the user is working on, waiting for or has asked you to track, read the text the user's screen showed \
+        Create and manage ironpet automations (reminders, watchers and scheduled jobs) and add things you found for the user to ironpet's inbox, \
+        read the text the user's screen showed \
         (screen_search, screen_window) and, when the user has turned it on, read and operate other apps (desktop_snapshot, \
         desktop_press and the rest), and keep Ghost's memory: save and forget notes about the user, their projects and people \
         (memory_remember, memory_forget) and search past chats, meetings, notes and the screen (memory_search, memory_get). \
@@ -99,18 +99,6 @@ package enum MCPEndpoint {
                 switch records.resolve(arguments["id"] as? String ?? "") {
                 case .failure(let error):
                     return toolResult(error.message, isError: true)
-                case .success(let found) where found.kind == .filter:
-                    guard let tasks else { return toolResult("ironpet's task list is not available right now", isError: true) }
-                    switch TaskJSON.call(tasks, "filters_list", [:], by: "agent:mcp") {
-                    case .success(let value):
-                        let listed = (value as? [String: Any])?["filters"] as? [[String: Any]] ?? []
-                        guard let filter = listed.first(where: { $0["id"] as? String == found.key }) else {
-                            return toolResult("no quick filter with id \(found.key)", isError: true)
-                        }
-                        return toolResult(text(filter), isError: false)
-                    case .failure(let error):
-                        return toolResult(error.message, isError: true)
-                    }
                 case .success(let found):
                     if let target = RecordMCP.target(found.kind, key: found.key) {
                         name = target.tool
@@ -142,24 +130,9 @@ package enum MCPEndpoint {
                 case .failure(let error): return toolResult(error.message, isError: true)
                 }
             }
-            // GTD's projects and horizons: `task_projects_list` runs `projects_list`, and so on.
-            if let prefix = ["task_projects_", "task_goals_", "task_areas_", "task_key_results_"].first(where: name.hasPrefix) {
-                guard let tasks else { return toolResult("ironpet's task list is not available right now", isError: true) }
-                switch TaskJSON.call(tasks, String(prefix.dropFirst("task_".count)) + String(name.dropFirst(prefix.count)), arguments, by: "agent:mcp") {
-                case .success(let value): return toolResult(text(value), isError: false)
-                case .failure(let error): return toolResult(error.message, isError: true)
-                }
-            }
-            if name.hasPrefix("task_filters_") {
-                guard let tasks else { return toolResult("ironpet's task list is not available right now", isError: true) }
-                switch TaskJSON.call(tasks, "filters_" + String(name.dropFirst("task_filters_".count)), arguments, by: "agent:mcp") {
-                case .success(let value): return toolResult(text(value), isError: false)
-                case .failure(let error): return toolResult(error.message, isError: true)
-                }
-            }
-            if name.hasPrefix("tasks_") {
-                guard let tasks else { return toolResult("ironpet's task list is not available right now", isError: true) }
-                switch TaskJSON.call(tasks, String(name.dropFirst("tasks_".count)), arguments, by: "agent:mcp") {
+            if name.hasPrefix("inbox_") {
+                guard let tasks else { return toolResult("ironpet's inbox is not available right now", isError: true) }
+                switch TaskJSON.call(tasks, String(name.dropFirst("inbox_".count)), arguments, by: "agent:mcp") {
                 case .success(let value): return toolResult(text(value), isError: false)
                 case .failure(let error): return toolResult(error.message, isError: true)
                 }
@@ -239,9 +212,6 @@ package enum MCPEndpoint {
             case "/memory":
                 guard let api = memory() else { return respond("503 Service Unavailable", Data()) }
                 result = MemoryMCP.handleCLI(body, api: api)
-            case "/tasks":
-                guard let tasks = tasks() else { return respond("503 Service Unavailable", Data()) }
-                result = TaskMCP.handleCLI(body, tasks: tasks)
             default:
                 guard let api = automations() else { return respond("503 Service Unavailable", Data()) }
                 result = await AutomationMCP.handleCLI(body, api: api)

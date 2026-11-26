@@ -18,7 +18,7 @@ package enum JobState: String, CaseIterable {
 }
 
 /// Work an agent handed off to its own agent session (`jobs_start`). It runs in the background in one folder, with the
-/// chat's agent and model, and is tracked by a task. Its transcript is saved as a thread, so the user can read it or
+/// chat's agent and model. Its transcript is saved as a thread, so the user can read it or
 /// carry on in the chat.
 package struct Job: Identifiable, Equatable {
     package init(
@@ -29,7 +29,6 @@ package struct Job: Identifiable, Equatable {
         agent: String,
         model: String? = nil,
         thread: String? = nil,
-        task: String? = nil,
         state: JobState = .queued,
         lastStep: String? = nil,
         summary: String? = nil,
@@ -46,7 +45,6 @@ package struct Job: Identifiable, Equatable {
         self.agent = agent
         self.model = model
         self.thread = thread
-        self.task = task
         self.state = state
         self.lastStep = lastStep
         self.summary = summary
@@ -66,8 +64,6 @@ package struct Job: Identifiable, Equatable {
     package var model: String?
     /// The agent's session id, which is also the saved thread's id. Nil until the session starts.
     package var thread: String?
-    /// The task that tracks it in the Tasks section.
-    package var task: String?
     package var state: JobState = .queued
     /// What the agent did last, such as "Run swift test".
     package var lastStep: String?
@@ -122,7 +118,6 @@ package struct Job: Identifiable, Equatable {
                                      "created": iso.string(from: created)]
         object["model"] = model
         object["thread"] = thread
-        object["task"] = task
         object["last_step"] = lastStep
         object["summary"] = summary
         object["error"] = error

@@ -8,7 +8,6 @@ package final class AssistantContext {
     package var jobs: () -> JobService? = { nil }
     /// The agent sessions ironpet watches through hooks, background jobs left out.
     package var sessions: () -> [AgentSession] = { [] }
-    package var tasks: () -> TasksAPI? = { nil }
     package var alerts: () -> [Signal] = { [] }
     package var brief: (Brief.Kind) -> Brief? = { _ in nil }
     package var meetings: () -> [MeetingRecord] = { [] }
@@ -58,7 +57,7 @@ package enum AssistantMCP {
             tool("jobs_open", "Show a job's transcript to the user in the chat.", id, required: ["id"]),
             tool("projects_resolve", "Find the folder for a job from what the user called the project. Returns best (use it), or matches to ask the user about when ambiguous is true. Without a name, best is the project the user is working in. name \"no project\" gives the folder for work that is not about code.",
                  ["name": ["type": "string", "description": "What the user called it, such as \"ironpet\" or \"the kokous repo\""]]),
-            tool("status_overview", "What's going on, in one call: agent sessions that need the user or are running, background jobs, tasks that need the user, open alerts and recent meetings. Use it for \"what's going on\" or \"anything need me\". The sessions are the calling agent's.", agentScope),
+            tool("status_overview", "What's going on, in one call: agent sessions that need the user or are running, background jobs, open alerts and recent meetings. Use it for \"what's going on\" or \"anything need me\". The sessions are the calling agent's.", agentScope),
             tool("status_sessions", "The coding agent sessions ironpet watches (Cursor, Claude Code, Codex and others): status, project, prompt and last reply. The calling agent's by default.", agentScope),
             tool("status_alerts", "The open alerts from ironpet's watchers: failed CI, reviews waiting, production errors.", [:]),
             tool("status_today", "Today's brief (what needs the user this morning) or recap (what finished today).",
@@ -185,24 +184,17 @@ package enum AssistantMCP {
     private static func overview(_ context: AssistantContext, sessions: [AgentSession]) -> [String: Any] {
         let jobs = context.jobs()?.jobs ?? []
         let cutoff = context.now().addingTimeInterval(-86_400)
-        let tasks = context.tasks()?.items.filter { $0.status != .done } ?? []
-        var object: [String: Any] = [
+        let overview: [String: Any] = [
             "sessions": [
                 "need_you": sessions.filter { $0.status == .needsInput || $0.status == .failed }.map(sessionJSON),
                 "running": sessions.filter { $0.status == .running }.map(sessionJSON),
                 "finished": sessions.filter { $0.status == .done }.map(sessionJSON),
             ],
             "jobs": jobs.filter { $0.state.isActive || ($0.ended ?? $0.created) > cutoff }.map(\.json),
-            "tasks": [
-                "needs_you": tasks.filter { $0.needsUser }.map { ["id": $0.id, "title": $0.title] },
-                "in_progress": tasks.filter { $0.status == .inProgress && !$0.isDeferred() }.map { ["id": $0.id, "title": $0.title] },
-                "backlog": tasks.filter { $0.status == .backlog && !$0.isDeferred() }.count,
-            ],
             "alerts": context.alerts().map(alertJSON),
             "meetings": context.meetings().prefix(3).map(meetingJSON),
         ]
-        if context.tasks() == nil { object["tasks"] = nil }
-        return object
+        return overview
     }
 
     private static func sessionJSON(_ session: AgentSession) -> [String: Any] {

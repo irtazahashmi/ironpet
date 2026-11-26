@@ -22,7 +22,7 @@ package struct ReflectionReader: Equatable {
     package let model: String?
 }
 
-/// How the memory digest and the task scan read what is new: a chat's messages after a cursor, the screen captures after the last
+/// How the memory digest reads what is new: a chat's messages after a cursor, the screen captures after the last
 /// one read, and the answer of a tool-less agent. Both passes read the same sources the same way, so the code lives here once.
 package enum ReflectionReading {
     package typealias Message = (id: String, user: Bool, text: String)
