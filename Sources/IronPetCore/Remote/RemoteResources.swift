@@ -162,7 +162,7 @@ package struct RemoteResources {
     // MARK: Today
 
     package func today(kind: String?) throws -> [String: Any] {
-        guard let kind = Brief.Kind(rawValue: kind ?? "brief") else { throw RemoteFailure.invalid("kind must be brief or recap") }
+        guard let kind = Brief.Kind(rawValue: kind ?? "brief") else { throw RemoteFailure.invalid("kind must be one of \(Brief.Kind.allCases.map(\.rawValue).joined(separator: ", "))") }
         let brief = api.today.brief(BriefRequest(kind: kind))
         return RemoteWire.object(RemoteToday(kind: kind.rawValue, title: kind.title, lines: brief.lines, sections: brief.sections.map { section in
             TodaySection(id: section.id, title: section.title, items: section.items.map {

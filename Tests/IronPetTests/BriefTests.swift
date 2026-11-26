@@ -483,7 +483,7 @@ final class DigestAutomationTests: AutomationTestCase {
     func testValidation() {
         var a = AutomationDefaults.morningBrief()
         a.action.digest = "weekly"
-        XCTAssertTrue(AutomationValidator.validate(a).contains("action.digest must be one of brief, recap"))
+        XCTAssertTrue(AutomationValidator.validate(a).contains("action.digest must be one of brief, recap, review"))
         let (parsed, errors) = AutomationValidator.parseOne([
             "id": "poll-digest", "name": "x", "trigger": ["type": "poll", "minutes": 5, "source": ["type": "shell", "command": "true"]],
             "action": ["type": "digest", "digest": "brief"]])
