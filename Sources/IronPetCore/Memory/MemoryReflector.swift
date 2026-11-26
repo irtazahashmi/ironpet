@@ -503,10 +503,10 @@ package final class MemoryReflector {
                                petName: String) -> String {
         var scopes = outside ? [] : ["\"me\" for the user's own preferences, habits and facts about them"]
         let here = hasProject ? "; leave entity out only for a fact about this chat's own folder" + (projectName.map { " (\($0))" } ?? "") : ""
-        scopes.append("\"project\" for a product, codebase or client project, with its name in \"entity\"" + here)
-        scopes.append("\"org\" for a company or team, with its name in \"entity\"")
+        scopes.append("\"project\" for a product, codebase or client engagement, with its name in \"entity\"" + here)
+        scopes.append("\"org\" for a company, employer, client, vendor, community or team, with its name in \"entity\"")
         scopes.append("\"tool\" for software or a service the user uses, with its name in \"entity\"")
-        scopes.append("\"topic\" for a recurring subject that is none of those, with its name in \"entity\"")
+        scopes.append("\"topic\" for a recurring subject that spans projects (a sport, a language being learned, a legal or tax matter), with its name in \"entity\"")
         scopes.append("\"people\" for facts about a person the user works with, with their name in \"person\"")
         let rule = outside
             ? "\nThis text was written from what other people said or wrote, so it says nothing about the user's own preferences: never use scope \"me\".\n"
@@ -545,6 +545,10 @@ package final class MemoryReflector {
             return "no \(type.label.lowercased()) name"
         }
         if proposal.scope == .people, MemoryNote.personName(proposal.person) == nil { return "no person" }
+        if WorkItemGuard.isWorkItem(proposal.entity) || WorkItemGuard.isWorkItem(proposal.person) {
+            return "a ticket, issue or PR is not a page; file the note on its project"
+        }
+        if WorkItemGuard.isTaskState(proposal.text) { return "the state of one task is not a lasting fact" }
         return nil
     }
 

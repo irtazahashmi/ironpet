@@ -88,6 +88,102 @@ final class MemoryEntitiesTests: XCTestCase {
         XCTAssertEqual(types["topic:invoicing"], .topic)
     }
 
+    // MARK: Entity types and work items (#367)
+
+    func testTheTaxAdvisersFirmLandsOnAnOrganizationPageNotOnMe() async {
+        chat("t1", "My tax adviser's firm, Weber & Partner, sends the return by March")
+        answers = [#"{"notes":[{"scope":"org","entity":"Weber & Partner","text":"Tax adviser's firm; sends the return by March.","replaces":[]}],"links":[]}"#]
+        await digest()
+        XCTAssertEqual(texts("org:weber & partner"), ["Tax adviser's firm; sends the return by March."])
+        XCTAssertEqual(store.entities().first { $0.name == "Weber & Partner" }?.type, .org)
+        XCTAssertTrue(texts("me").isEmpty)
+    }
+
+    func testThePromptDefinesEachType() {
+        let prompt = MemoryReflector.prompt(input: "x", kind: "a chat", notes: [], outside: false, hasProject: true, petName: "Ghost")
+        for phrase in ["a person is a human", "company, employer, client, vendor, community or team", "a product, a codebase or a client engagement",
+                       "software the user uses", "spans projects", "a language being learned", "legal or tax matter",
+                       "never a page name", "state of a single task"] {
+            XCTAssertTrue(prompt.contains(phrase), phrase)
+        }
+    }
+
+    func testATicketKeyIsNeverAPageAndItsFactsGoOnTheProject() async {
+        chat("t1", "SSP-10435 adds SSO to the portal")
+        answers = [#"""
+        {"notes":[{"scope":"project","entity":"SSP-10435","text":"SSP-10435 adds SSO to the portal.","replaces":[]},
+        {"scope":"project","entity":"Self Service Portal","text":"SSP-10435 adds SSO login.","replaces":[]}],"links":[]}
+        """#]
+        await digest()
+        XCTAssertEqual(texts("project:self service portal"), ["SSP-10435 adds SSO login."])
+        XCTAssertFalse(store.entities().contains { $0.name.uppercased().contains("SSP-10435") })
+        XCTAssertEqual(reflector.lastOutcome?.dropped.count, 1)
+    }
+
+    func testAnIssueNumberIsNeverAPageAndItsFactsGoOnTheIronPetProject() async {
+        chat("t1", "Issue #304 in ironpet is about the dock icon")
+        answers = [#"""
+        {"notes":[{"scope":"project","entity":"#304","text":"#304 is about the dock icon.","replaces":[]},
+        {"scope":"project","entity":"ironpet#304","text":"Is about the dock icon.","replaces":[]},
+        {"scope":"project","entity":"IronPet","text":"Issue #304 covers the dock icon.","replaces":[]}],"links":[]}
+        """#]
+        await digest()
+        XCTAssertEqual(texts("project:ironpet"), ["Issue #304 covers the dock icon."])
+        XCTAssertEqual(store.entities().filter { $0.type == .project }.count, 1)
+        XCTAssertEqual(reflector.lastOutcome?.dropped.count, 2)
+    }
+
+    func testLearningGermanLandsOnATopicPage() async {
+        chat("t1", "I am learning German, B1 exam in June")
+        answers = [#"{"notes":[{"scope":"topic","entity":"German","text":"Preparing for the B1 exam in June.","replaces":[]}],"links":[]}"#]
+        await digest()
+        XCTAssertEqual(texts("topic:german"), ["Preparing for the B1 exam in June."])
+        XCTAssertEqual(store.entities().first { $0.id == "topic:german" }?.type, .topic)
+    }
+
+    func testTheStateOfOneTaskIsNotKept() async {
+        chat("t1", "The PR is waiting for review")
+        answers = [#"""
+        {"notes":[{"scope":"project","entity":"IronPet","text":"PR #380 is waiting for review.","replaces":[]},
+        {"scope":"project","entity":"IronPet","text":"The ticket is in progress.","replaces":[]},
+        {"scope":"project","entity":"IronPet","text":"Pull request 12 was merged.","replaces":[]}],"links":[]}
+        """#]
+        await digest()
+        XCTAssertTrue(texts("project:ironpet").isEmpty)
+        XCTAssertEqual(reflector.lastOutcome?.dropped.count, 3)
+    }
+
+    func testALastingFactAboutPullRequestsIsKept() async {
+        chat("t1", "We squash PRs")
+        answers = [#"{"notes":[{"scope":"project","entity":"IronPet","text":"Pull requests are squash merged and need one approval.","replaces":[]}],"links":[]}"#]
+        await digest()
+        XCTAssertEqual(texts("project:ironpet"), ["Pull requests are squash merged and need one approval."])
+    }
+
+    func testAConventionAboutPullRequestsInGeneralIsKept() async {
+        chat("t1", "PRs wait for review")
+        answers = [#"{"notes":[{"scope":"project","entity":"IronPet","text":"PRs are ready for review once CI is green.","replaces":[]}],"links":[]}"#]
+        await digest()
+        XCTAssertEqual(texts("project:ironpet"), ["PRs are ready for review once CI is green."])
+    }
+
+    func testTheGuardRecognisesWorkItemNames() {
+        for name in ["SSP-10435", "ticket SSP-10435", "#304", "304", "PR 12", "PR #12", "pr-12", "issue #304", "Issue 304", "ironpet#304",
+                     "owner/repo#12", "https://github.com/o/r/pull/12", "https://x.atlassian.net/browse/SSP-10435"] {
+            XCTAssertTrue(WorkItemGuard.isWorkItem(name), name)
+        }
+        for name in ["IronPet", "Self Service Portal", "GPT-4", "gpt-35", "Xcode 16", "Q3 planning", "C#", "Weber & Partner", ""] {
+            XCTAssertFalse(WorkItemGuard.isWorkItem(name), name)
+        }
+        XCTAssertFalse(WorkItemGuard.isWorkItem(nil))
+    }
+
+    func testTheStoreRefusesAWorkItemPageFromAnyCaller() {
+        let result = store.replace([], with: "Adds SSO.", scope: .project, entity: "SSP-10435", source: "chat:x")
+        XCTAssertFalse(result.isSuccess)
+        XCTAssertFalse(store.entities().contains { $0.name.contains("SSP") })
+    }
+
     func testANamedScopeWithoutANameIsDropped() async {
         chat("t1", "Acme is a client")
         answers = [#"{"notes":[{"scope":"org","text":"Is a client.","replaces":[]}],"links":[]}"#]
