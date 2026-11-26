@@ -166,4 +166,16 @@ final class MCPEndpointTests: XCTestCase {
         let ping = try await rpc("ping", tasks: tasks)
         XCTAssertNotNil(ping["result"] as? [String: Any])
     }
+
+    func testTheHorizonToolsAreRoutedByTheirPrefix() async throws {
+        let area = try await tool("task_areas_upsert", ["title": "Work"], tasks: tasks)
+        XCTAssertFalse(area.isError, area.text)
+        let goal = try await tool("task_goals_upsert", ["title": "Ship 2.0", "area": "work"], tasks: tasks)
+        XCTAssertFalse(goal.isError, goal.text)
+        let result = try await tool("task_key_results_upsert", ["goal": "ship-2-0", "metric": "Features", "start": 0, "target": 8], tasks: tasks)
+        XCTAssertFalse(result.isError, result.text)
+        let listed = try await tool("task_goals_list", [:], tasks: tasks)
+        XCTAssertFalse(listed.isError, listed.text)
+        XCTAssertTrue(listed.text.contains("Ship 2.0") && listed.text.contains("Features"), listed.text)
+    }
 }

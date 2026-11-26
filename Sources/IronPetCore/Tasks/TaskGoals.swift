@@ -56,7 +56,7 @@ package enum TaskGoalValidator {
 
     package static func number(_ value: Any?, field: String) throws -> Double? {
         guard let value, !(value is NSNull) else { return nil }
-        guard let number = value as? NSNumber, !(value is Bool), number.doubleValue.isFinite else { throw TaskError(message: "\(field) must be a number") }
+        guard let number = value as? NSNumber, !number.isJSONBoolean, number.doubleValue.isFinite else { throw TaskError(message: "\(field) must be a number") }
         return number.doubleValue
     }
 
@@ -169,6 +169,7 @@ extension TaskStore {
         var result: TaskKeyResult
         if let id {
             guard let existing = keyResults.first(where: { $0.id == id }) else { throw TaskError(message: "no key result with id \"\(id)\"") }
+            if let goal, goal != existing.goal { throw TaskError(message: "a key result cannot move to another goal; create a new one") }
             result = existing
             if let metric { result.metric = try TaskProjectValidator.title(metric) }
             if let start { result.start = start }

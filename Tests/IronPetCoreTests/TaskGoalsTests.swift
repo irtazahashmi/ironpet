@@ -88,4 +88,24 @@ final class TaskGoalsTests: XCTestCase {
         XCTAssertEqual(api.goals, [goal])
         XCTAssertEqual(api.keyResults(of: goal.id), [result])
     }
+
+    func testZeroAndOneFromJSONAreNumbersButABooleanIsNot() throws {
+        let goal = try api.upsertGoal(id: nil, title: "Read more")
+        func decoded(_ json: String) throws -> [String: Any] {
+            try XCTUnwrap(JSONSerialization.jsonObject(with: Data(json.utf8)) as? [String: Any])
+        }
+        let made = try XCTUnwrap(try TaskJSON.call(api, "key_results_upsert", try decoded(#"{"goal":"\#(goal.id)","metric":"Books","start":0,"target":1}"#),
+                                                   by: "agent:mcp").get() as? [String: Any])
+        XCTAssertEqual(made["progress"] as? Double, 0)
+        XCTAssertThrowsError(try TaskJSON.call(api, "key_results_upsert", try decoded(#"{"goal":"\#(goal.id)","metric":"Pages","start":true,"target":1}"#),
+                                               by: "agent:mcp").get())
+    }
+
+    func testAProjectsGoalMustExistAndAKeyResultCannotMove() throws {
+        XCTAssertThrowsError(try api.upsertProject(id: nil, title: "Launch", goal: .some("Grow the business")), "a title is not an id")
+        let goal = try api.upsertGoal(id: nil, title: "Grow the business")
+        let other = try api.upsertGoal(id: nil, title: "Read more")
+        let result = try api.upsertKeyResult(id: nil, goal: goal.id, metric: "Revenue", start: 0, target: 10)
+        XCTAssertThrowsError(try api.upsertKeyResult(id: result.id, goal: other.id, current: 2))
+    }
 }

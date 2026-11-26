@@ -129,7 +129,7 @@ package enum TaskMCP {
                  ["id": ["type": "string", "description": "Leave out to create; the id is made from the title."],
                   "title": ["type": "string", "maxLength": TaskProjectValidator.maxTitle],
                   "outcome": ["type": "string", "description": "What done looks like, in one sentence."],
-                  "area": ["type": "string"], "goal": ["type": "string"],
+                  "area": ["type": "string"], "goal": ["type": "string", "description": "A goal id from task_goals_list; null clears it."],
                   "status": ["type": "string", "enum": TaskProject.Status.allCases.map(\.rawValue)],
                   "review_days": ["type": "integer", "minimum": 1, "maximum": TaskProjectValidator.maxReviewDays],
                   "reviewed": ["type": "boolean"]]),

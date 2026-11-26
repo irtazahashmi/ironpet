@@ -261,8 +261,8 @@ struct TaskListView: View {
         .pickerStyle(.segmented)
         .labelsHidden()
         .fixedSize()
-        .accessibilityLabel("Show tasks as a list, a board, by project, or the goals")
-        .help("Show the tasks as a list, as a board of columns, or grouped by project")
+        .accessibilityLabel("Show the tasks as a list, as a board of columns, grouped by project, or your goals")
+        .help("Show the tasks as a list, as a board of columns, grouped by project, or your goals")
     }
 
     @ViewBuilder private var suggestions: some View {

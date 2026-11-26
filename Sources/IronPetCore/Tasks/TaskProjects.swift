@@ -28,7 +28,7 @@ package struct TaskProject: Identifiable, Equatable, Codable {
     /// What done looks like, in one sentence.
     package var outcome: String
     package var area: String?
-    /// The goal it serves. Free text until goals have their own table.
+    /// The id of the goal it serves (`TaskGoal`).
     package var goal: String?
     package var status: Status
     /// Look at it again every this many days. Nil: only in the weekly review.
@@ -141,7 +141,11 @@ extension TaskStore {
         }
         if let outcome { project.outcome = try TaskProjectValidator.outcome(outcome) }
         if let area { project.area = try TaskProjectValidator.line(area, field: "area") }
-        if let goal { project.goal = try TaskProjectValidator.line(goal, field: "goal") }
+        if let goal {
+            let id = try TaskProjectValidator.line(goal, field: "goal")
+            if let id, self.goal(id) == nil { throw TaskError(message: "no goal with id \"\(id)\"; task_goals_list shows them") }
+            project.goal = id
+        }
         if let status { project.status = status }
         if let reviewDays { project.reviewDays = reviewDays }
         if markReviewed { project.reviewed = time }
