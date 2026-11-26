@@ -39,6 +39,12 @@ final class AutomationInboxTriggerTests: AutomationTestCase {
         XCTAssertEqual(AutomationValidator.validate(bad), ["trigger.minutes does not apply to an inbox trigger"])
     }
 
+    func testADigestActionIsRejectedOnAnInboxTrigger() {
+        var digest = inboxAutomation()
+        digest.action = .init(type: "digest", digest: "morning")
+        XCTAssertTrue(AutomationValidator.validate(digest).contains { $0.contains("not a inbox") })
+    }
+
     func testItRunsOncePerNewItemWithThatItem() async {
         _ = rig(inboxAutomation())
         add("a", "Reply to Ana")

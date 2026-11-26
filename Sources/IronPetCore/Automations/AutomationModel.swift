@@ -602,7 +602,7 @@ package enum AutomationValidator {
             }
         case "digest":
             if !digestKinds.contains(a.digest ?? "") { errors.append("action.digest must be one of \(digestKinds.joined(separator: ", "))") }
-            if trigger.type == "poll" || trigger.type == "stream" { errors.append("a digest action runs on an interval, daily or once trigger, not a \(trigger.type)") }
+            if ["poll", "stream", "inbox"].contains(trigger.type) { errors.append("a digest action runs on an interval, daily or once trigger, not a \(trigger.type)") }
         default:
             if (a.command ?? "").trimmingCharacters(in: .whitespaces).isEmpty { errors.append("action.command is empty") }
             if let report = a.report, !reports.contains(report) { errors.append("action.report must be one of \(reports.joined(separator: ", "))") }
