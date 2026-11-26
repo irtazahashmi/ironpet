@@ -808,6 +808,10 @@ private struct MeetingSettings: View {
             Section {
                 Toggle("Add meeting action items to the Inbox", isOn: Binding(
                     get: { store.config.tasks.meetingSuggestions }, set: { on in store.update { $0.tasks.meetingSuggestions = on } }))
+                Toggle("Show bubbles", isOn: Binding(
+                    get: { store.config.tasks.meetingSuggestionBubbles },
+                    set: { on in store.update { $0.tasks.meetingSuggestionBubbles = on } }))
+                    .disabled(!store.config.tasks.meetingSuggestions)
             } footer: {
                 Text("After a summary, \(store.config.pet.name) offers the items marked as yours as Inbox items. You mark each one done or remove it.")
                     .font(.caption).foregroundStyle(.secondary)

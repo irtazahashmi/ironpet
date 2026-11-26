@@ -491,6 +491,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         service.logRetentionDays = { [config] in config.config.automations.logRetentionDays }
         service.autoFixEnabled = { [config] in config.config.automations.autoFix }
         service.autoApproveEnabled = { [config] in config.config.automations.autoApprove }
+        service.autoApproveBubblesEnabled = { [config] in config.config.automations.autoApproveBubbles }
         service.requestFix = { [weak self] automation, trigger, error in
             self?.sendToChat(AutomationAgentPrompts.fix(automation, trigger: trigger, error: error), show: false,
                              title: "\(automation.name) failed", busyBody: "Ask \(self?.chat.agent.name ?? "the agent") to fix it?")
@@ -1449,7 +1450,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func offerSuggestions(_ added: [TaskSuggestion]) {
         guard !added.isEmpty else { return }
         for suggestion in added { activity?.record(.taskSuggested(suggestion)) }
-        announcer.taskSuggestions(added, review: { [weak self] in self?.showTasks() })
+        announcer.taskSuggestions(added, review: { [weak self] in self?.showTasks() },
+                                  bubble: Self.showsSuggestionBubble(for: added, config: config.config))
+    }
+
+    /// A meeting's bubble follows its own switch. Suggestions from an automation always get theirs.
+    static func showsSuggestionBubble(for added: [TaskSuggestion], config: Config) -> Bool {
+        guard let first = added.first else { return false }
+        if case .meeting = first.origin { return config.tasks.meetingSuggestionBubbles }
+        return true
     }
 
     private func showTasks() {

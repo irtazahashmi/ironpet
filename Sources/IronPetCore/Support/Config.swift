@@ -319,11 +319,12 @@ package struct Config: Codable, Equatable {
     }
 
     package struct Automations: Codable, Equatable {
-        package init(logRetentionDays: Int = 14, autoFix: Bool = true, autoApprove: Bool = false, ownRunLimit: Int = 50,
-                     keptThreads: Int = 50, runTimeoutSeconds: Int = 900) {
+        package init(logRetentionDays: Int = 14, autoFix: Bool = true, autoApprove: Bool = false, autoApproveBubbles: Bool = true,
+                     ownRunLimit: Int = 50, keptThreads: Int = 50, runTimeoutSeconds: Int = 900) {
             self.logRetentionDays = logRetentionDays
             self.autoFix = autoFix
             self.autoApprove = autoApprove
+            self.autoApproveBubbles = autoApproveBubbles
             self.ownRunLimit = ownRunLimit
             self.keptThreads = keptThreads
             self.runTimeoutSeconds = runTimeoutSeconds
@@ -335,6 +336,8 @@ package struct Config: Codable, Equatable {
         package var autoFix = true
         /// Approve commands, scripts and prompts that an agent writes without asking. Off by default.
         package var autoApprove = false
+        /// Show the "Auto-approved" bubble. Off skips only the bubble. The notification is still recorded.
+        package var autoApproveBubbles = true
         /// An automation's own agent thread without a known transcript file starts a fresh thread after this many runs.
         package var ownRunLimit = 50
         /// Threads kept per automation. Older ones are deleted after a run.
@@ -357,12 +360,15 @@ package struct Config: Codable, Equatable {
     }
 
     package struct Tasks: Codable, Equatable {
-        package init(meetingSuggestions: Bool = true) {
+        package init(meetingSuggestions: Bool = true, meetingSuggestionBubbles: Bool = true) {
             self.meetingSuggestions = meetingSuggestions
+            self.meetingSuggestionBubbles = meetingSuggestionBubbles
         }
 
         /// After a meeting summary, add the action items that belong to "Me" to the inbox. Nothing is done with them without a click.
         package var meetingSuggestions = true
+        /// Show the "From your meeting" bubble. Off skips only the bubble. The Inbox items and the notification are still added.
+        package var meetingSuggestionBubbles = true
     }
 
     /// Background jobs: work an agent hands off to its own agent session (`jobs_start`), each shown in the chat.
