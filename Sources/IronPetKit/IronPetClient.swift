@@ -255,7 +255,9 @@ public final class IronPetClient: @unchecked Sendable {
     public func downloadAsset(sha256: String) async throws -> Data { try await perform(request("GET", APIPath.asset(sha256))) }
 
     /// The image behind a `screenshot` message of the open chat. It throws the Mac's reason, such as "the file is no longer on the Mac".
-    public func downloadChatImage(messageID: String) async throws -> Data { try await perform(request("GET", APIPath.chatMessageFile(messageID))) }
+    public func downloadChatImage(messageID: String, agentId: String? = nil) async throws -> Data {
+        try await perform(request("GET", APIPath.chatMessageFile(messageID), query: Self.agentQuery(agentId)))
+    }
 
     /// A file a reply named, from the folder the Mac chat works in: the start of a text file, or an image. It throws the Mac's reason,
     /// such as "the Mac only previews files inside the folders its chat works in".
@@ -269,21 +271,28 @@ public final class IronPetClient: @unchecked Sendable {
 
     // MARK: Chat
 
-    func post<T: Decodable>(_ type: T.Type, _ path: String, json: [String: Any] = [:]) async throws -> T {
+    func post<T: Decodable>(_ type: T.Type, _ path: String, query: [URLQueryItem] = [], json: [String: Any] = [:]) async throws -> T {
         let data = try JSONSerialization.data(withJSONObject: json)
-        return try decode(type, from: try await perform(request("POST", path, body: data)))
+        return try decode(type, from: try await perform(request("POST", path, query: query, body: data)))
     }
 
-    func post(_ path: String, json: [String: Any] = [:]) async throws {
-        _ = try await perform(request("POST", path, body: try JSONSerialization.data(withJSONObject: json)))
+    func post(_ path: String, query: [URLQueryItem] = [], json: [String: Any] = [:]) async throws {
+        _ = try await perform(request("POST", path, query: query, body: try JSONSerialization.data(withJSONObject: json)))
+    }
+
+    /// The `agentId` query item of a chat call. Nil, and the empty id, add nothing, so the call is agent 1's and an older Mac sees the
+    /// request it always saw.
+    static func agentQuery(_ agentId: String?) -> [URLQueryItem] {
+        guard let agentId, !agentId.isEmpty else { return [] }
+        return [URLQueryItem(name: "agentId", value: agentId)]
     }
 
     /// The chat. With `limit`, the newest `limit` messages, or the ones before `before`; `hasMore` says whether older ones exist. A Mac
     /// older than paging ignores the query and sends the whole thread, with `hasMore` nil.
     /// The chat, unless it is still the one the phone saved. `etag` is the ETag of that saved chat. The answer is `.notModified` when the
     /// Mac says nothing changed, or the chat with the ETag to save next time.
-    public func chatIfChanged(etag: String?, limit: Int? = nil, before: String? = nil, after: Int? = nil, epoch: String? = nil) async throws -> ChatRead {
-        var query: [URLQueryItem] = []
+    public func chatIfChanged(etag: String?, limit: Int? = nil, before: String? = nil, after: Int? = nil, epoch: String? = nil, agentId: String? = nil) async throws -> ChatRead {
+        var query = Self.agentQuery(agentId)
         // The cursor of the last answer: the Mac sends only the messages that changed since. An older Mac ignores both.
         if let after, let epoch {
             query.append(URLQueryItem(name: "after", value: String(after)))
@@ -301,22 +310,32 @@ public final class IronPetClient: @unchecked Sendable {
         return .snapshot(try decode(RemoteChatSnapshot.self, from: data), etag: http.value(forHTTPHeaderField: "ETag"))
     }
 
-    public func chat(limit: Int? = nil, before: String? = nil) async throws -> RemoteChatSnapshot {
-        var query: [URLQueryItem] = []
+    public func chat(limit: Int? = nil, before: String? = nil, agentId: String? = nil) async throws -> RemoteChatSnapshot {
+        var query = Self.agentQuery(agentId)
         if let limit { query.append(URLQueryItem(name: "limit", value: String(limit))) }
         if let before { query.append(URLQueryItem(name: "before", value: before)) }
         return try await get(RemoteChatSnapshot.self, APIPath.chat, query: query)
     }
 
-    public func chatMessage(id: String) async throws -> RemoteChatItem { try await get(RemoteChatItem.self, APIPath.chatMessage(id)) }
+    public func chatMessage(id: String, agentId: String? = nil) async throws -> RemoteChatItem {
+        try await get(RemoteChatItem.self, APIPath.chatMessage(id), query: Self.agentQuery(agentId))
+    }
 
-    public func chatThreads() async throws -> [RemoteChatThread] { try await get(ChatThreadListResponse.self, APIPath.chatThreads).threads }
+    public func chatThreads(agentId: String? = nil) async throws -> [RemoteChatThread] {
+        try await get(ChatThreadListResponse.self, APIPath.chatThreads, query: Self.agentQuery(agentId)).threads
+    }
 
-    public func chatThread(id: String) async throws -> RemoteChatThreadDetail { try await get(RemoteChatThreadDetail.self, APIPath.chatThread(id)) }
+    public func chatThread(id: String, agentId: String? = nil) async throws -> RemoteChatThreadDetail {
+        try await get(RemoteChatThreadDetail.self, APIPath.chatThread(id), query: Self.agentQuery(agentId))
+    }
+
+    /// The agents of the Mac, enabled or not, in the order the Mac lists them (agent 1 first). A Mac from before several agents has no
+    /// such route and answers 404, so the caller treats a failure as "agent 1 only".
+    public func agentRecords() async throws -> [RemoteAgentRecord] { try await get(AgentRecordListResponse.self, APIPath.agentRecords).agents }
 
     /// Sends a message into the chat the Mac has open. `uploadIDs` come from `upload`. `clientID` is a UUID the phone made for this message.
     @discardableResult
-    public func sendMessage(text: String, uploadIDs: [String] = [], reply: RemoteReplyRef? = nil, clientID: String? = nil) async throws -> RemoteSendResult {
+    public func sendMessage(text: String, uploadIDs: [String] = [], reply: RemoteReplyRef? = nil, clientID: String? = nil, agentId: String? = nil) async throws -> RemoteSendResult {
         var body: [String: Any] = ["text": text]
         // The Mac dedupes on the client id, so a send that is repeated over HTTPS after the socket lost its ack creates one message.
         if let clientID { body["client_id"] = clientID }
@@ -326,32 +345,34 @@ public final class IronPetClient: @unchecked Sendable {
             if let selection = reply.selectionText { quote["selection_text"] = selection }
             body["reply"] = quote
         }
-        return try await post(RemoteSendResult.self, APIPath.chatSend, json: body)
+        return try await post(RemoteSendResult.self, APIPath.chatSend, query: Self.agentQuery(agentId), json: body)
     }
 
-    public func stopChat() async throws { try await post(APIPath.chatStop) }
+    public func stopChat(agentId: String? = nil) async throws { try await post(APIPath.chatStop, query: Self.agentQuery(agentId)) }
 
     /// Makes a saved thread the Mac's open chat. The Mac answers 409 while a turn runs or a question waits.
-    public func openThread(id: String) async throws { try await post(APIPath.chatOpen(id)) }
+    public func openThread(id: String, agentId: String? = nil) async throws { try await post(APIPath.chatOpen(id), query: Self.agentQuery(agentId)) }
 
-    public func newChat() async throws { try await post(APIPath.chatNew) }
+    public func newChat(agentId: String? = nil) async throws { try await post(APIPath.chatNew, query: Self.agentQuery(agentId)) }
 
     /// Changes the chat's agent, model, folder or permission mode. The Mac answers 409 while a turn runs, for all but `mode`.
-    public func setChatOptions(_ change: RemoteChatOptionsChange) async throws {
-        _ = try await perform(request("PATCH", APIPath.chatOptions, body: try JSONSerialization.data(withJSONObject: change.json)))
+    public func setChatOptions(_ change: RemoteChatOptionsChange, agentId: String? = nil) async throws {
+        _ = try await perform(request("PATCH", APIPath.chatOptions, query: Self.agentQuery(agentId), body: try JSONSerialization.data(withJSONObject: change.json)))
     }
 
-    public func decide(approval id: String, allow: Bool) async throws { try await post(APIPath.chatApproval(id), json: ["allow": allow]) }
-
-    public func answer(form id: String, answers: [String: RemoteFormAnswer]) async throws {
-        try await post(APIPath.chatForm(id), json: ["answers": Self.json(answers)])
+    public func decide(approval id: String, allow: Bool, agentId: String? = nil) async throws {
+        try await post(APIPath.chatApproval(id), query: Self.agentQuery(agentId), json: ["allow": allow])
     }
 
-    public func submit(form id: String, answers: [String: RemoteFormAnswer] = [:]) async throws {
-        try await post(APIPath.chatFormSubmit(id), json: ["answers": Self.json(answers)])
+    public func answer(form id: String, answers: [String: RemoteFormAnswer], agentId: String? = nil) async throws {
+        try await post(APIPath.chatForm(id), query: Self.agentQuery(agentId), json: ["answers": Self.json(answers)])
     }
 
-    public func skip(form id: String) async throws { try await post(APIPath.chatFormSkip(id)) }
+    public func submit(form id: String, answers: [String: RemoteFormAnswer] = [:], agentId: String? = nil) async throws {
+        try await post(APIPath.chatFormSubmit(id), query: Self.agentQuery(agentId), json: ["answers": Self.json(answers)])
+    }
+
+    public func skip(form id: String, agentId: String? = nil) async throws { try await post(APIPath.chatFormSkip(id), query: Self.agentQuery(agentId)) }
 
     private static func json(_ answers: [String: RemoteFormAnswer]) -> [String: Any] {
         answers.mapValues { answer -> Any in

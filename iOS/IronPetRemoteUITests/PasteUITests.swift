@@ -29,10 +29,7 @@ final class PasteUITests: XCTestCase {
     private func pair() {
         app.launchArguments = ["--reset-credentials"] + (dark ? ["--force-dark"] : [])
         app.launch()
-        let field = app.textFields["pairing-link-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.tap()
-        field.typeText(server.pairingLink)
+        app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
     }
 
@@ -290,10 +287,7 @@ final class ChatModeUITests: XCTestCase {
         server.chat.options.mode = "default"
         app.launchArguments = ["--reset-credentials"]
         app.launch()
-        let field = app.textFields["pairing-link-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.tap()
-        field.typeText(server.pairingLink)
+        app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         let tab = app.tabBars.buttons["Chat"]
         XCTAssertTrue(tab.waitForExistence(timeout: 20))
@@ -333,10 +327,7 @@ final class AttachPhotoUITests: XCTestCase {
         app = XCUIApplication()
         app.launchArguments = ["--reset-credentials"]
         app.launch()
-        let field = app.textFields["pairing-link-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.tap()
-        field.typeText(server.pairingLink)
+        app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         let tab = app.tabBars.buttons["Chat"]
         XCTAssertTrue(tab.waitForExistence(timeout: 20))
@@ -393,16 +384,20 @@ final class AttachPhotoUITests: XCTestCase {
     func testAFailedUploadShowsRetryAndRetrySendsOnce() throws {
         try pickFirstPhoto()
         server.uploadFails = true
+        let composerBefore = app.textViews["chat-input"].frame.height
         app.buttons["send-button"].tap()
-        XCTAssertTrue(any("upload-error").waitForExistence(timeout: 15), "the failure shows")
         let retry = app.buttons["upload-retry"]
-        XCTAssertTrue(retry.exists)
+        XCTAssertTrue(retry.waitForExistence(timeout: 15), "the failed badge shows on the attachment")
+        XCTAssertTrue(retry.label.hasPrefix("Retry upload"))
+        XCTAssertFalse(any("upload-error").exists, "no text row in the composer")
+        XCTAssertFalse(any("chat-error").exists, "no row above the transcript")
+        XCTAssertEqual(app.textViews["chat-input"].frame.height, composerBefore, accuracy: 0.5, "the composer keeps its height")
         XCTAssertEqual(server.count("POST /v1/chat/current/messages"), 0)
         server.uploadFails = false
         retry.tap()
         let sent = NSPredicate { _, _ in self.server.count("POST /v1/chat/current/messages") == 1 }
         wait(for: [XCTNSPredicateExpectation(predicate: sent, object: nil)], timeout: 15)
-        XCTAssertTrue(any("upload-error").waitForNonExistence(timeout: 10))
+        XCTAssertTrue(retry.waitForNonExistence(timeout: 10))
         XCTAssertEqual(server.count("POST /v1/chat/current/messages"), 1)
     }
 }

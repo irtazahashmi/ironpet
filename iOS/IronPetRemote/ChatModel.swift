@@ -141,6 +141,14 @@ struct PendingAttachment: Identifiable, Equatable {
 /// reloads everything on connect, resync and any `chat.state`.
 @MainActor @Observable
 final class ChatModel: SocketModel {
+    /// The agent whose chat this is. Nil is agent 1, the chat of a Mac that has no agent list, and its calls carry no `agentId`.
+    @ObservationIgnored let agentId: String?
+
+    init(client: IronPetClient, events: any EventSignalSource, network: NetworkHealth? = nil, agentId: String? = nil, onUnauthorized: @escaping () -> Void) {
+        self.agentId = agentId.flatMap { $0.isEmpty || $0 == defaultAgentID ? nil : $0 }
+        super.init(client: client, events: events, network: network, onUnauthorized: onUnauthorized)
+    }
+
     static let maxUploadBytes = 20 << 20
     /// Pending images at once, as many as the photo picker allows in one go.
     static let maxPendingImages = 4
@@ -205,7 +213,7 @@ final class ChatModel: SocketModel {
     /// Why the last upload failed, while the composer holds the attachments again. The composer shows it with a Retry.
     private(set) var uploadFailure: String?
     /// Screenshots and attached images the Mac holds, fetched by the id of their message.
-    @ObservationIgnored lazy var images = ChatImages(client: client)
+    @ObservationIgnored lazy var images = ChatImages(client: client, agentId: agentId)
     /// The last message typed on this phone that the Mac has confirmed, which shows the check. Earlier ones stay quiet.
     var deliveredID: String? {
         guard let last = items.last(where: { $0.kind == "user" && $0.origin == "ios" }) else { return nil }
@@ -290,7 +298,7 @@ final class ChatModel: SocketModel {
         guard hasOlderHistory, !loadingOlder, let oldest = items.first?.id else { return }
         loadingOlder = true
         defer { loadingOlder = false }
-        guard let page = await read(retriesTimeouts: false, { try await self.client.chat(limit: Self.pageSize, before: oldest) }) else { return }
+        guard let page = await read(retriesTimeouts: false, { try await self.client.chat(limit: Self.pageSize, before: oldest, agentId: self.agentId) }) else { return }
         let shown = Set(items.map(\.id))
         items = page.items.filter { !shown.contains($0.id) } + items
         hasOlderHistory = page.hasMore ?? false
@@ -306,7 +314,7 @@ final class ChatModel: SocketModel {
     /// client retries and reports, so a failure here only leaves the transcript as it was.
     @discardableResult
     private func fetch() async -> Bool {
-        guard let result = await read(retriesTimeouts: false, { try await self.client.chatIfChanged(etag: self.etag, limit: Self.pageSize, after: self.cursor?.seq, epoch: self.cursor?.epoch) }) else { return false }
+        guard let result = await read(retriesTimeouts: false, { try await self.client.chatIfChanged(etag: self.etag, limit: Self.pageSize, after: self.cursor?.seq, epoch: self.cursor?.epoch, agentId: self.agentId) }) else { return false }
         // A 304 means the Mac's chat is still the page saved with this ETag: what is shown already is current.
         switch result {
         case .notModified: break
@@ -377,6 +385,9 @@ final class ChatModel: SocketModel {
     }
 
     override func handle(_ event: RemoteEvent) async {
+        // Another agent's chat event says nothing about this chat. Agent 1's events carry no id, and a Mac that names agent 1 is read the same way.
+        let eventAgent = event.agentId.flatMap { $0.isEmpty || $0 == defaultAgentID ? nil : $0 }
+        if event.kind == RemoteEvent.chatItem || event.kind == RemoteEvent.chatState, eventAgent != agentId { return }
         switch event.kind {
         case RemoteEvent.chatItem:
             guard let id = event.id else { return await reload() }
@@ -447,7 +458,7 @@ final class ChatModel: SocketModel {
     /// One streamed message: read it and replace it, or add it at the end. A message the Mac no longer has means the chat changed under us.
     private func refreshItem(_ id: String) async {
         let revision = revisions[id, default: 0], reads = fullReads
-        guard let item = await read({ try await self.client.chatMessage(id: id) }) else {
+        guard let item = await read({ try await self.client.chatMessage(id: id, agentId: self.agentId) }) else {
             // A message the Mac no longer has means the chat changed under us.
             if case ClientError.api(404, _, _)? = lastError { await reload() }
             return
@@ -549,7 +560,7 @@ final class ChatModel: SocketModel {
         if case .uploadFailed(let reason) = result {
             outbox.removeAll { $0.id == message.id }
             // A sign-out leaves no reason, and then there is nothing to retry.
-            errorMessage = reason.isEmpty ? nil : reason
+            // The composer shows the failure on the attachments, so no chat-level row repeats it.
             uploadFailure = reason.isEmpty ? nil : "The upload failed. \(reason)"
             return restore()
         }
@@ -646,10 +657,11 @@ final class ChatModel: SocketModel {
         // The id is the message's own, so a Retry sends the same id and the Mac creates the message once.
         let clientID = id.uuidString.lowercased()
         do {
-            try await Self.withTimeout(timeout) { [socket] in
+            try await Self.withTimeout(timeout) { [socket, agentId] in
                 // The open event socket carries messages without attachments. Without it, or when the Mac did not announce `chat.send`,
                 // the send goes over HTTPS as before.
-                if uploadIDs.isEmpty, let socket, socket.canSendChat {
+                // The socket frame has no agent field, so only agent 1 sends over it.
+                if uploadIDs.isEmpty, agentId == nil, let socket, socket.canSendChat {
                     PhoneHopLog.mark("phone.socket")
                     do {
                         _ = try await socket.sendChat(clientID: clientID, text: text, reply: reply)
@@ -661,7 +673,7 @@ final class ChatModel: SocketModel {
                     }
                 }
                 PhoneHopLog.mark("phone.post")
-                _ = try await client.sendMessage(text: text, uploadIDs: uploadIDs, reply: reply, clientID: clientID)
+                _ = try await client.sendMessage(text: text, uploadIDs: uploadIDs, reply: reply, clientID: clientID, agentId: agentId)
                 PhoneHopLog.mark("phone.ack")
             }
             errorMessage = nil
@@ -947,13 +959,13 @@ final class ChatModel: SocketModel {
     }
 
     func stopTurn() async {
-        if await run({ try await self.client.stopChat() }) != nil { await reload() }
+        if await run({ try await self.client.stopChat(agentId: self.agentId) }) != nil { await reload() }
     }
 
     // MARK: Approvals and forms
 
     func decide(_ approval: RemoteApproval, allow: Bool) async {
-        if await run({ try await self.client.decide(approval: approval.id, allow: allow) }) != nil { await reload() }
+        if await run({ try await self.client.decide(approval: approval.id, allow: allow, agentId: self.agentId) }) != nil { await reload() }
     }
 
     /// The choice shows on the next frame. The Mac's answer settles it, and a refusal puts the old choice back with the Mac's reason.
@@ -961,7 +973,7 @@ final class ChatModel: SocketModel {
         PhoneHopLog.mark("phone.form.tap")
         let before = pendingAnswers[form.id]?[field]
         pendingAnswers[form.id, default: [:]][field] = value
-        let done = await run({ try await self.client.answer(form: form.id, answers: [field: value]) }) != nil
+        let done = await run({ try await self.client.answer(form: form.id, answers: [field: value], agentId: self.agentId) }) != nil
         PhoneHopLog.mark(done ? "phone.form.ack" : "phone.form.failed")
         if done { await reload() }
         // Only this answer rolls back, and only if no later tap replaced it while the request was out.
@@ -972,11 +984,11 @@ final class ChatModel: SocketModel {
     }
 
     func submit(_ form: RemoteForm) async {
-        await finish(form, mark: "submit") { try await self.client.submit(form: form.id) }
+        await finish(form, mark: "submit") { try await self.client.submit(form: form.id, agentId: self.agentId) }
     }
 
     func skip(_ form: RemoteForm) async {
-        await finish(form, mark: "skip") { try await self.client.skip(form: form.id) }
+        await finish(form, mark: "skip") { try await self.client.skip(form: form.id, agentId: self.agentId) }
     }
 
     /// Submit and Skip show as pending at once. A refusal ends the pending state and leaves the answers as they were.
@@ -993,23 +1005,23 @@ final class ChatModel: SocketModel {
     // MARK: Threads
 
     func loadThreads() async {
-        if let list = await run({ try await self.client.chatThreads() }) { threads = list }
+        if let list = await run({ try await self.client.chatThreads(agentId: self.agentId) }) { threads = list }
     }
 
-    func thread(_ id: String) async -> RemoteChatThreadDetail? { await run { try await self.client.chatThread(id: id) } }
+    func thread(_ id: String) async -> RemoteChatThreadDetail? { await run { try await self.client.chatThread(id: id, agentId: self.agentId) } }
 
     /// Makes a saved thread the Mac's chat. Returns true when the Mac did it; a 409 sets `conflictMessage` and returns false.
     @discardableResult
-    func open(_ thread: RemoteChatThread) async -> Bool { await change { try await self.client.openThread(id: thread.id) } }
+    func open(_ thread: RemoteChatThread) async -> Bool { await change { try await self.client.openThread(id: thread.id, agentId: self.agentId) } }
 
     @discardableResult
-    func newChat() async -> Bool { await change { try await self.client.newChat() } }
+    func newChat() async -> Bool { await change { try await self.client.newChat(agentId: self.agentId) } }
 
     /// Applies one change to the Mac chat's settings. A 409 (a turn is running) sets `conflictMessage`. The snapshot reloads either way, so
     /// a rejected choice snaps back to what the Mac has.
     @discardableResult
     func setOptions(_ change: RemoteChatOptionsChange) async -> Bool {
-        let done = await self.change { try await self.client.setChatOptions(change) }
+        let done = await self.change { try await self.client.setChatOptions(change, agentId: self.agentId) }
         if !done { await reload() }
         return done
     }

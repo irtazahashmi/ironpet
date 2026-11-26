@@ -80,7 +80,7 @@ struct ChatView: View {
     nonisolated(unsafe) static var blankRepairsForTesting = 0
 
     var body: some View {
-        if settingsOnly { settingsPopover } else { chat }
+        if settingsOnly { settingsPopover } else { chat.environment(\.petAvatar, session.avatar) }
     }
 
     private var chat: some View {
@@ -129,12 +129,35 @@ struct ChatView: View {
 
     /// The same header as every section: the avatar and the pet's name as the title, the chat's controls on the right.
     private var header: some View {
-        PageHeader(title: SettingsAPI.live.config.pet.name, leading: { PetAvatar(size: 22) }, trailing: { headerControls })
+        PageHeader(title: session.agentName ?? SettingsAPI.live.config.pet.name, leading: { PetAvatar(size: 22) }, trailing: { headerControls })
     }
 
     private var headerControls: some View {
         HStack(spacing: 2) {
+            agentSwitcher
             settingsButton
+        }
+    }
+
+    /// With more than one agent on, a menu lists them and opens the chosen agent's chat in its own window. This window keeps showing
+    /// the agent it was opened for.
+    @ViewBuilder private var agentSwitcher: some View {
+        let switcher = session.switcher
+        if switcher.isVisible {
+            Menu {
+                ForEach(switcher.choices) { choice in
+                    Button { session.pickAgent(choice.id) } label: {
+                        if choice.isCurrent { Label(choice.name, systemImage: SharedSymbols.allow) } else { Text(choice.name) }
+                    }
+                }
+            } label: {
+                Image(systemName: "person.2.fill").font(.system(size: 12))
+            }
+            .menuStyle(.borderlessButton)
+            .menuIndicator(.hidden)
+            .fixedSize()
+            .help("Switch agent")
+            .accessibilityIdentifier("agent-switcher")
         }
     }
 
@@ -903,7 +926,7 @@ struct ChatView: View {
 
     private func approvalCard(_ approval: ChatApprovalInfo) -> some View {
         VStack(alignment: .leading, spacing: 8) {
-            Label(approval.title, systemImage: SharedSymbols.approval)
+            Label(session.approvalHeading(approval), systemImage: SharedSymbols.approval)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(.orange)
             if !approval.detail.isEmpty {
@@ -1136,7 +1159,7 @@ struct ChatView: View {
                 .padding(.top, 4)
             }
             HStack(alignment: .bottom, spacing: 6) {
-                TextField(session.isRunning ? "\(SettingsAPI.live.config.pet.name) is working. Enter queues your message." : "Ask \(SettingsAPI.live.config.pet.name)…", text: $session.input, axis: .vertical)
+                TextField(session.isRunning ? "\(session.agentName ?? SettingsAPI.live.config.pet.name) is working. Enter queues your message." : "Ask \(session.agentName ?? SettingsAPI.live.config.pet.name)…", text: $session.input, axis: .vertical)
                     .textFieldStyle(.plain)
                     .font(.system(size: 13.5))
                     .lineLimit(1...8)
@@ -1911,6 +1934,8 @@ struct Thumbnail: View {
 /// The pet's first idle frame, cropped to the face, used as the chat avatar.
 struct PetAvatar: View {
     let size: CGFloat
+    /// Set by a chat window of an agent other than agent 1, so its messages carry its own pet.
+    @Environment(\.petAvatar) private var override
     @ObservedObject private var config = SettingsAPI.live
     @MainActor private static var cache: (sprite: String?, image: NSImage?)?
 
@@ -1927,7 +1952,7 @@ struct PetAvatar: View {
 
     var body: some View {
         Group {
-            if let image = Self.image(sprite: config.config.pet.sprite) {
+            if let image = Self.image(sprite: override.map(\.path) ?? config.config.pet.sprite) {
                 Image(nsImage: image).resizable().aspectRatio(contentMode: .fit)
             } else {
                 Image(systemName: SharedSymbols.pet).foregroundStyle(.secondary)
@@ -2135,5 +2160,21 @@ private struct AllowShortcut: ViewModifier {
 
     func body(content: Content) -> some View {
         if active { content.keyboardShortcut(.return, modifiers: .command) } else { content }
+    }
+}
+
+/// The sprite sheet an agent's chat window draws its avatar from. Nil in agent 1's window, which follows the pet set in Settings.
+struct AvatarSprite: Equatable {
+    var path: String?
+}
+
+private struct PetAvatarKey: EnvironmentKey {
+    static let defaultValue: AvatarSprite? = nil
+}
+
+extension EnvironmentValues {
+    var petAvatar: AvatarSprite? {
+        get { self[PetAvatarKey.self] }
+        set { self[PetAvatarKey.self] = newValue }
     }
 }

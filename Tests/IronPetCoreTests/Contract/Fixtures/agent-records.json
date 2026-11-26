@@ -17,6 +17,7 @@
 
             },
             "created" : "<date>",
+            "enabled" : true,
             "id" : "agent_default",
             "instructions" : "",
             "name" : "Ghost",
@@ -48,6 +49,7 @@
 
           },
           "created" : "<date>",
+          "enabled" : true,
           "id" : "agent_default",
           "instructions" : "",
           "name" : "Ghost",
@@ -78,6 +80,176 @@
           "message" : "no agent with id \"agent_nope\""
         },
         "id" : 3,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "agent 1 cannot be disabled",
+      "request" : {
+        "id" : 4,
+        "jsonrpc" : "2.0",
+        "method" : "agent.update",
+        "params" : {
+          "enabled" : false,
+          "id" : "agent_default"
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32002,
+          "data" : {
+            "code" : "invalid"
+          },
+          "message" : "agent 1 cannot be disabled"
+        },
+        "id" : 4,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "agent 1 cannot be deleted",
+      "request" : {
+        "id" : 5,
+        "jsonrpc" : "2.0",
+        "method" : "agent.delete",
+        "params" : {
+          "id" : "agent_default"
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32002,
+          "data" : {
+            "code" : "invalid"
+          },
+          "message" : "agent 1 cannot be deleted"
+        },
+        "id" : 5,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "deleting an unknown agent is not found",
+      "request" : {
+        "id" : 6,
+        "jsonrpc" : "2.0",
+        "method" : "agent.delete",
+        "params" : {
+          "id" : "agent_nope"
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32001,
+          "data" : {
+            "code" : "not_found"
+          },
+          "message" : "no agent with id \"agent_nope\""
+        },
+        "id" : 6,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "updating an unknown agent is not found",
+      "request" : {
+        "id" : 7,
+        "jsonrpc" : "2.0",
+        "method" : "agent.update",
+        "params" : {
+          "id" : "agent_nope",
+          "name" : "X"
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32001,
+          "data" : {
+            "code" : "not_found"
+          },
+          "message" : "no agent with id \"agent_nope\""
+        },
+        "id" : 7,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "creating an agent with an unknown CLI is invalid",
+      "request" : {
+        "id" : 8,
+        "jsonrpc" : "2.0",
+        "method" : "agent.create",
+        "params" : {
+          "agentCli" : "no-such-cli",
+          "name" : "Bunny"
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32002,
+          "data" : {
+            "code" : "invalid"
+          },
+          "message" : "unknown agent CLI \"no-such-cli\""
+        },
+        "id" : 8,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "create returns an enabled agent with the next number",
+      "request" : {
+        "id" : 9,
+        "jsonrpc" : "2.0",
+        "method" : "agent.create",
+        "params" : {
+          "agentCli" : "claude",
+          "instructions" : "Be brief.",
+          "model" : "opus",
+          "name" : "Bunny"
+        }
+      },
+      "response" : {
+        "id" : 9,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "agentCli" : "claude",
+          "cliModels" : {
+            "claude" : "opus"
+          },
+          "created" : "<date>",
+          "enabled" : true,
+          "id" : "agent_*",
+          "instructions" : "Be brief.",
+          "model" : "opus",
+          "name" : "Bunny",
+          "number" : 2,
+          "permissions" : {
+
+          },
+          "updated" : "<date>"
+        }
+      }
+    },
+    {
+      "name" : "chat.snapshot for an unknown agent is not found",
+      "request" : {
+        "id" : 10,
+        "jsonrpc" : "2.0",
+        "method" : "chat.snapshot",
+        "params" : {
+          "agentId" : "agent_nope"
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32001,
+          "data" : {
+            "code" : "not_found"
+          },
+          "message" : "no agent with id \"agent_nope\""
+        },
+        "id" : 10,
         "jsonrpc" : "2.0"
       }
     }

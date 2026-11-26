@@ -17,10 +17,7 @@ final class IronPetRemoteUITests: XCTestCase {
     override func tearDown() { server.stop() }
 
     private func paste(_ link: String) {
-        let field = app.descendants(matching: .any)["pairing-link-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.tap()
-        field.typeText(link)
+        app.enterPairingLink(link)
         app.buttons["pair-button"].tap()
     }
 

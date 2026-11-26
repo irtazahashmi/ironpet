@@ -16,6 +16,9 @@ package final class AssistantContext {
     /// Opens a job's thread in the chat, now or when the chat's turn ends. Returns what to tell the agent.
     package var openJob: (String) -> Result<String, JobError> = { _ in .failure(JobError(message: "the chat is not available")) }
     package var now: () -> Date = Date.init
+    /// The agent id a call names, checked against the agents on this install. Nil is agent 1. Throws `APIError.notFound` for an id no
+    /// agent has. Without the app's agents (tests), only agent 1 exists.
+    package var resolveAgent: (String?) throws -> String = { try AgentOwner.resolve($0, registry: nil) }
 }
 
 /// The tools that make Ghost an assistant: hand work to background jobs (`jobs_*`), answer "what's going on" (`status_*`),
@@ -39,6 +42,7 @@ package enum AssistantMCP {
             ["name": name, "description": description, "inputSchema": ["type": "object", "properties": properties, "required": required]]
         }
         let id: [String: Any] = ["id": ["type": "string", "description": "Job id, such as job-k3m9qa"]]
+        let agentScope: [String: Any] = ["agentId": ["type": "string", "description": "The agent whose sessions to show, such as agent_default for agent 1. Defaults to the calling agent."]]
         return [
             tool("jobs_start", "Start a background job.\n\n" + jobsGuide,
                  ["title": ["type": "string", "maxLength": Job.titleLimit, "description": "A few words for the Agents list and the task, such as \"Fix the flaky login test\""],
@@ -54,8 +58,8 @@ package enum AssistantMCP {
             tool("jobs_open", "Show a job's transcript to the user in the chat.", id, required: ["id"]),
             tool("projects_resolve", "Find the folder for a job from what the user called the project. Returns best (use it), or matches to ask the user about when ambiguous is true. Without a name, best is the project the user is working in. name \"no project\" gives the folder for work that is not about code.",
                  ["name": ["type": "string", "description": "What the user called it, such as \"ironpet\" or \"the kokous repo\""]]),
-            tool("status_overview", "What's going on, in one call: agent sessions that need the user or are running, background jobs, tasks that need the user, open alerts and recent meetings. Use it for \"what's going on\" or \"anything need me\".", [:]),
-            tool("status_sessions", "The coding agent sessions ironpet watches (Cursor, Claude Code, Codex and others): status, project, prompt and last reply.", [:]),
+            tool("status_overview", "What's going on, in one call: agent sessions that need the user or are running, background jobs, tasks that need the user, open alerts and recent meetings. Use it for \"what's going on\" or \"anything need me\". The sessions are the calling agent's.", agentScope),
+            tool("status_sessions", "The coding agent sessions ironpet watches (Cursor, Claude Code, Codex and others): status, project, prompt and last reply. The calling agent's by default.", agentScope),
             tool("status_alerts", "The open alerts from ironpet's watchers: failed CI, reviews waiting, production errors.", [:]),
             tool("status_today", "Today's brief (what needs the user this morning) or recap (what finished today).",
                  ["kind": ["type": "string", "enum": Brief.Kind.allCases.map(\.rawValue)]]),
@@ -73,9 +77,11 @@ package enum AssistantMCP {
 
     /// `fromVoice`: the call came from voice mode's session, whose jobs wait until the pet has answered and
     /// `JobService.voiceHold` more before they start.
-    package static func call(_ name: String, _ args: [String: Any], context: AssistantContext, fromVoice: Bool = false) -> Result<Any, JobError> {
+    /// `agent` is the agent the call comes from: the sessions it sees, unless the arguments name another agent.
+    package static func call(_ name: String, _ args: [String: Any], context: AssistantContext, fromVoice: Bool = false,
+                             agent: String? = nil) -> Result<Any, JobError> {
         do {
-            return .success(try run(name, args, context, fromVoice: fromVoice))
+            return .success(try run(name, args, context, fromVoice: fromVoice, agent: agent))
         } catch let error as JobError {
             return .failure(error)
         } catch {
@@ -83,7 +89,12 @@ package enum AssistantMCP {
         }
     }
 
-    private static func run(_ name: String, _ args: [String: Any], _ context: AssistantContext, fromVoice: Bool) throws -> Any {
+    private static func run(_ name: String, _ args: [String: Any], _ context: AssistantContext, fromVoice: Bool, agent: String?) throws -> Any {
+        /// The sessions the call may see: the agent it names, else the calling agent, else agent 1.
+        func sessions() throws -> [AgentSession] {
+            let owner = try context.resolveAgent(args["agentId"] as? String ?? agent)
+            return context.sessions().filter { $0.ownerAgentID == owner }
+        }
         func string(_ key: String) -> String? { (args[key] as? String).map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 } }
         func required(_ key: String) throws -> String {
             guard let value = string(key) else { throw JobError(message: "\(key) is required") }
@@ -147,9 +158,9 @@ package enum AssistantMCP {
             if result.matches.isEmpty { object["known"] = candidates.map(\.json) }
             return object
         case "status_overview":
-            return overview(context)
+            return overview(context, sessions: try sessions())
         case "status_sessions":
-            return ["sessions": context.sessions().map(sessionJSON)]
+            return ["sessions": try sessions().map(sessionJSON)]
         case "status_alerts":
             return ["alerts": context.alerts().map(alertJSON)]
         case "status_today":
@@ -171,8 +182,7 @@ package enum AssistantMCP {
         }
     }
 
-    private static func overview(_ context: AssistantContext) -> [String: Any] {
-        let sessions = context.sessions()
+    private static func overview(_ context: AssistantContext, sessions: [AgentSession]) -> [String: Any] {
         let jobs = context.jobs()?.jobs ?? []
         let cutoff = context.now().addingTimeInterval(-86_400)
         let tasks = context.tasks()?.items.filter { $0.status != .done } ?? []
