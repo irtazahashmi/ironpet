@@ -95,4 +95,13 @@ final class TaskFollowUpTests: XCTestCase {
         XCTAssertEqual(older.task("a")?.askedAt, Date(timeIntervalSince1970: 1_700_000_000))
         XCTAssertNil(older.task("b")?.askedAt)
     }
+
+    func testFollowedUpStartsTheCountAgain() throws {
+        let task = try store.create(title: "Get the contract back", source: .user, waitingOn: "Ana", by: "test")
+        clock = day(7)
+        XCTAssertTrue(try XCTUnwrap(store.task(task.id)).followUpDue(now: clock, calendar: calendar))
+        let again = try TaskEdits.markFollowedUp(task.id, in: TasksAPI(store: store), now: clock)
+        XCTAssertEqual(again.askedAt, day(7))
+        XCTAssertFalse(again.followUpDue(now: day(8), calendar: calendar))
+    }
 }

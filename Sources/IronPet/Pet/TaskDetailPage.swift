@@ -264,6 +264,11 @@ struct TaskDetailPage: View {
             Divider()
             SummaryRow(label: "Waiting on", symbol: "person.badge.clock") {
                 if task.waitingOn != nil || editingWaiting {
+                    if task.followUpDue(now: Date()) {
+                        Button("Followed up") { attempt { _ = try TaskEdits.markFollowedUp(id, in: tasks) } }
+                            .controlSize(.small)
+                            .help("You asked again today: start the \(TaskFollowUp.workingDays) working days over")
+                    }
                     TextField("Waiting on", text: $waiting)
                         .textFieldStyle(.roundedBorder)
                         .frame(width: 180)
