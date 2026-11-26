@@ -128,15 +128,7 @@
             "voice" : "am_puck"
           },
           "tasks" : {
-            "dueReminders" : true,
-            "keepDoneDays" : 30,
-            "meetingSuggestions" : true,
-            "quickFilters" : [
-
-            ],
-            "scan" : true,
-            "scanMinutes" : 60,
-            "scanScreen" : false
+            "meetingSuggestions" : true
           },
           "telegram" : {
             "allowedUsers" : [
@@ -310,15 +302,7 @@
             "voice" : "am_puck"
           },
           "tasks" : {
-            "dueReminders" : true,
-            "keepDoneDays" : 30,
-            "meetingSuggestions" : true,
-            "quickFilters" : [
-
-            ],
-            "scan" : true,
-            "scanMinutes" : 60,
-            "scanScreen" : false
+            "meetingSuggestions" : true
           },
           "telegram" : {
             "allowedUsers" : [
@@ -489,15 +473,7 @@
             "voice" : "am_puck"
           },
           "tasks" : {
-            "dueReminders" : true,
-            "keepDoneDays" : 30,
-            "meetingSuggestions" : true,
-            "quickFilters" : [
-
-            ],
-            "scan" : true,
-            "scanMinutes" : 60,
-            "scanScreen" : false
+            "meetingSuggestions" : true
           },
           "telegram" : {
             "allowedUsers" : [

@@ -188,27 +188,23 @@ final class DatabaseUnavailableTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: file.path + "-wal"))
     }
 
-    func testTasksShowTheUnavailableStateNotTheEmptyOne() throws {
+    func testInboxShowsTheUnavailableStateNotTheEmptyOne() throws {
         _ = try makeNewerFile()
         let store = TaskStore(database: Database.open(path: file, migrations: AppMigrations.all).database)
         XCTAssertNotNil(store.unavailable)
-        XCTAssertEqual(TaskListView.content(unavailable: store.unavailable != nil, isEmpty: true), .unavailable)
-        XCTAssertEqual(TaskListView.content(unavailable: false, isEmpty: true), .empty)
+        XCTAssertEqual(InboxView.content(unavailable: store.unavailable != nil, isEmpty: true), .unavailable)
+        XCTAssertEqual(InboxView.content(unavailable: false, isEmpty: true), .empty)
         XCTAssertNotNil(UsageStore(database: Database.open(path: file, migrations: AppMigrations.all).database).unavailable)
     }
 
-    func testTasksToolsReturnAnErrorNamingTheReason() throws {
+    func testInboxToolsReturnAnErrorNamingTheReason() throws {
         _ = try makeNewerFile()
         let store = TaskStore(database: Database.open(path: file, migrations: AppMigrations.all).database)
-        for op in ["list", "create"] {
+        for op in ["list", "add"] {
             guard case .failure(let error) = TaskJSON.call(TasksAPI(store: store), op, ["title": "x"], by: "agent:mcp") else { return XCTFail("\(op) succeeded") }
             XCTAssertTrue(error.message.contains("newer than this ironpet knows"), error.message)
             XCTAssertTrue(error.message.contains("Not saved"), error.message)
         }
-        let cli = TaskMCP.handleCLI(Data(#"{"op":"list"}"#.utf8), tasks: TasksAPI(store: store))
-        let object = try XCTUnwrap(try JSONSerialization.jsonObject(with: cli.body) as? [String: Any])
-        XCTAssertEqual(object["ok"] as? Bool, false)
-        XCTAssertTrue((object["error"] as? String)?.contains("newer than this ironpet knows") == true)
     }
 
     func testNormalDatabaseShowsNoAlertOrBanner() throws {

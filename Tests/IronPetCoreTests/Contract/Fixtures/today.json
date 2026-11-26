@@ -20,20 +20,6 @@
           ],
           "sections" : [
             {
-              "id" : "due",
-              "items" : [
-
-              ],
-              "title" : "Due"
-            },
-            {
-              "id" : "needs",
-              "items" : [
-
-              ],
-              "title" : "Needs you"
-            },
-            {
               "id" : "alerts",
               "items" : [
 
@@ -87,13 +73,6 @@
 
               ],
               "title" : "Agents"
-            },
-            {
-              "id" : "closed",
-              "items" : [
-
-              ],
-              "title" : "Tasks closed"
             },
             {
               "id" : "resolved",

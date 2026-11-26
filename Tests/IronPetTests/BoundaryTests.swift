@@ -71,7 +71,7 @@ final class BoundaryTests: XCTestCase {
         XCTAssertGreaterThan(files.count, 100, "the scan found no sources, so it would pass on anything")
         for adapter in Self.adapters { XCTAssertTrue(files.contains { $0.path == adapter }, "\(adapter) moved: update BoundaryTests.adapters") }
         let views = files.filter { Self.definesView($0.text) }.map(\.path)
-        for expected in ["Chat/ChatView.swift", "Pet/TaskListView.swift", "Pet/IronPetWindow.swift", "Meeting/TranscriptsView.swift", "App/SettingsWindow.swift"] {
+        for expected in ["Chat/ChatView.swift", "Pet/InboxView.swift", "Pet/IronPetWindow.swift", "Meeting/TranscriptsView.swift", "App/SettingsWindow.swift"] {
             XCTAssertTrue(views.contains(expected), "\(expected) is not recognised as a view file")
         }
     }

@@ -210,23 +210,20 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(memory.reflectModel, "sonnet")
     }
 
-    func testTaskDefaults() {
-        let tasks = Config().tasks
-        XCTAssertTrue(tasks.meetingSuggestions)
-        XCTAssertTrue(tasks.dueReminders)
-        XCTAssertEqual(tasks.keepDoneDays, 30)
+    func testInboxDefaults() {
+        XCTAssertTrue(Config().tasks.meetingSuggestions)
     }
 
-    func testDueRemindersCanBeTurnedOff() throws {
-        try write(#"{"tasks":{"dueReminders":false}}"#)
-        let config = Config.load(from: file).config
-        XCTAssertFalse(config.tasks.dueReminders)
-        XCTAssertTrue(config.tasks.meetingSuggestions)
+    func testRetiredTaskKeysInAnOldFileAreIgnored() throws {
+        try write(#"{"tasks":{"dueReminders":false,"keepDoneDays":9,"scan":false,"scanMinutes":60,"meetingSuggestions":false}}"#)
+        let (config, error) = Config.load(from: file)
+        XCTAssertNil(error)
+        XCTAssertFalse(config.tasks.meetingSuggestions)
     }
 
     func testWelcomeBackIsOnByDefaultAndForOldFiles() throws {
         XCTAssertTrue(Config().welcomeBack.enabled)
-        try write(#"{"tasks":{"dueReminders":false}}"#)
+        try write(#"{"tasks":{"meetingSuggestions":false}}"#)
         XCTAssertTrue(Config.load(from: file).config.welcomeBack.enabled)
     }
 
@@ -236,13 +233,6 @@ final class ConfigTests: XCTestCase {
         XCTAssertNil(error)
         XCTAssertFalse(config.welcomeBack.enabled)
         XCTAssertEqual(config.reminders, Config.Reminders())
-    }
-
-    func testKeepDoneDaysIsClamped() throws {
-        try write(#"{"tasks":{"keepDoneDays":0}}"#)
-        XCTAssertEqual(Config.load(from: file).config.tasks.keepDoneDays, 1)
-        try write(#"{"tasks":{"keepDoneDays":1000}}"#)
-        XCTAssertEqual(Config.load(from: file).config.tasks.keepDoneDays, 365)
     }
 
     func testJobsRunThreeAtOnceAndAreClamped() throws {
@@ -280,12 +270,11 @@ final class ConfigTests: XCTestCase {
         XCTAssertNil(VoiceModeController.hotkey(in: config))
     }
 
-    func testPartialTasksKeepOtherDefaults() throws {
+    func testPartialTasksSectionKeepsOtherSections() throws {
         try write(#"{"tasks":{"meetingSuggestions":false}}"#)
         let (config, error) = Config.load(from: file)
         XCTAssertNil(error)
         XCTAssertFalse(config.tasks.meetingSuggestions)
-        XCTAssertEqual(config.tasks.keepDoneDays, 30)
         XCTAssertEqual(config.meetings, Config.Meetings())
     }
 

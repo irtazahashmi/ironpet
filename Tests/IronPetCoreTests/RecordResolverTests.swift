@@ -10,7 +10,7 @@ final class RecordResolverTests: XCTestCase {
     override func setUp() async throws {
         try await super.setUp()
         database = Database.open(path: nil, migrations: AppMigrations.all).database
-        tasks = TaskStore(database: database, keepDoneDays: { 30 })
+        tasks = TaskStore(database: database)
         refs = RecordRefs(database: database)
     }
 
@@ -45,10 +45,10 @@ final class RecordResolverTests: XCTestCase {
     }
 
     func testIdsHaveThePrefixAndAtLeastSixHexDigits() async throws {
-        XCTAssertEqual(RecordID.parse("task_9f3c1e")?.kind, .task)
-        XCTAssertEqual(RecordID.parse("task_9f3c1e")?.hex, "9f3c1e")
-        XCTAssertNil(RecordID.parse("task_9f3c1"), "five digits is too few")
-        XCTAssertNil(RecordID.parse("task_9F3C1E"), "uppercase is not an id")
+        XCTAssertEqual(RecordID.parse("meeting_9f3c1e")?.kind, .meeting)
+        XCTAssertEqual(RecordID.parse("meeting_9f3c1e")?.hex, "9f3c1e")
+        XCTAssertNil(RecordID.parse("meeting_9f3c1"), "five digits is too few")
+        XCTAssertNil(RecordID.parse("meeting_9F3C1E"), "uppercase is not an id")
         XCTAssertNil(RecordID.parse("fix-login-bug"), "an old id is not in the new form")
         XCTAssertNil(RecordID.parse("job-k3m9qa"), "an old job id is not in the new form")
         XCTAssertNil(RecordID.parse("nope_9f3c1e"), "an unknown prefix is not a kind")
@@ -63,60 +63,44 @@ final class RecordResolverTests: XCTestCase {
     }
 
     func testRefsAreStableAndOnlyCreatedOnce() async throws {
-        let first = refs.ref(.task, "fix-login-bug")
+        let first = refs.ref(.meeting, "fix-login-bug")
         XCTAssertNotNil(first)
-        XCTAssertTrue(first?.hasPrefix("task_") ?? false)
-        XCTAssertEqual(refs.ref(.task, "fix-login-bug"), first, "the same key keeps its ref")
+        XCTAssertTrue(first?.hasPrefix("meeting_") ?? false)
+        XCTAssertEqual(refs.ref(.meeting, "fix-login-bug"), first, "the same key keeps its ref")
         XCTAssertEqual(refs.lookup(first ?? "")?.key, "fix-login-bug")
-        XCTAssertNil(refs.lookup("task_ffffff"))
+        XCTAssertNil(refs.lookup("meeting_ffffff"))
     }
 
     func testResolvesARefAndAnOldIdToTheSameRecord() async throws {
-        let ref = try XCTUnwrap(refs.ref(.task, "fix-login-bug"))
+        let ref = try XCTUnwrap(refs.ref(.meeting, "fix-login-bug"))
         let api = RecordResolver(refs: refs)
-        XCTAssertEqual(api.resolve(ref), .success(.init(kind: .task, key: "fix-login-bug", ref: ref)))
-        XCTAssertEqual(api.resolve("fix-login-bug"), .success(.init(kind: .task, key: "fix-login-bug", ref: ref)))
+        XCTAssertEqual(api.resolve(ref), .success(.init(kind: .meeting, key: "fix-login-bug", ref: ref)))
+        XCTAssertEqual(api.resolve("fix-login-bug"), .success(.init(kind: .meeting, key: "fix-login-bug", ref: ref)))
     }
 
     func testAnUnknownIdSaysSo() async throws {
         let api = RecordResolver(refs: refs)
-        XCTAssertEqual(api.resolve("task_ffffff"), .failure(RecordError(message: "no record with id task_ffffff")))
+        XCTAssertEqual(api.resolve("meeting_ffffff"), .failure(RecordError(message: "no record with id meeting_ffffff")))
         XCTAssertEqual(api.resolve("nothing-here"), .failure(RecordError(message: "no record with id nothing-here")))
     }
 
     func testAnOldIdShownByTwoKindsAsksForARef() async throws {
-        let task = try XCTUnwrap(refs.ref(.task, "shared"))
-        let filter = try XCTUnwrap(refs.ref(.filter, "shared"))
+        let task = try XCTUnwrap(refs.ref(.meeting, "shared"))
+        let filter = try XCTUnwrap(refs.ref(.screen, "shared"))
         let result = RecordResolver(refs: refs).resolve("shared")
         guard case .failure(let error) = result else { return XCTFail("expected the ambiguity error, got \(result)") }
         XCTAssertTrue(error.message.contains("more than one record"), error.message)
         XCTAssertTrue(error.message.contains(task) && error.message.contains(filter), error.message)
     }
 
-    func testGetReadsATaskByRefAndMatchesTasksGet() async throws {
-        let created = try await call("tasks_create", ["title": "Review the release notes", "origin": ["kind": "chat", "ref": "chat-1", "reason": "test"]])
-        XCTAssertFalse(created.isError, created.text)
-        let ref = try XCTUnwrap(tasks.tasks.first?.ref, "a new task gets a ref")
-        XCTAssertTrue(ref.hasPrefix("task_"))
-
-        let records = RecordResolver(refs: refs)
-        let byRef = try await call("get", ["id": ref], records: records)
-        let byOldID = try await call("get", ["id": "review-the-release-notes"], records: records)
-        let direct = try await call("tasks_get", ["id": "review-the-release-notes"])
-        XCTAssertFalse(byRef.isError, byRef.text)
-        XCTAssertEqual(byRef.text, direct.text, "get returns what tasks_get returns")
-        XCTAssertEqual(byOldID.text, direct.text)
-        XCTAssertTrue(byRef.text.contains(ref), "the answer names the ref")
-    }
-
     func testGetAnUnknownIdIsAnErrorNotAnEmptyAnswer() async throws {
-        let result = try await call("get", ["id": "task_ffffff"], records: RecordResolver(refs: refs))
+        let result = try await call("get", ["id": "meeting_ffffff"], records: RecordResolver(refs: refs))
         XCTAssertTrue(result.isError)
-        XCTAssertEqual(result.text, "no record with id task_ffffff")
+        XCTAssertEqual(result.text, "no record with id meeting_ffffff")
     }
 
     func testGetWithoutRecordsReportsAnError() async throws {
-        let result = try await call("get", ["id": "task_ffffff"])
+        let result = try await call("get", ["id": "meeting_ffffff"])
         XCTAssertTrue(result.isError)
     }
 
@@ -125,13 +109,6 @@ final class RecordResolverTests: XCTestCase {
         let result = try await call("get", ["id": screen], records: RecordResolver(refs: refs))
         XCTAssertTrue(result.isError)
         XCTAssertTrue(result.text.contains("screen"), result.text)
-    }
-
-    func testGetAFilterIdWithoutAFilterInConfigSaysSo() async throws {
-        let filter = try XCTUnwrap(refs.ref(.filter, "mine"))
-        let result = try await call("get", ["id": filter], records: RecordResolver(refs: refs))
-        XCTAssertTrue(result.isError)
-        XCTAssertEqual(result.text, "no quick filter with id mine")
     }
 
     func testGetIsListedAsAToolWithRequiredID() async throws {

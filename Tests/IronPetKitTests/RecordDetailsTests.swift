@@ -5,16 +5,16 @@ final class RecordDetailsTests: XCTestCase {
     private func details(_ json: String) throws -> RecordDetails { try RecordDetails(json: Data(json.utf8)) }
 
     func testTheIdsComeFromTheAnswer() throws {
-        let record = try details(#"{"kind":"task","ref":"task_9f3c1e","key":"review-contract"}"#)
-        XCTAssertEqual(record.kind, "task")
-        XCTAssertEqual(record.ref, "task_9f3c1e")
+        let record = try details(#"{"kind":"job","ref":"job_9f3c1e","key":"review-contract"}"#)
+        XCTAssertEqual(record.kind, "job")
+        XCTAssertEqual(record.ref, "job_9f3c1e")
         XCTAssertEqual(record.key, "review-contract")
         XCTAssertEqual(record.fields, [], "an answer with only the ids has no fields")
-        XCTAssertEqual(record.title, "Task")
+        XCTAssertEqual(record.title, "Job")
     }
 
     func testAnAnswerWithoutItsIdsIsAnError() {
-        XCTAssertThrowsError(try details(#"{"kind":"task","ref":"task_9f3c1e"}"#), "no key")
+        XCTAssertThrowsError(try details(#"{"kind":"job","ref":"job_9f3c1e"}"#), "no key")
         XCTAssertThrowsError(try details("[1, 2]"), "not an object")
     }
 

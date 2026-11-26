@@ -229,13 +229,12 @@ final class AgentOwnerTests: XCTestCase {
         XCTAssertEqual(try api.list(agentId: "agent_default").map(\.id), one.map(\.id))
         XCTAssertThrowsError(try api.list(agentId: "agent_nine")) { XCTAssertEqual(($0 as? APIError)?.code, .notFound) }
         for builtIn in AutomationDefaults.builtIns { XCTAssertNil(builtIn.ownerAgentID, "\(builtIn.id) has no owner") }
-        XCTAssertNil(AutomationDefaults.taskScan(minutes: 30).ownerAgentID)
     }
 
     func testTheAutomationToolsListAndCreateAsTheCallingAgent() async throws {
         let (api, _) = try automationRig()
         func names(_ result: Result<Any, AutomationError>) throws -> [String] {
-            ((try result.get()) as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }.filter { !["Morning brief", "End-of-day recap", "Task review", "Mail and calendar checks"].contains($0) }
+            ((try result.get()) as? [[String: Any]] ?? []).compactMap { $0["name"] as? String }.filter { !["Morning brief", "End-of-day recap", "Mail and calendar checks"].contains($0) }
         }
         let created = try await api.callJSON("create", ["name": "Theirs", "trigger": ["type": "interval", "minutes": 30, "clock": "wall"],
                                                        "action": ["type": "bubble", "title": "hi"]], by: "agent:mcp", agent: "agent_two").get()

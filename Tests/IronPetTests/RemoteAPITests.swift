@@ -118,17 +118,17 @@ final class RemoteAPITests: XCTestCase {
         XCTAssertEqual(sixth.status, 429)
         h.clock.advance(61)
         for index in 0..<10 {
-            let reply = try await h.request("GET", "/v1/tasks")
+            let reply = try await h.request("GET", "/v1/suggestions")
             XCTAssertEqual(reply.status, 401, "request \(index + 1)")
         }
-        let eleventh = try await h.request("GET", "/v1/tasks")
+        let eleventh = try await h.request("GET", "/v1/suggestions")
         XCTAssertEqual(eleventh.status, 429)
         XCTAssertNotNil(eleventh.headers["retry-after"])
         XCTAssertEqual(h.api.bubbles.list().filter { $0.id == "remote:blocked" }.count, 1)
-        let during = try await h.request("GET", "/v1/tasks", token: "nope")
+        let during = try await h.request("GET", "/v1/suggestions", token: "nope")
         XCTAssertEqual(during.status, 429)
         h.clock.advance(RemoteService.lockout + 1)
-        let after = try await h.request("GET", "/v1/tasks")
+        let after = try await h.request("GET", "/v1/suggestions")
         XCTAssertEqual(after.status, 401)
     }
 
@@ -142,140 +142,63 @@ final class RemoteAPITests: XCTestCase {
     }
 
     // S5
-    func testTasksNeedTheDevicesToken() async throws {
+    func testTheInboxNeedsTheDevicesToken() async throws {
         let paired = try await h.pairDevice()
-        _ = try h.api.tasks.create(CreateTaskRequest(title: "Write docs", source: .user))
-        let none = try await h.request("GET", "/v1/tasks")
+        h.api.tasks.suggest(SuggestTaskRequest(draft: .init(key: "k", title: "Write docs", due: nil), kind: .pr, sourceRef: "pr:1"))
+        let none = try await h.request("GET", "/v1/suggestions")
         XCTAssertEqual(none.status, 401)
-        let wrong = try await h.request("GET", "/v1/tasks", token: "ipt_wrong")
+        let wrong = try await h.request("GET", "/v1/suggestions", token: "ipt_wrong")
         XCTAssertEqual(wrong.status, 401)
         XCTAssertEqual(wrong.json["error"] as? [String: String], ["code": "unauthorized", "message": "unauthorized"])
-        let ok = try await h.request("GET", "/v1/tasks", token: paired.token)
+        let ok = try await h.request("GET", "/v1/suggestions", token: paired.token)
         XCTAssertEqual(ok.status, 200)
         XCTAssertEqual(ok.headers["cache-control"], "no-store")
-        let list = try XCTUnwrap(ok.json["tasks"] as? [[String: Any]])
-        XCTAssertEqual(list.compactMap { $0["id"] as? String }, h.api.tasks.list().map(\.id))
+        let list = try XCTUnwrap(ok.json["suggestions"] as? [[String: Any]])
+        XCTAssertEqual(list.compactMap { $0["id"] as? String }, h.api.tasks.suggestions.map(\.id))
         XCTAssertNotNil(list.first?["created"] as? String, "ISO 8601 date")
         h.clock.advance(61)
         let revoke = try await h.request("DELETE", "/v1/devices/me", token: paired.token)
         XCTAssertEqual(revoke.status, 200)
-        let revoked = try await h.request("GET", "/v1/tasks", token: paired.token)
+        let revoked = try await h.request("GET", "/v1/suggestions", token: paired.token)
         XCTAssertEqual(revoked.status, 401)
     }
 
     // S6
-    func testAcceptingASuggestionRecordsTheDevice() async throws {
+    func testMarkingAnItemDoneTakesItOffTheList() async throws {
         let paired = try await h.pairDevice()
         h.api.tasks.suggest(SuggestTaskRequest(draft: .init(key: "k", title: "Review PR", due: nil), kind: .pr, sourceRef: "pr:1"))
-        let suggestion = try XCTUnwrap(h.api.tasks.suggestions.first)
+        let item = try XCTUnwrap(h.api.tasks.suggestions.first)
         let list = try await h.request("GET", "/v1/suggestions", token: paired.token)
         XCTAssertEqual((list.json["suggestions"] as? [[String: Any]])?.count, 1)
-        let accepted = try await h.request("POST", "/v1/suggestions/\(suggestion.id)/accept", token: paired.token, body: [:])
-        XCTAssertEqual(accepted.status, 200)
-        let task = try XCTUnwrap(h.api.tasks.items.first { $0.title == "Review PR" })
-        XCTAssertTrue(h.api.tasks.history(task.id).contains { $0.by == "remote:\(paired.deviceID)" })
+        let done = try await h.request("POST", "/v1/suggestions/\(item.id)/accept", token: paired.token, body: [:])
+        XCTAssertEqual(done.status, 200)
+        XCTAssertEqual(done.json["done"] as? String, item.id)
+        XCTAssertTrue(h.api.tasks.suggestions.isEmpty, "the item is gone from the Mac too")
+    }
+
+    func testRemovingAnItemTakesItOffTheList() async throws {
+        let paired = try await h.pairDevice()
+        h.api.tasks.suggest(SuggestTaskRequest(draft: .init(key: "k", title: "Wrong item", due: nil), kind: .pr, sourceRef: "pr:1"))
+        let item = try XCTUnwrap(h.api.tasks.suggestions.first)
+        let removed = try await h.request("POST", "/v1/suggestions/\(item.id)/reject", token: paired.token, body: [:])
+        XCTAssertEqual(removed.status, 200)
+        XCTAssertEqual(removed.json["rejected"] as? String, item.id)
+        XCTAssertTrue(h.api.tasks.suggestions.isEmpty)
+        let again = try await h.request("POST", "/v1/suggestions/\(item.id)/reject", token: paired.token, body: [:])
+        XCTAssertEqual(again.status, 404)
+    }
+
+    func testTheTaskRoutesAreGone() async throws {
+        let paired = try await h.pairDevice()
+        for (method, path) in [("GET", "/v1/tasks"), ("POST", "/v1/tasks"), ("GET", "/v1/tasks/x"), ("PATCH", "/v1/tasks/x"),
+                               ("POST", "/v1/tasks/x/close"), ("GET", "/v1/task-filters"), ("DELETE", "/v1/task-filters/x")] {
+            let reply = try await h.request(method, path, token: paired.token, body: method == "GET" || method == "DELETE" ? nil : [:])
+            XCTAssertEqual(reply.status, 404, "\(method) \(path)")
+        }
     }
 
     private func encoded(_ id: String) -> String {
         id.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/"))) ?? id
-    }
-
-    func testTaskRoutesFindAnIdWithUmlautsThroughThePercentEncodedPath() async throws {
-        let paired = try await h.pairDevice()
-        let task = try h.api.tasks.create(CreateTaskRequest(title: "Ask the Bezirksjugendwart MFR Süd-Nord about a b", source: .user))
-        XCTAssertTrue(task.id.contains("ü"))
-        let path = "/v1/tasks/\(encoded(task.id))"
-        XCTAssertTrue(path.contains("%C3%BC"))
-        let got = try await h.request("GET", path, token: paired.token)
-        XCTAssertEqual(got.status, 200)
-        let patched = try await h.request("PATCH", path, token: paired.token, body: ["title": "Renamed", "notes": "n", "status": "in_progress"])
-        XCTAssertEqual(patched.status, 200)
-        XCTAssertEqual(h.api.tasks.task(task.id)?.title, "Renamed")
-        XCTAssertEqual(h.api.tasks.task(task.id)?.notes, "n")
-        XCTAssertEqual(h.api.tasks.task(task.id)?.status, .inProgress)
-        let closed = try await h.request("POST", path + "/close", token: paired.token, body: ["note": "done"])
-        XCTAssertEqual(closed.status, 200)
-        XCTAssertEqual(h.api.tasks.task(task.id)?.status, .done)
-    }
-
-    /// The phone queues changes made offline and replays them. A replay with the same `client_id` must not create or change twice.
-    func testAReplayedChangeWithTheSameClientIDAppliesOnce() async throws {
-        let paired = try await h.pairDevice()
-        let id = UUID().uuidString
-        let first = try await h.request("POST", "/v1/tasks", token: paired.token, body: ["title": "Offline idea", "client_id": id])
-        let second = try await h.request("POST", "/v1/tasks", token: paired.token, body: ["title": "Offline idea", "client_id": id])
-        XCTAssertEqual(first.status, 201)
-        XCTAssertEqual(second.status, 201)
-        XCTAssertEqual(first.json["id"] as? String, second.json["id"] as? String, "the second answer is the first one")
-        XCTAssertEqual(h.api.tasks.items.filter { $0.title == "Offline idea" }.count, 1)
-
-        let task = try XCTUnwrap(h.api.tasks.items.first { $0.title == "Offline idea" })
-        let path = "/v1/tasks/\(encoded(task.id))"
-        let note = UUID().uuidString
-        for _ in 0..<2 {
-            let reply = try await h.request("PATCH", path, token: paired.token, body: ["status": "in_progress", "note": "started", "client_id": note])
-            XCTAssertEqual(reply.status, 200)
-        }
-        XCTAssertEqual(h.api.tasks.history(task.id).filter { $0.detail.contains("started") }.count, 1, "the note was written once")
-
-        let bad = try await h.request("POST", "/v1/tasks", token: paired.token, body: ["title": "x", "client_id": "not-a-uuid"])
-        XCTAssertEqual(bad.status, 400)
-    }
-
-    /// `base_updated` is the `updated` time the phone edited. A task that changed since answers 409 and stays as it is.
-    func testAChangeBasedOnAnOlderCopyIsRefusedWith409() async throws {
-        let paired = try await h.pairDevice()
-        let task = try h.api.tasks.create(CreateTaskRequest(title: "Shared task", source: .user))
-        let path = "/v1/tasks/\(encoded(task.id))"
-        // The phone read the task a minute before the Mac's last change. The store stamps changes with the wall clock, so the stale time is set back instead of waiting.
-        let base = ISO8601DateFormatter().string(from: task.updated.addingTimeInterval(-60))
-        var change = UpdateTaskRequest(id: task.id, by: "user")
-        change.notes = "Edited on the Mac"
-        _ = try h.api.tasks.update(change)
-
-        let stale = try await h.request("PATCH", path, token: paired.token, body: ["title": "From the phone", "base_updated": base])
-        XCTAssertEqual(stale.status, 409)
-        XCTAssertEqual((stale.json["error"] as? [String: String])?["code"], "conflict")
-        XCTAssertEqual(h.api.tasks.task(task.id)?.title, "Shared task")
-        let staleClose = try await h.request("POST", path + "/close", token: paired.token, body: ["note": "done", "base_updated": base])
-        XCTAssertEqual(staleClose.status, 409)
-        XCTAssertEqual(h.api.tasks.task(task.id)?.status, .backlog)
-
-        let current = try XCTUnwrap(h.api.tasks.task(task.id))
-        let fresh = try await h.request("PATCH", path, token: paired.token, body: ["title": "From the phone", "base_updated": ISO8601DateFormatter().string(from: current.updated)])
-        XCTAssertEqual(fresh.status, 200)
-        XCTAssertEqual(h.api.tasks.task(task.id)?.title, "From the phone")
-    }
-
-    /// The phone's board sets and clears who holds a task with `waiting_on` on the same PATCH route the status uses.
-    func testPatchSetsAndClearsWaitingOnAlongsideTheStatus() async throws {
-        let paired = try await h.pairDevice()
-        let task = try h.api.tasks.create(CreateTaskRequest(title: "Wait for Ana", status: .inProgress, source: .user))
-        let path = "/v1/tasks/\(encoded(task.id))"
-        let set = try await h.request("PATCH", path, token: paired.token, body: ["waiting_on": "Ana"])
-        XCTAssertEqual(set.status, 200)
-        XCTAssertEqual(h.api.tasks.task(task.id)?.waitingOn, "Ana")
-        XCTAssertEqual(h.api.tasks.task(task.id)?.status, .inProgress)
-        let cleared = try await h.request("PATCH", path, token: paired.token, body: ["waiting_on": "", "status": "needs_you"])
-        XCTAssertEqual(cleared.status, 200)
-        XCTAssertNil(h.api.tasks.task(task.id)?.waitingOn)
-        XCTAssertEqual(h.api.tasks.task(task.id)?.status, .needsYou)
-    }
-
-    func testEveryKindOfIdIsDecodedExactlyOnce() async throws {
-        let paired = try await h.pairDevice()
-        for title in ["Größe prüfen", "Café öffnen", "Straße"] {
-            let task = try h.api.tasks.create(CreateTaskRequest(title: title, source: .user))
-            let reply = try await h.request("GET", "/v1/tasks/\(encoded(task.id))", token: paired.token)
-            XCTAssertEqual(reply.status, 200, task.id)
-        }
-        // These ids cannot be made by the slug, so the 404 message shows what the server decoded.
-        for id in ["50%-done", "fix 🐞 now", "two words", "a%2Fb", "süd"] {
-            let reply = try await h.request("GET", "/v1/tasks/\(encoded(id))", token: paired.token)
-            XCTAssertEqual(reply.status, 404)
-            let message = (reply.json["error"] as? [String: Any])?["message"] as? String
-            XCTAssertEqual(message, "no task with id \"\(id)\"", id)
-        }
     }
 
     func testSuggestionRoutesDecodeTheId() async throws {
@@ -283,21 +206,12 @@ final class RemoteAPITests: XCTestCase {
         let reply = try await h.request("POST", "/v1/suggestions/\(encoded("süd 🐞"))/reject", token: paired.token, body: [:])
         XCTAssertEqual(reply.status, 404)
         XCTAssertTrue(String(decoding: reply.data, as: UTF8.self).contains("süd 🐞"))
-    }
-
-    // S7
-    func testClosingNeedsANote() async throws {
-        let paired = try await h.pairDevice()
-        let task = try h.api.tasks.create(CreateTaskRequest(title: "Ship", source: .user))
-        let bad = try await h.request("POST", "/v1/tasks/\(task.id)/close", token: paired.token, body: [:])
-        XCTAssertEqual(bad.status, 400)
-        let message = (bad.json["error"] as? [String: Any])?["message"] as? String
-        XCTAssertEqual(message, "note is required and must not be empty: say what shows the task is done")
-        let good = try await h.request("POST", "/v1/tasks/\(task.id)/close", token: paired.token, body: ["note": "merged"])
-        XCTAssertEqual(good.status, 200)
-        XCTAssertEqual(h.api.tasks.task(task.id)?.status, .done)
-        let missing = try await h.request("GET", "/v1/tasks/nope", token: paired.token)
-        XCTAssertEqual(missing.status, 404)
+        for id in ["50%-done", "fix 🐞 now", "a%2Fb"] {
+            let accepted = try await h.request("POST", "/v1/suggestions/\(encoded(id))/accept", token: paired.token, body: [:])
+            XCTAssertEqual(accepted.status, 404)
+            let message = (accepted.json["error"] as? [String: Any])?["message"] as? String
+            XCTAssertEqual(message, "no inbox item \"\(id)\"", id)
+        }
     }
 
     // S8
@@ -319,18 +233,18 @@ final class RemoteAPITests: XCTestCase {
         let hello = try await read(socket, until: "hello")
         XCTAssertEqual(hello.last?["kind"] as? String, "hello")
         let started = Date()
-        _ = try h.api.tasks.create(CreateTaskRequest(title: "Live", source: .user))
-        let frames = try await read(socket, until: "tasks.changed")
-        XCTAssertEqual(frames.last?["kind"] as? String, "tasks.changed")
+        h.api.tasks.suggest(SuggestTaskRequest(draft: .init(key: "live", title: "Live", due: nil), kind: .pr, sourceRef: "pr:1"))
+        let frames = try await read(socket, until: "suggestions.changed")
+        XCTAssertEqual(frames.last?["kind"] as? String, "suggestions.changed")
         XCTAssertLessThan(Date().timeIntervalSince(started), 1)
         let seen = try XCTUnwrap(frames.last?["seq"] as? Int)
         socket.cancel(with: .normalClosure, reason: nil)
 
-        _ = try h.api.tasks.create(CreateTaskRequest(title: "Missed", source: .user))
+        h.api.tasks.suggest(SuggestTaskRequest(draft: .init(key: "missed", title: "Missed", due: nil), kind: .pr, sourceRef: "pr:2"))
         let again = h.session.webSocketTask(with: socketRequest(port: h.port, token: paired.token, since: seen))
         again.resume()
-        let replay = try await read(again, until: "tasks.changed")
-        XCTAssertTrue(replay.contains { ($0["seq"] as? Int ?? 0) > seen && $0["kind"] as? String == "tasks.changed" })
+        let replay = try await read(again, until: "suggestions.changed")
+        XCTAssertTrue(replay.contains { ($0["seq"] as? Int ?? 0) > seen && $0["kind"] as? String == "suggestions.changed" })
         XCTAssertFalse(replay.contains { $0["kind"] as? String == "resync" })
 
         h.service.revoke(paired.deviceID)
@@ -371,7 +285,7 @@ final class RemoteAPITests: XCTestCase {
         h.service.revokeAllAndRotate()
         XCTAssertNotEqual(h.service.identity.fingerprint, before)
         h.clock.advance(61)
-        let reply = try await h.request("GET", "/v1/tasks", token: paired.token)
+        let reply = try await h.request("GET", "/v1/suggestions", token: paired.token)
         XCTAssertEqual(reply.status, 401)
         XCTAssertTrue(h.service.devices.isEmpty)
     }
@@ -379,16 +293,16 @@ final class RemoteAPITests: XCTestCase {
     // S10
     func testAccessLogHoldsTemplatesOnly() async throws {
         let paired = try await h.pairDevice()
-        let task = try h.api.tasks.create(CreateTaskRequest(title: "Secret title", source: .user))
-        _ = try await h.request("GET", "/v1/tasks?label=secret:value", token: paired.token)
-        _ = try await h.request("GET", "/v1/tasks/\(task.id)", token: paired.token)
-        _ = try await h.request("POST", "/v1/tasks/\(task.id)/close", token: paired.token, body: ["note": "hush-note"])
+        h.api.tasks.suggest(SuggestTaskRequest(draft: .init(key: "secret-key", title: "Secret title", due: nil), kind: .pr, sourceRef: "pr:1"))
+        let item = try XCTUnwrap(h.api.tasks.suggestions.first)
+        _ = try await h.request("GET", "/v1/suggestions?label=secret:value", token: paired.token)
+        _ = try await h.request("POST", "/v1/suggestions/\(item.id)/reject", token: paired.token, body: ["note": "hush-note"])
         _ = try await h.request("GET", "/v1/unknown/path?x=1", token: paired.token)
         let rows = h.service.store.accessLog()
-        XCTAssertTrue(rows.contains { $0.route == "/v1/tasks/:id" && $0.deviceID == paired.deviceID })
-        XCTAssertTrue(rows.contains { $0.route == "/v1/tasks/:id/close" })
+        XCTAssertTrue(rows.contains { $0.route == "/v1/suggestions" && $0.deviceID == paired.deviceID })
+        XCTAssertTrue(rows.contains { $0.route == "/v1/suggestions/:id/reject" })
         let dump = try h.database.read { try $0.rows("SELECT * FROM remote_access_log") }.flatMap { $0 }.map { "\($0 ?? "")" }.joined(separator: "\n")
-        for secret in [paired.token, paired.code, task.id, "secret:value", "hush-note", "unknown", "x=1"] {
+        for secret in [paired.token, paired.code, item.id, "secret:value", "hush-note", "unknown", "x=1"] {
             XCTAssertFalse(dump.contains(secret), "\(secret) is in the access log")
         }
     }
@@ -428,7 +342,7 @@ final class RemoteEvictionTests: XCTestCase {
         try await h.start()
         defer { Task { await h.stop() } }
         let paired = try await h.pairDevice()
-        for index in 0..<6 { _ = try h.api.tasks.create(CreateTaskRequest(title: "T\(index)", source: .user)) }
+        for index in 0..<6 { h.api.tasks.suggest(SuggestTaskRequest(draft: .init(key: "k\(index)", title: "T\(index)", due: nil), kind: .pr, sourceRef: "pr:\(index)")) }
         var request = URLRequest(url: URL(string: "ws://127.0.0.1:\(h.port)/v1/events?since=1")!)
         request.setValue("Bearer \(paired.token)", forHTTPHeaderField: "Authorization")
         let socket = h.session.webSocketTask(with: request)

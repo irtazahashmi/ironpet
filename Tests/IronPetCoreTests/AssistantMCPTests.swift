@@ -85,7 +85,7 @@ final class AssistantMCPTests: XCTestCase {
 
     func testJobsStartOnlyAcceptsAKnownFolder() async throws {
         let database = Database.open(path: nil, migrations: TaskStore.migrations + JobService.migrations).database
-        let jobs = JobService(database: database, tasks: nil)
+        let jobs = JobService(database: database)
         jobs.currentAgent = { nil }
         context.jobs = { jobs }
         let cursorURL = try XCTUnwrap(URL(string: "file://" + folder.path + "/"))
@@ -124,24 +124,7 @@ final class AssistantMCPTests: XCTestCase {
         XCTAssertNotNil(recall["error"], "memory_search replaced memory_recall")
     }
 
-    func testStatusOverviewLeavesOutDeferredTasks() async throws {
-        let tasks = TaskStore(database: Database.open(path: nil, migrations: TaskStore.migrations).database)
-        let later = Date().addingTimeInterval(30 * 86_400)
-        _ = try tasks.create(title: "Renew the passport", status: .needsYou, source: .user, deferUntil: later, by: "user")
-        _ = try tasks.create(title: "Draft the talk", status: .inProgress, source: .user, deferUntil: later, by: "user")
-        _ = try tasks.create(title: "Pick a venue", source: .user, deferUntil: later, by: "user")
-        context.tasks = { TasksAPI(store: tasks) }
-        let overview = try await call("status_overview")
-        let summary = try XCTUnwrap(overview.json["tasks"] as? [String: Any])
-        XCTAssertEqual((summary["needs_you"] as? [Any])?.count, 0)
-        XCTAssertEqual((summary["in_progress"] as? [Any])?.count, 0)
-        XCTAssertEqual(summary["backlog"] as? Int, 0)
-    }
-
-    func testStatusOverviewGathersSessionsAlertsAndTasks() async throws {
-        let tasks = TaskStore(database: Database.open(path: nil, migrations: TaskStore.migrations).database)
-        _ = try tasks.create(title: "Review Sara's PR", status: .needsYou, source: .user, by: "user")
-        context.tasks = { TasksAPI(store: tasks) }
+    func testStatusOverviewGathersSessionsAlertsAndMeetings() async throws {
         var waiting = AgentSession(id: "claude:1", source: .claude, status: .needsInput, prompt: "Migrate the db")
         waiting.origin.workspace = "/Users/me/kokous"
         context.sessions = { [waiting] }
@@ -151,13 +134,13 @@ final class AssistantMCPTests: XCTestCase {
         XCTAssertFalse(overview.isError, overview.text)
         let sessions = try XCTUnwrap(overview.json["sessions"] as? [String: Any])
         XCTAssertEqual((sessions["need_you"] as? [[String: Any]])?.first?["project"] as? String, "kokous")
-        XCTAssertEqual(((overview.json["tasks"] as? [String: Any])?["needs_you"] as? [[String: Any]])?.first?["title"] as? String, "Review Sara's PR")
+        XCTAssertNil(overview.json["tasks"], "there is no task list to summarize")
         XCTAssertEqual((overview.json["alerts"] as? [[String: Any]])?.first?["title"] as? String, "main is red")
     }
 
     func testJobsOpenPassesOnWhenTheThreadOpens() async throws {
         let database = Database.open(path: nil, migrations: TaskStore.migrations + JobService.migrations).database
-        let jobs = JobService(database: database, tasks: nil)
+        let jobs = JobService(database: database)
         jobs.currentAgent = { (AgentCatalog.all[0], nil) }
         jobs.makeAgent = { _, _ in FakeOpenAgent() }
         jobs.preamble = { _ in "" }
@@ -179,7 +162,7 @@ final class AssistantMCPTests: XCTestCase {
 
     func testJobsOpenReportsWhyItCannotOpen() async throws {
         let database = Database.open(path: nil, migrations: JobService.migrations).database
-        let jobs = JobService(database: database, tasks: nil)
+        let jobs = JobService(database: database)
         context.jobs = { jobs }
         let missing = try await call("jobs_open", ["id": "job-nope"])
         XCTAssertTrue(missing.isError)

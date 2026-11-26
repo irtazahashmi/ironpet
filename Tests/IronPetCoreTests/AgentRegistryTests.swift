@@ -41,16 +41,6 @@ final class AgentRegistryTests: XCTestCase {
         XCTAssertEqual(agent.permissions, [:])
     }
 
-    func testWritesAfterTheUpgradeAreAttributedToAgentOne() async throws {
-        let database = try Database(path: nil, migrations: AppMigrations.all)
-        let registry = AgentRegistry(database: database)
-        let store = TaskStore(database: database, keepDoneDays: { 30 })
-        _ = try store.create(title: "A task", source: .user, by: "user")
-        let agents = try database.read { try $0.rows("SELECT DISTINCT agent_id FROM task_events").map { $0[0] as? String } }
-        XCTAssertEqual(agents, [registry.chatAgent?.id])
-        XCTAssertEqual(registry.get(try XCTUnwrap(agents.first ?? nil))?.number, 1)
-    }
-
     func testAnEmptyOrDefaultAgentIdResolvesToAgentOne() async throws {
         let registry = AgentRegistry(database: try Database(path: nil, migrations: AppMigrations.all))
         XCTAssertEqual(registry.get("")?.number, 1, "a row with no agent id still resolves")

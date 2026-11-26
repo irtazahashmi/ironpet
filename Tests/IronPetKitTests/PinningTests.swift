@@ -28,8 +28,8 @@ final class PinningTests: XCTestCase {
         try server.start()
         defer { server.stop() }
         let client = IronPetClient(endpoint: ServerEndpoint(baseURL: server.baseURL, pin: TestCertificates.A.fingerprint), token: server.token)
-        let tasks = try await client.tasks()
-        XCTAssertEqual(tasks.count, MockIronPetServer.sampleTasks.count)
+        let items = try await client.suggestions()
+        XCTAssertEqual(items.count, MockIronPetServer.sampleSuggestions.count)
     }
 
     func testOtherCertificateFailsAndNothingIsSent() async throws {
@@ -52,7 +52,7 @@ final class PinningTests: XCTestCase {
         try server.start()
         defer { server.stop() }
         let client = IronPetClient(endpoint: ServerEndpoint(baseURL: server.baseURL), token: server.token)
-        do { _ = try await client.tasks(); XCTFail("normal validation must refuse a self-signed certificate") } catch {
+        do { _ = try await client.suggestions(); XCTFail("normal validation must refuse a self-signed certificate") } catch {
             guard case .transport = error as? ClientError else { return XCTFail("\(error)") }
         }
         XCTAssertTrue(server.requests.isEmpty)

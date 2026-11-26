@@ -181,12 +181,12 @@ final class RemoteSecureListenerTests: XCTestCase {
     private let loopback = RemoteServerHarness.loopbackInterface
 
     // S3
-    func testAPinnedClientPairsAndListsTasksOverHTTPS() async throws {
+    func testAPinnedClientPairsAndListsTheInboxOverHTTPS() async throws {
         let h = RemoteServerHarness()
         try await h.startSecure(loopback.ip)
         h.pinned = h.service.newPairingCode().fingerprint
         let paired = try await h.pairDevice()
-        let tasks = try await h.request("GET", "/v1/tasks", token: paired.token)
+        let tasks = try await h.request("GET", "/v1/suggestions", token: paired.token)
         XCTAssertEqual(tasks.status, 200)
         await h.stop()
     }
@@ -199,7 +199,7 @@ final class RemoteSecureListenerTests: XCTestCase {
         try await h.startSecure(loopback.ip)
         let fingerprint = h.service.newPairingCode().fingerprint
         let keychain = try XCTUnwrap(h.controller.server?.keychain)
-        let before = try await h.secureRequest("GET", address: loopback.ip, port: h.port, "/v1/tasks", fingerprint: fingerprint)
+        let before = try await h.secureRequest("GET", address: loopback.ip, port: h.port, "/v1/suggestions", fingerprint: fingerprint)
         XCTAssertEqual(before.status, 401, "the TLS handshake works before the lock (no token, so the gate answers)")
         XCTAssertEqual(SecKeychainLock(keychain.keychain), errSecSuccess)
         // The timer unlocks the keychain within half a second, so a handshake right after the lock can still fail. A phone retries, and so
@@ -209,7 +209,7 @@ final class RemoteSecureListenerTests: XCTestCase {
         var lastError: Error?
         while after == nil, Date().timeIntervalSince(started) < 5 {
             do {
-                after = try await h.secureRequest("GET", address: loopback.ip, port: h.port, "/v1/tasks", fingerprint: fingerprint)
+                after = try await h.secureRequest("GET", address: loopback.ip, port: h.port, "/v1/suggestions", fingerprint: fingerprint)
             } catch {
                 lastError = error
                 try await Task.sleep(for: .milliseconds(50))
@@ -225,7 +225,7 @@ final class RemoteSecureListenerTests: XCTestCase {
         let h = RemoteServerHarness()
         try await h.startSecure(loopback.ip)
         do {
-            _ = try await h.secureRequest("GET", address: loopback.ip, port: h.port, "/v1/tasks", fingerprint: String(repeating: "0", count: 64))
+            _ = try await h.secureRequest("GET", address: loopback.ip, port: h.port, "/v1/suggestions", fingerprint: String(repeating: "0", count: 64))
             XCTFail("the handshake should fail")
         } catch {
             XCTAssertEqual((error as? URLError)?.code, .cancelled, "the client's delegate cancelled the handshake: \(error)")
@@ -296,7 +296,7 @@ final class RemoteSecureListenerTests: XCTestCase {
         let old = h.service.identity.fingerprint
         h.pinned = old
         let paired = try await h.pairDevice()
-        let before = try await h.request("GET", "/v1/tasks", token: paired.token)
+        let before = try await h.request("GET", "/v1/suggestions", token: paired.token)
         XCTAssertEqual(before.status, 200)
 
         h.controller.revokeAllAndRotate()
@@ -305,12 +305,12 @@ final class RemoteSecureListenerTests: XCTestCase {
         XCTAssertNotEqual(new, old)
         XCTAssertEqual(h.controller.server?.servedFingerprint, new, "the listener restarted with the new certificate")
         do {
-            _ = try await h.request("GET", "/v1/tasks", token: paired.token)
+            _ = try await h.request("GET", "/v1/suggestions", token: paired.token)
             XCTFail("the old pin must fail")
         } catch {}
         h.pinned = new
         h.clock.advance(61)
-        let after = try await h.request("GET", "/v1/tasks", token: paired.token)
+        let after = try await h.request("GET", "/v1/suggestions", token: paired.token)
         XCTAssertEqual(after.status, 401)
         await h.controller.server?.stop()
     }
@@ -327,7 +327,7 @@ final class RemoteSecureListenerTests: XCTestCase {
         let link = try XCTUnwrap(h.controller.pairingLink)
         let code = try XCTUnwrap(h.controller.pairing)
         XCTAssertEqual(link, "ironpet://pair?u=https://mac.tailnet.ts.net&c=\(code.code)")
-        let reply = try await h.request("GET", "/v1/tasks")
+        let reply = try await h.request("GET", "/v1/suggestions")
         XCTAssertEqual(reply.status, 401, "the front reaches the plain loopback listener")
         await h.controller.server?.stop()
     }

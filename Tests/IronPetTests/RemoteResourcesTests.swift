@@ -256,8 +256,6 @@ final class RemoteResourcesTests: XCTestCase {
     // MARK: Today, S8
 
     func testTodayHasTheSectionsAndTargetsOfTheBrief() async throws {
-        _ = try h.api.tasks.create(CreateTaskRequest(title: "Review the contract", notes: "", status: .needsYou, source: .user, due: nil, links: [],
-                                                     waitingOn: nil, sourceRef: nil, labels: [:], by: "test"))
         hook("UserPromptSubmit", session: "ask", payload: ["prompt": "Fix login"])
         hook("Notification", session: "ask", payload: ["message": "Needs permission"])
         signals.add(signal("a"), notify: false)
@@ -277,7 +275,7 @@ final class RemoteResourcesTests: XCTestCase {
         }
         let brief = try await get("/v1/today?kind=brief")
         let types = ((brief.json["sections"] as? [[String: Any]]) ?? []).flatMap { $0["items"] as? [[String: Any]] ?? [] }.compactMap { ($0["target"] as? [String: Any])?["type"] as? String }
-        XCTAssertTrue(types.contains("task"), "\(types)")
+        XCTAssertFalse(types.contains("task"), "\(types)")
         XCTAssertTrue(types.contains("session"), "\(types)")
         XCTAssertTrue(types.contains("alert"), "\(types)")
         let bad = try await get("/v1/today?kind=week")
@@ -287,7 +285,6 @@ final class RemoteResourcesTests: XCTestCase {
     }
 
     func testTargetsKeepTheirTypes() {
-        XCTAssertEqual(RemoteResources.target(.task("t")).type, .task)
         XCTAssertEqual(RemoteResources.target(.session(id: "s", workspace: nil, bundleID: nil)).type, .session)
         XCTAssertEqual(RemoteResources.target(.alert(id: "a", url: URL(string: "https://x.test"))).url, "https://x.test")
         XCTAssertEqual(RemoteResources.target(.meeting("m")).type, .meeting)

@@ -14,7 +14,7 @@ enum APITestSupport {
                         files: FileIntake? = nil, usage: UsageStore? = nil, agents: AgentRegistry? = nil,
                         configureAutomations: ((AutomationService) -> Void)? = nil) -> IronPetAPI {
         TestMemory.isolate()
-        let tasks = TaskStore(database: memoryDatabase(), now: now, keepDoneDays: { 30 })
+        let tasks = TaskStore(database: memoryDatabase(), now: now)
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-api-\(UUID().uuidString)")
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         let paths = AutomationPaths(file: dir.appendingPathComponent("automations.json"), directory: dir.appendingPathComponent("automations"))

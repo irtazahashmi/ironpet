@@ -3,7 +3,7 @@ import XCTest
 
 final class PromptStoreTests: XCTestCase {
     private var directory: URL!
-    private let id = "task-review"
+    private let id = "chat-preamble"
 
     override func setUpWithError() throws {
         directory = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-prompts-\(UUID().uuidString)")
@@ -154,32 +154,5 @@ final class PromptStoreTests: XCTestCase {
     func testTheAutomationWrapperDefaultIsUnchanged() {
         XCTAssertEqual(Prompts.render(id: "automation-prompt", ["name": "Morning brief", "prompt": "Check it."]),
                        "This is an automated run of \"Morning brief\" from ironpet. Answer in under 600 characters, as plain text for a small notification.\n\nCheck it.")
-    }
-
-    // MARK: The built-in task review
-
-    func testTheTaskReviewRunsEveryTwentyMinutesInItsOwnSessionAndReportsToTheChat() {
-        let review = AutomationDefaults.taskReview()
-        XCTAssertEqual(review.id, "task-review")
-        XCTAssertEqual(review.trigger.type, "interval")
-        XCTAssertEqual(review.trigger.minutes, 20)
-        XCTAssertEqual(review.action.effectiveSession, "own")
-        XCTAssertEqual(review.action.effectiveReport, "chat")
-        XCTAssertTrue(review.enabled)
-        XCTAssertTrue(AutomationDefaults.builtIns.contains { $0.id == "task-review" })
-    }
-
-    @MainActor
-    func testTheTaskReviewPromptReadsTheEditablePromptAndIsNotItemData() {
-        let review = AutomationDefaults.taskReview()
-        let prompt = review.action.prompt ?? ""
-        XCTAssertFalse(AutomationService.usesItemData(prompt))
-        XCTAssertEqual(AutomationTemplate.render(prompt, values: [:]), defaultText)
-        PromptStore.save("task-review", text: "Edited review.")
-        XCTAssertEqual(AutomationTemplate.render(prompt, values: [:]), "Edited review.")
-    }
-
-    func testAQuietReplyOfNothingPostsNothing() {
-        XCTAssertEqual(AutomationDefaults.taskReview().action.quietReplies, ["NOTHING", "NOTHING_NEW"])
     }
 }

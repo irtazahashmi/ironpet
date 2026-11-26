@@ -26,9 +26,9 @@ final class IronPetWindowTests: XCTestCase {
         return store
     }
 
-    func testAnAgentThatNeedsYouWinsOverAlertsAndTasks() throws {
+    func testAnAgentThatNeedsYouWinsOverAlertsAndTheInbox() throws {
         let list = tasks()
-        _ = try list.create(title: "Approve the deploy", status: .needsYou, source: .agent, by: "agent:mcp")
+        list.suggest([("Approve the deploy", nil, nil)], meeting: URL(fileURLWithPath: "/tmp/meeting"))
         XCTAssertEqual(IronPetSection.needingAttention(agents: AgentsAPI(store: sessions(.needsInput)), alerts: AlertsAPI(store: signals(2)), tasks: TasksAPI(store: list)), .agents)
         XCTAssertEqual(IronPetSection.needingAttention(agents: AgentsAPI(store: sessions(.failed)), alerts: AlertsAPI(store: signals(2)), tasks: TasksAPI(store: list)), .agents)
     }
@@ -38,33 +38,21 @@ final class IronPetWindowTests: XCTestCase {
         XCTAssertEqual(IronPetSection.needingAttention(agents: AgentsAPI(store: sessions(.running)), alerts: AlertsAPI(store: signals(1)), tasks: TasksAPI(store: tasks())), .agents)
     }
 
-    func testTasksOpenWhenOneNeedsYouAndNothingElseDoes() throws {
+    func testTheInboxOpensWhenItHasItemsAndNothingElseNeedsYou() throws {
         let list = tasks()
-        _ = try list.create(title: "Approve the deploy", status: .needsYou, source: .agent, by: "agent:mcp")
-        XCTAssertEqual(IronPetSection.needingAttention(agents: AgentsAPI(store: sessions()), alerts: AlertsAPI(store: signals(0)), tasks: TasksAPI(store: list)), .tasks)
+        list.suggest([("Share the results", nil, "Priya")], meeting: URL(fileURLWithPath: "/tmp/meeting"))
+        XCTAssertEqual(IronPetSection.needingAttention(agents: AgentsAPI(store: sessions()), alerts: AlertsAPI(store: signals(0)), tasks: TasksAPI(store: list)), .inbox)
         XCTAssertEqual(IronPetSection.needingAttention(agents: AgentsAPI(store: sessions()), alerts: AlertsAPI(store: signals(0)), tasks: TasksAPI(store: tasks())), .agents)
     }
 
-    func testTasksWaitingOnSomeoneElseDoNotOpenTasks() throws {
-        let list = tasks()
-        _ = try list.create(title: "Send the deck", source: .meeting, waitingOn: "Ana", by: "user")
-        _ = try list.create(title: "Approve the budget", status: .needsYou, source: .agent, waitingOn: "Them", by: "agent:mcp")
-        XCTAssertEqual(IronPetSection.needingAttention(agents: AgentsAPI(store: sessions()), alerts: AlertsAPI(store: signals(0)), tasks: TasksAPI(store: list)), .agents)
-        XCTAssertEqual(list.activeCount, 0)
-
-        list.suggest([("Share the results", nil, "Priya")], meeting: URL(fileURLWithPath: "/tmp/meeting"))
-        XCTAssertEqual(IronPetSection.needingAttention(agents: AgentsAPI(store: sessions()), alerts: AlertsAPI(store: signals(0)), tasks: TasksAPI(store: list)), .tasks,
-                       "a suggestion still waits on the user's Add or Skip")
-    }
-
     func testBubblesWaitOnTheSectionsThatShowWhatTheyWouldAnnounce() {
-        XCTAssertEqual(IronPetSection.allCases.filter(\.hidesBubbles), [.chat, .agents, .alerts, .notifications, .tasks, .actions, .today])
+        XCTAssertEqual(IronPetSection.allCases.filter(\.hidesBubbles), [.chat, .agents, .alerts, .notifications, .inbox, .actions, .today])
     }
 
     func testCommandDigitsPickTheSidebarRowsInOrder() {
         let all = IronPetSection.shown(chat: true, transcripts: true, automations: true)
         XCTAssertEqual((1...9).map { IronPetSection.forShortcut("\($0)", in: all) },
-                       [.chat, .agents, .alerts, .notifications, .tasks, .transcripts, .screen, .actions, .automations])
+                       [.chat, .agents, .alerts, .notifications, .inbox, .transcripts, .screen, .actions, .automations])
         XCTAssertNil(IronPetSection.forShortcut("0", in: all))
         XCTAssertNil(IronPetSection.forShortcut("f", in: all))
         XCTAssertNil(IronPetSection.forShortcut(nil, in: all))
@@ -272,7 +260,7 @@ final class IronPetWindowTests: XCTestCase {
             let scale = CGFloat(rep.pixelsWide) / IronPetPanel.minimumSize.width
             return CGRect(x: 170 * scale, y: 0, width: CGFloat(rep.pixelsWide) - 170 * scale, height: CGFloat(rep.pixelsHigh))
         }
-        for section in [IronPetSection.agents, .alerts, .tasks, .actions] {
+        for section in [IronPetSection.agents, .alerts, .inbox, .actions] {
             for scheme in [ColorScheme.light, .dark] {
                 let plain = try XCTUnwrap(render(section: section, background: ChatBackground.defaultID, scheme: scheme))
                 let patterned = try XCTUnwrap(render(section: section, background: "paws", scheme: scheme))
@@ -392,7 +380,7 @@ final class IronPetWindowTests: XCTestCase {
         for collapsed in [false, true] {
             XCTAssertEqual(model.sidebarCollapsed, collapsed)
             XCTAssertTrue(panel.runSidebarShortcut(flags: .command, characters: "4"))
-            XCTAssertEqual(model.section, .tasks, "⌘4 does not pick the fourth row when collapsed == \(collapsed)")
+            XCTAssertEqual(model.section, .inbox, "⌘4 does not pick the fourth row when collapsed == \(collapsed)")
             XCTAssertTrue(panel.runSidebarShortcut(flags: [.command, .control], characters: "s"))
         }
         XCTAssertFalse(model.sidebarCollapsed)
@@ -412,7 +400,7 @@ final class IronPetWindowTests: XCTestCase {
     func testRailTooltipsNameTheSectionAndItsShortcut() {
         let all = IronPetSection.shown(chat: true, transcripts: true, automations: true)
         XCTAssertEqual(all.map { $0.hint(in: all) },
-                       ["Chat (⌘1)", "Agents (⌘2)", "Alerts (⌘3)", "Notifications (⌘4)", "Tasks (⌘5)", "Transcripts (⌘6)", "Screen (⌘7)", "Actions (⌘8)", "Automations (⌘9)", "Memory"])
+                       ["Chat (⌘1)", "Agents (⌘2)", "Alerts (⌘3)", "Notifications (⌘4)", "Inbox (⌘5)", "Transcripts (⌘6)", "Screen (⌘7)", "Actions (⌘8)", "Automations (⌘9)", "Memory"])
         let noChat = IronPetSection.shown(chat: false, transcripts: true, automations: true)
         XCTAssertEqual(IronPetSection.agents.hint(in: noChat), "Agents (⌘1)")
     }
@@ -495,7 +483,7 @@ final class IronPetWindowTests: XCTestCase {
     func testEverySectionHasOneHeaderHeightWithTheTitleCenteredInIt() throws {
         try CISkip.unlessLocal()
         for collapsed in [false, true] {
-            for section in [IronPetSection.agents, .chat, .alerts, .tasks, .transcripts, .actions] {
+            for section in [IronPetSection.agents, .chat, .alerts, .inbox, .transcripts, .actions] {
                 let (header, title) = try headerFrames(section: section, collapsed: collapsed)
                 XCTAssertEqual(header.height, PageHeaderMetrics.height, accuracy: 0.5, "\(section) header height")
                 XCTAssertEqual(header.minY, 0, accuracy: 0.5, "\(section) header starts at the window top")
@@ -581,8 +569,8 @@ final class IronPetWindowTests: XCTestCase {
 
     func testTheRailLabelNamesTheSectionAndItsShortcut() {
         let sections = IronPetSection.shown(chat: true, transcripts: true, automations: true)
-        XCTAssertEqual(IronPetSection.tasks.shortcutLabel(in: sections), "⌘5")
-        XCTAssertEqual(IronPetSection.tasks.hint(in: sections), "Tasks (⌘5)")
+        XCTAssertEqual(IronPetSection.inbox.shortcutLabel(in: sections), "⌘5")
+        XCTAssertEqual(IronPetSection.inbox.hint(in: sections), "Inbox (⌘5)")
     }
 
     // MARK: Dragging the sidebar edge
@@ -814,7 +802,7 @@ extension WindowAutoHideTests {
 final class SectionSymbolTableTests: XCTestCase {
     func testSidebarSectionsReadTheSharedTable() {
         XCTAssertEqual(IronPetSection.chat.symbol, SharedSymbols.chat)
-        XCTAssertEqual(IronPetSection.tasks.symbol, SharedSymbols.tasks)
+        XCTAssertEqual(IronPetSection.inbox.symbol, SharedSymbols.tasks)
         XCTAssertEqual(IronPetSection.agents.symbol, SharedSymbols.agents)
         XCTAssertEqual(IronPetSection.alerts.symbol, SharedSymbols.alerts)
         XCTAssertEqual(IronPetSection.automations.symbol, SharedSymbols.automations)

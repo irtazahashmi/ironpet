@@ -8,7 +8,6 @@ final class RemoteRefTests: XCTestCase {
     }
 
     func testRecordsCarryTheirRef() throws {
-        XCTAssertEqual(try roundTrip(RemoteTask(id: "review", title: "Review", ref: "task_9f3c1e")).ref, "task_9f3c1e")
         XCTAssertEqual(try roundTrip(RemoteMeeting(id: "standup", date: Date(timeIntervalSince1970: 0), ref: "meeting_abc123")).ref, "meeting_abc123")
         XCTAssertEqual(try roundTrip(RemoteAutomation(id: "a1", name: "Digest", ref: "auto_abc123")).ref, "auto_abc123")
         XCTAssertEqual(try roundTrip(RemoteScreenCapture(id: 7, time: Date(timeIntervalSince1970: 0), app: "Xcode", window: "w", ref: "screen_abc123")).ref,
@@ -16,7 +15,6 @@ final class RemoteRefTests: XCTestCase {
     }
 
     func testARecordWithoutARefStillDecodes() throws {
-        XCTAssertNil(try roundTrip(RemoteTask(id: "review", title: "Review")).ref)
         XCTAssertNil(try roundTrip(RemoteMeeting(id: "standup", date: Date(timeIntervalSince1970: 0))).ref)
         XCTAssertNil(try roundTrip(RemoteAutomation(id: "a1", name: "Digest")).ref)
     }

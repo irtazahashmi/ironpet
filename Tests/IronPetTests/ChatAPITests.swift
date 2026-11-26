@@ -127,12 +127,12 @@ final class ChatAPITests: XCTestCase {
         _ = streaming
         _ = try await send("hello", from: phone)
         await settle()
-        bus.publish(.tasksChanged, id: "keep-me")
+        bus.publish(.agentsChanged, id: "keep-me")
         let before = bus.lastSeq
         for _ in 0..<500 { deliver[0](.assistant("word ")) }
         XCTAssertGreaterThan(bus.lastSeq - before, 400, "every delta still reaches live subscribers")
         let replay = bus.replay(after: before - 1)
-        XCTAssertTrue(replay.events.contains { $0.kind == .tasksChanged && $0.id == "keep-me" }, "the buffer still holds the earlier event")
+        XCTAssertTrue(replay.events.contains { $0.kind == .agentsChanged && $0.id == "keep-me" }, "the buffer still holds the earlier event")
         XCTAssertLessThanOrEqual(replay.events.filter { $0.kind == .chatItem }.count, 2, "one buffered event per streamed message")
         XCTAssertFalse(replay.gap)
     }
