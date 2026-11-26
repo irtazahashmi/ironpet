@@ -28,9 +28,9 @@
 #     Remote/RemoteIdentity.swift (core) and Remote/RemoteTLSKeychain.swift (Security calls)
 #     Desktop/DesktopAX.swift (protocols and idle adapters in core) and Desktop/LiveDesktopAX.swift (AX and CGEvent)
 #     Voice/SpeechPlayer.swift (SpeechProducer, SpeechChunkReader and ClipPlaying moved to core as Voice/SpeechProducer.swift)
-#     Pet/TaskListView.swift (TaskItem and TaskLink display helpers moved to core as Tasks/TaskItem+Due.swift and Tasks/TaskLink+Display.swift)
+#     Pet/TaskListView.swift (the TaskLink display helpers moved to core as Tasks/TaskLink+Display.swift)
 #   Edited by hand so the file compiles without a Mac framework:
-#     Activity/WelcomeBack.swift (tasksDueID), Brief/BriefSource.swift (BriefModel only where Combine exists), Chat/ChatFind.swift,
+#     Activity/WelcomeBack.swift, Brief/BriefSource.swift (BriefModel only where Combine exists), Chat/ChatFind.swift,
 #     Desktop/DesktopKeys.swift (DesktopKeyFlags instead of CGEventFlags), Desktop/DesktopSafety.swift, Desktop/DesktopService.swift,
 #     Support/Log.swift (no os import; Log.fallbackSink, which main.swift sets to OSLogLog), Voice/LevelBuffer.swift, Voice/SpeechText.swift,
 #     Remote/RemoteChat.swift
@@ -619,8 +619,6 @@ Support/Log.swift
 Support/Paths.swift
 Tasks/ActionItems.swift
 Tasks/TaskDetailLogic.swift
-Tasks/TaskDue.swift
-Tasks/TaskDueReminders.swift
 Tasks/TaskJSON.swift
 Tasks/TaskMCP.swift
 Tasks/TaskModel.swift
@@ -679,7 +677,7 @@ PasteLimitsTests.swift
 SessionMappingTests.swift
 SkillInstallerTests.swift
 SpeechTextTests.swift
-TaskListTests.swift
+InboxLinkTests.swift
 TaskTimeTests.swift
 ThreadRestoreTests.swift
 VoiceActivityTests.swift

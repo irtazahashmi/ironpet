@@ -26,10 +26,10 @@ served over a transport yet.
 Every message is a JSON-RPC 2.0 object. `jsonrpc` is always `"2.0"`.
 
 ```json
-{"jsonrpc":"2.0","id":1,"method":"tasks.get","params":{"id":"3F2A..."}}
-{"jsonrpc":"2.0","id":1,"result":{"task":{},"history":[]}}
-{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"no task with id \"3F2A...\"","data":{"code":"not_found"}}}
-{"jsonrpc":"2.0","method":"tasks.changed","params":{"seq":12,"at":"2026-11-06T21:20:00Z"}}
+{"jsonrpc":"2.0","id":1,"method":"inbox.done","params":{"id":"meeting-1-call"}}
+{"jsonrpc":"2.0","id":1,"result":null}
+{"jsonrpc":"2.0","id":1,"error":{"code":-32001,"message":"no inbox item \"meeting-1-call\"","data":{"code":"not_found"}}}
+{"jsonrpc":"2.0","method":"suggestions.changed","params":{"seq":12,"at":"2026-11-06T21:20:00Z"}}
 ```
 
 - `id` is a number or a string that the client picks. The response repeats it. A response to a line that could not be read has `"id": null`.
@@ -63,7 +63,7 @@ The result:
   "server":{"name":"IronPetCore","version":"1.4.0"},
   "node":{"id":"node_9f3c1e5a07b2c4d8","agent":"agent_default"},
   "session":"b1c0...",
-  "capabilities":["agentrecords","agents","alerts","automations","bubbles","chat","meetings","node","notifications","session","settings","tasks","today"],
+  "capabilities":["agentrecords","agents","alerts","automations","bubbles","chat","inbox","meetings","node","notifications","session","settings","today"],
   "seq":130,
   "gap":false}}
 ```
@@ -195,8 +195,7 @@ event for each id.
 
 | Notification | Sent when | Read again with |
 |---|---|---|
-| `tasks.changed` | A task changed. | `tasks.list`, or `tasks.get` with `id` |
-| `suggestions.changed` | A suggestion was added or removed. | `tasks.suggestions` |
+| `suggestions.changed` | An inbox item was added or removed. | `inbox.list` |
 | `chat.item` | One chat message was added or changed. `id` is the message. | `chat.messages` |
 | `chat.state` | The chat's running state, queue, approvals, forms or draft changed. | `chat.status`, `chat.snapshot` |
 | `agents.changed` | An agent session started, changed or ended. | `agents.list` |
@@ -218,26 +217,18 @@ Over HTTP the same events arrive as JSON objects with `seq`, `at`, `kind` and `i
 One section per public facade of `IronPetAPI`. A row is a method a client can call now. Types are the Swift types in `Sources/IronPetCore/API`,
 encoded as JSON with the rules in "Envelope".
 
-### `tasks`
+### `inbox`
 
-Tasks and the suggestions that wait to become tasks.
+The Inbox: action items from meetings, and items that watchers and agents add. The REST routes keep the name `suggestions`.
 
 | Method | Params | Result | REST route |
 |---|---|---|---|
-| `tasks.accept` | `AcceptSuggestionRequest` | `TaskItem` | `POST /v1/suggestions/:id/accept` |
-| `tasks.acceptAll` | none | `null` | none |
-| `tasks.close` | `CloseTaskRequest` | `TaskItem` | `POST /v1/tasks/:id/close` |
-| `tasks.create` | `CreateTaskRequest` | `TaskItem` | `POST /v1/tasks` |
-| `tasks.delete` | `DeleteTaskRequest` | `null` | `DELETE /v1/tasks/:id` |
-| `tasks.get` | `ID` | `TaskWithHistory` | `GET /v1/tasks/:id` |
-| `tasks.list` | `TaskListRequest` | `[TaskItem]` | `GET /v1/tasks` |
-| `tasks.reject` | `RejectSuggestionRequest` | `null` | `POST /v1/suggestions/:id/reject` |
-| `tasks.skip` | `ID` | `null` | none |
-| `tasks.suggest` | `SuggestTaskRequest` | `[TaskSuggestion]` | none |
-| `tasks.suggestions` | none | `[TaskSuggestion]` | `GET /v1/suggestions` |
-| `tasks.update` | `UpdateTaskRequest` | `TaskItem` | `PATCH /v1/tasks/:id` |
+| `inbox.add` | `SuggestTaskRequest` | `[TaskSuggestion]` | none |
+| `inbox.done` | `ID` | `null` | `POST /v1/suggestions/:id/accept` |
+| `inbox.list` | none | `[TaskSuggestion]` | `GET /v1/suggestions` |
+| `inbox.remove` | `RemoveSuggestionRequest` | `null` | `POST /v1/suggestions/:id/reject` |
 
-`tasks.suggest` and `tasks.acceptAll` have no REST route because the phone does not create suggestions or accept them all. `tasks.skip` has none because REST has no skip.
+`inbox.add` has no REST route because the phone does not add items. `RemoveSuggestionRequest` is `{"id", "note"}`, and `note` is optional. There are no `tasks.*` methods: migration 590 dropped the task tables, with no export.
 
 ### `alerts`
 
@@ -335,7 +326,7 @@ The phone's Memory screen uses five REST routes that have no dispatcher method. 
 
 ### `prompts`
 
-The prompts ironpet sends to agents on its own: the chat context and rules, the automation run wrapper, the messages that ask the chat agent to create or fix an automation, the meeting summary and the built-in task review, screen review and mail and calendar checks. Each one's text is `~/.ironpet/prompts/<id>.md`, copied from the default the app ships the first time. `PromptsAPI` lists them with their default and whether a newer default is waiting, and saves, resets or keeps the user's text. Settings → Prompts is its only client today, so no RPC method or REST route exists yet.
+The prompts ironpet sends to agents on its own: the chat context and rules, the automation run wrapper, the messages that ask the chat agent to create or fix an automation, the meeting summary and the built-in mail and calendar checks. Each one's text is `~/.ironpet/prompts/<id>.md`, copied from the default the app ships the first time. `PromptsAPI` lists them with their default and whether a newer default is waiting, and saves, resets or keeps the user's text. Settings → Prompts is its only client today, so no RPC method or REST route exists yet.
 
 ### `settings`
 
@@ -402,7 +393,7 @@ that ends during a turn is started again after 1 s, then 2, 4, 8 and so on up to
 30 s. One agent's crash does not touch another's process or chat. Disabling an agent stops its process and removes its pet; its threads, sessions
 and automations stay on disk, and enabling it starts a new process that lists them again. Deleting an agent removes its record only: its threads
 and automations stay on disk under an id that no longer resolves, so nothing lists them, and agent 1's data is never touched. The scheduler,
-screen capture, the memory pass and the task scan stay single on the node.
+screen capture and the memory pass stay single on the node.
 
 A `chat.*` call, `GET /v1/chat/*` route or MCP chat tool names the agent with `agentId` (the query parameter `agentId` on a route), and agent 1
 without it. An id no agent has is `notFound`. An agent that exists but is disabled has no process, so a call to its chat other than
@@ -432,7 +423,7 @@ instead of agent 1: the agent a stdio bridge speaks for (the `IRONPET_AGENT_ID` 
 the automation whose session makes the call. `automations_list`, `status_sessions`, `status_overview` and the new `chat_threads_list` take an optional
 `agentId` and default to the calling agent. A hook sends `x-ironpet-agent` to attribute its session to an agent.
 
-The built-in and system automations (`morning-brief`, `day-recap`, `task-review`, `mail-calendar`, `task-scan`) are node-level: they have no
+The built-in and system automations (`morning-brief`, `day-recap`, `mail-calendar`) are node-level: they have no
 owner, an `agentId` written on them is ignored, they are listed for every agent, and they run as they did before. The memory pass is not an automation
 and stays node-level.
 
@@ -452,11 +443,10 @@ Which install the host is, and the agent its changes are attributed to.
 `NodeInfo` is `{"id":"node_9f3c1e5a07b2c4d8","agent":"agent_default"}`, the same object as `node` in the `session.hello` result. It fails with
 `unavailable` on a host with no node id.
 
-Every change to shared data records the node id and the agent id that made it, in `node_id` and `agent_id` columns. They are on tasks and task
-events, memory claims and memory changes, automation runs and notifications. Rows written before the columns existed have both empty.
+Every change to shared data records the node id and the agent id that made it, in `node_id` and `agent_id` columns. They are on memory claims and memory changes, automation runs and notifications. Rows written before the columns existed have both empty.
 
-Record ids made from now on are a prefix and 12 random hex digits, such as `task_9f3c1e5a07b2`, so two nodes that never talk to each other do not
-make the same id. Older ids with six digits, and the old keys (a task's slug, a job's `job-` id), still resolve with `get`.
+Record ids made from now on are a prefix and 12 random hex digits, such as `job_9f3c1e5a07b2`, so two nodes that never talk to each other do not
+make the same id. Older ids with six digits, and the old keys (a job's `job-` id), still resolve with `get`.
 
 ### `bubbles`
 
@@ -548,7 +538,7 @@ Not yet on the wire. Audio does not fit a request and response, so it has its ow
 A method and its REST route do the same thing, but the two bodies are not the same JSON yet.
 
 - RPC results and params are the in-process `Codable` values of IronPetCore, with camelCase keys (`includeDone`, `sourceRef`).
-- REST bodies are the IronPetKit types that the iOS app decodes (`RemoteTask`, `RemoteSuggestion` and the others), with the snake_case keys the Kit declares (`source_ref`). Core PR 10 moved the task and resource routes onto them.
+- REST bodies are the IronPetKit types that the iOS app decodes (`RemoteSuggestion` and the others), with the snake_case keys the Kit declares (`source_ref`). Core PR 10 moved the inbox and resource routes onto them.
 - REST reports a failure with an HTTP status and `{"error": {"code", "message"}}`. RPC reports it as `error` above. The `code` string is the same `APIError` name in both.
 
 Neither side changes in core PR 11. The conformance tests pin the RPC side only.
@@ -566,17 +556,9 @@ audio, or an area that is not on the wire yet.
 | `DELETE /v1/devices/me` | none |
 | `GET /v1/events` | none |
 | `GET /v1/voice` | none |
-| `GET /v1/tasks` | `tasks.list` |
-| `POST /v1/tasks` | `tasks.create` |
-| `GET /v1/tasks/:id` | `tasks.get` |
-| `PATCH /v1/tasks/:id` | `tasks.update` |
-| `POST /v1/tasks/:id/close` | `tasks.close` |
-| `DELETE /v1/tasks/:id` | `tasks.delete` |
-| `GET /v1/task-filters` | none |
-| `DELETE /v1/task-filters/:id` | none |
-| `GET /v1/suggestions` | `tasks.suggestions` |
-| `POST /v1/suggestions/:id/accept` | `tasks.accept` |
-| `POST /v1/suggestions/:id/reject` | `tasks.reject` |
+| `GET /v1/suggestions` | `inbox.list` |
+| `POST /v1/suggestions/:id/accept` | `inbox.done` |
+| `POST /v1/suggestions/:id/reject` | `inbox.remove` |
 | `GET /v1/screen/status` | none |
 | `GET /v1/screen/changes` | none |
 | `GET /v1/screen/captures/:id` | none |
@@ -652,9 +634,8 @@ audio, or an area that is not on the wire yet.
 | `GET /v1/events` | none |
 | `GET /v1/voice` | none |
 
-`GET /v1/records/:id` has no RPC method. It resolves a public id from chat (`task_…`, `meeting_…`, `auto_…`, `screen_…`, and the other
-record prefixes) and answers `{kind, ref, key}` plus the record's fields when the Mac can read that kind (or the task's fields for a
-task). A kind with no reader answers with the three keys only. An unknown id is 404.
+`GET /v1/records/:id` has no RPC method. It resolves a public id from chat (`meeting_…`, `auto_…`, `screen_…`, and the other
+record prefixes) and answers `{kind, ref, key}` plus the record's fields when the Mac can read that kind. A kind with no reader answers with the three keys only. An unknown id is 404.
 
 ### Reading the chat over REST
 
@@ -670,7 +651,7 @@ task). A kind with no reader answers with the three keys only. An unknown id is 
 The answer carries an `ETag` and `Cache-Control: no-cache`. The ETag stands for the page asked for (`limit` and `before`) and the number of
 chat events the Mac has published since it launched, so it changes whenever the chat changes and also after the Mac restarts. A request
 whose `If-None-Match` equals it gets `304` with no body, and the Mac builds nothing for it. The Mac builds the body of a changed chat off the
-main actor, so a long chat does not hold up `/v1/pet`, `/v1/today` or `/v1/tasks`.
+main actor, so a long chat does not hold up `/v1/pet`, `/v1/today` or `/v1/suggestions`.
 
 A phone should not retry a timed-out chat read: the Mac is slow, and a retry asks it to do the same work again.
 
@@ -680,7 +661,7 @@ A phone should not retry a timed-out chat read: the Mac is slow, and a retry ask
 
 - `ContractGoldenTests` sends each request in `Tests/IronPetCoreTests/Contract/Fixtures/*.json` through `RPCDispatcher.handle(line:)` against an `IronPetAPI` built on in-memory stores,
   and compares the response with the golden one. Keys are sorted. Ids a request captured become `$name`, other UUIDs `<uuid>`, times `<date>`, and temp folders `<tmp>`.
-  A mismatch names the method and the field, such as `tasks.create (create): response.result.title: the golden file has this field and the API does not`.
+  A mismatch names the method and the field, such as `inbox.add (add): response.result[0].title: the golden file has this field and the API does not`.
 - `ContractErrorTests` covers the error shapes that no method raises with in-memory stores, and the envelope.
 - `ContractDocTests` fails when this page lacks an event, an `APIError` case, a facade, a method, or a `/v1` route.
 
