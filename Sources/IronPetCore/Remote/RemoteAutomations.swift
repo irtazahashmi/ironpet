@@ -44,6 +44,11 @@ package struct RemoteAutomations {
 
     package func list() -> [String: Any] { ["automations": RemoteWire.array(automations.list().map { dto($0) })] }
 
+    /// The automations one agent owns, plus the node-level ones. Nil is agent 1.
+    package func list(agentId: String?) throws -> [String: Any] {
+        ["automations": RemoteWire.array(try automations.list(agentId: agentId).map { dto($0) })]
+    }
+
     package func get(_ id: String) throws -> [String: Any] { RemoteWire.object(dto(try automations.get(id), detail: true)) }
 
     package func history(_ id: String, query: [String: [String]]) throws -> [String: Any] {

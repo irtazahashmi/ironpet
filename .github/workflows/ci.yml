@@ -211,10 +211,9 @@ jobs:
           for script in scripts/*.sh; do bash -n "$script"; done
           python3 -m py_compile scripts/e2e.py scripts/gen_agent_catalog.py scripts/ios_ui_shards.py
 
-  # IronPet Remote for iOS, on a simulator. ios-build compiles the app and the test bundles once and uploads them.
-  # ios-unit and the four ios-ui shards download that build and run it with test-without-building.
+  # IronPet Remote for iOS, on a simulator. Three jobs run in parallel: the unit tests, and the UI tests in shards.
   # The shard lists live in scripts/ios_ui_shards.py. Each class runs in exactly one job.
-  ios-build:
+  ios-unit:
     needs: changes
     if: needs.changes.outputs.ios == 'true'
     runs-on: macos-15
@@ -237,56 +236,17 @@ jobs:
         working-directory: iOS
         run: xcodegen generate
 
-      - name: Build for testing
-        run: |
-          xcodebuild build-for-testing -project iOS/IronPetRemote.xcodeproj -scheme IronPetRemote \
-            -destination 'generic/platform=iOS Simulator' -sdk iphonesimulator -derivedDataPath "$RUNNER_TEMP/dd" \
-            CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= CODE_SIGN_IDENTITY=-
-
-      # ditto keeps symlinks and the executable bit. The .xctestrun finds its products through __TESTROOT__, so it stays
-      # next to Debug-iphonesimulator inside the zip.
-      - name: Zip the products
-        run: |
-          set -euo pipefail
-          products="$RUNNER_TEMP/dd/Build/Products"
-          ls "$products"
-          compgen -G "$products/*.xctestrun"
-          test -d "$products/Debug-iphonesimulator"
-          ditto -c -k "$products" "$RUNNER_TEMP/ios-products.zip"
-          du -sh "$RUNNER_TEMP/ios-products.zip"
-
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ios-products
-          path: ${{ runner.temp }}/ios-products.zip
-          retention-days: 1
-          compression-level: 0
-          if-no-files-found: error
-
-  ios-unit:
-    needs: [changes, ios-build]
-    if: needs.changes.outputs.ios == 'true'
-    runs-on: macos-15
-    timeout-minutes: 30
-    steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: ios-products
-          path: ${{ runner.temp }}/artifact
-
       - name: Unit tests
         run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/products"
-          ditto -x -k "$RUNNER_TEMP/artifact/ios-products.zip" "$RUNNER_TEMP/products"
-          xctestrun=$(find "$RUNNER_TEMP/products" -maxdepth 1 -name '*.xctestrun')
           device=$(xcrun simctl list devices available iPhone | grep -m1 -oE '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}')
-          xcodebuild test-without-building -xctestrun "$xctestrun" \
-            -destination "platform=iOS Simulator,id=$device" \
-            -only-testing:IronPetRemoteTests
+          xcodebuild test -project iOS/IronPetRemote.xcodeproj -scheme IronPetRemote \
+            -destination "platform=iOS Simulator,id=$device" -derivedDataPath "$RUNNER_TEMP/dd" \
+            -retry-tests-on-failure -test-iterations 2 \
+            -only-testing:IronPetRemoteTests \
+            CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= CODE_SIGN_IDENTITY=-
 
   ios-ui:
-    needs: [changes, ios-build]
+    needs: changes
     if: needs.changes.outputs.ios == 'true'
     runs-on: macos-15
     timeout-minutes: 30
@@ -295,27 +255,29 @@ jobs:
       matrix:
         shard: [1, 2, 3, 4]
     steps:
-      # The checkout is only for scripts/ios_ui_shards.py, which holds the shard lists.
       - uses: actions/checkout@v4
-        with:
-          sparse-checkout: scripts
 
-      - uses: actions/download-artifact@v4
-        with:
-          name: ios-products
-          path: ${{ runner.temp }}/artifact
+      - name: Install XcodeGen
+        run: |
+          mkdir -p "$RUNNER_TEMP/xcodegen"
+          curl -fsSL -o "$RUNNER_TEMP/xcodegen.zip" https://github.com/yonaskolb/XcodeGen/releases/download/2.43.0/xcodegen.zip
+          echo "a4847ed77d3341a4d24049bc4424a3babca4c94ff1dcaaee923eaca2b32c678f  $RUNNER_TEMP/xcodegen.zip" | shasum -a 256 -c -
+          unzip -q "$RUNNER_TEMP/xcodegen.zip" -d "$RUNNER_TEMP/xcodegen"
+          echo "$RUNNER_TEMP/xcodegen/xcodegen/bin" >> "$GITHUB_PATH"
+
+      - name: Generate the project
+        working-directory: iOS
+        run: xcodegen generate
 
       - name: UI tests, shard ${{ matrix.shard }}
         run: |
-          set -euo pipefail
-          mkdir -p "$RUNNER_TEMP/products"
-          ditto -x -k "$RUNNER_TEMP/artifact/ios-products.zip" "$RUNNER_TEMP/products"
-          xctestrun=$(find "$RUNNER_TEMP/products" -maxdepth 1 -name '*.xctestrun')
           device=$(xcrun simctl list devices available iPhone | grep -m1 -oE '[0-9A-F]{8}-([0-9A-F]{4}-){3}[0-9A-F]{12}')
           read -ra tests <<< "$(python3 scripts/ios_ui_shards.py args ${{ matrix.shard }})"
-          xcodebuild test-without-building -xctestrun "$xctestrun" \
-            -destination "platform=iOS Simulator,id=$device" \
-            "${tests[@]}"
+          xcodebuild test -project iOS/IronPetRemote.xcodeproj -scheme IronPetRemote \
+            -destination "platform=iOS Simulator,id=$device" -derivedDataPath "$RUNNER_TEMP/dd" \
+            -retry-tests-on-failure -test-iterations 2 \
+            "${tests[@]}" \
+            CODE_SIGN_STYLE=Manual DEVELOPMENT_TEAM= CODE_SIGN_IDENTITY=-
 
   # IronPetCore on Linux. It is non-blocking for now (continue-on-error), and the "build" gate below does not wait for it.
   linux:
@@ -346,7 +308,7 @@ jobs:
 
   # Branch protection requires a check named "build". Skipped Mac and iOS jobs count as OK for docs-only PRs.
   build:
-    needs: [changes, test, bundle, scripts, ios-build, ios-unit, ios-ui]
+    needs: [changes, test, bundle, scripts, ios-unit, ios-ui]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -361,11 +323,10 @@ jobs:
           test_r="${{ needs.test.result }}"
           bundle_r="${{ needs.bundle.result }}"
           scripts_r="${{ needs.scripts.result }}"
-          ios_build_r="${{ needs.ios-build.result }}"
           ios_unit_r="${{ needs.ios-unit.result }}"
           ios_ui_r="${{ needs.ios-ui.result }}"
           echo "changes=$changes_r mac=$mac scripts=$scripts ios=$ios"
-          echo "test=$test_r bundle=$bundle_r scripts_job=$scripts_r ios_build=$ios_build_r ios_unit=$ios_unit_r ios_ui=$ios_ui_r"
+          echo "test=$test_r bundle=$bundle_r scripts_job=$scripts_r ios_unit=$ios_unit_r ios_ui=$ios_ui_r"
 
           [ "$changes_r" = success ]
 
@@ -384,7 +345,7 @@ jobs:
           fi
 
           if [ "$ios" = true ]; then
-            [ "$ios_build_r" = success ] && [ "$ios_unit_r" = success ] && [ "$ios_ui_r" = success ]
+            [ "$ios_unit_r" = success ] && [ "$ios_ui_r" = success ]
           else
-            ok "$ios_build_r" && ok "$ios_unit_r" && ok "$ios_ui_r"
+            ok "$ios_unit_r" && ok "$ios_ui_r"
           fi

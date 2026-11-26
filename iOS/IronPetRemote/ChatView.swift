@@ -13,6 +13,8 @@ struct ChatView: View {
     var avatar: CGImage?
     /// The pet's name, shown beside its face in the header, as the Mac does.
     var petName = ""
+    /// The agents of the Mac. Nil, or one agent, and the chat looks as it did before there were several.
+    var agents: AgentChatsModel?
     @State private var showThreads = false
     @State private var showSettings = false
     @State private var showFiles = false
@@ -21,6 +23,7 @@ struct ChatView: View {
     @State private var focused = false
     @State private var find = ChatFindState()
     @State private var preview: FilePreviewTarget?
+    @State private var record: RecordLink?
 
     /// Changes when the query or the transcript does, so the matches are found again.
     private var findKey: String {
@@ -42,9 +45,10 @@ struct ChatView: View {
                         .accessibilityIdentifier("chat-error")
                 }
                 // The composer floats over the transcript, so the background shows through the glass.
-                Transcript(model: model, find: find, avatar: avatar)
+                Transcript(model: model, find: find, avatar: avatar, showsAgentNames: agents?.showsAgents ?? false)
                     .fullPageLoadError(model)
                     .environment(\.openFilePath, { preview = FilePreviewTarget(path: $0) })
+                    .environment(\.openRecord, { record = RecordLink(id: $0) })
                     .glassBottomBar {
                         VStack(spacing: 6) {
                             if let notice = model.snapshot?.notice {
@@ -67,6 +71,9 @@ struct ChatView: View {
             .themedScreen()
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                if let agents, agents.showsAgents {
+                    ToolbarItem(placement: .topBarLeading) { AgentPicker(agents: agents) }
+                }
                 ToolbarItem(placement: .principal) {
                     HStack(spacing: 6) {
                         if let avatar {
@@ -96,6 +103,7 @@ struct ChatView: View {
             .sheet(isPresented: $showThreads) { ThreadsSheet(model: model, avatar: avatar) }
             .sheet(isPresented: $showSettings) { ChatSettingsSheet(model: model) }
             .sheet(item: $preview) { FilePreviewSheet(client: model.client, target: $0) }
+            .sheet(item: $record) { RecordSheet(client: model.client, id: $0.id) }
             .fileImporter(isPresented: $showFiles, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
                 guard case .success(let urls) = result else { return }
                 for url in urls {
@@ -136,10 +144,32 @@ private final class FollowTracker {
     var state = TranscriptFollowState()
 }
 
+/// The menu that picks which agent's chat the tab shows. An agent the Mac turned off is listed and cannot be chosen.
+private struct AgentPicker: View {
+    let agents: AgentChatsModel
+
+    var body: some View {
+        Menu {
+            ForEach(agents.listed) { record in
+                let shown = agents.currentRecord?.id == record.id
+                Button {
+                    agents.select(record.chatAgentID)
+                } label: {
+                    Label(record.enabled ? record.displayName : "\(record.displayName) (off)", systemImage: shown ? SharedSymbols.allow : SharedSymbols.agents)
+                }
+                .disabled(!record.enabled)
+                .accessibilityIdentifier("agent-choice-\(record.id)")
+            }
+        } label: { Image(systemName: SharedSymbols.agents) }
+            .accessibilityLabel("Agents").accessibilityIdentifier("chat-agents-button")
+    }
+}
+
 private struct Transcript: View {
     let model: ChatModel
     let find: ChatFindState
     var avatar: CGImage?
+    var showsAgentNames = false
     @Environment(VoiceModel.self) private var voice: VoiceModel?
     /// The follow logic keeps its last measurements in a reference, so a scroll frame does not invalidate the view. Only a change of
     /// `pinned` or `newBelow` does.
@@ -185,8 +215,8 @@ private struct Transcript: View {
                                                 highlights: find.highlights, deliveredID: model.deliveredID)
                         }
                         if showsTyping { TypingRow(started: model.snapshot?.runStarted, avatar: avatar) }
-                        ForEach(model.approvals) { ApprovalCard(approval: $0, model: model) }
-                        ForEach(model.forms) { FormCard(form: $0, model: model) }
+                        ForEach(model.approvals) { ApprovalCard(approval: $0, model: model, agentName: showsAgentNames ? $0.agentName : nil) }
+                        ForEach(model.forms) { FormCard(form: $0, model: model, agentName: showsAgentNames ? $0.agentName : nil) }
                         ForEach(model.queue) { QueuedRow(queued: $0) }
                     }
                     Color.clear.frame(height: 1).id("bottom")
@@ -328,6 +358,7 @@ struct MessageRow: View {
     /// The "Delivered" mark, drawn on the row of the source and the time. Only a text bubble has that row.
     var status: AnyView?
     @Environment(\.openFilePath) private var openFilePath
+    @Environment(\.openRecord) private var openRecord
     @State private var selecting = false
 
     var body: some View {
@@ -353,8 +384,12 @@ struct MessageRow: View {
             }
         }
         .frame(maxWidth: .infinity, alignment: item.kind == "user" || (item.kind == "screenshot" && item.origin != nil) ? .trailing : .leading)
-        // A tap on a file path asks the Mac for a preview. Any other link keeps its usual action.
+        // A tap on a record id opens the record, and a tap on a file path asks the Mac for a preview. Any other link keeps its usual action.
         .environment(\.openURL, OpenURLAction { url in
+            if let id = RecordLinks.id(from: url), let openRecord {
+                openRecord(id)
+                return .handled
+            }
             guard let path = ChatFilePaths.path(from: url), let openFilePath else { return .systemAction }
             openFilePath(path)
             return .handled
@@ -587,9 +622,12 @@ private struct FormRecord: View {
 private struct ApprovalCard: View {
     let approval: RemoteApproval
     let model: ChatModel
+    /// The agent that asks, shown when the Mac runs several. Nil otherwise.
+    var agentName: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            if let agentName { Text(agentName).font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("approval-agent-\(approval.id)") }
             Label(approval.title, systemImage: SharedSymbols.approval).font(.system(size: 13, weight: .semibold)).foregroundStyle(.orange)
             if !approval.detail.isEmpty {
                 Text(approval.detail).font(.system(size: 11.5, design: .monospaced)).lineLimit(10).textSelection(.enabled)
@@ -614,6 +652,8 @@ private struct ApprovalCard: View {
 private struct FormCard: View {
     let form: RemoteForm
     let model: ChatModel
+    /// The agent that asks, shown when the Mac runs several. Nil otherwise.
+    var agentName: String?
     @State private var typed: [String: String] = [:]
     @State private var pager: ElicitationPager?
 
@@ -624,6 +664,7 @@ private struct FormCard: View {
         let pages = form.pages
         let page = current
         VStack(alignment: .leading, spacing: 10) {
+            if let agentName { Text(agentName).font(.caption).foregroundStyle(.secondary).accessibilityIdentifier("form-agent-\(form.id)") }
             Label(form.message.isEmpty ? "The agent has a question" : form.message, systemImage: SharedSymbols.question)
                 .font(.system(size: 13, weight: .semibold)).foregroundStyle(.orange).fixedSize(horizontal: false, vertical: true)
             // Every page sits in the same ZStack and only the current one shows, so the card keeps the height of the tallest page

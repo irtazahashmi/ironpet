@@ -28,7 +28,16 @@ package final class AgentsAPI {
     /// The most urgent status and how many sessions share it.
     package var summary: (status: AgentStatus, count: Int) { store.summary }
 
+    /// The agents on this install, for checking an agent id a call names. Set by the API owner when there is a database.
+    package var registry: AgentRegistry?
+
     package func list() -> [AgentSession] { store.ordered }
+
+    /// The sessions this agent owns, most urgent first. Nil is agent 1, and so is a session no hook attributed to an agent. An id no
+    /// agent has is `notFound`.
+    package func list(agentId: String?) throws -> [AgentSession] {
+        store.ordered(agent: try AgentOwner.resolve(agentId, registry: registry))
+    }
 
     package func get(_ id: String) throws -> AgentSession {
         guard let session = store.sessions[id] else { throw APIError.notFound("no session with id \"\(id)\"") }

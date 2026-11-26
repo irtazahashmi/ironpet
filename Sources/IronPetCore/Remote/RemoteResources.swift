@@ -76,6 +76,11 @@ package struct RemoteResources {
     /// Sessions that are not idle, the ones that need the user first.
     package func agents() -> [String: Any] { RemoteWire.object(AgentListResponse(agents: api.agents.list().map { dto($0, detail: false) })) }
 
+    /// The sessions one agent owns. Nil is agent 1.
+    package func agents(agentId: String?) throws -> [String: Any] {
+        RemoteWire.object(AgentListResponse(agents: try api.agents.list(agentId: agentId).map { dto($0, detail: false) }))
+    }
+
     package func agent(_ id: String) throws -> [String: Any] { RemoteWire.object(dto(try api.agents.get(id), detail: true)) }
 
     /// The agents as records. The sessions above are what the agents are doing; these are the agents themselves.
@@ -87,6 +92,28 @@ package struct RemoteResources {
     package func agentRecord(_ id: String) throws -> [String: Any] {
         guard let records = api.agentRecords else { throw APIError.unavailable("this host has no agent records") }
         return RemoteWire.object(try records.get(id))
+    }
+
+    /// `{name, agentCli, pet?, model?, instructions?}`. The new agent starts enabled.
+    package func createAgentRecord(_ body: [String: Any]) throws -> [String: Any] {
+        guard let records = api.agentRecords else { throw APIError.unavailable("this host has no agent records") }
+        guard let name = body["name"] as? String, let cli = body["agentCli"] as? String else { throw RemoteFailure.invalid("name and agentCli are required") }
+        return RemoteWire.object(try records.create(CreateAgentRequest(name: name, agentCli: cli, pet: body["pet"] as? String, model: body["model"] as? String,
+                                                                      instructions: body["instructions"] as? String)))
+    }
+
+    /// Any of `{name, agentCli, pet, model, instructions, enabled}`. An empty `pet` or `model` clears it.
+    package func updateAgentRecord(_ id: String, _ body: [String: Any]) throws -> [String: Any] {
+        guard let records = api.agentRecords else { throw APIError.unavailable("this host has no agent records") }
+        return RemoteWire.object(try records.update(UpdateAgentRequest(id: id, name: body["name"] as? String, pet: body["pet"] as? String,
+                                                                      agentCli: body["agentCli"] as? String, model: body["model"] as? String,
+                                                                      instructions: body["instructions"] as? String, enabled: body["enabled"] as? Bool)))
+    }
+
+    package func deleteAgentRecord(_ id: String) throws -> [String: Any] {
+        guard let records = api.agentRecords else { throw APIError.unavailable("this host has no agent records") }
+        try records.delete(id)
+        return ["deleted": id]
     }
 
     package func acknowledge(_ id: String) throws -> [String: Any] {
