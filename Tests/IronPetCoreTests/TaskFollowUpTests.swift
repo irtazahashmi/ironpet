@@ -22,7 +22,7 @@ final class TaskFollowUpTests: XCTestCase {
 
     private func day(_ n: Int) -> Date { monday.addingTimeInterval(TimeInterval(n) * 86_400) }
 
-    func testWorkingDaysSkipTheWeekend() {
+    func testWorkingDaysSkipTheWeekend() async {
         XCTAssertEqual(calendar.component(.weekday, from: monday), 2, "the fixture is a Monday")
         XCTAssertEqual(TaskFollowUp.workingDays(from: monday, to: day(4), calendar: calendar), 4, "Tuesday to Friday")
         XCTAssertEqual(TaskFollowUp.workingDays(from: monday, to: day(6), calendar: calendar), 4, "the weekend adds nothing")
@@ -30,14 +30,14 @@ final class TaskFollowUpTests: XCTestCase {
         XCTAssertEqual(TaskFollowUp.workingDays(from: monday, to: day(400), calendar: calendar), 5, "the count stops at the limit")
     }
 
-    func testAFollowUpIsDueAfterFiveWorkingDays() throws {
+    func testAFollowUpIsDueAfterFiveWorkingDays() async throws {
         let task = try store.create(title: "Get the contract back", source: .user, waitingOn: "Ana", by: "test")
         XCTAssertEqual(task.askedAt, monday)
         XCTAssertFalse(task.followUpDue(now: day(6), calendar: calendar))
         XCTAssertTrue(task.followUpDue(now: day(7), calendar: calendar))
     }
 
-    func testANewPersonRestartsTheClockAndNobodyClearsIt() throws {
+    func testANewPersonRestartsTheClockAndNobodyClearsIt() async throws {
         let task = try store.create(title: "Get the contract back", source: .user, waitingOn: "Ana", by: "test")
         clock = day(3)
         XCTAssertEqual(try store.update(task.id, waitingOn: .some("Sam"), by: "test").askedAt, day(3))
@@ -45,7 +45,7 @@ final class TaskFollowUpTests: XCTestCase {
         XCTAssertNil(try store.update(task.id, waitingOn: .some(nil), by: "test").askedAt)
     }
 
-    func testOwnWorkAndDoneTasksNeverNeedAFollowUp() throws {
+    func testOwnWorkAndDoneTasksNeverNeedAFollowUp() async throws {
         let own = try store.create(title: "Write the report", source: .user, by: "test")
         XCTAssertNil(own.askedAt)
         XCTAssertFalse(own.followUpDue(now: day(30), calendar: calendar))
@@ -53,7 +53,7 @@ final class TaskFollowUpTests: XCTestCase {
         XCTAssertFalse(done.followUpDue(now: day(30), calendar: calendar))
     }
 
-    func testAgentsSetAskedAtAndSeeWhenAFollowUpIsDue() throws {
+    func testAgentsSetAskedAtAndSeeWhenAFollowUpIsDue() async throws {
         let api = TasksAPI(store: store)
         let args: [String: Any] = ["title": "Hear back from the landlord", "waiting_on": "Landlord", "asked_at": "2020-01-06",
                                    "origin": ["kind": "chat", "ref": "t1", "reason": "asked"]]
@@ -67,20 +67,20 @@ final class TaskFollowUpTests: XCTestCase {
         XCTAssertNil(fresh["follow_up_due"], "the user just followed up")
     }
 
-    func testParkedOrDeferredWaitingTasksGetNoFollowUp() throws {
+    func testParkedOrDeferredWaitingTasksGetNoFollowUp() async throws {
         let someday = try store.create(title: "Maybe hear from the agency", status: .someday, source: .user, waitingOn: "Agency", by: "test")
         XCTAssertFalse(someday.followUpDue(now: day(30), calendar: calendar))
         let deferred = try store.create(title: "Quote from the builder", source: .user, waitingOn: "Builder", deferUntil: day(60), by: "test")
         XCTAssertFalse(deferred.followUpDue(now: day(30), calendar: calendar))
     }
 
-    func testAskedAtOnlyAppliesWhileTheTaskWaits() throws {
+    func testAskedAtOnlyAppliesWhileTheTaskWaits() async throws {
         let own = try store.create(title: "Write the report", source: .user, askedAt: day(-10), by: "test")
         XCTAssertNil(own.askedAt, "nobody to follow up with")
         XCTAssertNil(try store.update(own.id, askedAt: day(-5), by: "test").askedAt)
     }
 
-    func testMigration573StartsTheClockOfTasksAlreadyWaiting() throws {
+    func testMigration573StartsTheClockOfTasksAlreadyWaiting() async throws {
         let file = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-573-\(UUID().uuidString).db")
         defer { try? FileManager.default.removeItem(at: file) }
         let before = Database.open(path: file, migrations: AppMigrations.all.filter { $0.version < 573 }).database
@@ -96,7 +96,7 @@ final class TaskFollowUpTests: XCTestCase {
         XCTAssertNil(older.task("b")?.askedAt)
     }
 
-    func testFollowedUpStartsTheCountAgain() throws {
+    func testFollowedUpStartsTheCountAgain() async throws {
         let task = try store.create(title: "Get the contract back", source: .user, waitingOn: "Ana", by: "test")
         clock = day(7)
         XCTAssertTrue(try XCTUnwrap(store.task(task.id)).followUpDue(now: clock, calendar: calendar))
