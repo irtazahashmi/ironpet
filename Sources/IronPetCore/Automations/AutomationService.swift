@@ -1106,8 +1106,12 @@ package final class AutomationService {
     }
 
     package func history(_ id: String, limit: Int) -> [[String: String]] {
-        engine.state.history(id, limit: max(1, limit)).reversed().map {
-            ["time": AutomationClock.format($0.date), "outcome": $0.outcome, "output": $0.output]
+        let runs = engine.state.history(id, limit: max(1, limit))
+        let refs = engine.state.records.refs(.run, runs.compactMap { $0.id.map(String.init) })
+        return runs.reversed().map { run in
+            var out = ["time": AutomationClock.format(run.date), "outcome": run.outcome, "output": run.output]
+            if let key = run.id.map(String.init), let ref = refs[key] { out["ref"] = ref }
+            return out
         }
     }
 

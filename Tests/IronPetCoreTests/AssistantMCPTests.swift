@@ -124,6 +124,20 @@ final class AssistantMCPTests: XCTestCase {
         XCTAssertNotNil(recall["error"], "memory_search replaced memory_recall")
     }
 
+    func testStatusOverviewLeavesOutDeferredTasks() async throws {
+        let tasks = TaskStore(database: Database.open(path: nil, migrations: TaskStore.migrations).database)
+        let later = Date().addingTimeInterval(30 * 86_400)
+        _ = try tasks.create(title: "Renew the passport", status: .needsYou, source: .user, deferUntil: later, by: "user")
+        _ = try tasks.create(title: "Draft the talk", status: .inProgress, source: .user, deferUntil: later, by: "user")
+        _ = try tasks.create(title: "Pick a venue", source: .user, deferUntil: later, by: "user")
+        context.tasks = { TasksAPI(store: tasks) }
+        let overview = try await call("status_overview")
+        let summary = try XCTUnwrap(overview.json["tasks"] as? [String: Any])
+        XCTAssertEqual((summary["needs_you"] as? [Any])?.count, 0)
+        XCTAssertEqual((summary["in_progress"] as? [Any])?.count, 0)
+        XCTAssertEqual(summary["backlog"] as? Int, 0)
+    }
+
     func testStatusOverviewGathersSessionsAlertsAndTasks() async throws {
         let tasks = TaskStore(database: Database.open(path: nil, migrations: TaskStore.migrations).database)
         _ = try tasks.create(title: "Review Sara's PR", status: .needsYou, source: .user, by: "user")

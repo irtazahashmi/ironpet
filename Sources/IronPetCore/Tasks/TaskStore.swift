@@ -134,6 +134,20 @@ package final class TaskStore {
                 try db.execute("ALTER TABLE task_items ADD COLUMN assignee TEXT")
             }
         },
+        // The tickler: a task stays out of the list until `defer_until`. Nothing to fill in for existing tasks.
+        .init(580, "tasks: defer until") { db in
+            if !(try TaskStore.columns(db, "task_items")).contains("defer_until") {
+                try db.execute("ALTER TABLE task_items ADD COLUMN defer_until REAL")
+            }
+        },
+        // The task scan's clarify proposal on a new suggestion: context, area, two-minute and someday.
+        .init(581, "tasks: clarify proposals on suggestions") { db in
+            let existing = try TaskStore.columns(db, "task_suggestions")
+            for (column, type) in [("clarify_context", "TEXT"), ("clarify_area", "TEXT"), ("clarify_two_minute", "INTEGER"),
+                                   ("clarify_someday", "INTEGER")] where !existing.contains(column) {
+                try db.execute("ALTER TABLE task_suggestions ADD COLUMN \(column) \(type)")
+            }
+        },
     ]
 
     /// A source reference as stored: a JSON object, keys sorted.
@@ -192,7 +206,7 @@ package final class TaskStore {
 
     /// Open tasks first (needs you, in progress, backlog), then done, newest first within each.
     package var ordered: [TaskItem] {
-        let rank: [TaskStatus: Int] = [.needsYou: 0, .inProgress: 1, .backlog: 2, .done: 3]
+        let rank: [TaskStatus: Int] = [.needsYou: 0, .inProgress: 1, .backlog: 2, .someday: 3, .done: 4]
         return tasks.sorted { a, b in
             if rank[a.status]! != rank[b.status]! { return rank[a.status]! < rank[b.status]! }
             return (a.closed ?? a.updated) > (b.closed ?? b.updated)
@@ -201,7 +215,9 @@ package final class TaskStore {
 
     /// What the Tasks section counts: the user's own work that is moving or waiting on them. Tasks waiting on someone else
     /// are left out.
-    package var activeCount: Int { tasks.filter { $0.waitingOn == nil && ($0.status == .needsYou || $0.status == .inProgress) }.count }
+    package var activeCount: Int {
+        tasks.filter { $0.waitingOn == nil && !$0.isDeferred(now: now()) && ($0.status == .needsYou || $0.status == .inProgress) }.count
+    }
 
     package func history(_ id: String) -> [TaskEvent] {
         (try? database.read { db in
@@ -218,7 +234,7 @@ package final class TaskStore {
     @discardableResult
     package func create(title: String, notes: String = "", status: TaskStatus = .backlog, source: TaskSource, due: Date? = nil,
                 links: [TaskLink] = [], waitingOn: String? = nil, sourceRef: String? = nil, labels: [String: String] = [:],
-                assignee: String? = nil, by: String) throws -> TaskItem {
+                deferUntil: Date? = nil, assignee: String? = nil, by: String) throws -> TaskItem {
         guard labels.count <= TaskValidator.maxLabels else { throw TaskError(message: "at most \(TaskValidator.maxLabels) labels") }
         let title = try TaskValidator.title(title)
         let notes = try TaskValidator.notes(notes)
@@ -227,10 +243,12 @@ package final class TaskStore {
         let id = AutomationValidator.slug(title, taken: Set(tasks.map(\.id)).union(deletedIDs()))
         let time = now()
         let item = TaskItem(id: id, title: title, notes: notes, status: status, source: source, due: due, links: links,
-                            created: time, updated: time, closed: status == .done ? time : nil, waitingOn: waitingOn, sourceRef: sourceRef, labels: labels, assignee: assignee)
+                            created: time, updated: time, closed: status == .done ? time : nil, waitingOn: waitingOn, sourceRef: sourceRef, labels: labels,
+                            deferUntil: deferUntil, assignee: assignee)
         try database.write { db in
             try Self.save(item, db)
             try Self.log(db, id, time, by, .created, "\(status.rawValue): \(title)" + (waitingOn.map { " (waiting on \($0))" } ?? "")
+                         + (deferUntil.map { " (deferred until \(ISO8601DateFormatter().string(from: $0)))" } ?? "")
                          + (sourceRef.map { " [source: \(source.rawValue) \($0)]" } ?? "")
                          + (labels.isEmpty ? "" : " [labels: \(Self.describe(labels))]")
                          + (assignee.map { " [assignee: \($0)]" } ?? ""))
@@ -244,7 +262,7 @@ package final class TaskStore {
     @discardableResult
     package func update(_ id: String, title: String? = nil, notes: String? = nil, status: TaskStatus? = nil, due: Date?? = nil,
                 links: [TaskLink]? = nil, waitingOn: String?? = nil, addLabels: [String: String] = [:], removeLabels: [String] = [],
-                assignee: String?? = nil, note: String? = nil, by: String) throws -> TaskItem {
+                deferUntil: Date?? = nil, assignee: String?? = nil, note: String? = nil, by: String) throws -> TaskItem {
         guard var item = task(id) else { throw TaskError(message: "no task with id \"\(id)\"") }
         let time = now()
         var events: [(TaskEvent.Kind, String)] = []
@@ -259,6 +277,10 @@ package final class TaskStore {
         if let due, due != item.due {
             item.due = due
             events.append((.edited, "due: \(due.map { ISO8601DateFormatter().string(from: $0) } ?? "none")"))
+        }
+        if let deferUntil, deferUntil != item.deferUntil {
+            item.deferUntil = deferUntil
+            events.append((.edited, "defer until: \(deferUntil.map { ISO8601DateFormatter().string(from: $0) } ?? "none")"))
         }
         if let links, links != item.links { item.links = links; events.append((.edited, "links: \(links.count)")) }
         if let waitingOn {
@@ -452,7 +474,8 @@ package final class TaskStore {
             }
             added.append((draft.key, TaskSuggestion(id: id, title: title, due: draft.due, notes: draft.notes, url: draft.url,
                                                     origin: origin, created: time, waitingOn: waitingOn,
-                                                    sourceRef: sourceRef ?? draft.sourceRef ?? Self.refText(ref))))
+                                                    sourceRef: sourceRef ?? draft.sourceRef ?? Self.refText(ref),
+                                                    clarify: draft.clarify?.isEmpty == false ? draft.clarify : nil)))
         }
         guard !added.isEmpty else { return [] }
         do {
@@ -474,6 +497,14 @@ package final class TaskStore {
         return added.map(\.suggestion)
     }
 
+    /// The stored proposal, or nil when the row has none (every column empty).
+    private static func clarify(context: String?, area: String?, twoMinute: Int64?, someday: Int64?) -> TaskSuggestion.Clarify? {
+        guard twoMinute != nil || someday != nil || context != nil || area != nil else { return nil }
+        let clarify = TaskSuggestion.Clarify(context: context.flatMap(TaskContext.init(rawValue:)), area: area,
+                                             twoMinute: twoMinute == 1, someday: someday == 1)
+        return clarify.isEmpty ? nil : clarify
+    }
+
     private static func insert(_ s: TaskSuggestion, _ db: Database.Connection) throws {
         var meeting: String?, automation: String?, name: String?
         switch s.origin {
@@ -483,11 +514,13 @@ package final class TaskStore {
         }
         try db.execute("""
             INSERT INTO task_suggestions(id, title, due, notes, url, meeting, automation, automation_name, created, waiting_on, source_ref,
-                                         scan, update_task, update_title, update_note, update_done, update_waiting)
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                         scan, update_task, update_title, update_note, update_done, update_waiting,
+                                         clarify_context, clarify_area, clarify_two_minute, clarify_someday)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [s.id, s.title, s.due, s.notes, s.url?.absoluteString, meeting, automation, name, s.created.timeIntervalSince1970,
                   s.waitingOn, s.sourceRef, s.origin == .taskScan ? 1 : 0, s.update?.target, s.update?.targetTitle, s.update?.note,
-                  (s.update?.markDone ?? false) ? 1 : 0, s.update?.waitingOn])
+                  (s.update?.markDone ?? false) ? 1 : 0, s.update?.waitingOn,
+                  s.clarify?.context?.rawValue, s.clarify?.area, s.clarify.map { $0.twoMinute ? 1 : 0 }, s.clarify.map { $0.someday ? 1 : 0 }])
     }
 
     private func suggestedKeys(_ automation: String) -> Set<String> {
@@ -511,7 +544,7 @@ package final class TaskStore {
         package var status: String?
     }
 
-    /// Turns a suggestion into a backlog task, linked to its meeting folder or to the url the automation gave, and waiting
+    /// Turns a suggestion into a backlog (or, as the scan proposed, someday) task, linked to its meeting folder or to the url the automation gave, and waiting
     /// on the suggestion's owner if it has one. `note` goes to the new task's history.
     @discardableResult
     package func accept(_ suggestionID: String, overrides: Overrides = Overrides(), note: String? = nil, by: String = "user") throws -> TaskItem {
@@ -526,9 +559,11 @@ package final class TaskStore {
             if due == nil, let text = s.due { notes = "Due (from the meeting): \(text)" }
         }
         if let url = s.url { links.append(TaskLink(kind: .url, ref: url.absoluteString, label: nil)) }
-        let status = try overrides.status.map { try TaskValidator.status($0) } ?? .backlog
+        // The scan's clarify proposal is applied as filed: its labels, and someday instead of the backlog.
+        let status = try overrides.status.map { try TaskValidator.status($0) } ?? (s.clarify?.someday == true ? .someday : .backlog)
+        let labels = (try? TaskValidator.labels(s.clarify?.labels ?? [:])) ?? [:]
         var item = try create(title: overrides.title ?? s.title, notes: notes, status: status, source: s.source, due: due, links: links,
-                              waitingOn: s.waitingOn, sourceRef: s.sourceRef, by: by)
+                              waitingOn: s.waitingOn, sourceRef: s.sourceRef, labels: labels, by: by)
         if let note, !note.isEmpty { item = try update(item.id, note: note, by: by) }
         removeSuggestion(suggestionID)
         return item
@@ -670,7 +705,7 @@ package final class TaskStore {
                     guard let task = row[0] as? String, let key = row[1] as? String, let value = row[2] as? String else { continue }
                     labels[task, default: [:]][key] = value
                 }
-                let items = try db.rows("SELECT id, title, notes, status, source, due, created, updated, closed, waiting_on, source_ref, assignee FROM task_items").compactMap { row -> TaskItem? in
+                let items = try db.rows("SELECT id, title, notes, status, source, due, created, updated, closed, waiting_on, source_ref, defer_until, assignee FROM task_items").compactMap { row -> TaskItem? in
                     guard let id = row[0] as? String, let title = row[1] as? String,
                           let status = (row[3] as? String).flatMap(TaskStatus.init(rawValue:)),
                           let created = row[6] as? Double, let updated = row[7] as? Double else { return nil }
@@ -679,11 +714,13 @@ package final class TaskStore {
                                     due: (row[5] as? Double).map(Date.init(timeIntervalSince1970:)), links: links[id] ?? [],
                                     created: Date(timeIntervalSince1970: created), updated: Date(timeIntervalSince1970: updated),
                                     closed: (row[8] as? Double).map(Date.init(timeIntervalSince1970:)), waitingOn: row[9] as? String,
-                                    sourceRef: row[10] as? String, labels: labels[id] ?? [:], assignee: row[11] as? String)
+                                    sourceRef: row[10] as? String, labels: labels[id] ?? [:],
+                                    deferUntil: (row[11] as? Double).map(Date.init(timeIntervalSince1970:)), assignee: row[12] as? String)
                 }
                 let suggested = try db.rows("""
                     SELECT id, title, due, notes, url, meeting, automation, automation_name, created, waiting_on, source_ref,
-                           scan, update_task, update_title, update_note, update_done, update_waiting
+                           scan, update_task, update_title, update_note, update_done, update_waiting,
+                           clarify_context, clarify_area, clarify_two_minute, clarify_someday
                     FROM task_suggestions ORDER BY created, id
                     """).compactMap { row -> TaskSuggestion? in
                     guard let id = row[0] as? String, let title = row[1] as? String, let created = row[8] as? Double else { return nil }
@@ -705,7 +742,9 @@ package final class TaskStore {
                     return TaskSuggestion(id: id, title: title, due: row[2] as? String, notes: row[3] as? String ?? "",
                                           url: (row[4] as? String).flatMap(URL.init(string:)), origin: origin,
                                           created: Date(timeIntervalSince1970: created), waitingOn: row[9] as? String,
-                                          sourceRef: row[10] as? String, update: change)
+                                          sourceRef: row[10] as? String, update: change,
+                                          clarify: Self.clarify(context: row[17] as? String, area: row[18] as? String,
+                                                                twoMinute: row[19] as? Int64, someday: row[20] as? Int64))
                 }
                 return (items, suggested)
             }
@@ -726,11 +765,11 @@ package final class TaskStore {
     private static func save(_ item: TaskItem, _ db: Database.Connection) throws {
         try db.execute("""
             INSERT OR REPLACE INTO task_items(id, title, notes, status, source, due, created, updated, closed, waiting_on, source_ref,
-                                              assignee, node_id, agent_id)
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                              defer_until, assignee, node_id, agent_id)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [item.id, item.title, item.notes, item.status.rawValue, item.source.rawValue, item.due?.timeIntervalSince1970,
                   item.created.timeIntervalSince1970, item.updated.timeIntervalSince1970, item.closed?.timeIntervalSince1970,
-                  item.waitingOn, item.sourceRef, item.assignee] + Provenance.current(db).columns)
+                  item.waitingOn, item.sourceRef, item.deferUntil?.timeIntervalSince1970, item.assignee] + Provenance.current(db).columns)
         try db.execute("DELETE FROM task_links WHERE task = ?", [item.id])
         for (position, link) in item.links.enumerated() {
             try db.execute("INSERT INTO task_links(task, position, kind, ref, label) VALUES(?, ?, ?, ?, ?)",

@@ -1,7 +1,7 @@
 import IronPetCore
 import SwiftUI
 
-/// The tasks as five columns. A card opens the task, and dropping it on another column changes its status.
+/// The tasks as columns, one per `TaskColumn`. A card opens the task, and dropping it on another column changes its status.
 struct TaskBoardView: View {
     let columns: [TaskColumn: [TaskItem]]
     /// The agents, to show an assignee's name.

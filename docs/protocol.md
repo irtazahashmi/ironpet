@@ -650,6 +650,7 @@ audio, or an area that is not on the wire yet.
 | `POST /v1/bubbles/:id/actions/:action` | none |
 | `GET /v1/agent-records` | `agent.list` |
 | `GET /v1/agent-records/:id` | `agent.get` |
+| `GET /v1/records/:id` | none |
 | `POST /v1/agent-records` | `agent.create` |
 | `PATCH /v1/agent-records/:id` | `agent.update` |
 | `DELETE /v1/agent-records/:id` | `agent.delete` |
@@ -666,6 +667,10 @@ audio, or an area that is not on the wire yet.
 | `GET /v1/assets/:sha256` | none |
 | `GET /v1/events` | none |
 | `GET /v1/voice` | none |
+
+`GET /v1/records/:id` has no RPC method. It resolves a public id from chat (`task_…`, `meeting_…`, `auto_…`, `screen_…`, and the other
+record prefixes) and answers `{kind, ref, key}` plus the record's fields when the Mac can read that kind (or the task's fields for a
+task). A kind with no reader answers with the three keys only. An unknown id is 404.
 
 ### Reading the chat over REST
 

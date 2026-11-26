@@ -2,6 +2,7 @@ import AppKit
 import enum IronPetKit.SharedTheme
 import enum IronPetKit.SharedSymbols
 import IronPetCore
+import enum IronPetKit.BuiltInQuickFilters
 import struct IronPetKit.QuickFilter
 import enum IronPetKit.QuickFilterPrompt
 import enum IronPetKit.QuickFilterNode
@@ -21,6 +22,8 @@ struct TaskListView: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var showDone = false
+    @State private var showSomeday = false
+    @State private var showDeferred = false
     @State private var message = ""
     @State private var highlighted: String?
     /// The id of the quick filter the list is narrowed by. Empty is the "All" chip. Saved per device, so it survives
@@ -97,19 +100,26 @@ struct TaskListView: View {
 
     /// Clears a saved filter that was deleted while the app was closed, so the list shows All and the stored value goes.
     private func dropStaleFilter() {
-        if selectedFilter != nil, QuickFilterSelection.valid(selectedFilter, in: tasks.quickFilters) == nil { selectedFilter = nil }
+        if selectedFilter != nil, QuickFilterSelection.valid(selectedFilter, in: shownChips) == nil { selectedFilter = nil }
     }
+
+    /// The built-in chips first, then the saved ones, in the order the bar shows them.
+    private var shownChips: [QuickFilter] { tasks.builtInQuickFilters + QuickFilter.chips(tasks.quickFilters) }
+
+    private var isNextActions: Bool { tasks.groupsByContext(selectedFilter) }
 
     private var removingShown: Binding<Bool> {
         Binding(get: { removingFilter != nil }, set: { if !$0 { removingFilter = nil } })
     }
 
     /// The chosen filter's query, or nil for "All". A filter that was removed or that this build cannot read counts as "All".
-    private var activeFilter: QuickFilterNode? { selectedFilter.flatMap { tasks.quickFilter($0)?.node } }
+    private var activeFilter: QuickFilterNode? {
+        selectedFilter.flatMap { tasks.quickFilter($0)?.node }
+    }
 
     /// The chip to highlight. A filter the agent removed meanwhile leaves "All" highlighted, which is what the list shows.
     private var shownFilter: Binding<String?> {
-        Binding(get: { selectedFilter.flatMap { id in QuickFilter.chips(tasks.quickFilters).contains { $0.id == id } ? id : nil } },
+        Binding(get: { selectedFilter.flatMap { id in shownChips.contains { $0.id == id } ? id : nil } },
                 set: { selectedFilter = $0 })
     }
 
@@ -149,7 +159,7 @@ struct TaskListView: View {
             let content = Self.content(unavailable: tasks.unavailable != nil, isEmpty: tasks.suggestions.isEmpty && tasks.all.isEmpty)
             let columns = Self.columns(tasks.all, filter: activeFilter, query: search)
             if content == .list || !tasks.quickFilters.isEmpty {
-                QuickFilterBar(filters: QuickFilter.chips(tasks.quickFilters), selection: shownFilter,
+                QuickFilterBar(filters: QuickFilter.chips(tasks.quickFilters), builtIn: tasks.builtInQuickFilters, selection: shownFilter,
                                onAdd: { filterRequest = .add },
                                onEdit: { filterRequest = .edit($0) },
                                onRemove: { removingFilter = $0 },
@@ -157,6 +167,7 @@ struct TaskListView: View {
                 Divider()
             }
             let nothingShown = suggestionRows.isEmpty && columns.isEmpty
+                && (mode == .board || isNextActions || TaskBoard.deferred(tasks.all, filter: activeFilter, query: search).isEmpty)
             if content == .unavailable {
                 Spacer()
             } else if content == .empty {
@@ -177,18 +188,26 @@ struct TaskListView: View {
                 ScrollViewReader { proxy in
                     ListScroll {
                         suggestions
-                        ForEach([TaskColumn.needsYou, .inProgress, .backlog], id: \.self) { column in
-                            let items = columns[column] ?? []
-                            if !items.isEmpty {
-                                ListGroupTitle(column.title)
+                        if isNextActions {
+                            nextActionGroups(columns)
+                        } else {
+                            ForEach([TaskColumn.needsYou, .inProgress, .backlog], id: \.self) { column in
+                                let items = columns[column] ?? []
+                                if !items.isEmpty {
+                                    ListGroupTitle(column.title)
+                                    ForEach(items) { row($0) }
+                                }
+                            }
+                            if let items = columns[.waiting], !items.isEmpty {
+                                ListGroupTitle(TaskColumn.waiting.title)
                                 ForEach(items) { row($0) }
                             }
+                            collapsible(TaskColumn.someday.title, columns[.someday] ?? [], open: $showSomeday,
+                                        show: "Show tasks put off to someday", hide: "Hide someday tasks")
+                            collapsible("Deferred", TaskBoard.deferred(tasks.all, filter: activeFilter, query: search), open: $showDeferred,
+                                        show: "Show tasks hidden until a later day", hide: "Hide deferred tasks")
+                            doneSection(columns[.done] ?? [])
                         }
-                        if let items = columns[.waiting], !items.isEmpty {
-                            ListGroupTitle(TaskColumn.waiting.title)
-                            ForEach(items) { row($0) }
-                        }
-                        doneSection(columns[.done] ?? [])
                     }
                     .onAppear { reveal(focus.wrappedValue, proxy) }
                     .onChange(of: focus.wrappedValue) { reveal(focus.wrappedValue, proxy) }
@@ -239,7 +258,7 @@ struct TaskListView: View {
 
     @ViewBuilder private var suggestions: some View {
         if !suggestionRows.isEmpty {
-            SectionHeader("Suggestions", action: "Add all", help: "Add every suggested new task. Updates to existing tasks are accepted one by one") { tasks.acceptAll() }
+            SectionHeader("Inbox", action: "Add all", help: "Add every suggested new task. Updates to existing tasks are accepted one by one") { tasks.acceptAll() }
             ForEach(suggestionRows) { suggestion in
                 SuggestionRow(suggestion: suggestion,
                               onAdd: { _ = try? tasks.accept(AcceptSuggestionRequest(id: suggestion.id)) },
@@ -250,18 +269,32 @@ struct TaskListView: View {
         }
     }
 
+    /// The Next actions list: the open tasks under a heading for each context. The chip already leaves out done and waiting tasks.
+    @ViewBuilder private func nextActionGroups(_ columns: [TaskColumn: [TaskItem]]) -> some View {
+        let open = [TaskColumn.needsYou, .inProgress, .backlog].flatMap { columns[$0] ?? [] }
+        ForEach(NextActions.groups(open)) { group in
+            ListGroupTitle(group.title)
+            ForEach(group.tasks) { row($0) }
+        }
+    }
+
     @ViewBuilder private func doneSection(_ done: [TaskItem]) -> some View {
-        if !done.isEmpty {
+        collapsible("Done", done, open: $showDone, show: "Show tasks finished in the last 7 days", hide: "Hide finished tasks")
+    }
+
+    /// A group that starts closed: Someday, Deferred and Done, which the user looks at in a review rather than every day.
+    @ViewBuilder private func collapsible(_ title: String, _ items: [TaskItem], open: Binding<Bool>, show: String, hide: String) -> some View {
+        if !items.isEmpty {
             Button {
-                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) { showDone.toggle() }
+                withAnimation(reduceMotion ? nil : .easeOut(duration: 0.15)) { open.wrappedValue.toggle() }
             } label: {
                 HStack(spacing: 4) {
-                    Text("DONE (\(done.count))")
+                    Text("\(title.uppercased()) (\(items.count))")
                         .font(.system(size: 10, weight: .semibold))
                         .tracking(0.6)
                     Image(systemName: SharedSymbols.chevron)
                         .font(.system(size: 8, weight: .bold))
-                        .rotationEffect(.degrees(showDone ? 90 : 0))
+                        .rotationEffect(.degrees(open.wrappedValue ? 90 : 0))
                 }
                 .foregroundStyle(.tertiary)
                 .padding(.horizontal, 10)
@@ -270,11 +303,11 @@ struct TaskListView: View {
                 .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel("Done, \(done.count) \(done.count == 1 ? "task" : "tasks")")
-            .accessibilityValue(showDone ? "Expanded" : "Collapsed")
-            .help(showDone ? "Hide finished tasks" : "Show tasks finished in the last 7 days")
-            if showDone {
-                ForEach(done) { row($0) }
+            .accessibilityLabel("\(title), \(items.count) \(items.count == 1 ? "task" : "tasks")")
+            .accessibilityValue(open.wrappedValue ? "Expanded" : "Collapsed")
+            .help(open.wrappedValue ? hide : show)
+            if open.wrappedValue {
+                ForEach(items) { row($0) }
             }
         }
     }
@@ -297,6 +330,15 @@ struct TaskListView: View {
         focus.wrappedValue = nil
         nav.close()
         if task.status == .done { showDone = true }
+        if task.status == .someday {
+            showSomeday = true
+            if isNextActions { nav.open(id) }
+        }
+        if task.isDeferred() {
+            showDeferred = true
+            // The board and Next actions draw no Deferred group, so the task's page is the only place to show it.
+            if mode == .board || isNextActions { nav.open(id) }
+        }
         highlighted = id
         DispatchQueue.main.async {
             withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.2)) { proxy?.scrollTo(id, anchor: .center) }
@@ -456,10 +498,18 @@ private struct SuggestionRow: View {
                         .font(.caption)
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
+                        if let clarify = suggestion.clarify {
+                            Label("Files as: \(clarify.summary)", systemImage: "sparkles")
+                                .labelStyle(DueLabelStyle())
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .lineLimit(1)
+                        }
                         HStack(spacing: 6) {
                             Button(suggestion.update == nil ? "Add" : "Accept", action: onAdd)
                                 .help(suggestion.update != nil ? "Apply this change to the task"
-                                      : suggestion.waitingOn == nil ? "Add to the backlog" : "Add to Waiting on others")
+                                      : suggestion.clarify.map { "Add as proposed: \($0.summary)" } ??
+                                      (suggestion.waitingOn == nil ? "Add to the backlog" : "Add to Waiting on others"))
                             Button("Skip", action: onSkip)
                                 .help(suggestion.update == nil ? "Dismiss this suggestion" : "Leave the task as it is")
                         }

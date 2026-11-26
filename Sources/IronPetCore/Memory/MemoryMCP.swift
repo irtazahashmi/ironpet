@@ -273,16 +273,17 @@ package enum MemoryMCP {
         }
     }
 
-    private static func pageJSON(_ page: EntityPage) -> [String: Any] {
+    package static func pageJSON(_ page: EntityPage) -> [String: Any] {
         [
             "entity": page.entity.name, "id": page.entity.id, "ref": page.entity.ref, "type": page.entity.type.rawValue,
             "aliases": page.entity.aliases,
-            "claims": page.claims.map { claim in
-                ["id": claim.ref, "text": claim.text, "date": claim.date,
-                 "sources": claim.sources, "pinned": claim.pinned] as [String: Any]
-            },
+            "claims": page.claims.map(claimJSON),
             "links": page.links.map(linkJSON),
         ]
+    }
+
+    package static func claimJSON(_ claim: MemoryClaim) -> [String: Any] {
+        ["id": claim.ref, "text": claim.text, "date": claim.date, "sources": claim.sources, "pinned": claim.pinned]
     }
 
     package static func mergeJSON(_ merge: EntityMemoryStore.PageMerge) -> [String: Any] {

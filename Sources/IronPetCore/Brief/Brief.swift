@@ -202,7 +202,7 @@ package enum BriefBuilder {
                        title: task.title, subtitle: task.dueLabel(now: now, calendar: calendar), target: .task(task.id))
         }
         let dueIDs = Set(due.map(\.id))
-        let needsYou = open.filter { $0.needsUser && !dueIDs.contains($0.id) }.sorted { $0.updated > $1.updated }
+        let needsYou = open.filter { $0.needsUser(now: now) && !dueIDs.contains($0.id) }.sorted { $0.updated > $1.updated }
         let needsItems = needsYou.map { Brief.Item(id: "needs:\($0.id)", symbol: "person.fill.questionmark", title: $0.title,
                                                    subtitle: "Needs you", target: .task($0.id)) }
 
@@ -277,7 +277,7 @@ package enum BriefBuilder {
                        subtitle: meetingLabel(m, now: now, calendar: calendar), target: .meeting(m.id))
         }
 
-        let stillTasks = input.tasks.filter { $0.waitingOn == nil && ($0.status == .needsYou || $0.status == .inProgress) }
+        let stillTasks = input.tasks.filter { $0.waitingOn == nil && !$0.isDeferred(now: now) && ($0.status == .needsYou || $0.status == .inProgress) }
             .sorted { ($0.status == .needsYou ? 0 : 1, $0.updated) < ($1.status == .needsYou ? 0 : 1, $1.updated) }
         let stillAlerts = orderedAlerts(actionable(input.alerts))
         let stillAgents = waitingSessions(input.sessions)

@@ -1,6 +1,8 @@
 import AppKit
 import ImageIO
 import IronPetCore
+import enum IronPetKit.BuiltInQuickFilters
+import enum IronPetKit.QuickFilterSelection
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -99,12 +101,12 @@ enum PreviewRenderer {
         let meetingLibrary = MeetingLibrary(root: sampleMeetings())
         meetingLibrary.reload()
         let meetings = MeetingsAPI(recorder: MeetingController(), library: meetingLibrary)
-        func list(_ sessions: SessionStore, tasks: TasksAPI, on section: IronPetSection? = nil) -> some View {
+        func list(_ sessions: SessionStore, tasks: TasksAPI, on section: IronPetSection? = nil, height: CGFloat = 560) -> some View {
             let model = IronPetWindowModel(defaults: UserDefaults(suiteName: "ironpet-previews") ?? .standard)
             model.section = section ?? IronPetSection.needingAttention(agents: AgentsAPI(store: sessions), alerts: AlertsAPI(store: signals), tasks: tasks)
             return IronPetWindowView(model: model, agents: AgentsAPI(store: sessions), alerts: AlertsAPI(store: signals), tasks: tasks, chat: Self.chatModel(chat),
                                      meetings: meetings, actions: .none)
-                .frame(width: 780, height: 560).panel()
+                .frame(width: 780, height: height).panel()
         }
         render(list(sessions, tasks: tasks, on: .chat), to: dir, "window-chat")
         render(list(sessions, tasks: tasks, on: .chat), to: dir, "window-chat-light", scheme: .light)
@@ -166,9 +168,15 @@ enum PreviewRenderer {
         ConfigStore.shared.usePreview(screenConfig)
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks")
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks-light", scheme: .light)
+        // Tall enough to show the folded groups at the end: Someday, Deferred and Done.
+        render(list(sessions, tasks: tasks, on: .tasks, height: 1200), to: dir, "tasks-all-groups")
+        // The Next actions chip, selected: the open tasks grouped under their contexts.
+        QuickFilterSelection.save(BuiltInQuickFilters.nextActionsID)
+        render(list(sessions, tasks: tasks, on: .tasks, height: 1000), to: dir, "tasks-next-actions")
+        QuickFilterSelection.save(nil)
         for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
             render(TaskBoardView(columns: TaskBoard.columns(tasks.all, filter: nil, query: ""), agents: tasks.agents, onOpen: { _ in }, onDrop: { _, _ in })
-                .frame(width: 1240, height: 520).panel(), to: dir, "tasks-board" + suffix, scheme: scheme)
+                .frame(width: 1480, height: 520).panel(), to: dir, "tasks-board" + suffix, scheme: scheme)
         }
         if let sample = tasks.all.first(where: { $0.assignee != nil }) ?? tasks.all.first {
             render(TaskDetailPage(tasks: tasks, id: sample.id, onBack: {}, onOpen: { _ in }).frame(width: 760, height: 1000).panel(), to: dir, "task-detail")
@@ -460,7 +468,7 @@ enum PreviewRenderer {
     }
 
     /// The Usage tab with a week of made-up events: cost mode, requests mode and the hourly Today range.
-    /// Two agents on one Mac: their two pets side by side, the chat of the second with the agent switcher in its header, and Settings → Agents.
+    /// Two agents on one Mac: their two pets side by side, the chat of the second with the agent switcher in its header, and Settings → Pets.
     private static func renderSeveralAgents(to dir: URL, spriteA: String?, spriteB: String?) {
         guard let database = try? Database(path: nil, migrations: AppMigrations.all) else { return }
         let registry = AgentRegistry(database: database)
@@ -489,7 +497,14 @@ enum PreviewRenderer {
         model.agentRecords = { registry.list() }
         render(ChatView(session: model).frame(width: 520, height: 640).panel(), to: dir, "chat-agent-switcher")
 
-        render(AgentsSettings(api: records).frame(width: 540, height: 360).panel(), to: dir, "settings-agents")
+        let gallery = PetGalleryModel(sprite: { spriteB })
+        render(Form { PetsSection(api: records, gallery: gallery, buildPet: { _ in }) }.formStyle(.grouped).frame(width: 540, height: 360).panel(), to: dir, "settings-pets")
+        // The gallery decodes the sheets off the main thread, so let it finish before the picture is taken.
+        gallery.setWindowShown(true)
+        gallery.setViewShown(true)
+        RunLoop.main.run(until: Date().addingTimeInterval(2))
+        render(PetDetails(api: records, gallery: gallery, petID: bunny.id, buildPet: { _ in }, close: {}).panel(), to: dir, "settings-pet-details")
+        gallery.setViewShown(false)
     }
 
     private static func renderUsage(to dir: URL) {
@@ -833,7 +848,7 @@ enum PreviewRenderer {
             notes: "## Why now\n\nThe canary has been **green for an hour**. Steps:\n\n- check the `rate_limit` dashboard\n- read https://example.com/runbook\n- ask ops@example.com if unsure\n\nSee [the PR](https://github.com/you/api-server/pull/17).",
             links: [TaskLink(kind: .url, ref: "https://github.com/you/api-server/pull/17", label: "PR #17"),
                     TaskLink(kind: .thread, ref: "t1", label: nil), TaskLink(kind: .file, ref: "/Users/you/notes/deploy.md", label: nil)])
-        _ = try? store.update(store.ordered[0].id, addLabels: ["merge": "auto", "repo": "api-server", "project": "payments"], by: "agent:mcp")
+        _ = try? store.update(store.ordered[0].id, addLabels: ["merge": "auto", "repo": "api-server", "area": "payments", "context": "mac"], by: "agent:mcp")
         add("Fix the flaky login test", .inProgress, .chat, ago: 1500, due: today.addingTimeInterval(-day),
             links: [TaskLink(kind: .session, ref: "3", label: nil), TaskLink(kind: .thread, ref: "t1", label: nil)])
         add("Make the settings page work on mobile", .inProgress, .telegram, ago: 3 * 3600,
@@ -846,6 +861,17 @@ enum PreviewRenderer {
         add("Rotate the Sentry token", .done, .user, ago: 2 * 3600)
         add("Answer Maya about the onboarding copy", .done, .meeting, ago: day + 3600)
         add("Remove the old feature flags", .done, .agent, ago: 3 * day)
+        add("Learn to bake sourdough", .someday, .chat, ago: 5 * day)
+        add("Renew the domain", .backlog, .user, ago: day)
+        if let renew = store.tasks.first(where: { $0.title == "Renew the domain" }) {
+            _ = try? store.update(renew.id, deferUntil: .some(today.addingTimeInterval(10 * day)), by: "agent:mcp")
+        }
+        for (title, context) in [("Make the settings page work on mobile", "phone"), ("Fix the flaky login test", "mac"),
+                                 ("Upgrade the docs site to Node 20", "agent")] {
+            if let task = store.tasks.first(where: { $0.title == title }) {
+                _ = try? store.update(task.id, addLabels: ["context": context], by: "agent:mcp")
+            }
+        }
         // Two tasks are assigned to an agent: Scout, and agent 1 (Ghost). The others are the user's.
         if let scout, let flaky = store.tasks.first(where: { $0.title == "Fix the flaky login test" }),
            let docs = store.tasks.first(where: { $0.title == "Upgrade the docs site to Node 20" }) {
@@ -861,7 +887,9 @@ enum PreviewRenderer {
                       automation: "gmail-watch", name: "Gmail watcher")
         // What the task scan files: a new task, and a change to a task that exists.
         clock = Date().addingTimeInterval(-120)
-        store.suggest(scan: [TaskSuggestion.Draft(key: "scan", title: "Send Tom the deck", due: "2026-11-26")])
+        var deck = TaskSuggestion.Draft(key: "scan", title: "Send Tom the deck", due: "2026-11-26")
+        deck.clarify = TaskSuggestion.Clarify(context: .mac, area: "Sales", twoMinute: true)
+        store.suggest(scan: [deck])
         if let target = store.tasks.first(where: { $0.title == "Send the updated pricing deck" }) {
             store.suggest(scanUpdates: [(TaskSuggestion.Update(target: target.id, targetTitle: target.title, note: "Sent on Tuesday, Ana confirmed.",
                                                                markDone: true), nil)])

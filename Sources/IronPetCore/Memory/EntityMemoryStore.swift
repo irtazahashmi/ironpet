@@ -140,6 +140,12 @@ package final class EntityMemoryStore: MemoryStore {
     }
 
     /// A page by name, alias or identifier. Ambiguous or unknown names are refused rather than guessed.
+    /// The page with this `page_` ref, the same page `page(_:)` gives for its name.
+    package func page(ref: String) -> EntityPage? {
+        guard let entity = entities().first(where: { $0.ref == ref }) else { return nil }
+        return EntityPage(entity: entity, claims: claims(of: entity.id), links: links(of: entity.id))
+    }
+
     package func page(_ name: String) -> Result<EntityPage, MemoryError> {
         switch EntityMatcher.match(name: name, identifiers: [name], in: records()) {
         case .found(let id):

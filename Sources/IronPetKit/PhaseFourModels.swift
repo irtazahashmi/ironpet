@@ -39,9 +39,11 @@ public struct RemoteAutomation: Codable, Equatable, Hashable, Identifiable, Send
     public var approvalDetail: String?
     /// Detail only: the automation as pretty JSON.
     public var definition: String?
+    /// The public `auto_<hex>` id. Nil from a Mac older than record ids.
+    public var ref: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, name, enabled, trigger, action, approval, stream, definition
+        case id, name, enabled, trigger, action, approval, stream, definition, ref
         case triggerType = "trigger_type"
         case createdBy = "created_by"
         case nextRun = "next_run"
@@ -52,10 +54,11 @@ public struct RemoteAutomation: Codable, Equatable, Hashable, Identifiable, Send
 
     public init(id: String, name: String, enabled: Bool = true, trigger: String = "", triggerType: String = "daily", action: String = "bubble",
                 createdBy: String = "user", nextRun: Date? = nil, lastRun: RemoteAutomationRun? = nil, approval: String? = nil,
-                stream: String? = nil, lastEvent: Date? = nil, approvalDetail: String? = nil, definition: String? = nil) {
+                stream: String? = nil, lastEvent: Date? = nil, approvalDetail: String? = nil, definition: String? = nil,
+                ref: String? = nil) {
         self.id = id; self.name = name; self.enabled = enabled; self.trigger = trigger; self.triggerType = triggerType; self.action = action
         self.createdBy = createdBy; self.nextRun = nextRun; self.lastRun = lastRun; self.approval = approval; self.stream = stream
-        self.lastEvent = lastEvent; self.approvalDetail = approvalDetail; self.definition = definition
+        self.lastEvent = lastEvent; self.approvalDetail = approvalDetail; self.definition = definition; self.ref = ref
     }
 
     /// The Mac still has to press Approve before this runs.
@@ -98,18 +101,20 @@ public struct RemoteMeeting: Codable, Equatable, Hashable, Identifiable, Sendabl
     public var hasAudio: Bool
     /// The meeting is being recorded or summarized now.
     public var active: Bool
+    /// The public `meeting_<hex>` id. Nil from a Mac older than record ids.
+    public var ref: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, date, preview, active
+        case id, date, preview, active, ref
         case hasSummary = "has_summary"
         case hasTranscript = "has_transcript"
         case hasAudio = "has_audio"
     }
 
     public init(id: String, date: Date, preview: String = "", hasSummary: Bool = false, hasTranscript: Bool = false, hasAudio: Bool = false,
-                active: Bool = false) {
+                active: Bool = false, ref: String? = nil) {
         self.id = id; self.date = date; self.preview = preview; self.hasSummary = hasSummary; self.hasTranscript = hasTranscript
-        self.hasAudio = hasAudio; self.active = active
+        self.hasAudio = hasAudio; self.active = active; self.ref = ref
     }
 }
 
