@@ -173,6 +173,8 @@ package final class ACPBackend {
     package let agent: ACPAgent
     package private(set) var sessionID: String?
     package private(set) var capabilities: JSON = [:]
+    /// The agent's process ended and `shutdown()` did not ask for it. The chat resumes the session on its next message.
+    package var onUnexpectedExit: (() -> Void)?
     package private(set) var authMethods: [AuthMethod] = []
     /// How this agent takes a message into a running turn, from `_meta.steering.supported` in its `initialize` response.
     package private(set) var steering = Steering.none
@@ -489,6 +491,7 @@ package final class ACPBackend {
             guard let self, self.client === client else { return }
             ChatLog.note("agent process \(self.agent.id) exited; transcript untouched, next message resumes the session")
             self.sessionReady = false
+            self.onUnexpectedExit?()
         }
         try client.start()
         ChatLog.note("agent process \(agent.id) started")

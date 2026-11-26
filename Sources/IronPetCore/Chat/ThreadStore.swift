@@ -17,7 +17,8 @@ package struct ChatThread: Codable, Identifiable {
         voice: Bool? = nil,
         session: String? = nil,
         previousSessions: [String]? = nil,
-        handoff: String? = nil
+        handoff: String? = nil,
+        agentId: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -33,6 +34,7 @@ package struct ChatThread: Codable, Identifiable {
         self.session = session
         self.previousSessions = previousSessions
         self.handoff = handoff
+        self.agentId = agentId
     }
 
     package let id: String
@@ -61,6 +63,12 @@ package struct ChatThread: Codable, Identifiable {
     /// Set between a rollover and the first turn of the new agent session: the context that turn carries. While it is
     /// set and `session` is nil, the thread has no agent session yet.
     package var handoff: String? = nil
+
+    /// The id of the agent that owns the thread. Nil in a file saved before agents owned threads, which is agent 1's.
+    package var agentId: String? = nil
+
+    /// The owning agent's id, with a missing one read as agent 1.
+    package var ownerAgentID: String { AgentOwner.id(agentId) }
 
     package var isAutomationRun: Bool { automation != nil }
 
@@ -118,9 +126,9 @@ package enum ThreadStore {
 
     /// Most recent first. Automation runs are capped at `automationLimit`, so an hourly job does not push the user's own
     /// threads out of the list.
-    package static func recent(limit: Int = 15, automationLimit: Int = 5) -> [ChatThread] {
+    package static func recent(limit: Int = 15, automationLimit: Int = 5, agent: String? = nil) -> [ChatThread] {
         var automations = 0
-        return all()
+        return all(agent: agent)
             .filter { thread in
                 guard thread.isAutomationRun else { return true }
                 automations += 1
@@ -135,11 +143,13 @@ package enum ThreadStore {
         Array(all().filter { $0.voice == true }.prefix(limit))
     }
 
-    package static func all() -> [ChatThread] {
+    /// Every thread, newest first. With `agent`, only the threads that agent owns.
+    package static func all(agent: String? = nil) -> [ChatThread] {
         let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
         return files
             .filter { $0.pathExtension == "json" }
             .compactMap { (try? Data(contentsOf: $0)).flatMap { try? decoder.decode(ChatThread.self, from: $0) } }
+            .filter { thread in agent.map { thread.ownerAgentID == AgentOwner.id($0) } ?? true }
             .sorted { $0.updatedAt > $1.updatedAt }
     }
 

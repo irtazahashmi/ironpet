@@ -5,8 +5,9 @@ import Foundation
 package struct AgentRecord: Codable, Equatable, Sendable {
     package init(id: String, number: Int, name: String, pet: String? = nil, agentCli: String, model: String? = nil,
                  cliModels: [String: String] = [:], instructions: String = "", permissions: [String: String] = [:],
-                 created: Date = Date(timeIntervalSince1970: 0), updated: Date = Date(timeIntervalSince1970: 0)) {
+                 enabled: Bool = true, created: Date = Date(timeIntervalSince1970: 0), updated: Date = Date(timeIntervalSince1970: 0)) {
         self.id = id
+        self.enabled = enabled
         self.number = number
         self.name = name
         self.pet = pet
@@ -35,15 +36,41 @@ package struct AgentRecord: Codable, Equatable, Sendable {
     package var cliModels: [String: String]
     /// Standing instructions for this agent. Empty today: no setting writes them before the agents UI exists.
     package var instructions: String
-    /// Tool permissions this agent has been given, by tool name. Empty today: the chat still asks for each permission.
+    /// Tool permissions this agent has been given, by tool rule such as `Bash` or `Bash(git status:*)`, each `allow` or `deny`. An
+    /// automation run this agent owns follows them. Empty today: the chat still asks for each permission.
     package var permissions: [String: String]
+    /// A disabled agent has no process and no pet. Its threads, sessions and automations stay on disk. Agent 1 is always enabled.
+    package var enabled: Bool
     package var created: Date
     package var updated: Date
+
+    private enum CodingKeys: String, CodingKey {
+        case id, number, name, pet, agentCli, model, cliModels, instructions, permissions, enabled, created, updated
+    }
+
+    /// `enabled` is new on the wire, so a record from an older node, which has none, is enabled.
+    package init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        number = try c.decode(Int.self, forKey: .number)
+        name = try c.decode(String.self, forKey: .name)
+        pet = try c.decodeIfPresent(String.self, forKey: .pet)
+        agentCli = try c.decode(String.self, forKey: .agentCli)
+        model = try c.decodeIfPresent(String.self, forKey: .model)
+        cliModels = try c.decodeIfPresent([String: String].self, forKey: .cliModels) ?? [:]
+        instructions = try c.decodeIfPresent(String.self, forKey: .instructions) ?? ""
+        permissions = try c.decodeIfPresent([String: String].self, forKey: .permissions) ?? [:]
+        enabled = try c.decodeIfPresent(Bool.self, forKey: .enabled) ?? true
+        created = try c.decodeIfPresent(Date.self, forKey: .created) ?? Date(timeIntervalSince1970: 0)
+        updated = try c.decodeIfPresent(Date.self, forKey: .updated) ?? Date(timeIntervalSince1970: 0)
+    }
 }
 
 /// A change to an agent. A nil field is left as it is. `model` and `pet` are double optionals so a caller can also clear them.
 package struct AgentRecordPatch: Equatable {
-    package init(name: String? = nil, pet: String?? = nil, agentCli: String? = nil, model: String?? = nil, instructions: String? = nil) {
+    package init(name: String? = nil, pet: String?? = nil, agentCli: String? = nil, model: String?? = nil, instructions: String? = nil,
+                 enabled: Bool? = nil) {
+        self.enabled = enabled
         self.name = name
         self.pet = pet
         self.agentCli = agentCli
@@ -56,6 +83,7 @@ package struct AgentRecordPatch: Equatable {
     package var agentCli: String?
     package var model: String??
     package var instructions: String?
+    package var enabled: Bool?
 }
 
 /// The `agents` table: every agent on this install, and the one the chat runs. Agents never open the database themselves; this is the
@@ -93,9 +121,14 @@ package final class AgentRegistry {
             INSERT INTO agents(id, number, name, agent_cli, created, updated)
                 VALUES('agent_default', 1, 'Ghost', 'cursor', CAST(strftime('%s', 'now') AS REAL), CAST(strftime('%s', 'now') AS REAL));
             """),
+        .init(571, "agents: an enabled flag and a number counter, so an agent can be switched off or deleted without losing its history", sql: """
+            ALTER TABLE agents ADD COLUMN enabled INTEGER NOT NULL DEFAULT 1;
+            CREATE TABLE agent_counter(value INTEGER NOT NULL);
+            INSERT INTO agent_counter(value) SELECT COALESCE(MAX(number), 1) FROM agents;
+            """),
     ]
 
-    private static let columns = "id, number, name, pet, agent_cli, model, cli_models, instructions, permissions, created, updated"
+    private static let columns = "id, number, name, pet, agent_cli, model, cli_models, instructions, permissions, created, updated, enabled"
 
     package init(database: Database, now: @escaping () -> Date = Date.init) {
         self.database = database
@@ -121,7 +154,7 @@ package final class AgentRegistry {
     package var chatAgent: AgentRecord? { self.get(Self.chatAgentID) }
 
     private static func record(_ row: [Database.Value]) -> AgentRecord? {
-        guard row.count == 11, let id = row[0] as? String, let number = row[1] as? Int64, let name = row[2] as? String,
+        guard row.count == 12, let id = row[0] as? String, let number = row[1] as? Int64, let name = row[2] as? String,
               let cli = row[4] as? String else { return nil }
         func map(_ value: Database.Value) -> [String: String] {
             guard let text = value as? String, let object = (try? JSONSerialization.jsonObject(with: Data(text.utf8))) as? [String: String] else { return [:] }
@@ -129,6 +162,7 @@ package final class AgentRegistry {
         }
         return AgentRecord(id: id, number: Int(number), name: name, pet: row[3] as? String, agentCli: cli, model: row[5] as? String,
                            cliModels: map(row[6]), instructions: row[7] as? String ?? "", permissions: map(row[8]),
+                           enabled: (row[11] as? Int64 ?? 1) != 0,
                            created: Date(timeIntervalSince1970: row[9] as? Double ?? 0), updated: Date(timeIntervalSince1970: row[10] as? Double ?? 0))
     }
 
@@ -155,18 +189,59 @@ package final class AgentRegistry {
             if let model { record.cliModels[record.agentCli] = model } else { record.cliModels[record.agentCli] = nil }
         }
         if let instructions = patch.instructions { record.instructions = instructions }
+        if let enabled = patch.enabled {
+            guard enabled || record.id != Self.chatAgentID else { throw APIError.invalid("agent 1 cannot be disabled") }
+            record.enabled = enabled
+        }
         guard record != before else { return before }
         record.updated = now()
         changes.send()
         try database.write { db in
             try db.execute("""
-                UPDATE agents SET name = ?, pet = ?, agent_cli = ?, model = ?, cli_models = ?, instructions = ?, permissions = ?, updated = ?
+                UPDATE agents SET name = ?, pet = ?, agent_cli = ?, model = ?, cli_models = ?, instructions = ?, permissions = ?, enabled = ?, updated = ?
                 WHERE id = ?
                 """, [record.name, record.pet, record.agentCli, record.model, Self.json(record.cliModels), record.instructions,
-                      Self.json(record.permissions), record.updated.timeIntervalSince1970, record.id])
+                      Self.json(record.permissions), Int64(record.enabled ? 1 : 0), record.updated.timeIntervalSince1970, record.id])
         }
         return record
     }
+
+    /// Adds an agent, enabled. Its number is the next one and is never reused, even after a delete. Its id is `agent_` and a random part.
+    @discardableResult
+    package func create(name: String, pet: String? = nil, agentCli: String, model: String? = nil, instructions: String = "") throws -> AgentRecord {
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw APIError.invalid("an agent needs a name") }
+        guard AgentCatalog.agent(id: agentCli) != nil else { throw APIError.invalid("unknown agent CLI \"\(agentCli)\"") }
+        let created = now()
+        changes.send()
+        return try database.write { db -> AgentRecord in
+            let top = (try db.rows("SELECT MAX(number) FROM agents").first?.first as? Int64) ?? 0
+            let counter = (try db.rows("SELECT MAX(value) FROM agent_counter").first?.first as? Int64) ?? 0
+            let number = max(top, counter) + 1
+            let id = "agent_" + String(UUID().uuidString.replacingOccurrences(of: "-", with: "").prefix(12)).lowercased()
+            let record = AgentRecord(id: id, number: Int(number), name: name, pet: pet, agentCli: agentCli, model: model,
+                                     cliModels: model.map { [agentCli: $0] } ?? [:], instructions: instructions, created: created, updated: created)
+            try db.execute("""
+                INSERT INTO agents(id, number, name, pet, agent_cli, model, cli_models, instructions, permissions, legacy_imported, created, updated, enabled)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, '{}', 1, ?, ?, 1)
+                """, [record.id, number, record.name, record.pet, record.agentCli, record.model, Self.json(record.cliModels),
+                      record.instructions, created.timeIntervalSince1970, created.timeIntervalSince1970])
+            try db.execute("UPDATE agent_counter SET value = ?", [number])
+            return record
+        }
+    }
+
+    /// Removes an agent's record. Its threads, sessions and automations stay on disk under an id that no longer resolves, so nothing
+    /// lists them. Agent 1 cannot be deleted.
+    package func delete(_ id: String) throws {
+        guard let record = get(id) else { throw APIError.notFound("no agent with id \"\(id)\"") }
+        guard record.id != Self.chatAgentID else { throw APIError.invalid("agent 1 cannot be deleted") }
+        changes.send()
+        try database.write { try $0.execute("DELETE FROM agents WHERE id = ?", [record.id]) }
+    }
+
+    /// The agents that should be running: the enabled ones, in number order.
+    package func enabledAgents() -> [AgentRecord] { list().filter(\.enabled) }
 
     // MARK: Settings from before agents existed
 

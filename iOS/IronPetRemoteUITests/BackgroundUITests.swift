@@ -22,10 +22,7 @@ final class BackgroundUITests: XCTestCase {
     private func pair() {
         app.launchArguments = ["--reset-credentials", "--stub-photo"] + (dark ? ["--force-dark"] : [])
         app.launch()
-        let field = app.textFields["pairing-link-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.tap()
-        field.typeText(server.pairingLink)
+        app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         XCTAssertTrue(app.tabBars.buttons["Chat"].waitForExistence(timeout: 20))
     }

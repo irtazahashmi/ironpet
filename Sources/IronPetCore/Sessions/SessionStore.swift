@@ -4,17 +4,20 @@ import Combine
 #endif
 
 package struct HookEvent {
-    package init(source: AgentSource, name: String, payload: [String: Any], origin: SessionOrigin) {
+    package init(source: AgentSource, name: String, payload: [String: Any], origin: SessionOrigin, agentId: String? = nil) {
         self.source = source
         self.name = name
         self.payload = payload
         self.origin = origin
+        self.agentId = agentId
     }
 
     package let source: AgentSource
     package let name: String
     package let payload: [String: Any]
     package let origin: SessionOrigin
+    /// The agent that launched the session, when the hook says so. Nil is agent 1.
+    package let agentId: String?
 }
 
 /// Folds hook events into per-session status and a single pet-level summary.
@@ -36,6 +39,12 @@ package final class SessionStore {
     /// Called when a session enters a status worth announcing.
     package var onAttention: ((AgentSession) -> Void)?
 
+    /// The sessions that are not idle and that this agent owns, most urgent first. Without `agent`, every agent's.
+    package func ordered(agent: String?) -> [AgentSession] {
+        guard let agent else { return ordered }
+        return ordered.filter { $0.ownerAgentID == agent }
+    }
+
     package var ordered: [AgentSession] {
         sessions.values
             .filter { $0.status != .idle }
@@ -53,6 +62,7 @@ package final class SessionStore {
         let key = "\(event.source.rawValue):\(sessionID)"
         var session = sessions[key] ?? AgentSession(id: key, source: event.source)
         let previous = session.status
+        if session.agentId == nil, let agent = event.agentId, !agent.isEmpty { session.agentId = agent }
         if session.origin.workspace == nil { session.origin.workspace = event.origin.workspace }
         if let term = event.origin.termProgram, !term.isEmpty { session.origin.termProgram = term }
         if let iterm = event.origin.itermSessionID, !iterm.isEmpty { session.origin.itermSessionID = iterm }

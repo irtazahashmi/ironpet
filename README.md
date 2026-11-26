@@ -83,7 +83,7 @@ macOS will ask for these permissions as you use the features:
 | See watched agents, alerts and tasks | Click Ghost when something needs attention, or right-click → Show agents. One window with a sidebar holds Chat, Agents, Alerts, Notifications, Tasks, Transcripts, Screen, Actions, Automations (and Today when a brief or recap is on), plus Settings |
 | Allow an action | **Allow** or <kbd>⌘↩</kbd> on the approval card |
 | Move Ghost | Drag him; he stays where you leave him |
-| Open a record named in chat | Click its id, such as `task_9f3c1e`, `meeting_…` or `notif_…`. The id is a link that opens that record in its section |
+| Open a record named in chat | Click its id, such as `task_9f3c1e`, `meeting_…` or `notif_…`. On the Mac the id opens that record in its section; on the iPhone it opens the record's details |
 | Copy a record's id | A task, meeting, automation, capture, notification or memory page shows its id under the date. Click the copy button next to it, then paste the id in a chat or a note |
 | Switch section | <kbd>⌘1</kbd> to <kbd>⌘9</kbd> in the ironpet window select the Nth sidebar row (Chat, Agents, Alerts, Notifications, Tasks, Transcripts, Screen, Actions, Automations; Today, listed last, has no number), also while the chat field has focus |
 | Morning brief and recap | Turn on **Morning brief** or **End-of-day recap** in ironpet window → Automations and pick the time there. The bubble's Open, or the Today row, shows each item; click one to open its task, session, alert link or meeting |

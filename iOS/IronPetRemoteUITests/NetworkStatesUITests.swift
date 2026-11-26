@@ -19,10 +19,7 @@ final class NetworkStatesUITests: XCTestCase {
     private func launch(dark: Bool = false, extra: [String] = []) {
         app.launchArguments = ["--reset-credentials", "--auto-unlock", "--network-strip-delay", "3", "--network-retry-ms", "100"] + (dark ? ["--force-dark"] : []) + extra
         app.launch()
-        let field = app.textFields["pairing-link-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.tap()
-        field.typeText(server.pairingLink)
+        app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         XCTAssertTrue(app.tabBars.buttons["Agents"].waitForExistence(timeout: 20))
     }

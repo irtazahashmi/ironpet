@@ -29,12 +29,17 @@ package enum AutomationSession {
     /// asks about waits for the user.
     package enum Route { case answer(ApprovalDecision), ask }
 
-    package nonisolated static func route(for call: ACPToolCall, allowed: [String]?, disallowed: [String]?) -> Route {
+    package nonisolated static func route(for call: ACPToolCall, allowed: [String]?, disallowed: [String]?,
+                                          permissions: [String: String] = [:]) -> Route {
         if ["edit", "delete", "move"].contains(call.kind), call.allPaths.contains(where: LegacyMemoryFiles.contains) {
             return .answer(.deny("Automations may not edit Ghost's memory files"))
         }
+        // The owner's own rules: its refusals come before the automation's `allowedTools`, its allowances after them.
+        let verdict = AutomationPrompt.ownerVerdict(permissions, for: call)
+        if let verdict, !verdict.allow { return .answer(verdict) }
         if let disallowed, disallowed.contains(where: { ToolRule.matches($0, call) }) { return .answer(.deny("This automation may not use that tool")) }
         if let allowed, allowed.contains(where: { ToolRule.matches($0, call) }) { return .answer(.allow) }
+        if let verdict { return .answer(verdict) }
         if case .allow = ApprovalRules.policy(for: call) { return .answer(.allow) }
         return .ask
     }
@@ -48,8 +53,11 @@ package enum AutomationSession {
     package static func run(_ automation: Automation, prompt: String, workspace: URL, spawner: ProcessSpawner, timeout: TimeInterval? = nil,
                     agentOverride: ACPAgent? = nil, turnRunner: TurnRunner? = nil, now: Date = Date(),
                     fork: String? = nil, onNote: ((String) -> Void)? = nil, permissions: BackgroundPermissions? = nil,
-                    rolloverLimit: Int64? = nil, handoffTimeout: Duration = .seconds(90)) async -> Result<String, AutomationError> {
-        guard let agent = agentOverride ?? AgentCatalog.agent(id: AutomationPrompt.agentID(automation)) else {
+                    rolloverLimit: Int64? = nil, handoffTimeout: Duration = .seconds(90),
+                    registry: AgentRegistry? = nil) async -> Result<String, AutomationError> {
+        // The owner's CLI, model and permissions. `agentOverride` only replaces the CLI, so a test can run a scripted agent.
+        let runtime = AutomationPrompt.runtime(for: automation, registry: registry)
+        guard let agent = agentOverride ?? AgentCatalog.agent(id: runtime.cli) else {
             return .failure(.init(message: "no agent is available"))
         }
         try? FileManager.default.createDirectory(at: workspace, withIntermediateDirectories: true)
@@ -67,7 +75,8 @@ package enum AutomationSession {
             created.usageFeature = .automations
             created.mcpCaller = "automation:\(automation.id)"
             created.onPermission = { call, respond in
-                switch Self.route(for: call, allowed: automation.action.allowedTools, disallowed: automation.action.disallowedTools) {
+                switch Self.route(for: call, allowed: automation.action.allowedTools, disallowed: automation.action.disallowedTools,
+                                  permissions: runtime.permissions) {
                 case .answer(let decision): respond(decision)
                 case .ask:
                     guard let permissions else { return respond(.deny("This automation runs without anyone to ask")) }
@@ -87,7 +96,7 @@ package enum AutomationSession {
                 let limit = rolloverLimit ?? Int64(Config.load().config.chat.sessionRolloverMB) * 1_048_576
                 if let bytes = AgentTranscript.size(agent: agent.id, workspace: workspace.path, session: active), bytes > limit {
                     let probe = ACPTurn(prompt: SessionHandoff.prompt, preamble: nil, workspace: workspace, resume: active,
-                                        model: automation.action.model, images: [], files: [], allowedTools: [], disallowedTools: nil)
+                                        model: runtime.model, images: [], files: [], allowedTools: [], disallowedTools: nil)
                     let summary = await requestHandoff(probe, timeout: handoffTimeout, turnRunner: turnRunner, backend: turnRunner == nil ? makeBackend() : nil)
                     handoff = SessionHandoff.compose(summary: SessionHandoff.clean(summary) ?? SessionHandoff.fallbackSummary(items: earlier.items), items: earlier.items)
                     rolledFrom = active
@@ -103,7 +112,7 @@ package enum AutomationSession {
         if let handoff {
             preamble = SessionHandoff.insert(handoff, into: MemoryPreamble.build(store: EntityMemoryStore.shared, workspace: workspace, firstMessage: prompt))
         }
-        let turn = ACPTurn(prompt: prompt, preamble: preamble, workspace: workspace, resume: resume, model: automation.action.model,
+        let turn = ACPTurn(prompt: prompt, preamble: preamble, workspace: workspace, resume: resume, model: runtime.model,
                            images: [], files: [], allowedTools: automation.action.allowedTools, disallowedTools: automation.action.disallowedTools, fork: fork)
 
         var backend: ACPBackend?
@@ -163,7 +172,7 @@ package enum AutomationSession {
                                         items: (resumed?.items ?? []) + marker + [first] + items, agent: agent.id,
                                         automation: automation.id, automationName: automation.name, runs: (resumed?.runs ?? 0) + 1,
                                         session: sessionID == threadID ? nil : sessionID,
-                                        previousSessions: previous.isEmpty ? nil : previous))
+                                        previousSessions: previous.isEmpty ? nil : previous, agentId: automation.ownerAgentID))
             ThreadStore.prune(automation: automation.id, keep: keptThreads)
             if rolledFrom != nil { AgentTranscript.pruneInBackground() }
         }

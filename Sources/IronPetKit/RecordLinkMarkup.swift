@@ -1,8 +1,8 @@
 import Foundation
-import IronPetKit
 
-/// Links record ids in a chat's Markdown. This needs `AttributedString`'s Markdown attributes, which Linux's Foundation lacks, so it
-/// lives in the Mac app and not in `IronPetKit`, which CI also builds on Linux.
+#if canImport(Darwin)
+/// Links record ids in a chat's Markdown, on the Mac and the phone. It needs `AttributedString`'s Markdown attributes, which only Apple's
+/// Foundation has; on Linux the chat text stays plain, as it does for every other Markdown style.
 extension RecordLinks {
     /// Links each id in `text` that is not already a link and not code. The text itself does not change.
     static func link(_ text: AttributedString) -> AttributedString {
@@ -27,3 +27,4 @@ extension RecordLinks {
         return intent?.contains(.code) == true
     }
 }
+#endif

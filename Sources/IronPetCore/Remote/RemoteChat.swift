@@ -60,7 +60,19 @@ package struct RemoteChat {
         self.api = api
         self.device = device
         self.uploads = uploads
+        self.chat = api.chat
     }
+
+    /// The chat of one agent. Nil is agent 1. An id no agent has is 404, and an agent that is not running is 503.
+    package init(api: IronPetAPI, device: String, uploads: RemoteUploads, agentId: String?) throws {
+        self.api = api
+        self.device = device
+        self.uploads = uploads
+        self.chat = try api.chat(for: agentId)
+    }
+
+    /// The chat every call here reads and writes.
+    private let chat: ChatAPI
 
     package let api: IronPetAPI
     /// The device that calls. Its id names the origin of a chat message.
@@ -88,7 +100,7 @@ package struct RemoteChat {
     }
 
     /// The chat's state at this moment. It copies arrays and builds nothing, so it is the only part of a read that needs the main actor.
-    package func snapshot() -> ChatSnapshot { api.chat.snapshot() }
+    package func snapshot() -> ChatSnapshot { chat.snapshot() }
 
     /// The chat as the phone shows it, as JSON bytes. With `limit`, `items` is the newest `limit` visible messages, or the `limit` before
     /// the message `before` names, and `has_more` says whether older ones exist. Without `limit` the newest `defaultLimit` come back.
@@ -106,7 +118,7 @@ package struct RemoteChat {
     }
 
     package func current(limit: Int? = nil, before: String? = nil) async -> [String: Any] {
-        Self.page(api.chat.snapshot(), limit: limit, before: before)
+        Self.page(chat.snapshot(), limit: limit, before: before)
     }
 
     /// Where the chat stands in the event stream, and what changed since the phone's cursor. Read it in the same main actor turn as
@@ -207,7 +219,7 @@ package struct RemoteChat {
     /// `model: null` returns to the agent's default. The agent, model and folder cannot change while a turn runs, as on the Mac, and the
     /// folder must be one the Mac chat already lists. Everything is checked before anything changes.
     package func setOptions(_ body: [String: Any]) async throws -> [String: Any] {
-        let options = await api.chat.options()
+        let options = await chat.options()
         var agent: String?, folder: String?
         if let raw = body["agent"] {
             guard let id = raw as? String, options.agents.contains(where: { $0.id == id }) else { throw RemoteFailure.invalid("no such agent") }
@@ -235,15 +247,15 @@ package struct RemoteChat {
             guard offered.contains(model) else { throw RemoteFailure.invalid("this agent does not offer that model") }
         }
         if agent != nil || changesModel || folder != nil || noProject {
-            if await api.chat.status().running {
+            if await chat.status().running {
                 throw RemoteFailure(status: 409, code: "conflict", message: "The agent is working. Stop it first, or wait for it to finish.")
             }
         }
-        if let agent { try await api.chat.setAgent(agent) }
-        if changesModel { await api.chat.setModel(model) }
-        if let folder { try await api.chat.useFolder(folder) }
-        if noProject { await api.chat.useNoProject() }
-        if let mode { await api.chat.setMode(mode) }
+        if let agent { try await chat.setAgent(agent) }
+        if changesModel { await chat.setModel(model) }
+        if let folder { try await chat.useFolder(folder) }
+        if noProject { await chat.useNoProject() }
+        if let mode { await chat.setMode(mode) }
         return ["changed": true]
     }
 
@@ -257,7 +269,7 @@ package struct RemoteChat {
 
     package func message(_ id: String) async throws -> [String: Any] {
         guard let uuid = UUID(uuidString: id) else { throw Self.unknownMessage }
-        return Self.json(try await api.chat.message(uuid))
+        return Self.json(try await chat.message(uuid))
     }
 
     /// The most bytes of one image the route sends. Uploads stop at 20 MiB, and a Mac screenshot is smaller than that.
@@ -268,7 +280,7 @@ package struct RemoteChat {
     /// image attachment, or whose file is gone, is a 404 with a reason the phone can show.
     package func file(_ id: String) async throws -> (data: Data, contentType: String, name: String) {
         guard let uuid = UUID(uuidString: id) else { throw Self.unknownMessage }
-        let item = try await api.chat.message(uuid)
+        let item = try await chat.message(uuid)
         guard case .screenshot(let path) = item.kind else {
             throw RemoteFailure(status: 404, code: "not_found", message: "this message has no attachment")
         }
@@ -286,7 +298,7 @@ package struct RemoteChat {
     /// The preview of a file a reply named. It may come only from the open chat's folder, where the agent works. The scratch folder of a
     /// general question is not one, and neither are the recent folders, which can be as wide as a home folder. See `RemoteFilePreview`.
     package func filePreview(path: String) async throws -> FilePreview {
-        let options = await api.chat.options()
+        let options = await chat.options()
         var roots: [String] = []
         if let folder = options.folder, folder != ChatSession.scratchWorkspace.path { roots.append(folder) }
         let file = try RemoteFilePreview.resolve(path, roots: roots)
@@ -295,10 +307,15 @@ package struct RemoteChat {
 
     private static var unknownMessage: RemoteFailure { RemoteFailure(status: 404, code: "not_found", message: "no message with this id") }
 
-    package func threads() async -> [String: Any] { ["threads": await api.chat.threads().map(Self.json)] }
+    package func threads() async -> [String: Any] { ["threads": await chat.threads().map(Self.json)] }
+
+    /// The threads one agent owns, newest first. Nil is agent 1.
+    package func threads(agentId: String?) async throws -> [String: Any] {
+        ["threads": try await chat.threads(agentId: agentId).map(Self.json)]
+    }
 
     package func thread(_ id: String) async throws -> [String: Any] {
-        let found = try await api.chat.thread(id)
+        let found = try await chat.thread(id)
         var object = Self.json(found.info)
         object["items"] = found.items.filter(Self.isVisible).map(Self.json)
         return object
@@ -317,7 +334,7 @@ package struct RemoteChat {
             reply = try await replyTo(itemID, selection: quote["selection_text"] as? String)
         }
         let files = try uploads.files(ids, device: device)
-        let result = try await api.chat.send(SendChatRequest(text: text, origin: origin, files: files, reply: reply))
+        let result = try await chat.send(SendChatRequest(text: text, origin: origin, files: files, reply: reply))
         uploads.forget(ids)
         return ["outcome": Self.name(result.outcome)]
     }
@@ -330,7 +347,7 @@ package struct RemoteChat {
             let outcome = try await send(body)["outcome"] as? String ?? ChatSendOutcome.sent.rawValue
             // A message that started a turn is the newest user item. A queued one has no item until its turn comes.
             let itemID = outcome == ChatSendOutcome.sent.rawValue
-                ? await api.chat.messages().last { if case .user = $0.kind { true } else { false } }?.id.uuidString : nil
+                ? await chat.messages().last { if case .user = $0.kind { true } else { false } }?.id.uuidString : nil
             return RemoteSendAck(clientID: clientID, outcome: outcome, itemID: itemID, seq: api.events.lastSeq)
         }
     }
@@ -338,7 +355,7 @@ package struct RemoteChat {
     /// The quote of a user or assistant message, as the Mac builds it. A tool step, a screenshot or an error cannot be replied to.
     private func replyTo(_ id: UUID, selection: String?) async throws -> ChatReply {
         let item: ChatItem
-        do { item = try await api.chat.message(id) } catch { throw RemoteFailure.invalid("the message to reply to is not in this chat") }
+        do { item = try await chat.message(id) } catch { throw RemoteFailure.invalid("the message to reply to is not in this chat") }
         let sender: String, text: String, fromUser: Bool
         switch item.kind {
         case .user(let value): sender = "You"; text = value; fromUser = true
@@ -351,7 +368,7 @@ package struct RemoteChat {
     }
 
     package func stop() async -> [String: Any] {
-        _ = await api.chat.stop(keepDraft: true)
+        _ = await chat.stop(keepDraft: true)
         return ["stopped": true]
     }
 
@@ -359,7 +376,7 @@ package struct RemoteChat {
 
     /// A running turn or a waiting question blocks it, since opening a thread would stop them.
     private func requireIdle() async throws {
-        let status = await api.chat.status()
+        let status = await chat.status()
         if status.running { throw RemoteFailure(status: 409, code: "conflict", message: "The agent is working. Stop it first, or wait for it to finish.") }
         if status.pendingApprovals > 0 || status.pendingForms > 0 {
             throw RemoteFailure(status: 409, code: "conflict", message: "The agent is waiting for an answer. Answer it first.")
@@ -368,13 +385,13 @@ package struct RemoteChat {
 
     package func open(_ id: String) async throws -> [String: Any] {
         try await requireIdle()
-        try await api.chat.openThread(id)
+        try await chat.openThread(id)
         return ["opened": id]
     }
 
     package func newChat() async throws -> [String: Any] {
         try await requireIdle()
-        await api.chat.newChat()
+        await chat.newChat()
         return ["opened": true]
     }
 
@@ -383,7 +400,7 @@ package struct RemoteChat {
     package func decide(_ id: String, _ body: [String: Any]) async throws -> [String: Any] {
         guard let allow = body["allow"] as? Bool else { throw RemoteFailure.invalid("allow must be true or false") }
         guard let uuid = UUID(uuidString: id) else { throw RemoteFailure(status: 404, code: "not_found", message: "that approval is no longer waiting") }
-        try await api.chat.decide(DecideApprovalRequest(id: uuid, allow: allow))
+        try await chat.decide(DecideApprovalRequest(id: uuid, allow: allow))
         return ["allowed": allow]
     }
 
@@ -403,19 +420,19 @@ package struct RemoteChat {
     package func submit(_ id: String, _ body: [String: Any]) async throws -> [String: Any] {
         let uuid = try formID(id)
         try await apply(body["answers"], to: uuid)
-        try await api.chat.submitForm(uuid)
+        try await chat.submitForm(uuid)
         return ["submitted": true]
     }
 
     package func skip(_ id: String) async throws -> [String: Any] {
-        try await api.chat.skipForm(try formID(id))
+        try await chat.skipForm(try formID(id))
         return ["skipped": true]
     }
 
     private func apply(_ raw: Any?, to id: UUID) async throws {
         guard let raw, !(raw is NSNull) else { return }
         guard let answers = raw as? [String: Any] else { throw RemoteFailure.invalid("answers must be an object") }
-        guard let form = await api.chat.forms().first(where: { $0.id == id }) else {
+        guard let form = await chat.forms().first(where: { $0.id == id }) else {
             throw RemoteFailure(status: 404, code: "not_found", message: "that question is no longer waiting")
         }
         var parsed: [(String, ElicitationValue?)] = []
@@ -423,7 +440,7 @@ package struct RemoteChat {
             guard let field = form.form.fields.first(where: { $0.id == name }) else { throw RemoteFailure.invalid("no field \"\(name)\"") }
             parsed.append((name, try Self.value(value, for: field)))
         }
-        for (name, value) in parsed { try await api.chat.answerForm(AnswerFormRequest(id: id, field: name, value: value)) }
+        for (name, value) in parsed { try await chat.answerForm(AnswerFormRequest(id: id, field: name, value: value)) }
     }
 
     private static func value(_ raw: Any, for field: ElicitationField) throws -> ElicitationValue? {
@@ -529,7 +546,10 @@ package struct RemoteChat {
     }
 
     private nonisolated static func json(_ approval: ChatApprovalInfo) -> [String: Any] {
-        ["id": approval.id.uuidString, "title": approval.title, "detail": approval.detail]
+        var object: [String: Any] = ["id": approval.id.uuidString, "title": approval.title, "detail": approval.detail]
+        if let agentId = approval.agentId { object["agent_id"] = agentId }
+        if let agentName = approval.agentName { object["agent_name"] = agentName }
+        return object
     }
 
     private nonisolated static func json(_ queued: ChatQueuedInfo) -> [String: Any] {
@@ -555,8 +575,11 @@ package struct RemoteChat {
             case .flag(let on): answers[name] = on
             }
         }
-        return ["id": form.id.uuidString, "message": form.form.message, "fields": form.form.fields.map(json), "answers": answers,
-                "can_submit": form.form.canSubmit(form.answers)]
+        var object: [String: Any] = ["id": form.id.uuidString, "message": form.form.message, "fields": form.form.fields.map(json), "answers": answers,
+                                     "can_submit": form.form.canSubmit(form.answers)]
+        if let agentId = form.agentId { object["agent_id"] = agentId }
+        if let agentName = form.agentName { object["agent_name"] = agentName }
+        return object
     }
 
     private nonisolated static func json(_ field: ElicitationField) -> [String: Any] {

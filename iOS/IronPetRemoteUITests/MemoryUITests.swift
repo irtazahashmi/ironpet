@@ -25,10 +25,7 @@ final class MemoryUITests: XCTestCase {
 
     private func openMemory() {
         app.launch()
-        let field = app.textFields["pairing-link-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
-        field.tap()
-        field.typeText(server.pairingLink)
+        app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         let more = app.tabBars.buttons["More"]
         XCTAssertTrue(more.waitForExistence(timeout: 20))
@@ -41,6 +38,7 @@ final class MemoryUITests: XCTestCase {
     func testBrowseFilterOpenAPageAndFollowALink() {
         openMemory()
         XCTAssertTrue(app.buttons["memory-row-page_4e91b0"].waitForExistence(timeout: 20))
+        XCTAssertFalse(app.staticTexts["memory-count"].exists, "the list shows no count label")
         attach("memory-list")
         app.buttons["memory-chip-people"].tap()
         XCTAssertTrue(app.buttons["memory-row-page_9594cc"].waitForExistence(timeout: 10))

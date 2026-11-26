@@ -21,6 +21,8 @@ final class SettingsModel: ObservableObject {
     var voiceKey: VoiceKey { VoiceKey(store: platform.secrets) }
     /// Set once the app has built it, before the window can open.
     var automations: AutomationsAPI?
+    /// The agents, for Settings → Agents. Nil without a database.
+    var agentRecords: AgentRecordsAPI?
     /// The meeting controller, for labelling the voices of the last meeting.
     var meeting: MeetingsAPI?
     /// The chat's reply reader, so Preview and a reply never talk over each other. Nil in preview renders.
@@ -155,6 +157,7 @@ struct SettingsView: View {
 
     static let pages = [
         Page(tag: "general", title: "General", symbol: SharedSymbols.settings),
+        Page(tag: "agents", title: "Agents", symbol: "person.2"),
         Page(tag: "memory", title: "Memory", symbol: SharedSymbols.memory),
         Page(tag: "prompts", title: "Prompts", symbol: "text.bubble"),
         Page(tag: "integrations", title: "Integrations", symbol: "puzzlepiece.extension"),
@@ -210,6 +213,8 @@ struct SettingsView: View {
 
     @ViewBuilder private var content: some View {
         switch model.tab {
+        case "agents":
+            if let records = model.agentRecords { AgentsSettings(api: records) } else { Text("Agents need the database, which is not available.").foregroundStyle(.secondary) }
         case "memory": MemorySettings(model: model)
         case "prompts": PromptsSettings(model: model)
         case "integrations": IntegrationsSettings(telegram: model.telegram)

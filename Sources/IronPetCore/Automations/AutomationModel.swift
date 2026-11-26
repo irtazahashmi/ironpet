@@ -261,6 +261,19 @@ package struct Automation: Codable, Equatable, Identifiable {
     /// Deletes the automation after a run: `success` after the first run whose action succeeded, `once` after the first
     /// completed run whatever the outcome. Missing means it stays. Not for script triggers, which return `done: true`.
     package var until: String?
+    /// The id of the agent that owns the automation: its runs use that agent's CLI, model and permissions and report to that agent's
+    /// chat. Missing in a file written before agents owned automations, which is agent 1's. Ignored for the node-level automations
+    /// (`AutomationDefaults.nodeLevelIDs`).
+    package var agentId: String?
+
+    /// The owning agent's id, or nil for a node-level automation (task review, task scan, morning brief, day recap, mail and calendar),
+    /// which no agent owns. A missing `agentId` is agent 1.
+    package var ownerAgentID: String? {
+        AutomationDefaults.nodeLevelIDs.contains(id) ? nil : AgentOwner.id(agentId)
+    }
+
+    /// Whether this automation is listed for and runs on behalf of this agent. Node-level automations are for every agent.
+    package func isVisible(to agent: String) -> Bool { ownerAgentID.map { $0 == agent } ?? true }
 
     package var isByUser: Bool { createdBy == "user" }
 
@@ -268,7 +281,7 @@ package struct Automation: Codable, Equatable, Identifiable {
     package var isBreakReminder: Bool { trigger.countsKeyboardTime && action.type == "bubble" }
 
     package init(id: String, name: String, enabled: Bool = true, trigger: Trigger, action: Action, presentation: Presentation = Presentation(),
-         createdBy: String = "user", note: String? = nil, until: String? = nil) {
+         createdBy: String = "user", note: String? = nil, until: String? = nil, agentId: String? = nil) {
         self.id = id
         self.name = name
         self.enabled = enabled
@@ -278,9 +291,10 @@ package struct Automation: Codable, Equatable, Identifiable {
         self.createdBy = createdBy
         self.note = note
         self.until = until
+        self.agentId = agentId
     }
 
-    private enum CodingKeys: String, CodingKey { case id, name, enabled, trigger, action, presentation, createdBy, note, until }
+    private enum CodingKeys: String, CodingKey { case id, name, enabled, trigger, action, presentation, createdBy, note, until, agentId }
 
     /// A script automation has no `action`: the script returns its own actions.
     package func encode(to encoder: Encoder) throws {
@@ -294,6 +308,7 @@ package struct Automation: Codable, Equatable, Identifiable {
         try c.encode(createdBy, forKey: .createdBy)
         try c.encodeIfPresent(note, forKey: .note)
         try c.encodeIfPresent(until, forKey: .until)
+        try c.encodeIfPresent(agentId, forKey: .agentId)
     }
 
     /// `enabled`, `presentation` and `createdBy` may be left out of the file.
@@ -308,6 +323,7 @@ package struct Automation: Codable, Equatable, Identifiable {
         createdBy = try c.decodeIfPresent(String.self, forKey: .createdBy) ?? "user"
         note = try c.decodeIfPresent(String.self, forKey: .note)
         until = try c.decodeIfPresent(String.self, forKey: .until)
+        agentId = try c.decodeIfPresent(String.self, forKey: .agentId)
     }
 
     /// The session settings of a prompt, which decide what it may do. Empty for the default, so an automation written before
@@ -357,7 +373,7 @@ package enum AutomationValidator {
     package static let buttons = ["done", "snooze"]
 
     private static let keys: [String: Set<String>] = [
-        "automation": ["id", "name", "enabled", "trigger", "action", "presentation", "createdBy", "note", "until"],
+        "automation": ["id", "name", "enabled", "trigger", "action", "presentation", "createdBy", "note", "until", "agentId"],
         "trigger": ["type", "minutes", "clock", "times", "weekdays", "at", "source", "mode", "items", "id", "version", "script", "cooldownMinutes", "catchUpMinutes", "command", "when", "debounceSeconds", "throttleSeconds"],
         "source": ["type", "command", "timeoutSeconds", "url", "headers"],
         "action": ["type", "title", "body", "prompt", "agent", "model", "command", "timeoutSeconds", "digest", "quiet", "session", "report", "allowedTools", "disallowedTools"],
