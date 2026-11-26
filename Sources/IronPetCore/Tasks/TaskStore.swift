@@ -135,7 +135,7 @@ package final class TaskStore {
             }
         },
         // The task scan's clarify proposal on a new suggestion: context, area, two-minute and someday.
-        .init(571, "tasks: clarify proposals on suggestions") { db in
+        .init(581, "tasks: clarify proposals on suggestions") { db in
             let existing = try TaskStore.columns(db, "task_suggestions")
             for (column, type) in [("clarify_context", "TEXT"), ("clarify_area", "TEXT"), ("clarify_two_minute", "INTEGER"),
                                    ("clarify_someday", "INTEGER")] where !existing.contains(column) {
