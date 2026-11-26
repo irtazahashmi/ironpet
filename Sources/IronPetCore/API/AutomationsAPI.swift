@@ -214,6 +214,18 @@ package final class AutomationsAPI {
             .map { AutomationRunInfo(date: $0.date, outcome: $0.outcome, output: $0.output) }
     }
 
+    /// The automation's public `auto_<hex>` id.
+    package func ref(_ id: String) -> String? { service.engine.state.records.ref(.auto, id) }
+
+    /// One run by its row id, as `automations_history` lists it, with the automation it belongs to. Nil once it has been pruned.
+    package func runRecord(_ key: String) -> [String: Any]? {
+        guard let rowID = Int64(key), let found = service.engine.state.run(rowID) else { return nil }
+        var out: [String: Any] = ["automation": found.automation, "time": AutomationClock.format(found.run.date),
+                                  "outcome": found.run.outcome, "output": found.run.output]
+        if let ref = service.engine.state.records.ref(.auto, found.automation) { out["automationRef"] = ref }
+        return out
+    }
+
     /// The command, script or prompt the user is asked to approve.
     package func approvalDetail(_ id: String) throws -> String { service.approvalDetail(try get(id)) }
 

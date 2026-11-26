@@ -33,7 +33,8 @@ package struct RemoteAutomations {
         var item = RemoteAutomation(id: a.id, name: a.name, enabled: a.enabled, trigger: status.trigger, triggerType: a.trigger.type,
                                     action: a.action.type, createdBy: a.createdBy, nextRun: status.nextRun,
                                     lastRun: status.lastRun.map { RemoteAutomationRun(date: $0.date, outcome: $0.outcome, output: $0.output) },
-                                    approval: status.approval?.rawValue, stream: status.stream, lastEvent: status.lastEvent)
+                                    approval: status.approval?.rawValue, stream: status.stream, lastEvent: status.lastEvent,
+                                    ref: automations.ref(a.id))
         if detail {
             if status.approval != nil { item.approvalDetail = try? automations.approvalDetail(a.id) }
             item.definition = try? automations.definition(a.id)
