@@ -131,6 +131,12 @@ package enum TaskEdits {
         try tasks.update(UpdateTaskRequest(id: id, waitingOn: name.trimmingCharacters(in: .whitespacesAndNewlines)))
     }
 
+    /// Hands the task to an agent, or back to the user when `agentId` is nil. An id no agent has is refused.
+    @MainActor @discardableResult
+    package static func setAssignee(_ agentId: String?, of id: String, in tasks: TasksAPI) throws -> TaskItem {
+        try tasks.update(UpdateTaskRequest(id: id, assignee: agentId ?? TaskAssignee.userValue))
+    }
+
     @MainActor @discardableResult
     package static func setNotes(_ notes: String, of id: String, in tasks: TasksAPI) throws -> TaskItem {
         try tasks.update(UpdateTaskRequest(id: id, notes: notes))

@@ -120,6 +120,7 @@ package final class IronPetAPI {
         node = NodeAPI(nodeID: stores.nodeID)
         session = SessionAPI(clients: registry, events: events, node: node.info()) { served() }
         stores.tasks.events = events
+        stores.tasks.registry = stores.agents
         stores.automations.store.events = events
         stores.automations.registry = stores.agents
         tasks = TasksAPI(store: stores.tasks, config: stores.config)

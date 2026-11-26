@@ -5,10 +5,11 @@ import Combine
 #endif
 
 package struct TaskListRequest: Codable, Equatable {
-    package init(statuses: [TaskStatus]? = nil, includeDone: Bool = false, labels: [String: String] = [:]) {
+    package init(statuses: [TaskStatus]? = nil, includeDone: Bool = false, labels: [String: String] = [:], assignee: String? = nil) {
         self.statuses = statuses
         self.includeDone = includeDone
         self.labels = labels
+        self.assignee = assignee
     }
 
     /// Only tasks in these statuses. Nil lists every open task.
@@ -17,6 +18,8 @@ package struct TaskListRequest: Codable, Equatable {
     package var includeDone = false
     /// Only tasks that have all of these labels with these values.
     package var labels: [String: String] = [:]
+    /// Only tasks assigned to this agent id. An empty string or `user` lists the tasks nobody but the user works on. Nil lists every task.
+    package var assignee: String?
 }
 
 package struct TaskWithHistory: Codable, Equatable {
@@ -40,6 +43,7 @@ package struct CreateTaskRequest: Codable, Equatable {
         waitingOn: String? = nil,
         sourceRef: String? = nil,
         labels: [String: String] = [:],
+        assignee: String? = nil,
         by: String = "user"
     ) {
         self.title = title
@@ -51,6 +55,7 @@ package struct CreateTaskRequest: Codable, Equatable {
         self.waitingOn = waitingOn
         self.sourceRef = sourceRef
         self.labels = labels
+        self.assignee = assignee
         self.by = by
     }
 
@@ -64,6 +69,8 @@ package struct CreateTaskRequest: Codable, Equatable {
     package var sourceRef: String?
     /// Key/value labels, such as `merge=auto`. Data for filtering, never instructions.
     package var labels: [String: String] = [:]
+    /// The agent the task is assigned to. Nil, an empty string and `user` leave it with the user.
+    package var assignee: String?
     /// Who is asking: `user`, `agent:mcp`, `agent:cli`. It goes to the task's history.
     package var by = "user"
 }
@@ -81,6 +88,7 @@ package struct UpdateTaskRequest: Codable, Equatable {
         waitingOn: String? = nil,
         labels: [String: String] = [:],
         removeLabels: [String] = [],
+        assignee: String? = nil,
         note: String? = nil,
         by: String = "user"
     ) {
@@ -94,6 +102,7 @@ package struct UpdateTaskRequest: Codable, Equatable {
         self.waitingOn = waitingOn
         self.labels = labels
         self.removeLabels = removeLabels
+        self.assignee = assignee
         self.note = note
         self.by = by
     }
@@ -112,6 +121,8 @@ package struct UpdateTaskRequest: Codable, Equatable {
     package var labels: [String: String] = [:]
     /// Label keys to remove.
     package var removeLabels: [String] = []
+    /// A new assignee: an agent id. An empty string or `user` hands the task back to the user. Nil keeps the assignee.
+    package var assignee: String?
     /// Goes to the history only, to say why something changed.
     package var note: String?
     package var by = "user"
@@ -247,11 +258,15 @@ package final class TasksAPI {
     /// Why tasks are only in memory, when the database could not be opened.
     package var unavailable: String? { store.unavailable }
 
+    /// The agents an assignee can name, to show their names. Empty on a host with no agent registry.
+    package var agents: [AgentRecord] { store.registry?.list() ?? [] }
+
     package func task(_ id: String) -> TaskItem? { store.task(id) }
     package func history(_ id: String) -> [TaskEvent] { store.history(id) }
 
     package func list(_ request: TaskListRequest = TaskListRequest()) -> [TaskItem] {
-        let matching = store.ordered.filter { item in request.labels.allSatisfy { item.labels[$0.key] == $0.value } }
+        var matching = store.ordered.filter { item in request.labels.allSatisfy { item.labels[$0.key] == $0.value } }
+        if let wanted = request.assignee { matching = matching.filter { $0.assignee == TaskAssignee.normalize(wanted) } }
         if let statuses = request.statuses { return matching.filter { statuses.contains($0.status) } }
         return request.includeDone ? matching : matching.filter { $0.status != .done }
     }
@@ -267,7 +282,7 @@ package final class TasksAPI {
     package func create(_ request: CreateTaskRequest) throws -> TaskItem {
         try run {
             try store.create(title: request.title, notes: request.notes, status: request.status, source: request.source, due: request.due,
-                             links: request.links, waitingOn: request.waitingOn, sourceRef: request.sourceRef, labels: request.labels, by: request.by)
+                             links: request.links, waitingOn: request.waitingOn, sourceRef: request.sourceRef, labels: request.labels, assignee: request.assignee, by: request.by)
         }
     }
 
@@ -277,7 +292,7 @@ package final class TasksAPI {
             try store.update(request.id, title: request.title, notes: request.notes, status: request.status,
                              due: request.clearDue ? .some(nil) : request.due.map { .some($0) },
                              links: request.links, waitingOn: request.waitingOn.map { .some($0) }, addLabels: request.labels,
-                             removeLabels: request.removeLabels, note: request.note, by: request.by)
+                             removeLabels: request.removeLabels, assignee: request.assignee.map { .some($0) }, note: request.note, by: request.by)
         }
     }
 
@@ -323,7 +338,7 @@ package final class TasksAPI {
         do {
             return try body()
         } catch let error as TaskError {
-            let missing = error.message.hasPrefix("no task") || error.message.hasPrefix("no suggestion")
+            let missing = error.message.hasPrefix("no task") || error.message.hasPrefix("no suggestion") || error.message.hasPrefix("no agent")
             throw missing ? APIError.notFound(error.message) : APIError.invalid(error.message)
         } catch {
             throw APIError.wrap(error)

@@ -139,6 +139,23 @@ struct TaskDetailPage: View {
         }
     }
 
+    private func assigneePicker(_ task: TaskItem) -> some View {
+        Picker("Assignee", selection: Binding(get: { task.assignee ?? "" }, set: { changeAssignee(to: $0.isEmpty ? nil : $0, task) })) {
+            ForEach(TaskAssignee.choices(current: task.assignee, agents: tasks.agents), id: \.id) { choice in
+                Text(choice.name).tag(choice.id ?? "")
+            }
+        }
+        .labelsHidden()
+        .pickerStyle(.menu)
+        .fixedSize()
+        .accessibilityLabel("Assignee")
+    }
+
+    private func changeAssignee(to assignee: String?, _ task: TaskItem) {
+        guard assignee != task.assignee else { return }
+        attempt { _ = try TaskEdits.setAssignee(assignee, of: id, in: tasks) }
+    }
+
     private func statusPicker(_ task: TaskItem) -> some View {
         Picker("Status", selection: Binding(get: { task.status }, set: { changeStatus(to: $0, task) })) {
             ForEach(TaskStatus.allCases, id: \.self) { Text($0.title).tag($0) }
@@ -220,6 +237,8 @@ struct TaskDetailPage: View {
                     }
                 }
             }
+            Divider()
+            SummaryRow(label: "Assignee", symbol: "person") { assigneePicker(task) }
             Divider()
             SummaryRow(label: "Waiting on", symbol: "person.badge.clock") {
                 if task.waitingOn != nil || editingWaiting {

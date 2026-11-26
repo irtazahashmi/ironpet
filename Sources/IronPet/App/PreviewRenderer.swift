@@ -167,10 +167,10 @@ enum PreviewRenderer {
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks")
         render(list(sessions, tasks: tasks, on: .tasks), to: dir, "tasks-light", scheme: .light)
         for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
-            render(TaskBoardView(columns: TaskBoard.columns(tasks.all, filter: nil, query: ""), onOpen: { _ in }, onDrop: { _, _ in })
+            render(TaskBoardView(columns: TaskBoard.columns(tasks.all, filter: nil, query: ""), agents: tasks.agents, onOpen: { _ in }, onDrop: { _, _ in })
                 .frame(width: 1240, height: 520).panel(), to: dir, "tasks-board" + suffix, scheme: scheme)
         }
-        if let sample = tasks.all.first {
+        if let sample = tasks.all.first(where: { $0.assignee != nil }) ?? tasks.all.first {
             render(TaskDetailPage(tasks: tasks, id: sample.id, onBack: {}, onOpen: { _ in }).frame(width: 760, height: 1000).panel(), to: dir, "task-detail")
             render(TaskDetailPage(tasks: tasks, id: sample.id, onBack: {}, onOpen: { _ in }).frame(width: 760, height: 1000).panel(), to: dir, "task-detail-light", scheme: .light)
         }
@@ -815,7 +815,12 @@ enum PreviewRenderer {
 
     private static func sampleTasks() -> TasksAPI {
         var clock = Date()
-        let store = TaskStore(database: Database.open(path: nil, migrations: TaskStore.migrations).database, now: { clock })
+        let database = Database.open(path: nil, migrations: AppMigrations.all).database
+        let store = TaskStore(database: database, now: { clock })
+        // A second agent, so the tasks can show who they are assigned to.
+        let registry = AgentRegistry(database: database)
+        store.registry = registry
+        let scout = try? registry.create(name: "Scout", agentCli: "claude")
         let day: TimeInterval = 86_400
         func add(_ title: String, _ status: TaskStatus, _ source: TaskSource, ago: TimeInterval, due: Date? = nil,
                  notes: String = "", links: [TaskLink] = [], waitingOn: String? = nil) {
@@ -841,6 +846,12 @@ enum PreviewRenderer {
         add("Rotate the Sentry token", .done, .user, ago: 2 * 3600)
         add("Answer Maya about the onboarding copy", .done, .meeting, ago: day + 3600)
         add("Remove the old feature flags", .done, .agent, ago: 3 * day)
+        // Two tasks are assigned to an agent: Scout, and agent 1 (Ghost). The others are the user's.
+        if let scout, let flaky = store.tasks.first(where: { $0.title == "Fix the flaky login test" }),
+           let docs = store.tasks.first(where: { $0.title == "Upgrade the docs site to Node 20" }) {
+            _ = try? store.update(flaky.id, assignee: .some(scout.id), by: "agent:mcp")
+            _ = try? store.update(docs.id, assignee: .some(AgentOwner.defaultID), by: "agent:mcp")
+        }
         clock = Date().addingTimeInterval(-900)
         store.suggest([("Send the design review notes to the team", "Friday", nil), ("Share the load test results", nil, "Priya")],
                       meeting: URL(fileURLWithPath: "/Users/you/.ironpet/meetings/2026-11-16-1500"))

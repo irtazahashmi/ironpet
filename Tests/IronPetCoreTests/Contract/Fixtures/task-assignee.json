@@ -1,0 +1,368 @@
+{
+  "cases" : [
+    {
+      "capture" : {
+        "taskId" : "result.id"
+      },
+      "name" : "create assigned to an agent",
+      "request" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.create",
+        "params" : {
+          "assignee" : "agent_two",
+          "by" : "user",
+          "labels" : {
+
+          },
+          "links" : [
+
+          ],
+          "notes" : "",
+          "source" : "cli",
+          "status" : "backlog",
+          "title" : "Review the protocol doc"
+        }
+      },
+      "response" : {
+        "id" : 1,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "assignee" : "agent_two",
+          "created" : "<date>",
+          "id" : "$taskId",
+          "labels" : {
+
+          },
+          "links" : [
+
+          ],
+          "notes" : "",
+          "ref" : "task_*",
+          "source" : "cli",
+          "status" : "backlog",
+          "title" : "Review the protocol doc",
+          "updated" : "<date>"
+        }
+      }
+    },
+    {
+      "name" : "create for the user",
+      "request" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.create",
+        "params" : {
+          "by" : "user",
+          "labels" : {
+
+          },
+          "links" : [
+
+          ],
+          "notes" : "",
+          "source" : "cli",
+          "status" : "backlog",
+          "title" : "Book the room"
+        }
+      },
+      "response" : {
+        "id" : 2,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "created" : "<date>",
+          "id" : "book-the-room",
+          "labels" : {
+
+          },
+          "links" : [
+
+          ],
+          "notes" : "",
+          "ref" : "task_*",
+          "source" : "cli",
+          "status" : "backlog",
+          "title" : "Book the room",
+          "updated" : "<date>"
+        }
+      }
+    },
+    {
+      "name" : "list for one agent",
+      "request" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.list",
+        "params" : {
+          "assignee" : "agent_two",
+          "includeDone" : false,
+          "labels" : {
+
+          }
+        }
+      },
+      "response" : {
+        "id" : 3,
+        "jsonrpc" : "2.0",
+        "result" : [
+          {
+            "assignee" : "agent_two",
+            "created" : "<date>",
+            "id" : "$taskId",
+            "labels" : {
+
+            },
+            "links" : [
+
+            ],
+            "notes" : "",
+            "ref" : "task_*",
+            "source" : "cli",
+            "status" : "backlog",
+            "title" : "Review the protocol doc",
+            "updated" : "<date>"
+          }
+        ]
+      }
+    },
+    {
+      "name" : "list for the user",
+      "request" : {
+        "id" : 4,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.list",
+        "params" : {
+          "assignee" : "user",
+          "includeDone" : false,
+          "labels" : {
+
+          }
+        }
+      },
+      "response" : {
+        "id" : 4,
+        "jsonrpc" : "2.0",
+        "result" : [
+          {
+            "created" : "<date>",
+            "id" : "book-the-room",
+            "labels" : {
+
+            },
+            "links" : [
+
+            ],
+            "notes" : "",
+            "ref" : "task_*",
+            "source" : "cli",
+            "status" : "backlog",
+            "title" : "Book the room",
+            "updated" : "<date>"
+          }
+        ]
+      }
+    },
+    {
+      "name" : "hand the task back to the user",
+      "request" : {
+        "id" : 5,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.update",
+        "params" : {
+          "assignee" : "user",
+          "by" : "user",
+          "clearDue" : false,
+          "id" : "$taskId",
+          "labels" : {
+
+          },
+          "removeLabels" : [
+
+          ]
+        }
+      },
+      "response" : {
+        "id" : 5,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "created" : "<date>",
+          "id" : "$taskId",
+          "labels" : {
+
+          },
+          "links" : [
+
+          ],
+          "notes" : "",
+          "ref" : "task_*",
+          "source" : "cli",
+          "status" : "backlog",
+          "title" : "Review the protocol doc",
+          "updated" : "<date>"
+        }
+      }
+    },
+    {
+      "name" : "assign to agent one",
+      "request" : {
+        "id" : 6,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.update",
+        "params" : {
+          "assignee" : "agent_default",
+          "by" : "user",
+          "clearDue" : false,
+          "id" : "$taskId",
+          "labels" : {
+
+          },
+          "removeLabels" : [
+
+          ]
+        }
+      },
+      "response" : {
+        "id" : 6,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "assignee" : "agent_default",
+          "created" : "<date>",
+          "id" : "$taskId",
+          "labels" : {
+
+          },
+          "links" : [
+
+          ],
+          "notes" : "",
+          "ref" : "task_*",
+          "source" : "cli",
+          "status" : "backlog",
+          "title" : "Review the protocol doc",
+          "updated" : "<date>"
+        }
+      }
+    },
+    {
+      "name" : "an unknown agent on update",
+      "request" : {
+        "id" : 7,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.update",
+        "params" : {
+          "assignee" : "agent_nobody",
+          "by" : "user",
+          "clearDue" : false,
+          "id" : "$taskId",
+          "labels" : {
+
+          },
+          "removeLabels" : [
+
+          ]
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32001,
+          "data" : {
+            "code" : "not_found"
+          },
+          "message" : "no agent with id \"agent_nobody\""
+        },
+        "id" : 7,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "an unknown agent on create",
+      "request" : {
+        "id" : 8,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.create",
+        "params" : {
+          "assignee" : "agent_nobody",
+          "by" : "user",
+          "labels" : {
+
+          },
+          "links" : [
+
+          ],
+          "notes" : "",
+          "source" : "cli",
+          "status" : "backlog",
+          "title" : "Never made"
+        }
+      },
+      "response" : {
+        "error" : {
+          "code" : -32001,
+          "data" : {
+            "code" : "not_found"
+          },
+          "message" : "no agent with id \"agent_nobody\""
+        },
+        "id" : 8,
+        "jsonrpc" : "2.0"
+      }
+    },
+    {
+      "name" : "get shows the history",
+      "request" : {
+        "id" : 9,
+        "jsonrpc" : "2.0",
+        "method" : "tasks.get",
+        "params" : {
+          "id" : "$taskId"
+        }
+      },
+      "response" : {
+        "id" : 9,
+        "jsonrpc" : "2.0",
+        "result" : {
+          "history" : [
+            {
+              "at" : "<date>",
+              "by" : "user",
+              "detail" : "backlog: Review the protocol doc [assignee: agent_two]",
+              "kind" : "created"
+            },
+            {
+              "at" : "<date>",
+              "by" : "user",
+              "detail" : "assignee: agent_two → user",
+              "kind" : "edited"
+            },
+            {
+              "at" : "<date>",
+              "by" : "user",
+              "detail" : "assignee: user → agent_default",
+              "kind" : "edited"
+            }
+          ],
+          "task" : {
+            "assignee" : "agent_default",
+            "created" : "<date>",
+            "id" : "$taskId",
+            "labels" : {
+
+            },
+            "links" : [
+
+            ],
+            "notes" : "",
+            "ref" : "task_*",
+            "source" : "cli",
+            "status" : "backlog",
+            "title" : "Review the protocol doc",
+            "updated" : "<date>"
+          }
+        }
+      }
+    }
+  ],
+  "seed" : [
+    "agentTwo"
+  ]
+}

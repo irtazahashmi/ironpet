@@ -441,6 +441,22 @@ agent record maps a tool rule such as `Bash` or `Bash(git status:*)` to `allow` 
 automation's own `allowedTools`. Agent 1's model is the chat's model and automations have never used it, so an automation of agent 1 keeps the CLI's
 default model unless it names one.
 
+### Task assignees
+
+A task is assigned to the user or to one agent. `TaskItem.assignee` is an agent id, and a task with no assignee, which is every task from before the
+field existed, is the user's. The field is left out of the JSON when it is empty, so the user's tasks look as they did. Agent 1 is `agent_default`,
+so "no assignee" and "agent 1" are different: an empty `assignee` never means agent 1.
+
+`CreateTaskRequest.assignee` and `UpdateTaskRequest.assignee` are optional strings. On create, a missing, empty or `user` value leaves the task with
+the user. On update, a missing value keeps the assignee, and an empty string or `user` hands the task back to the user. An id no agent has fails
+with `notFound` and the task is not created or changed. Agents that are disabled count as known, and a deleted agent does not.
+`TaskListRequest.assignee` keeps only the tasks assigned to that agent id, `user` or an empty string keeps the user's, and a missing value keeps
+all. The MCP tools take the same field: `tasks_create` and `tasks_list` as `assignee`, and `tasks_update` inside `changes`.
+
+Each change is an `edited` task event whose detail reads `assignee: <old> → <new>` (with `user` for the user), recorded with the node and
+the agent that made it. A task created with an assignee names it in the `created` event. `RemoteTask.assignee` carries the id to the phone, which
+shows the agent's name from `GET /v1/agent-records`, or the id when the list has no such agent.
+
 ### `node`
 
 Which install the host is, and the agent its changes are attributed to.

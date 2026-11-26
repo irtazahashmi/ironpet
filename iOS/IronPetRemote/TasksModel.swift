@@ -8,6 +8,8 @@ final class TasksModel: SocketModel {
     /// What the list shows: the Mac's tasks with the changes still waiting to sync applied on top.
     private(set) var tasks: [RemoteTask] = []
     private(set) var suggestions: [RemoteSuggestion] = []
+    /// The Mac's agents, to show a task's assignee by name. Empty on a Mac that has no agent list.
+    private(set) var agents: [RemoteAgentRecord] = []
     /// The Mac's saved quick filters, in chip order. Empty when the Mac predates them, which hides the chips.
     private(set) var filters: [QuickFilter] = []
     /// False once the Mac answered 404 to the filter route.
@@ -108,7 +110,16 @@ final class TasksModel: SocketModel {
         await reloadTasks()
         await reloadSuggestions()
         await reloadFilters()
+        await reloadAgents()
     }
+
+    /// A Mac from before agent records answers 404. The phone then shows an assignee's id, and "You" for the rest.
+    func reloadAgents() async {
+        if let list = try? await client.agentRecords() { agents = list }
+    }
+
+    /// "You" or the assigned agent's name.
+    func assigneeName(_ task: RemoteTask) -> String { task.assigneeName(in: agents) }
 
     override func handle(_ signal: EventSignal) async {
         if case .resumed = signal { await flush() }

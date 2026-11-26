@@ -121,6 +121,33 @@ final class TasksModelTests: XCTestCase {
         XCTAssertEqual(model.done.map(\.id), ["t-done"])
     }
 
+    // MARK: Assignee
+
+    func testTheListAndDetailNameTheAssignee() async {
+        server.agentRecords = [RemoteAgentRecord(id: defaultAgentID, number: 1, name: "Ghost"), RemoteAgentRecord(id: "agent_two", number: 2, name: "Scout")]
+        server.tasks = server.tasks.map { task in
+            var task = task
+            if task.id == "t-progress" { task.assignee = "agent_two" }
+            if task.id == "t-backlog" { task.assignee = "agent_gone" }
+            return task
+        }
+        let model = makeModel()
+        await model.reload()
+        let byID = Dictionary(uniqueKeysWithValues: model.tasks.map { ($0.id, $0) })
+        XCTAssertEqual(model.assigneeName(byID["t-needs"]!), "You", "a task with no assignee is the user's")
+        XCTAssertEqual(model.assigneeName(byID["t-progress"]!), "Scout")
+        XCTAssertEqual(model.assigneeName(byID["t-backlog"]!), "agent_gone", "a deleted agent shows its id")
+        XCTAssertTrue(TaskRow(task: byID["t-progress"]!, assignee: model.assigneeName(byID["t-progress"]!)).detailText.hasPrefix("Scout"))
+    }
+
+    func testAMacWithoutAgentRecordsStillShowsYou() async {
+        server.agentRecords = nil
+        let model = makeModel()
+        await model.reload()
+        XCTAssertTrue(model.agents.isEmpty)
+        XCTAssertEqual(model.assigneeName(model.tasks[0]), "You")
+    }
+
     // MARK: Board
 
     private func boardModel() async -> TasksModel {

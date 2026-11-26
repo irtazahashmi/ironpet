@@ -128,6 +128,12 @@ package final class TaskStore {
                 }
             }
         },
+        // The agent a task is assigned to. Null is the user, so every task from before this column belongs to the user.
+        .init(572, "tasks: an assignee") { db in
+            if try !TaskStore.columns(db, "task_items").contains("assignee") {
+                try db.execute("ALTER TABLE task_items ADD COLUMN assignee TEXT")
+            }
+        },
     ]
 
     /// A source reference as stored: a JSON object, keys sorted.
@@ -156,6 +162,9 @@ package final class TaskStore {
         events?.publish(id == nil ? .suggestionsChanged : .tasksChanged, id: id)
         onChange?(id)
     }
+
+    /// The agents an assignee is checked against. Without one (a host with no `agents` table) only agent 1 is known.
+    package var registry: AgentRegistry?
 
     private let database: Database
     private let now: () -> Date
@@ -209,20 +218,22 @@ package final class TaskStore {
     @discardableResult
     package func create(title: String, notes: String = "", status: TaskStatus = .backlog, source: TaskSource, due: Date? = nil,
                 links: [TaskLink] = [], waitingOn: String? = nil, sourceRef: String? = nil, labels: [String: String] = [:],
-                by: String) throws -> TaskItem {
+                assignee: String? = nil, by: String) throws -> TaskItem {
         guard labels.count <= TaskValidator.maxLabels else { throw TaskError(message: "at most \(TaskValidator.maxLabels) labels") }
         let title = try TaskValidator.title(title)
         let notes = try TaskValidator.notes(notes)
         let waitingOn = try TaskValidator.waitingOn(waitingOn)
+        let assignee = try knownAssignee(assignee)
         let id = AutomationValidator.slug(title, taken: Set(tasks.map(\.id)).union(deletedIDs()))
         let time = now()
         let item = TaskItem(id: id, title: title, notes: notes, status: status, source: source, due: due, links: links,
-                            created: time, updated: time, closed: status == .done ? time : nil, waitingOn: waitingOn, sourceRef: sourceRef, labels: labels)
+                            created: time, updated: time, closed: status == .done ? time : nil, waitingOn: waitingOn, sourceRef: sourceRef, labels: labels, assignee: assignee)
         try database.write { db in
             try Self.save(item, db)
             try Self.log(db, id, time, by, .created, "\(status.rawValue): \(title)" + (waitingOn.map { " (waiting on \($0))" } ?? "")
                          + (sourceRef.map { " [source: \(source.rawValue) \($0)]" } ?? "")
-                         + (labels.isEmpty ? "" : " [labels: \(Self.describe(labels))]"))
+                         + (labels.isEmpty ? "" : " [labels: \(Self.describe(labels))]")
+                         + (assignee.map { " [assignee: \($0)]" } ?? ""))
         }
         reload()
         didChange(id)
@@ -233,7 +244,7 @@ package final class TaskStore {
     @discardableResult
     package func update(_ id: String, title: String? = nil, notes: String? = nil, status: TaskStatus? = nil, due: Date?? = nil,
                 links: [TaskLink]? = nil, waitingOn: String?? = nil, addLabels: [String: String] = [:], removeLabels: [String] = [],
-                note: String? = nil, by: String) throws -> TaskItem {
+                assignee: String?? = nil, note: String? = nil, by: String) throws -> TaskItem {
         guard var item = task(id) else { throw TaskError(message: "no task with id \"\(id)\"") }
         let time = now()
         var events: [(TaskEvent.Kind, String)] = []
@@ -253,6 +264,13 @@ package final class TaskStore {
         if let waitingOn {
             let waitingOn = try TaskValidator.waitingOn(waitingOn)
             if waitingOn != item.waitingOn { item.waitingOn = waitingOn; events.append((.edited, "waiting on: \(waitingOn ?? "none")")) }
+        }
+        if let assignee {
+            let assignee = try knownAssignee(assignee)
+            if assignee != item.assignee {
+                events.append((.edited, "assignee: \(item.assignee ?? TaskAssignee.userValue) → \(assignee ?? TaskAssignee.userValue)"))
+                item.assignee = assignee
+            }
         }
         if !addLabels.isEmpty || !removeLabels.isEmpty {
             var labels = item.labels
@@ -286,6 +304,15 @@ package final class TaskStore {
         reload()
         didChange(id)
         return task(id) ?? changed
+    }
+
+    /// The assignee a call names, as it is stored: nil for the user. An agent id that no agent has is refused, whether the agent is
+    /// enabled or not.
+    private func knownAssignee(_ raw: String?) throws -> String? {
+        guard let id = TaskAssignee.normalize(raw) else { return nil }
+        let known = registry.map { $0.get(id) != nil } ?? (id == AgentOwner.defaultID)
+        guard known else { throw TaskError(message: "no agent with id \"\(id)\"") }
+        return id
     }
 
     @discardableResult
@@ -643,7 +670,7 @@ package final class TaskStore {
                     guard let task = row[0] as? String, let key = row[1] as? String, let value = row[2] as? String else { continue }
                     labels[task, default: [:]][key] = value
                 }
-                let items = try db.rows("SELECT id, title, notes, status, source, due, created, updated, closed, waiting_on, source_ref FROM task_items").compactMap { row -> TaskItem? in
+                let items = try db.rows("SELECT id, title, notes, status, source, due, created, updated, closed, waiting_on, source_ref, assignee FROM task_items").compactMap { row -> TaskItem? in
                     guard let id = row[0] as? String, let title = row[1] as? String,
                           let status = (row[3] as? String).flatMap(TaskStatus.init(rawValue:)),
                           let created = row[6] as? Double, let updated = row[7] as? Double else { return nil }
@@ -652,7 +679,7 @@ package final class TaskStore {
                                     due: (row[5] as? Double).map(Date.init(timeIntervalSince1970:)), links: links[id] ?? [],
                                     created: Date(timeIntervalSince1970: created), updated: Date(timeIntervalSince1970: updated),
                                     closed: (row[8] as? Double).map(Date.init(timeIntervalSince1970:)), waitingOn: row[9] as? String,
-                                    sourceRef: row[10] as? String, labels: labels[id] ?? [:])
+                                    sourceRef: row[10] as? String, labels: labels[id] ?? [:], assignee: row[11] as? String)
                 }
                 let suggested = try db.rows("""
                     SELECT id, title, due, notes, url, meeting, automation, automation_name, created, waiting_on, source_ref,
@@ -699,11 +726,11 @@ package final class TaskStore {
     private static func save(_ item: TaskItem, _ db: Database.Connection) throws {
         try db.execute("""
             INSERT OR REPLACE INTO task_items(id, title, notes, status, source, due, created, updated, closed, waiting_on, source_ref,
-                                              node_id, agent_id)
-            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                              assignee, node_id, agent_id)
+            VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """, [item.id, item.title, item.notes, item.status.rawValue, item.source.rawValue, item.due?.timeIntervalSince1970,
                   item.created.timeIntervalSince1970, item.updated.timeIntervalSince1970, item.closed?.timeIntervalSince1970,
-                  item.waitingOn, item.sourceRef] + Provenance.current(db).columns)
+                  item.waitingOn, item.sourceRef, item.assignee] + Provenance.current(db).columns)
         try db.execute("DELETE FROM task_links WHERE task = ?", [item.id])
         for (position, link) in item.links.enumerated() {
             try db.execute("INSERT INTO task_links(task, position, kind, ref, label) VALUES(?, ?, ?, ?, ?)",

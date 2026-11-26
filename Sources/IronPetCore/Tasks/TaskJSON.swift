@@ -44,6 +44,8 @@ package enum TaskJSON {
         if let due = item.due { object["due"] = iso.string(from: due) }
         if let closed = item.closed { object["closed"] = iso.string(from: closed) }
         if let waitingOn = item.waitingOn { object["waiting_on"] = waitingOn }
+        // A task with no `assignee` belongs to the user.
+        if let assignee = item.assignee { object["assignee"] = assignee }
         if let ref = item.sourceRef { object["source_ref"] = refValue(ref) }
         if !item.labels.isEmpty { object["labels"] = item.labels }
         if !item.links.isEmpty {
@@ -103,6 +105,7 @@ package enum TaskJSON {
                     request.includeDone = args["include_done"] as? Bool == true
                 }
                 request.labels = try TaskValidator.labels(args["labels"])
+                if args.keys.contains("assignee"), !(args["assignee"] is NSNull) { request.assignee = try TaskValidator.assignee(args["assignee"]) ?? "" }
                 // A saved filter or an inline query narrows the list further. It sees done tasks too unless status or include_done says otherwise,
                 // so a query such as {"status": "done"} works; the query itself says what to leave out.
                 var condition: QuickFilterNode?
@@ -146,7 +149,7 @@ package enum TaskJSON {
                     title: try TaskValidator.title(args["title"]), notes: try TaskValidator.notes(args["notes"]), status: status,
                     source: origin.kind, due: try TaskValidator.due(args["due"]), links: try TaskValidator.links(args["links"]),
                     waitingOn: try TaskValidator.waitingOn(args["waiting_on"]), sourceRef: origin.ref,
-                    labels: try TaskValidator.labels(args["labels"]), by: by))
+                    labels: try TaskValidator.labels(args["labels"]), assignee: try TaskValidator.assignee(args["assignee"]), by: by))
                 return .success(json(item))
             case "update":
                 let current = try api.get(try id(args)).task
@@ -166,6 +169,7 @@ package enum TaskJSON {
                 request.labels = try TaskValidator.labels(changes["labels"])
                 request.removeLabels = try TaskValidator.labelKeys(changes["remove_labels"])
                 if changes.keys.contains("waiting_on") { request.waitingOn = try TaskValidator.waitingOn(changes["waiting_on"]) ?? "" }
+                if changes.keys.contains("assignee") { request.assignee = try TaskValidator.assignee(changes["assignee"]) ?? "" }
                 request.note = try (args["note"] ?? changes["note"]).map { try TaskValidator.notes($0) }
                 return .success(json(try api.update(request)))
             case "close":

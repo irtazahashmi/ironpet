@@ -169,28 +169,31 @@ struct TasksView: View {
     }
 
     private func row(_ task: RemoteTask) -> some View {
-        NavigationLink(value: task) { TaskRow(task: task, pendingSync: model.isPendingSync(task.id)) }.accessibilityIdentifier("task-\(task.id)")
+        NavigationLink(value: task) { TaskRow(task: task, assignee: model.assigneeName(task), pendingSync: model.isPendingSync(task.id)) }.accessibilityIdentifier("task-\(task.id)")
     }
 }
 
 struct TaskRow: View {
     let task: RemoteTask
+    /// "You" or the agent's name.
+    var assignee = "You"
     /// The task changed on this phone and the Mac has not confirmed it.
     var pendingSync = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             Text(task.title).strikethrough(task.status == .done)
-            if let line = detail { Text(line).font(.caption).foregroundStyle(.secondary) }
+            Text(detailText).font(.caption).foregroundStyle(.secondary)
             if pendingSync { PendingSyncMark() }
         }
     }
 
-    private var detail: String? {
-        var parts: [String] = []
+    /// The second line of the row: who the task is assigned to, who it waits on and when it is due.
+    var detailText: String {
+        var parts: [String] = [assignee]
         if let waiting = task.waitingOn { parts.append("Waiting on \(waiting)") }
         if let due = task.due { parts.append("Due \(due.formatted(date: .abbreviated, time: .omitted))") }
-        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+        return parts.joined(separator: " · ")
     }
 }
 

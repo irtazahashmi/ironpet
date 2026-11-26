@@ -22,6 +22,7 @@ struct TaskDetailView: View {
                 Section {
                     Text(current.title).font(.headline)
                     LabeledContent("Status", value: current.waitingOn.map { "Waiting on \($0)" } ?? current.status.title)
+                    LabeledContent("Assignee", value: model.assigneeName(current))
                     if let due = current.due { LabeledContent("Due", value: due.formatted(date: .abbreviated, time: .omitted)) }
                     LabeledContent("From", value: current.source)
                 }

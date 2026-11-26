@@ -169,7 +169,7 @@ struct TaskListView: View {
                     ListScroll { suggestions }.frame(maxHeight: 190)
                     Divider()
                 }
-                TaskBoardView(columns: columns, highlighted: highlighted, onOpen: { nav.open($0) },
+                TaskBoardView(columns: columns, agents: tasks.agents, highlighted: highlighted, onOpen: { nav.open($0) },
                               onDrop: drop(_:on:))
                     .onAppear { reveal(focus.wrappedValue, nil) }
                     .onChange(of: focus.wrappedValue) { reveal(focus.wrappedValue, nil) }
@@ -280,7 +280,7 @@ struct TaskListView: View {
     }
 
     private func row(_ task: TaskItem) -> some View {
-        TaskRow(task: task,
+        TaskRow(task: task, agents: tasks.agents,
                 onDone: { _ = try? tasks.close(CloseTaskRequest(id: task.id)) },
                 onDelete: { try? tasks.delete(DeleteTaskRequest(id: task.id)) },
                 onOpen: open(_:),
@@ -348,6 +348,7 @@ struct TaskListView: View {
 
 private struct TaskRow: View {
     let task: TaskItem
+    let agents: [AgentRecord]
     let onDone: () -> Void
     let onDelete: () -> Void
     let onOpen: (TaskLink) -> Void
@@ -382,6 +383,10 @@ private struct TaskRow: View {
                 .font(.system(size: 10))
                 .accessibilityLabel("From \(task.source.rawValue)")
             Text(TaskTime.relative(task.closed ?? task.updated, now: now))
+            Text("·").accessibilityHidden(true)
+            Label(TaskAssignee.name(task.assignee, agents: agents), systemImage: task.assignee == nil ? "person" : "sparkles")
+                .labelStyle(DueLabelStyle())
+                .accessibilityLabel("Assigned to \(TaskAssignee.name(task.assignee, agents: agents))")
             if let waiting = task.waitingLabel {
                 Text("·").accessibilityHidden(true)
                 Label(waiting, systemImage: "person.badge.clock").labelStyle(DueLabelStyle())

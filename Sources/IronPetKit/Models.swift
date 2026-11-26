@@ -34,6 +34,8 @@ public struct RemoteTask: Codable, Equatable, Hashable, Identifiable, Sendable {
     public var due: Date?
     public var closed: Date?
     public var waitingOn: String?
+    /// The agent id the task is assigned to. Nil is the user, also for a Mac that does not send the field.
+    public var assignee: String?
     public var links: [TaskLink]
     public var labels: [String: String]
     public var created: Date
@@ -45,12 +47,14 @@ public struct RemoteTask: Codable, Equatable, Hashable, Identifiable, Sendable {
         case id, title, notes, status, source, due, closed, links, labels, created, updated
         case waitingOn = "waiting_on"
         case sourceRef = "source_ref"
+        case assignee
     }
 
     public init(id: String, title: String, notes: String = "", status: TaskStatus = .backlog, source: String = "user", due: Date? = nil,
                 closed: Date? = nil, waitingOn: String? = nil, links: [TaskLink] = [], labels: [String: String] = [:],
                 created: Date = Date(timeIntervalSince1970: 1_700_000_000), updated: Date = Date(timeIntervalSince1970: 1_700_000_000),
-                sourceRef: RemoteJSON? = nil) {
+                sourceRef: RemoteJSON? = nil, assignee: String? = nil) {
+        self.assignee = assignee
         self.id = id; self.title = title; self.notes = notes; self.status = status; self.source = source; self.due = due
         self.closed = closed; self.waitingOn = waitingOn; self.links = links; self.labels = labels; self.created = created; self.updated = updated
         self.sourceRef = sourceRef
@@ -66,6 +70,7 @@ public struct RemoteTask: Codable, Equatable, Hashable, Identifiable, Sendable {
         due = try c.decodeIfPresent(Date.self, forKey: .due)
         closed = try c.decodeIfPresent(Date.self, forKey: .closed)
         waitingOn = try c.decodeIfPresent(String.self, forKey: .waitingOn)
+        assignee = try c.decodeIfPresent(String.self, forKey: .assignee)
         links = try c.decodeIfPresent([TaskLink].self, forKey: .links) ?? []
         labels = try c.decodeIfPresent([String: String].self, forKey: .labels) ?? [:]
         created = try c.decode(Date.self, forKey: .created)
@@ -83,6 +88,7 @@ public struct RemoteTask: Codable, Equatable, Hashable, Identifiable, Sendable {
         try c.encodeIfPresent(due, forKey: .due)
         try c.encodeIfPresent(closed, forKey: .closed)
         try c.encodeIfPresent(waitingOn, forKey: .waitingOn)
+        try c.encodeIfPresent(assignee, forKey: .assignee)
         if !links.isEmpty { try c.encode(links, forKey: .links) }
         if !labels.isEmpty { try c.encode(labels, forKey: .labels) }
         try c.encode(created, forKey: .created)
@@ -92,6 +98,13 @@ public struct RemoteTask: Codable, Equatable, Hashable, Identifiable, Sendable {
 
     /// Only the user can take the next step. A task waiting on someone else never counts, whatever its status.
     public var needsUser: Bool { status == .needsYou && waitingOn == nil }
+
+    /// What the phone shows for who the task is assigned to: "You" with no assignee, otherwise the agent's name. An id the list does not
+    /// have (the agent was deleted, or the Mac sent no list) shows as the id.
+    public func assigneeName(in agents: [RemoteAgentRecord]) -> String {
+        guard let assignee, !assignee.isEmpty else { return "You" }
+        return agents.first { $0.id == assignee }?.name ?? assignee
+    }
 }
 
 public struct RemoteTaskEvent: Codable, Equatable, Hashable, Sendable {

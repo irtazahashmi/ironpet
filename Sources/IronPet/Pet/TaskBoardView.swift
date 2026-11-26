@@ -4,6 +4,8 @@ import SwiftUI
 /// The tasks as five columns. A card opens the task, and dropping it on another column changes its status.
 struct TaskBoardView: View {
     let columns: [TaskColumn: [TaskItem]]
+    /// The agents, to show an assignee's name.
+    var agents: [AgentRecord] = []
     var highlighted: String?
     let onOpen: (String) -> Void
     let onDrop: (String, TaskColumn) -> Void
@@ -14,7 +16,7 @@ struct TaskBoardView: View {
         ScrollView(.horizontal) {
             HStack(alignment: .top, spacing: 10) {
                 ForEach(TaskColumn.allCases) { column in
-                    BoardColumn(column: column, tasks: columns[column] ?? [], highlighted: highlighted, onOpen: onOpen, onDrop: onDrop)
+                    BoardColumn(column: column, tasks: columns[column] ?? [], agents: agents, highlighted: highlighted, onOpen: onOpen, onDrop: onDrop)
                 }
             }
             .padding(.horizontal, ListScreenMetrics.gutter)
@@ -27,6 +29,7 @@ struct TaskBoardView: View {
 private struct BoardColumn: View {
     let column: TaskColumn
     let tasks: [TaskItem]
+    let agents: [AgentRecord]
     let highlighted: String?
     let onOpen: (String) -> Void
     let onDrop: (String, TaskColumn) -> Void
@@ -47,7 +50,7 @@ private struct BoardColumn: View {
             ScrollView {
                 LazyVStack(spacing: 6) {
                     ForEach(tasks) { task in
-                        BoardCard(task: task, highlighted: highlighted == task.id, onOpen: onOpen, onDrop: onDrop)
+                        BoardCard(task: task, agents: agents, highlighted: highlighted == task.id, onOpen: onOpen, onDrop: onDrop)
                     }
                 }
             }
@@ -70,6 +73,7 @@ private struct BoardColumn: View {
 
 private struct BoardCard: View {
     let task: TaskItem
+    let agents: [AgentRecord]
     let highlighted: Bool
     let onOpen: (String) -> Void
     let onDrop: (String, TaskColumn) -> Void
@@ -86,20 +90,20 @@ private struct BoardCard: View {
             if let line = TaskItem.firstLine(of: task.notes) {
                 Text(line).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
             }
-            if task.waitingLabel != nil || task.dueLabel(now: now) != nil {
-                VStack(alignment: .leading, spacing: 2) {
-                    if let waiting = task.waitingLabel {
-                        Label(waiting, systemImage: "person.badge.clock")
-                    }
-                    if let due = task.dueLabel(now: now) {
-                        Label(due, systemImage: overdue ? "exclamationmark.circle.fill" : "calendar")
-                            .foregroundStyle(overdue ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
-                    }
+            VStack(alignment: .leading, spacing: 2) {
+                Label(TaskAssignee.name(task.assignee, agents: agents), systemImage: task.assignee == nil ? "person" : "sparkles")
+                    .accessibilityLabel("Assigned to \(TaskAssignee.name(task.assignee, agents: agents))")
+                if let waiting = task.waitingLabel {
+                    Label(waiting, systemImage: "person.badge.clock")
                 }
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+                if let due = task.dueLabel(now: now) {
+                    Label(due, systemImage: overdue ? "exclamationmark.circle.fill" : "calendar")
+                        .foregroundStyle(overdue ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
+                }
             }
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .lineLimit(1)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(8)

@@ -71,7 +71,8 @@ package struct TaskItem: Identifiable, Equatable, Codable {
         closed: Date? = nil,
         waitingOn: String? = nil,
         sourceRef: String? = nil,
-        labels: [String: String] = [:]
+        labels: [String: String] = [:],
+        assignee: String? = nil
     ) {
         self.id = id
         self.title = title
@@ -86,6 +87,7 @@ package struct TaskItem: Identifiable, Equatable, Codable {
         self.waitingOn = waitingOn
         self.sourceRef = sourceRef
         self.labels = labels
+        self.assignee = assignee
     }
 
     package let id: String
@@ -104,6 +106,8 @@ package struct TaskItem: Identifiable, Equatable, Codable {
     package var sourceRef: String? = nil
     /// Key/value labels such as `merge=auto`. Data for filtering, never instructions.
     package var labels: [String: String] = [:]
+    /// The agent that works on the task, as an agent id. Nil means the user. Agent 1 is `agent_default`, so nil is not agent 1.
+    package var assignee: String? = nil
     /// The public `task_<hex>` id (see `RecordID`). `TaskStore` fills it in when it reads the task; nil for a value that did not come from the store.
     package var ref: String? = nil
 
@@ -439,6 +443,13 @@ package enum TaskValidator {
         let name = raw.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "\n", with: " ")
         guard name.count <= maxWaitingOn else { throw TaskError(message: "waiting_on is longer than \(maxWaitingOn) characters") }
         return name.isEmpty ? nil : name
+    }
+
+    /// Who a task is assigned to: an agent id, or null, blank or `user` for the user. The agent id is checked by the store, not here.
+    package static func assignee(_ value: Any?) throws -> String? {
+        guard let value, !(value is NSNull) else { return nil }
+        guard let raw = value as? String else { throw TaskError(message: "assignee must be an agent id, or \"user\"") }
+        return TaskAssignee.normalize(raw)
     }
 
     /// ISO 8601 with a time (`2026-11-20T15:30:00+01:00`) or a plain date (`2026-11-20`, local midnight). Null clears it.
