@@ -190,7 +190,7 @@ final class TaskStoreTests: XCTestCase {
     func testNoTwoMigrationsShareAVersionAndTheNewOneComesAfterEveryOldOne() {
         let versions = AppMigrations.all.map(\.version)
         XCTAssertEqual(versions.count, Set(versions).count)
-        XCTAssertEqual(TaskStore.migrations.map(\.version).max(), 593)
+        XCTAssertEqual(TaskStore.migrations.map(\.version).max(), 594)
         XCTAssertEqual(AppMigrations.latestVersion, 603)
     }
 

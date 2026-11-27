@@ -865,7 +865,23 @@ enum PreviewRenderer {
         store.suggest([TaskSuggestion.Draft(key: "msg-1", title: "Reply to Sam about the Q4 budget", due: nil,
                                             url: URL(string: "https://mail.google.com/mail/u/0/#inbox/1"))],
                       automation: "gmail-watch", name: "Gmail watcher")
+        // Items the inbox scan found in a chat and on the screen, one with a link, and one it resolved.
+        clock = Date().addingTimeInterval(-360)
+        let chatRef = TaskStore.refText(["ref": "chat:sample-thread", "reason": "Found by the inbox scan in a chat between the user and Ghost"]) ?? ""
+        store.file(TaskSuggestion.Draft(key: "scan:a", title: "Decide whether to install the new build"), agent: .chat, sourceRef: chatRef)
+        clock = Date().addingTimeInterval(-3600)
+        store.file(TaskSuggestion.Draft(key: "scan:b", title: "Test the V-Bucks flow, then say ship", notes: "Check the ledger tool returns real data.",
+                                        url: URL(string: "https://tickets.example.com/browse/SSP-11797")), agent: .chat, sourceRef: chatRef)
+        clock = Date().addingTimeInterval(-540)
+        store.file(TaskSuggestion.Draft(key: "scan:c", title: "Write the RFC for moving prompts out of Langfuse",
+                                        url: URL(string: "https://docs.example.com/rfc")), agent: .capture,
+                   sourceRef: TaskStore.refText(["ref": "capture:1", "reason": "Found by the inbox scan in the text on the user's screen"]) ?? "")
+        clock = Date().addingTimeInterval(-7200)
+        store.file(TaskSuggestion.Draft(key: "scan:d", title: "Answer the permission prompt blocking the agent"), agent: .chat, sourceRef: chatRef)
         clock = Date()
+        if let done = store.suggestions.first(where: { $0.title.hasPrefix("Answer the permission") }) {
+            _ = try? store.resolve(done.id, reason: "The agent got past the prompt: its fix PR merged and closed the issue (checked with gh)", by: InboxScanner.resolverName)
+        }
         return TasksAPI(store: store)
     }
 

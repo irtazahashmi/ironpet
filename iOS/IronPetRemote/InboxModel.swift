@@ -34,6 +34,21 @@ final class InboxModel: SocketModel {
     /// Removes the item on the Mac.
     func remove(_ item: RemoteSuggestion) async { await take(item) { try await self.client.rejectSuggestion(id: item.id) } }
 
+    /// Opens the chat thread an item came from, on the Mac, and shows the Chat tab. A thread the Mac no longer has says so in `errorMessage`.
+    func showChat(_ thread: String) async -> Bool {
+        do {
+            try await client.openThread(id: thread)
+            network.reportAnswered()
+            return true
+        } catch {
+            if error is CancellationError { return false }
+            if error as? ClientError == .unauthorized { onUnauthorized(); return false }
+            errorMessage = (error as? ClientError).flatMap { if case .api(404, _, _) = $0 { return "That chat is no longer on the Mac." } else { return nil } }
+                ?? error.localizedDescription
+            return false
+        }
+    }
+
     /// Takes the item off the list at once and puts it back, with the reason in `errorMessage`, when the Mac does not take the change.
     private func take(_ item: RemoteSuggestion, _ call: () async throws -> Void) async {
         guard let index = items.firstIndex(where: { $0.id == item.id }) else { return }
@@ -54,42 +69,5 @@ final class InboxModel: SocketModel {
             network.report(error)
             errorMessage = error.localizedDescription
         }
-    }
-}
-
-extension RemoteSuggestion {
-    /// "Meeting", or "From <automation name>". An older Mac may still send another origin, such as `task-scan`, which reads as an automation.
-    var originLabel: String {
-        if origin == "meeting" { return "Meeting" }
-        if let name = originDetail?.trimmingCharacters(in: .whitespaces), !name.isEmpty { return "From \(name)" }
-        return "From an automation"
-    }
-
-    /// The link to the source. A meeting's source is a folder on the Mac, which the phone cannot open, so a meeting has none.
-    var sourceLink: URL? {
-        guard origin != "meeting", let url, let link = URL(string: url), ["http", "https"].contains(link.scheme?.lowercased()) else { return nil }
-        return link
-    }
-}
-
-/// A page an inbox item came from, with the word on its link.
-struct SourceLink: Identifiable, Equatable {
-    var label: String
-    var url: URL
-    var id: String { url.absoluteString }
-}
-
-extension RemoteSuggestion {
-    /// One link for each source that has a web page. An item merged from a meeting and a mail has a link for the mail. A Mac that sends
-    /// no source list gives the single `sourceLink`.
-    var sourceLinks: [SourceLink] {
-        var links: [SourceLink] = []
-        for source in sources {
-            guard let raw = source.url, let url = URL(string: raw), ["http", "https"].contains(url.scheme?.lowercased()),
-                  !links.contains(where: { $0.url == url }) else { continue }
-            links.append(SourceLink(label: source.label ?? url.host ?? raw, url: url))
-        }
-        if links.isEmpty, let link = sourceLink { links.append(SourceLink(label: link.host ?? link.absoluteString, url: link)) }
-        return links
     }
 }

@@ -115,15 +115,20 @@ final class InboxModelTests: XCTestCase {
         XCTAssertEqual(model.items.map(\.id), ["s-1", "s-2"])
     }
 
-    func testRowsNameTheOriginAndLinkTheSource() {
-        let meeting = RemoteSuggestion(id: "m", title: "Send the notes", origin: "meeting", url: "https://example.com/meeting")
-        XCTAssertEqual(meeting.originLabel, "Meeting")
-        XCTAssertNil(meeting.sourceLink, "a meeting's source is a folder on the Mac")
-        let automation = RemoteSuggestion(id: "a", title: "Fix the build", origin: "automation", originDetail: "CI watcher", url: "https://example.com/pr/1")
-        XCTAssertEqual(automation.originLabel, "From CI watcher")
-        XCTAssertEqual(automation.sourceLink?.absoluteString, "https://example.com/pr/1")
-        XCTAssertNil(RemoteSuggestion(id: "f", title: "File", origin: "automation", url: "file:///Users/me/notes").sourceLink)
-        XCTAssertEqual(RemoteSuggestion(id: "x", title: "Old", origin: "task-scan").originLabel, "From an automation")
+    /// S5, S6, S10: the phone groups by the first source, shows Open only for a web link, and names where an item came from.
+    func testRowsGroupByOriginAndOpenOnlyAWebLink() {
+        let chat = RemoteSuggestion(id: "c", title: "Test the flow", created: Date(timeIntervalSince1970: 300), origin: "automation",
+                                    url: "https://example.com/t/1", sources: [RemoteSource(kind: "chat", ref: "chat:abc"), RemoteSource(kind: "agent", ref: "x", label: "Agent")])
+        let plain = RemoteSuggestion(id: "p", title: "Plain", created: Date(timeIntervalSince1970: 200), origin: "automation",
+                                     sources: [RemoteSource(kind: "chat", ref: "chat:abc")])
+        let meeting = RemoteSuggestion(id: "m", title: "Send the notes", created: Date(timeIntervalSince1970: 100), origin: "meeting", url: "file:///Users/me/notes")
+        XCTAssertEqual(RemoteSuggestion.groups([meeting, plain, chat]).map(\.kind), ["chat", "meeting"])
+        XCTAssertEqual(RemoteSuggestion.groups([meeting, plain, chat])[0].items.map(\.id), ["c", "p"], "newest first")
+        XCTAssertEqual(chat.openURL?.absoluteString, "https://example.com/t/1")
+        XCTAssertNil(plain.openURL, "no url, no Open")
+        XCTAssertNil(meeting.openURL, "only http and https open")
+        XCTAssertEqual(chat.otherSourcesLabel, "and Agent")
+        XCTAssertEqual(chat.chatThread, "abc")
     }
 
     /// S6: an older Mac sends fields the phone no longer knows, and an origin it no longer uses.
@@ -138,7 +143,7 @@ final class InboxModelTests: XCTestCase {
         let list = try WireJSON.makeDecoder().decode(SuggestionListResponse.self, from: Data(json.utf8))
         XCTAssertEqual(list.suggestions.map(\.id), ["u-1"])
         XCTAssertEqual(list.suggestions[0].origin, "task-scan")
-        XCTAssertEqual(list.suggestions[0].originLabel, "From Task scan")
+        XCTAssertEqual(list.suggestions[0].groupKind, "automation", "an origin the phone does not know reads as an automation")
     }
 
     /// S6: the Mac answers 404 (no inbox route), 501, an error, or something unreadable. The phone shows an empty Inbox and no banner.

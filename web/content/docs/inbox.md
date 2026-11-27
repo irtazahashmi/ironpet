@@ -5,13 +5,17 @@ section: Features
 order: 10
 ---
 
-The Inbox holds things that need a decision from you: action items from your meetings, and things your watchers or agents found, such as an email that needs a reply or an issue. Click your pet, then **Inbox** in the sidebar. The iPhone's Inbox tab shows the same list.
+The Inbox holds things that need a decision from you: action items from your meetings, and things your watchers or agents found, such as an email that needs a reply or an issue. Click your pet, then **Inbox** in the sidebar. The iPhone's Inbox tab shows the same groups. Swiping a row offers Remove, and tapping it opens the same page.
 
 ironpet has no task list. If you tell your pet in the chat what you did, it can save that as a [memory](/docs/memory/) note instead.
 
 ## Items
 
-An item has a title, optional notes and a due date, and links to every source it came from (a meeting, a mail or an issue URL). Click an item to expand everything stored about it.
+An item has a title, optional notes and a due date, and links to every source it came from (a meeting, a mail or an issue URL).
+
+The list has one group for each place items came from (Chat, Screen capture, Meeting and so on), with a count, newest first, one line per item. An **Open** button shows only for an item with a link. Click a row to open its page: the title, why the item exists with the chat it came from as a link, Done, Remove and Open, then the notes and the sources.
+
+Items resolved today are listed at the end with the reason and the time. Their page says "Resolved by <who> at <time>" and shows the reason as evidence. An item resolved before ironpet stored the resolver shows "unknown".
 
 **Done** and **Remove** both take it off the list, on the Mac and on the iPhone, and neither creates anything else.
 
@@ -41,6 +45,7 @@ It's off by default. Under Settings → Inbox (`tasks.inboxScan`) you set:
 | Whether its bubble shows | `tasks.inboxScanBubbles` | On. Off skips only the bubble. |
 
 - A run sends only the text since the last run: a chat's text to that chat's own agent, and screen text to the current chat's agent. The agent gets no tools and every permission is refused.
+- The scan also keeps open items current. When a later message gives an item's missing link, due date or notes, the item gets that field. When a later message says an item is done ("merged it"), the item leaves the list under Resolved today, with the scan as resolver and a reason that names the message. When it is in doubt, it leaves the item open.
 - An item already in the Inbox isn't added again, and one you removed or marked done doesn't come back.
 - Apps on the screen capture skip list and secure fields are never read.
 
@@ -59,7 +64,7 @@ Agents use seven MCP tools:
 | `inbox_note` | `id`, `text` | Adds a note to an item. |
 | `inbox_add` | `id`, `title`, `notes`, `due`, `url`, optional `same_as`, and an `origin` with `kind`, `ref` and `reason` | Adds or updates an item. |
 | `inbox_done` | `id` | Marks an item done. |
-| `inbox_resolve` | `id`, `reason` | Takes an item off the list with a reason such as `answered`. |
+| `inbox_resolve` | `id`, `reason`, optional `resolved_by` | Takes an item off the list. The reason is the evidence, such as "PR 398 merged, checked with gh", and must not be empty. |
 | `inbox_remove` | `id`, optional `note` | Removes an item. |
 
 - `inbox_add` with an `id` whose item is still in the Inbox updates it, so a follow-up mail that moves a date changes the item.

@@ -84,12 +84,13 @@ struct ListScreen<Trailing: View, Content: View>: View {
             content().safeAreaInset(edge: .top, spacing: 0) {
                 GlassPanel {
                     HStack(spacing: 10) {
-                        titleView
+                        titleView.background(FrameReader(role: .title))
                         Spacer(minLength: 8)
                         controls
                     }
                     .padding(.horizontal, 16)
                     .frame(height: PageHeaderMetrics.height)
+                    .background(FrameReader(role: .header))
                 }
             }
         } else {

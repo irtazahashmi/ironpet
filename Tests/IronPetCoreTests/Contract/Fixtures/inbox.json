@@ -406,6 +406,7 @@
           "id" : "$deckId",
           "reason" : "answered",
           "resolved" : "<date>",
+          "resolvedBy" : "API client",
           "sources" : [
             {
               "kind" : "pr",
