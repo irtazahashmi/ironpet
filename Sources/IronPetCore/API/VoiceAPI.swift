@@ -50,7 +50,7 @@ package struct VoiceStatus: Codable, Equatable {
         self.speaking = speaking
     }
 
-    /// Every reply is read aloud automatically (`speech.enabled`).
+    /// Replies are read aloud on their own: Speak replies is not Never (`speech.speakReplies`).
     package var speechEnabled: Bool
     /// A speech model is set, so the speaker button can read a reply.
     package var canSpeak: Bool
@@ -96,14 +96,14 @@ package final class VoiceAPI {
         self.settings = settings
         forwarding = [speech.changes.observe { [weak self] in self?.changes.send() }]
         // The player and every client decide from the same settings.
-        speech.isEnabled = { [weak settings] in settings?.config.speech.enabled ?? false }
+        speech.isEnabled = { [weak settings] in (settings?.config.speech.speakReplies ?? .never) != .never }
     }
 
     /// The chat message being read aloud, so its speaker button shows Stop.
     package var speakingItem: UUID? { speech.speakingID }
 
     package var status: VoiceStatus {
-        VoiceStatus(speechEnabled: settings.config.speech.enabled, canSpeak: settings.config.speech.canSpeak, transcriptionEnabled: settings.config.voice.enabled, speaking: speech.isSpeaking)
+        VoiceStatus(speechEnabled: settings.config.speech.speakReplies != .never, canSpeak: settings.config.speech.canSpeak, transcriptionEnabled: settings.config.voice.enabled, speaking: speech.isSpeaking)
     }
 
     /// Reads a reply aloud on this Mac's speaker. Replaces whatever is being read. It needs a speech model, not the switch for

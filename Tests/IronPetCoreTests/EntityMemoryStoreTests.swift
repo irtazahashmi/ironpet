@@ -261,6 +261,62 @@ final class EntityMemoryStoreTests: XCTestCase {
         XCTAssertFalse(FileManager.default.fileExists(atPath: folder.appendingPathComponent("people.md").path))
         XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: folder.appendingPathComponent("projects").path), [])
     }
+
+    // MARK: Near-duplicate notes
+
+    private func orca(_ text: String, source: String) -> Result<MemoryNote, MemoryError> {
+        store.remember(text, scope: .tool, entity: "Orca", source: source)
+    }
+
+    func testRestatedNotesRefreshTheOneOnThePage() async throws {
+        _ = try orca(NearDuplicateTests.bloated, source: "chat:one").get()
+        clock = clock.addingTimeInterval(86_400 * 3)
+        for (index, text) in NearDuplicateTests.restatements.enumerated() {
+            clock = clock.addingTimeInterval(60)
+            _ = try orca(text, source: "chat:r\(index)").get()
+        }
+        let claims = store.claims(of: "tool:orca")
+        XCTAssertEqual(claims.count, 1)
+        XCTAssertEqual(claims.first?.text, NearDuplicateTests.bloated, "the earlier wording stays")
+        XCTAssertEqual(claims.first?.date, MemoryNote.day(clock, calendar: .current))
+        XCTAssertEqual(Set(claims.first?.sources ?? []), ["chat:one", "chat:r0", "chat:r1", "chat:r2"])
+        XCTAssertTrue(store.history(of: "tool:orca").isEmpty)
+    }
+
+    func testADifferentFactAboutTheSameSubjectIsAdded() async throws {
+        _ = try orca(NearDuplicateTests.bloated, source: "chat:one").get()
+        _ = try orca(NearDuplicateTests.branches, source: "chat:two").get()
+        XCTAssertEqual(Set(store.claims(of: "tool:orca").map(\.text)), [NearDuplicateTests.bloated, NearDuplicateTests.branches])
+        _ = try store.remember(NearDuplicateTests.jiraA, scope: .tool, entity: "Jira", source: "chat:a").get()
+        _ = try store.remember("Keeps Jira estimates in story points and sets them before a ticket moves to In Progress.", scope: .tool, entity: "Jira", source: "chat:b").get()
+        XCTAssertEqual(store.claims(of: "tool:jira").count, 2)
+    }
+
+    func testAnExactRepeatStillRefreshesTheNote() async throws {
+        _ = try orca(NearDuplicateTests.bloated, source: "chat:one").get()
+        clock = clock.addingTimeInterval(86_400 * 2)
+        _ = try orca(NearDuplicateTests.bloated, source: "chat:two").get()
+        let claims = store.claims(of: "tool:orca")
+        XCTAssertEqual(claims.count, 1)
+        XCTAssertEqual(claims.first?.date, MemoryNote.day(clock, calendar: .current))
+        XCTAssertEqual(claims.first?.sources, ["chat:one", "chat:two"])
+    }
+
+    func testAPinnedNoteIsNeverRefreshedByARestatement() async throws {
+        _ = try orca(NearDuplicateTests.bloated, source: "chat:one").get()
+        let pinned = try XCTUnwrap(store.claims(of: "tool:orca").first)
+        _ = store.setPinned(pinned.id, true)
+        _ = try orca(NearDuplicateTests.restatements[0], source: "chat:two").get()
+        let claims = store.claims(of: "tool:orca")
+        XCTAssertEqual(claims.count, 2)
+        XCTAssertEqual(claims.first { $0.id == pinned.id }?.sources, ["chat:one"])
+    }
+
+    func testARestatementThatReplacesANoteStillReplacesIt() async throws {
+        _ = try orca(NearDuplicateTests.bloated, source: "chat:one").get()
+        _ = try store.replace([NearDuplicateTests.bloated], with: NearDuplicateTests.restatements[0], scope: .tool, entity: "Orca", source: "chat:two").get()
+        XCTAssertEqual(store.claims(of: "tool:orca").map(\.text), [NearDuplicateTests.restatements[0]])
+    }
 }
 
 private extension Result {

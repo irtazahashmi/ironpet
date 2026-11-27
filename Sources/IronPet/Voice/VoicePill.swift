@@ -4,32 +4,26 @@ import IronPetCore
 import IronPetKit
 import SwiftUI
 
-/// What voice mode shows by the pet: the state, the last thing heard, and a button to end. The pet itself shows that it
-/// is listening (`VoiceConversation.mood`). With Wispr Flow it holds a text field that keeps ironpet focused, so Wispr's dictation is addressed to ironpet.
+/// What a spoken message shows by the pet: the microphone while it listens, then "Got it" while the recording is
+/// transcribed, and a button to discard it. The pet itself shows that it is listening (`SpokenMessageRecorder.mood`).
 struct VoicePillView: View {
-    @ObservedObject var conversation: VoiceConversation
+    @ObservedObject var recorder: SpokenMessageRecorder
     var petName: String
     var onEnd: () -> Void
 
-    @FocusState private var fieldFocused: Bool
-    @State private var typed = ""
-
-    private var state: VoiceConversation.State { conversation.state }
-    private var wispr: Bool { conversation.mode == .wispr }
-
-    var title: String { state.title(wispr: wispr, petName: petName) }
-    private var symbol: String { state.symbol }
+    private var state: SpokenMessageRecorder.State { recorder.state }
+    var title: String { state.title }
 
     var body: some View {
         HStack(spacing: 10) {
-            Image(systemName: symbol)
+            Image(systemName: state.symbol)
                 .font(.system(size: 13, weight: .semibold))
                 .foregroundStyle(state == .listening ? Color.red : Color.accentColor)
                 .frame(width: 18)
                 .accessibilityHidden(true)
             VStack(alignment: .leading, spacing: 2) {
                 Text(title).font(.system(size: 13, weight: .semibold))
-                if let heard = conversation.heard {
+                if let heard = recorder.heard {
                     Text(heard)
                         .font(.system(size: 11))
                         .foregroundStyle(.secondary)
@@ -38,17 +32,6 @@ struct VoicePillView: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            if wispr {
-                // Wispr Flow types into the focused app; this field keeps that app ironpet. Its text arrives through
-                // Wispr's history instead (`WisprBridge`), so the field is cleared and never sent.
-                TextField("", text: $typed)
-                    .textFieldStyle(.plain)
-                    .frame(width: 1, height: 1)
-                    .opacity(0.01)
-                    .focused($fieldFocused)
-                    .onChange(of: typed) { if !typed.isEmpty { typed = "" } }
-                    .accessibilityHidden(true)
-            }
             Button(action: onEnd) {
                 Image(systemName: SharedSymbols.deny)
                     .font(.system(size: 10, weight: .bold))
@@ -57,8 +40,8 @@ struct VoicePillView: View {
                     .background(Color.primary.opacity(0.08), in: Circle())
             }
             .buttonStyle(.plain)
-            .help("End the conversation (Esc)")
-            .accessibilityLabel("End voice conversation")
+            .help("Discard the message (Esc)")
+            .accessibilityLabel("Discard spoken message")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
@@ -66,29 +49,24 @@ struct VoicePillView: View {
         .background(.regularMaterial, in: Capsule())
         .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1)))
         .accessibilityElement(children: .contain)
-        .accessibilityLabel("Voice mode: \(title)")
-        .onAppear { fieldFocused = wispr }
-        .onChange(of: conversation.mode) { fieldFocused = wispr }
+        .accessibilityLabel("Spoken message: \(title)")
     }
 }
 
-extension VoiceConversation.State {
-    /// The state in a few words, for the pill and the Voice page.
-    func title(wispr: Bool, petName: String) -> String {
+extension SpokenMessageRecorder.State {
+    /// The state in a few words, for the pill.
+    var title: String {
         switch self {
-        case .idle: return "Voice mode"
-        case .listening: return wispr ? "Dictate with Wispr Flow" : "Listening…"
+        case .idle: return "Voice"
+        case .listening: return "Listening…"
         case .transcribing: return "Got it…"
-        case .thinking: return "Thinking…"
-        case .speaking: return "\(petName) is speaking"
         }
     }
 
     var symbol: String {
         switch self {
         case .idle, .listening: return SharedSymbols.microphoneActive
-        case .transcribing, .thinking: return "ellipsis"
-        case .speaking: return "speaker.wave.2.fill"
+        case .transcribing: return "ellipsis"
         }
     }
 }
@@ -128,15 +106,15 @@ struct VoiceLevelMeter: View {
     }
 }
 
-/// The pill's window: borderless, above other windows and next to the pet. It only takes focus in Wispr mode, where the
-/// dictation needs a focused ironpet window.
+/// The pill's window: borderless, above other windows and next to the pet. It never takes focus, so the app the user is
+/// in keeps it.
 @MainActor
 final class VoicePillPanel {
     let panel: NSPanel
     private let host: NSHostingView<VoicePillView>
     private let petName: () -> String
 
-    init(conversation: VoiceConversation, petName: @escaping () -> String, onEnd: @escaping () -> Void) {
+    init(recorder: SpokenMessageRecorder, petName: @escaping () -> String, onEnd: @escaping () -> Void) {
         self.petName = petName
         panel = KeyablePanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
         panel.isOpaque = false
@@ -146,12 +124,12 @@ final class VoicePillPanel {
         panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         panel.hidesOnDeactivate = false
         panel.isReleasedWhenClosed = false
-        host = NSHostingView(rootView: VoicePillView(conversation: conversation, petName: petName(), onEnd: onEnd))
+        host = NSHostingView(rootView: VoicePillView(recorder: recorder, petName: petName(), onEnd: onEnd))
         panel.contentView = host
     }
 
-    /// Shows the pill above the pet, or below it near the top of the screen. `focus` makes it the key window.
-    func present(near pet: CGRect, focus: Bool) {
+    /// Shows the pill above the pet, or below it near the top of the screen.
+    func present(near pet: CGRect) {
         host.rootView.petName = petName()
         let size = host.fittingSize
         let screen = NSScreen.screens.first { $0.frame.intersects(pet) }?.visibleFrame ?? NSScreen.main?.visibleFrame ?? .zero
@@ -160,12 +138,7 @@ final class VoicePillPanel {
         origin.x = min(max(origin.x, screen.minX + 8), screen.maxX - size.width - 8)
         origin.y = min(max(origin.y, screen.minY + 8), screen.maxY - size.height - 8)
         panel.setFrame(CGRect(origin: origin, size: size), display: true)
-        if focus {
-            NSApp.activate(ignoringOtherApps: true)
-            panel.makeKeyAndOrderFront(nil)
-        } else {
-            panel.orderFrontRegardless()
-        }
+        panel.orderFrontRegardless()
     }
 
     func dismiss() {
@@ -174,5 +147,5 @@ final class VoicePillPanel {
 }
 
 private final class KeyablePanel: NSPanel {
-    override var canBecomeKey: Bool { true }
+    override var canBecomeKey: Bool { false }
 }

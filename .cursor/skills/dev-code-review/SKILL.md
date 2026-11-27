@@ -17,7 +17,7 @@ You are the code reviewer for ironpet. Gate merges on correctness, safety, priva
 
 ironpet is a macOS 14+ app built with SwiftPM (`Package.swift`: one executable target `IronPet`, one XCTest target). It runs with the user's permissions, edits other tools' config files (agent hooks), starts coding agents that can change files and run commands (ACP over stdio), listens on a local HTTP port, and can record audio. That is why safety comes first (`CONTRIBUTING.md` › Guidelines).
 
-The design and the reasons behind it are in `SPEC.md`. Everything the app reads and writes is in `SECURITY.md`. Features and every `config.json` key are in `README.md`. These override generic skill defaults.
+The design and the reasons behind it are in `SPEC.md`. Everything the app reads and writes is in `SECURITY.md`. Features and every `config.json` key are in the ironpet.ai docs, `web/content/docs/` (`configuration.md` for the keys); `README.md` is a short overview. These override generic skill defaults.
 
 ## Use this skill when
 
@@ -48,7 +48,7 @@ Classify every changed path, then open the surface file for each surface touched
 |---|---|---|
 | `Sources/IronPet/**`, `Tests/IronPetTests/**`, `Package.swift` | App | [app.md](app.md) |
 | `sidecar/**`, `scripts/**`, `tools/**`, `Resources/**`, `.github/**` | Tooling | [tooling.md](tooling.md) |
-| `README.md`, `SPEC.md`, `SECURITY.md`, `CONTRIBUTING.md`, `docs/**` only | Docs | The [Docs](#checks-on-every-review) check below |
+| `README.md`, `SPEC.md`, `SECURITY.md`, `CONTRIBUTING.md`, `docs/**`, `web/content/**` only | Docs | The [Docs](#checks-on-every-review) check below |
 | Anything else (`.cursor/`, `.agents/`, `.gitignore`, `LICENSE`) | Repo | Structure and secrets checks below |
 
 A change to the hook script (`Hooks/HookScript.swift`), `HookInstaller`, `ApprovalRules`, `EventServer`, `TestControl` or `scripts/install.sh` / `uninstall.sh` crosses both surfaces: review it under both files.
@@ -87,7 +87,7 @@ These apply whatever surfaces were touched.
 3. **Secrets and config**
    - Tokens and API keys live in the Keychain (`ironpet.voice`, `ironpet.sentry`), never in `config.json`, `threads/`, logs, UserDefaults or a committed file. A leak is **Critical**.
    - Nothing private is committed: tokens, chat transcripts, meeting audio, `~/.ironpet` content, signing identities.
-   - A new setting goes in `Config` (`Support/Config.swift`) with a safe default and clamping, with a Settings control if most people would change it, and documented in the README's Configuration section. A setting read from somewhere else is **High**; an undocumented key is **Medium**.
+   - A new setting goes in `Config` (`Support/Config.swift`) with a safe default and clamping, with a Settings control if most people would change it, and documented in `web/content/docs/configuration.md`. A setting read from somewhere else is **High**; an undocumented key is **Medium**.
 
 4. **Structure and naming**
    - Files sit in the folder that owns their area (see the layout table in `app.md`). No parallel trees, no second copy of a helper that already exists.
@@ -96,8 +96,8 @@ These apply whatever surfaces were touched.
    - A mismatch is at least **Medium**. The fix names the expected location and a safe rename or move.
 
 5. **Docs**
-   - Map the diff to the page that owns it: `README.md` for features, config keys, permissions and shortcuts; `SPEC.md` for design decisions and how a feature works; `SECURITY.md` for anything read, written, sent or stored; `CONTRIBUTING.md` for the dev workflow.
-   - A behavior, config, permission, file or network change with no matching doc update is **High** for `SECURITY.md` and **Medium** for `README.md` / `SPEC.md`. A doc that now contradicts the code is **Medium**.
+   - Map the diff to the page that owns it: the `web/content/docs/` page for features, config keys, permissions and shortcuts (`README.md` only for a headline feature); `SPEC.md` for design decisions and how a feature works; `SECURITY.md` for anything read, written, sent or stored; `CONTRIBUTING.md` for the dev workflow.
+   - A behavior, config, permission, file or network change with no matching doc update is **High** for `SECURITY.md` and **Medium** for the docs pages / `SPEC.md`. A doc that now contradicts the code is **Medium**.
    - UI changes include an updated screenshot when the README shows that screen (`scripts/screenshots.sh` renders them from sample data). A stale README screenshot is **Low**.
    - Use `N/A` only for tests-only, format-only, or a change no page describes.
 
@@ -189,9 +189,9 @@ After the tables, list **Blockers fixed during review** when any were fixed, and
 |---|---|
 | Safety | ✅ Hooks unchanged; `ApprovalRules` only adds a read-only verb, covered by `ApprovalRulesTests` |
 | Privacy and defaults | ✅ New integration defaults to off; permission asked on first use |
-| Secrets and config | ✅ Key in the Keychain; new `config.json` key documented in README |
+| Secrets and config | ✅ Key in the Keychain; new `config.json` key documented in the docs |
 | Structure/naming | ✅ New type in `Chat/ACP/`, file named after it |
-| Docs | ✅ Checked `README.md`, `SPEC.md`, `SECURITY.md`; behavior matches |
+| Docs | ✅ Checked the docs pages, `SPEC.md`, `SECURITY.md`; behavior matches |
 | Language guidelines compliance | ✅ Opened `swift`, `swift-concurrency`, `swift-codable` |
 
 ### Ownership / boundary check

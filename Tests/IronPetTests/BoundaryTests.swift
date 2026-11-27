@@ -18,8 +18,8 @@ final class BoundaryTests: XCTestCase {
         "Notifications/NotificationMCP.swift", "Agents/AgentMCP.swift", "Remote/RemoteServer.swift", "Remote/RemoteTasks.swift",
     ]
 
-    /// Files that build every store from sample data to render screenshots. They are a test harness, not a client.
-    static let harnesses: Set<String> = ["App/PreviewRenderer.swift"]
+    /// Files that build every store from sample data to render screenshots and clips. They are a test harness, not a client.
+    static let harnesses: Set<String> = ["App/PreviewRenderer.swift", "App/PreviewVideos.swift"]
 
     /// The Mac target and the portable core. A path below is relative to whichever folder holds the file.
     private static var sourceRoots: [URL] {
@@ -161,7 +161,7 @@ final class BoundaryTests: XCTestCase {
     static let coreFiles = [
         "Automations/AutomationEngine.swift", "Automations/AutomationService.swift", "Activity/WelcomeBack.swift", "Activity/Presence.swift",
         "Support/ListNavigation.swift", "Bridge/HTTPRequest.swift", "Telegram/TelegramMedia.swift", "Meeting/MeetingRegenerator.swift",
-        "Meeting/MeetingSummary.swift", "Meeting/SpeakerDiarizing.swift", "Voice/VoiceConversation.swift", "Voice/ConversationPorts.swift",
+        "Meeting/MeetingSummary.swift", "Meeting/SpeakerDiarizing.swift", "Voice/SpokenMessageRecorder.swift", "Voice/ConversationPorts.swift",
         "Platform/PresenceSource.swift", "Platform/URLOpener.swift", "Platform/AudioTranscoder.swift",
     ]
     static let macOnly = [

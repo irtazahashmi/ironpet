@@ -26,7 +26,7 @@ final class ChatSessionCoreTests: XCTestCase {
         session.workspace = FileManager.default.temporaryDirectory
         var deliver: [(AgentEvent) -> Void] = []
         session.turnRunner = { _, onEvent in deliver.append(onEvent) }
-        XCTAssertEqual(session.submitLocal("hi", files: [], reply: nil), .sent)
+        XCTAssertEqual(session.submitLocal("hi", files: [], reply: nil, spoken: true), .sent)
         for _ in 0..<10 { await Task.yield() }
         deliver[0](.assistant("Two files changed."))
         deliver[0](.finished(error: nil))

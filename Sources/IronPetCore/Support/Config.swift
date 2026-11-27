@@ -78,7 +78,7 @@ package struct Config: Codable, Equatable {
             captureRegion: String = "cmd+opt+ctrl+g",
             voice: String = "cmd+opt+v",
             meeting: String = "",
-            voiceMode: String = "cmd+opt+ctrl+v",
+            voiceMode: String = Hotkeys.defaultVoiceMode,
             copyVersion: String = "",
             dictation: String = "ctrl+opt+space"
         ) {
@@ -100,8 +100,13 @@ package struct Config: Codable, Equatable {
         /// Starts the meeting picker, or stops a running meeting. No default binding. Only registered while meeting
         /// transcripts are on.
         package var meeting = ""
-        /// Starts and ends a voice conversation with the pet. Only registered while voice mode is on.
-        package var voiceMode = "cmd+opt+ctrl+v"
+        /// Records one spoken message and sends it to the primary chat. Only registered while voice notes are on, because it
+        /// transcribes with the same server. Control+Shift+V is "Paste and Match Style" in many Mac apps; the shortcut
+        /// is configurable, and an empty string turns it off.
+        package var voiceMode = Hotkeys.defaultVoiceMode
+        package static let defaultVoiceMode = "ctrl+shift+v"
+        /// The default before spoken messages went into the primary chat. Config files that still hold it move to the new one.
+        package static let previousVoiceMode = "cmd+opt+ctrl+v"
         /// Copies the app version and commit to the clipboard. No default binding.
         package var copyVersion = ""
         /// Starts and stops dictation into whatever text field has focus in any app. Empty turns it off. Only
@@ -133,31 +138,55 @@ package struct Config: Codable, Equatable {
         package var holdToTalk = true
     }
 
+    /// When the chat reads a reply's summary aloud. Config files from before this setting hold `speech.enabled` and
+    /// `voiceMode.enabled`; those keys are ignored and every such file gets `automatic`, which speaks only after a spoken message.
+    package enum SpeakReplies: String, Codable, CaseIterable, Equatable {
+        case automatic, always, never
+
+        /// Whether a reply is spoken, given whether the message it answers was said aloud.
+        package func speaks(afterSpokenMessage spoken: Bool) -> Bool {
+            switch self {
+            case .automatic: return spoken
+            case .always: return true
+            case .never: return false
+            }
+        }
+    }
+
     /// Spoken replies: Ghost reads chat replies aloud with a voice from an OpenAI-compatible speech server. Uses the
     /// server in `voice` (base URL, Keychain key).
     package struct Speech: Codable, Equatable {
         package init(
-            enabled: Bool = false,
+            speakReplies: SpeakReplies = .automatic,
             model: String = Speech.defaultModel,
             voice: String = Speech.defaultVoice,
             speed: Double = Speech.defaultSpeed
         ) {
-            self.enabled = enabled
+            self.speakReplies = speakReplies
             self.model = model
             self.voice = voice
             self.speed = speed
         }
 
-        /// Off by default: turning it on reads each reply to a chat message aloud, which sends its text to the voice
-        /// server. With it off, text is sent only when the user presses a reply's speaker button.
-        package var enabled = false
+        package init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            // A value this version does not know, such as one from a newer build, falls back instead of voiding the file.
+            speakReplies = (try? c.decodeIfPresent(SpeakReplies.self, forKey: .speakReplies)) ?? .automatic
+            model = try c.decodeIfPresent(String.self, forKey: .model) ?? Speech.defaultModel
+            voice = try c.decodeIfPresent(String.self, forKey: .voice) ?? Speech.defaultVoice
+            speed = try c.decodeIfPresent(Double.self, forKey: .speed) ?? Speech.defaultSpeed
+        }
+
+        /// When a reply's spoken summary is read aloud. Automatic speaks only the reply to a message the user said; text
+        /// reaches the voice server only then, or when the user presses a reply's speaker button.
+        package var speakReplies = SpeakReplies.automatic
         package var model = Speech.defaultModel
         /// One of the model's voices, such as Kokoro's `am_puck` or OpenAI's `nova`.
         package var voice = Speech.defaultVoice
         /// Playback speed sent with each request; 1 is the model's normal pace.
         package var speed = Speech.defaultSpeed
 
-        /// Whether a speech model is set, which is all the speaker button needs. `enabled` only governs reading
+        /// Whether a speech model is set, which is all the speaker button needs. `speakReplies` only governs reading
         /// replies aloud automatically.
         package var canSpeak: Bool { !model.trimmingCharacters(in: .whitespaces).isEmpty }
 
@@ -167,48 +196,20 @@ package struct Config: Codable, Equatable {
         package static let speedRange = 0.5...2.0
     }
 
-    /// Voice mode: a spoken conversation with the pet on a shortcut. It listens through ironpet's microphone (or takes
-    /// Wispr Flow's dictation), answers aloud through spoken replies' voice, and hands longer work to background jobs.
+    /// Spoken messages: a shortcut records one utterance through ironpet's microphone and sends it to the primary chat.
+    /// The key keeps its old name, `voiceMode`, so existing config files still load.
     package struct VoiceMode: Codable, Equatable {
-        package init(
-            enabled: Bool = false,
-            listenWith: String = VoiceMode.ironpet,
-            model: String = "",
-            silenceSeconds: Int = 20,
-            speakJobUpdates: Bool = true,
-            idleShutdownMinutes: Int = 10,
-            fastModelWords: [String] = VoiceMode.defaultFastModelWords
-        ) {
-            self.enabled = enabled
-            self.listenWith = listenWith
-            self.model = model
+        package init(silenceSeconds: Int = 20, speakJobUpdates: Bool = true) {
             self.silenceSeconds = silenceSeconds
             self.speakJobUpdates = speakJobUpdates
-            self.idleShutdownMinutes = idleShutdownMinutes
-            self.fastModelWords = fastModelWords
         }
 
-        /// Off by default: it opens the microphone and sends what was said to the voice server and the agent.
-        package var enabled = false
-        /// `ironpet` (the app hears when you stop talking) or `wispr` (Wispr Flow's dictation is sent as it lands).
-        package var listenWith = VoiceMode.ironpet
-        /// The model the conversation's agent session uses. Empty: the agent's fastest.
-        package var model = ""
-        /// The conversation ends after this long with nothing said.
+        /// Listening stops after this long with nothing said.
         package var silenceSeconds = 20
-        /// Speak up when a job started by voice finishes, fails or needs an OK.
+        /// Speak up when a job started during a spoken turn finishes, fails or needs an OK.
         package var speakJobUpdates = true
-        /// The front desk's agent process is closed after this many minutes without a conversation.
-        package var idleShutdownMinutes = 10
-        /// With no `model` set, the front desk uses the first model whose id or name has one of these words, in this order.
-        package var fastModelWords = VoiceMode.defaultFastModelWords
 
-        package static let ironpet = "ironpet"
-        package static let wispr = "wispr"
         package static let silenceRange = 5...120
-        package static let idleShutdownRange = 1...120
-        package static let defaultFastModelWords = ["haiku", "flash", "mini", "fast", "lite"]
-        package static let maxFastModelWords = 20
     }
 
     /// Meeting transcripts: the mic and one app's audio go to the voice server in chunks, and an agent summarizes the
@@ -821,12 +822,6 @@ package struct Config: Codable, Equatable {
         c.memory.maxClaimsPerEntity = clamp(c.memory.maxClaimsPerEntity, Memory.maxClaimsPerEntityRange)
         c.memory.noteMaxLength = clamp(c.memory.noteMaxLength, Memory.noteMaxLengthRange)
         c.jobs.retentionDays = clamp(c.jobs.retentionDays, Jobs.retentionDaysRange)
-        c.voiceMode.idleShutdownMinutes = clamp(c.voiceMode.idleShutdownMinutes, VoiceMode.idleShutdownRange)
-        var seen = Set<String>()
-        c.voiceMode.fastModelWords = c.voiceMode.fastModelWords
-            .map { $0.trimmingCharacters(in: .whitespaces).lowercased() }
-            .filter { !$0.isEmpty && seen.insert($0).inserted }
-            .prefix(VoiceMode.maxFastModelWords).map { $0 }
         c.automations.ownRunLimit = clamp(c.automations.ownRunLimit, Automations.ownRunLimitRange)
         c.automations.keptThreads = clamp(c.automations.keptThreads, Automations.keptThreadsRange)
         c.automations.runTimeoutSeconds = clamp(c.automations.runTimeoutSeconds, Automations.runTimeoutSecondsRange)
@@ -839,8 +834,7 @@ package struct Config: Codable, Equatable {
         if c.speech.voice.isEmpty { c.speech.voice = Speech.defaultVoice }
         c.speech.speed = c.speech.speed.isFinite
             ? min(Speech.speedRange.upperBound, max(Speech.speedRange.lowerBound, c.speech.speed)) : Speech.defaultSpeed
-        if c.voiceMode.listenWith != VoiceMode.wispr { c.voiceMode.listenWith = VoiceMode.ironpet }
-        c.voiceMode.model = c.voiceMode.model.trimmingCharacters(in: .whitespacesAndNewlines)
+        if c.hotkeys.voiceMode == Hotkeys.previousVoiceMode { c.hotkeys.voiceMode = Hotkeys.defaultVoiceMode }
         c.voiceMode.silenceSeconds = min(VoiceMode.silenceRange.upperBound, max(VoiceMode.silenceRange.lowerBound, c.voiceMode.silenceSeconds))
         if c.meetings.summaryModel?.trimmingCharacters(in: .whitespaces).isEmpty == true { c.meetings.summaryModel = nil }
         c.meetings.ignoredMicApps = MicIgnoreList.normalized(c.meetings.ignoredMicApps)

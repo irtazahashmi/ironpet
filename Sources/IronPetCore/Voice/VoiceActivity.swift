@@ -156,7 +156,18 @@ package struct UtteranceCutter {
         }
     }
 
-    /// Drops the utterance in progress, for when the conversation stops listening.
+    /// Ends the utterance in progress now and returns it, or nil when nobody was speaking.
+    package mutating func flush() -> Data? {
+        guard activity.isSpeaking, !utterance.isEmpty else {
+            reset()
+            return nil
+        }
+        let wav = WAV.encode(utterance)
+        reset()
+        return wav
+    }
+
+    /// Drops the utterance in progress, for when listening stops.
     package mutating func reset() {
         activity.reset()
         lead = []

@@ -9,6 +9,7 @@ final class LaunchArgumentsTests: XCTestCase {
         XCTAssertEqual(route("--test-mode"), .gui)
         XCTAssertEqual(route("-psn_0_12345"), .gui)
         XCTAssertEqual(route("--test-mode", "-chatDraft", ""), .gui)
+        XCTAssertEqual(route("--render-videos", "/tmp/videos", "--sprite", "ghost.png"), .gui)
     }
 
     func testUnknownSubcommandIsRejectedInsteadOfStartingTheGUI() {

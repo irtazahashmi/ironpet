@@ -104,12 +104,6 @@ final class PlatformTests: XCTestCase {
         let mic = UnsupportedConversationMic()
         expect("ConversationListening") { try mic.start() }
         do {
-            try await UnsupportedConversationSpeaker().say("hi")
-            XCTFail("expected an error")
-        } catch {
-            XCTAssertEqual(error as? CapabilityError, .unsupported(capability: "ConversationSpeaker", platform: platform))
-        }
-        do {
             _ = try await UnsupportedDiarizer().diarize(wav: URL(fileURLWithPath: "/x.wav"))
             XCTFail("expected an error")
         } catch {

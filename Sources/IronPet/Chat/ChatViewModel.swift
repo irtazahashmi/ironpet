@@ -296,6 +296,18 @@ final class ChatViewModel: ObservableObject {
         if sendAfterDictation { send() }
     }
 
+    /// A message the user said aloud with the voice shortcut: sent as its own message, so the draft stays as it was, and marked
+    /// as spoken so the reply starts with a summary that is read aloud. With no folder chosen the text goes into the draft instead.
+    func sendSpoken(_ text: String) { read { await $0.sendSpokenNow(text) } }
+
+    func sendSpokenNow(_ text: String) async {
+        let result = try? await api.send(SendChatRequest(text: text, origin: nil, spoken: true))
+        if result?.outcome == .needsFolder || result == nil {
+            restore(ChatRestoredDraft(text: text, files: [], reply: nil, selection: nil))
+            await refreshOptions()
+        }
+    }
+
     func attach(_ screenshot: URL) { attachments.append(screenshot) }
 
     /// Appends files to the current attachments, skipping ones already there.

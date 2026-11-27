@@ -110,7 +110,7 @@ Summary rows for the **App** table:
 | App bundle | `bundle.sh` + `check_adapters.sh`, or `N/A — <reason>` |
 | Safety rules | Hooks, approvals, local server, test mode, writes outside `~/.ironpet` |
 | Tests for risky changes | `ApprovalRulesTests`, `HookInstallerTests`, `SessionMappingTests`, `ConfigTests` cover the change |
-| Config and secrets | New keys in `Config` with defaults and in README; secrets in the Keychain |
+| Config and secrets | New keys in `Config` with defaults and in `web/content/docs/configuration.md`; secrets in the Keychain |
 | Concurrency and main thread | Isolation reasoned about; no blocking I/O on the main thread |
 | Generated files | `AgentCatalogData.swift` regenerated, not hand-edited, or `N/A` |
 | e2e scenarios | Which cover the diff, and whether they ran |

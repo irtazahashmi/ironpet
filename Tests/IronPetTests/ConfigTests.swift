@@ -296,31 +296,50 @@ final class ConfigTests: XCTestCase {
         XCTAssertEqual(Config.load(from: file).config.jobs.maxRunning, 5)
     }
 
-    func testVoiceModeIsOffAndIsCleanedUp() throws {
+    func testSpokenMessageDefaultsAndClamping() throws {
         let defaults = Config()
-        XCTAssertFalse(defaults.voiceMode.enabled)
-        XCTAssertEqual(defaults.hotkeys.voiceMode, "cmd+opt+ctrl+v")
+        XCTAssertEqual(defaults.hotkeys.voiceMode, "ctrl+shift+v")
         XCTAssertEqual(defaults.voiceMode.silenceSeconds, 20)
-        try write(#"{"voiceMode":{"enabled":true,"listenWith":"siri","silenceSeconds":1,"model":"  haiku  "}}"#)
-        var mode = Config.load(from: file).config.voiceMode
-        XCTAssertTrue(mode.enabled)
-        XCTAssertEqual(mode.listenWith, Config.VoiceMode.ironpet)
-        XCTAssertEqual(mode.silenceSeconds, Config.VoiceMode.silenceRange.lowerBound)
-        XCTAssertEqual(mode.model, "haiku")
-        XCTAssertTrue(mode.speakJobUpdates)
-        try write(#"{"voiceMode":{"listenWith":"wispr","silenceSeconds":900}}"#)
-        mode = Config.load(from: file).config.voiceMode
-        XCTAssertEqual(mode.listenWith, Config.VoiceMode.wispr)
+        XCTAssertTrue(defaults.voiceMode.speakJobUpdates)
+        try write(#"{"voiceMode":{"silenceSeconds":1}}"#)
+        XCTAssertEqual(Config.load(from: file).config.voiceMode.silenceSeconds, Config.VoiceMode.silenceRange.lowerBound)
+        try write(#"{"voiceMode":{"silenceSeconds":900,"speakJobUpdates":false}}"#)
+        let mode = Config.load(from: file).config.voiceMode
         XCTAssertEqual(mode.silenceSeconds, Config.VoiceMode.silenceRange.upperBound)
+        XCTAssertFalse(mode.speakJobUpdates)
     }
 
-    func testVoiceModeShortcutIsRegisteredOnlyWhileOn() {
-        var config = Config()
-        XCTAssertNil(VoiceModeController.hotkey(in: config))
-        config.voiceMode.enabled = true
-        XCTAssertEqual(VoiceModeController.hotkey(in: config), "cmd+opt+ctrl+v")
-        config.hotkeys.voiceMode = ""
-        XCTAssertNil(VoiceModeController.hotkey(in: config))
+    func testSpeakRepliesDefaultsToAutomaticAndRoundTrips() throws {
+        XCTAssertEqual(Config().speech.speakReplies, .automatic)
+        for value in Config.SpeakReplies.allCases {
+            try write(#"{"speech":{"speakReplies":"\#(value.rawValue)"}}"#)
+            XCTAssertEqual(Config.load(from: file).config.speech.speakReplies, value)
+        }
+        try write(#"{"speech":{"speakReplies":"sometimes"}}"#)
+        let (config, error) = Config.load(from: file)
+        XCTAssertNil(error, "a value this version does not know does not void the file")
+        XCTAssertEqual(config.speech.speakReplies, .automatic)
+    }
+
+    func testOldSpeechAndVoiceModeSwitchesMapToAutomatic() throws {
+        // Automatic reads only after a spoken message, so each old combination keeps what its user could do before: nothing
+        // is read after typing unless they turn on Always, and a spoken message is answered aloud.
+        for (speech, voiceMode) in [(false, false), (true, false), (false, true), (true, true)] {
+            try write(#"{"speech":{"enabled":\#(speech),"voice":"bf_emma"},"voiceMode":{"enabled":\#(voiceMode),"listenWith":"wispr","model":"haiku"}}"#)
+            let (config, error) = Config.load(from: file)
+            XCTAssertNil(error, "the old keys are still readable")
+            XCTAssertEqual(config.speech.speakReplies, .automatic)
+            XCTAssertEqual(config.speech.voice, "bf_emma", "the rest of the section is kept")
+        }
+    }
+
+    func testOldVoiceModeShortcutMovesToTheNewDefaultAndACustomOneStays() throws {
+        try write(#"{"hotkeys":{"voiceMode":"cmd+opt+ctrl+v"}}"#)
+        XCTAssertEqual(Config.load(from: file).config.hotkeys.voiceMode, "ctrl+shift+v")
+        try write(#"{"hotkeys":{"voiceMode":"cmd+opt+k"}}"#)
+        XCTAssertEqual(Config.load(from: file).config.hotkeys.voiceMode, "cmd+opt+k")
+        try write(#"{"hotkeys":{"voiceMode":""}}"#)
+        XCTAssertEqual(Config.load(from: file).config.hotkeys.voiceMode, "", "an empty shortcut stays off")
     }
 
     func testPartialTasksSectionKeepsOtherSections() throws {
@@ -340,11 +359,11 @@ final class ConfigTests: XCTestCase {
         XCTAssertFalse(saved.lowercased().contains("apikey"))
     }
 
-    func testOldConfigWithoutSpeechKeysKeepsSpeechOff() throws {
+    func testOldConfigWithoutSpeechKeysUsesTheDefaults() throws {
         try write(#"{"voice":{"enabled":true}}"#)
         let config = Config.load(from: file).config
         XCTAssertEqual(config.speech, Config.Speech())
-        XCTAssertFalse(config.speech.enabled)
+        XCTAssertEqual(config.speech.speakReplies, .automatic)
         XCTAssertEqual(config.speech.model, "mlx-community/Kokoro-82M-bf16")
         XCTAssertEqual(config.speech.voice, "am_puck")
         XCTAssertEqual(config.speech.speed, 1)
@@ -360,9 +379,9 @@ final class ConfigTests: XCTestCase {
     }
 
     func testBlankSpeechModelAndVoiceMeanDefaults() throws {
-        try write(#"{"speech":{"enabled":true,"model":"  ","voice":" bf_emma "}}"#)
+        try write(#"{"speech":{"speakReplies":"always","model":"  ","voice":" bf_emma "}}"#)
         var speech = Config.load(from: file).config.speech
-        XCTAssertTrue(speech.enabled)
+        XCTAssertEqual(speech.speakReplies, .always)
         XCTAssertEqual(speech.model, Config.Speech.defaultModel)
         XCTAssertEqual(speech.voice, "bf_emma")
         try write(#"{"speech":{"voice":""}}"#)
@@ -372,7 +391,7 @@ final class ConfigTests: XCTestCase {
 
     func testSpeechKeysRoundTrip() throws {
         var config = Config()
-        config.speech = Config.Speech(enabled: true, model: "gpt-4o-mini-tts", voice: "nova")
+        config.speech = Config.Speech(speakReplies: .never, model: "gpt-4o-mini-tts", voice: "nova")
         try config.save(to: file)
         XCTAssertEqual(Config.load(from: file).config, config)
     }

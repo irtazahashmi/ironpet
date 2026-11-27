@@ -39,12 +39,6 @@ package final class JobService: ObservableObject {
     package static var retention: TimeInterval { TimeInterval(ConfigStore.shared.config.jobs.retentionDays * 86_400) }
     /// Jobs kept in memory for `jobs_list`, newest first.
     package static let listed = 50
-    /// A job started by voice waits this long after the pet has said what it started, so "cancel that" stops it before it
-    /// has done anything.
-    package static let voiceHold: TimeInterval = 5
-    /// The longest a voice job waits for the pet to finish speaking, should voice mode never release it.
-    package static let voiceHoldLimit: TimeInterval = 60
-
     /// Newest first: the active jobs and the latest finished ones.
     @Published package private(set) var jobs: [Job] = []
 
@@ -84,21 +78,9 @@ package final class JobService: ObservableObject {
     /// A job saved its transcript, so the chat can reload its history list and the open thread.
     package var onThreadSaved: (ChatThread) -> Void = { _ in }
 
-    /// How long a voice job waits once released, and at most before. `voiceHold` and `voiceHoldLimit` in the app; tests
-    /// shorten them.
-    package var voiceHoldSeconds = JobService.voiceHold
-    package var voiceHoldLimit = JobService.voiceHoldLimit
-
     private let database: Database
     private let now: () -> Date
     private var runs: [String: Run] = [:]
-    /// Jobs started by voice in this run of the app. Not stored: after a restart they are interrupted anyway.
-    private var voiceJobs: Set<String> = []
-    /// Voice jobs still inside their hold, with the timer that ends it.
-    private var held: [String: Task<Void, Never>] = [:]
-    /// Held jobs whose short hold has not started yet: the pet is still answering.
-    private var unreleased: Set<String> = []
-
     /// A job's live state while it holds an agent process.
     private final class Run {
         let agent: JobAgent
@@ -131,46 +113,9 @@ package final class JobService: ObservableObject {
 
     // MARK: Operations
 
-    package func isFromVoice(_ id: String) -> Bool { voiceJobs.contains(id) }
-    package func isHeld(_ id: String) -> Bool { held[id] != nil }
-
-    /// Stops the newest voice job that is still waiting out its hold, for "cancel that". Nil when there is none.
-    package func cancelHeldVoiceJob() -> Job? {
-        guard let job = jobs.first(where: { held[$0.id] != nil && $0.state == .queued }) else { return nil }
-        return try? stop(job.id)
-    }
-
-    /// The pet has said what it started: held voice jobs run `voiceHoldSeconds` from now.
-    package func releaseVoiceHolds() {
-        for id in unreleased { hold(id, for: voiceHoldSeconds) }
-        unreleased = []
-    }
-
-    private func hold(_ id: String, for seconds: TimeInterval) {
-        held[id]?.cancel()
-        held[id] = Task { [weak self] in
-            try? await Task.sleep(for: .seconds(seconds))
-            guard !Task.isCancelled, let self, held.removeValue(forKey: id) != nil else { return }
-            unreleased.remove(id)
-            pump()
-        }
-    }
-
-    private func holdForVoice(_ id: String) {
-        voiceJobs.insert(id)
-        unreleased.insert(id)
-        hold(id, for: voiceHoldLimit)
-    }
-
-    private func release(_ id: String) {
-        held.removeValue(forKey: id)?.cancel()
-        unreleased.remove(id)
-    }
-
-    /// Starts a job in `folder`, or queues it when `maxRunning` jobs already run. A job from
-    /// voice mode is held until `releaseVoiceHolds` and `voiceHoldSeconds` after it.
+    /// Starts a job in `folder`, or queues it when `maxRunning` jobs already run.
     @discardableResult
-    package func start(title: String, prompt: String, folder: URL, fromVoice: Bool = false) throws -> Job {
+    package func start(title: String, prompt: String, folder: URL) throws -> Job {
         let title = title.split(whereSeparator: \.isNewline).first.map { $0.trimmingCharacters(in: .whitespaces) } ?? ""
         let prompt = prompt.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !title.isEmpty else { throw JobError(message: "title is required: a few words saying what the job does") }
@@ -184,7 +129,6 @@ package final class JobService: ObservableObject {
         guard let (agent, model) = currentAgent() else { throw JobError(message: "no agent is available to run the job") }
         let job = Job(id: Job.makeID(), title: title, prompt: prompt, folder: folder.standardizedFileURL.path, agent: agent.id,
                       model: model, created: now())
-        if fromVoice { holdForVoice(job.id) }
         jobs.insert(job, at: 0)
         trim()
         save(job)
@@ -194,9 +138,9 @@ package final class JobService: ObservableObject {
     }
 
     /// Sends another message to a job. A running job gets it after its current turn; a finished one starts again in the same
-    /// session; from voice mode it is held first, like a new voice job.
+    /// session.
     @discardableResult
-    package func followUp(_ id: String, message: String, fromVoice: Bool = false) throws -> Job {
+    package func followUp(_ id: String, message: String) throws -> Job {
         guard let job = job(id) else { throw JobError(message: "no job with id \"\(id)\"") }
         let message = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !message.isEmpty else { throw JobError(message: "message is empty") }
@@ -220,7 +164,6 @@ package final class JobService: ObservableObject {
             job.started = nil
             job.ended = nil
         }
-        if fromVoice { holdForVoice(id) }
         pump()
         return self.job(id) ?? job
     }
@@ -236,7 +179,6 @@ package final class JobService: ObservableObject {
             cancel(id, run)
         } else {
             pendingFollowUps[id] = nil
-            release(id)
             finish(id, state: .stopped)
         }
         return self.job(id) ?? job
@@ -288,7 +230,7 @@ package final class JobService: ObservableObject {
     /// Starts queued jobs, oldest first, while there are free slots.
     private func pump() {
         let limit = max(1, maxRunning())
-        while runs.count < limit, let next = jobs.last(where: { $0.state == .queued && held[$0.id] == nil }) {
+        while runs.count < limit, let next = jobs.last(where: { $0.state == .queued }) {
             launch(next)
         }
     }

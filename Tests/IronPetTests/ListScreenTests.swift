@@ -39,6 +39,26 @@ final class ListScreenTests: XCTestCase {
         XCTAssertTrue(AgentsSearch.filter([a, b], query: "nothing like it").isEmpty)
     }
 
+    func testAgentsListGroupsByWhatTheyNeedAndHidesEmptyGroups() {
+        let sessions = [
+            AgentSession(id: "a", source: .claude, status: .done),
+            AgentSession(id: "b", source: .cursor, status: .needsInput),
+            AgentSession(id: "c", source: .codex, status: .failed),
+        ]
+        XCTAssertEqual(AgentsList.entries(sessions).map(\.id),
+                       ["group:Needs you", "session:b", "group:Finished", "session:a", "session:c"])
+        XCTAssertTrue(AgentsList.entries([]).isEmpty)
+    }
+
+    func testAnAgentRowKeepsItsIdWhenItMovesToAnotherGroup() {
+        var session = AgentSession(id: "a", source: .claude, status: .running)
+        let before = AgentsList.entries([session]).map(\.id)
+        session.status = .done
+        let after = AgentsList.entries([session]).map(\.id)
+        XCTAssertEqual(before, ["group:Working", "session:a"])
+        XCTAssertEqual(after, ["group:Finished", "session:a"])
+    }
+
     func testAlertsMatchOnTheTitleAndTheSubtitle() {
         let ci = Signal(id: "1", title: "CI failed", subtitle: "ironpet #12", url: nil, date: Date(), label: "CI", symbol: "xmark", mood: .failed)
         let pr = Signal(id: "2", title: "Review requested", subtitle: "website #3", url: nil, date: Date(), label: "PR", symbol: "eye", mood: .needsInput)

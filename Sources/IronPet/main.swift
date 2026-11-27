@@ -60,6 +60,10 @@ if CommandLine.arguments.contains("--render-previews") {
     MainActor.assumeIsolated { PreviewRenderer.run(arguments: CommandLine.arguments) }
     exit(0)
 }
+if CommandLine.arguments.contains("--render-videos") {
+    MainActor.assumeIsolated { PreviewVideos.run(arguments: CommandLine.arguments) }
+    exit(0)
+}
 
 // One GUI process per ironpet root. A second one hands over to the first and exits before it opens a window.
 let instanceLock: SingleInstance

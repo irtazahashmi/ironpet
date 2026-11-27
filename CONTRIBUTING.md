@@ -12,7 +12,7 @@ cd ironpet
 ./scripts/install.sh      # build, install to /Applications and start
 ```
 
-The [README](README.md) covers features and configuration, [SPEC.md](SPEC.md) the design and the reasons behind it, and [SECURITY.md](SECURITY.md) what the app reads and writes.
+The [README](README.md) is the overview. Features and every `config.json` key are documented on [ironpet.ai/docs](https://ironpet.ai/docs/), from the Markdown in `web/content/docs/`; [SPEC.md](SPEC.md) the design and the reasons behind it, and [SECURITY.md](SECURITY.md) what the app reads and writes.
 
 ## Making changes
 
@@ -23,9 +23,25 @@ swift test                # unit tests: config parsing, shortcuts, hook install/
 # run them locally before merging chat, window or settings changes.
 ./scripts/install.sh      # release build, install, restart
 ./scripts/screenshots.sh  # render the README screenshots from sample data
+./scripts/videos.sh       # render the website's clips from sample data
 ```
 
 Check your change in the installed app, not just with `swift build`. Things like global hotkeys, Screen Recording and notifications only behave properly from `/Applications/IronPet.app`, signed with the `ironpet-dev` identity that `install.sh` creates.
+
+### Website
+
+`web/` is the ironpet.ai site: Next.js with a static export, docs and blog posts as Markdown in `web/content/`, and the FAQ in `web/content/faq.json`. It needs Node 22 or newer.
+
+```bash
+cd web
+npm ci
+npm run dev     # http://localhost:3000
+npm run build   # static site in web/out
+```
+
+Both commands first copy `docs/screenshots/` and the app icon into `web/public/`, so the site uses the README's screenshots. Ghost's sprite sheet, `web/public/pet/ghost.webp`, is committed because the site builds on Linux; after changing `tools/make_pet.swift`, regenerate it with `web/scripts/make-pet.sh` (needs `cwebp`). The download links read the latest GitHub release at build time.
+
+The homepage clips in `web/public/videos/` (an MP4 and a JPEG poster each) are committed too. `./scripts/videos.sh` renders them with `IronPet --render-videos` from the same sample data as the screenshots: the window clips open a real ironpet window on screen and record it as its sample stores change, so leave the Mac alone for the minute it takes. `./scripts/videos.sh chat agents` renders only those clips. Re-render a clip when the view it shows changes.
 
 ### iOS app
 
@@ -81,7 +97,8 @@ Run the scenarios related to your change, and mention which ones you ran in the 
 ## Guidelines
 
 - **Safety first.** ironpet edits other tools' config files and starts agents that can change files. Changes to hooks, approvals, Auto mode or anything that writes outside `~/.ironpet` need tests and a note in SECURITY.md. New integrations that touch the network or credentials are off by default.
-- **Settings** go in `Config` (`Support/Config.swift`) with a safe default, plus a control on a Settings page if most people would want to change them. Document new keys in the README's Configuration section.
+- **Settings** go in `Config` (`Support/Config.swift`) with a safe default, plus a control on a Settings page if most people would want to change them. Document new keys in `web/content/docs/configuration.md`, and the feature on its page in `web/content/docs/`.
+- **Agent catalog and skills.** `scripts/gen_agent_catalog.py` regenerates the agent list in `Chat/ACP/AgentCatalogData.swift` from the ACP registry. To add a bundled agent skill, make `skills/<name>/SKILL.md` (frontmatter with `name`, the same as the folder, and `description`), then run `python3 scripts/gen_skills.py`, which compiles the skills into the app. A test fails if you forget.
 - **Style.** Follow the code around your change. Keep functions small, comment the *why* rather than the *what*, and don't add dependencies without discussing it first.
 - **Commits and PRs.** Keep each PR focused on one thing. Describe what changed, why, and how you tested it; include a screenshot for UI changes. CI picks jobs from the paths you touch: Mac build/test/bundle when `Sources/`, `Tests/`, `Package.swift`, adapters or related scripts change; iOS when `iOS/` or `IronPetKit` change; script syntax alone when only other files under `scripts/` change. Docs-only PRs (README, SPEC, SECURITY, …) skip those runners; the required `build` check still passes.
 

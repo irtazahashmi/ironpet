@@ -1,6 +1,6 @@
 import IronPetCore
 
-/// Sends a voice note's transcript to the chat of the active agent, the pet the user selected last. The hotkey records once, on one
+/// Sends a voice note's transcript, or a spoken message, to the chat of the active agent, the pet the user selected last. The hotkey records once, on one
 /// recorder, so this decides where the text goes. An agent with no chat on screen falls back to agent 1's.
 @MainActor
 struct VoiceTranscriptRouter {
@@ -17,5 +17,10 @@ struct VoiceTranscriptRouter {
 
     func route(_ text: String) {
         model(target)?.receiveTranscript(text)
+    }
+
+    /// Sends a message the user said aloud to that chat as its own message.
+    func routeSpoken(_ text: String) {
+        model(target)?.sendSpoken(text)
     }
 }

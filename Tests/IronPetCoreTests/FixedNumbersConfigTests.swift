@@ -12,8 +12,7 @@ final class FixedNumbersConfigTests: XCTestCase {
         XCTAssertFalse(config.memory.learnFromScreen)
         XCTAssertEqual(config.memory.maxClaimsPerEntity, 30)
         XCTAssertEqual(config.memory.noteMaxLength, 240)
-        XCTAssertEqual(config.voiceMode.idleShutdownMinutes, 10)
-        XCTAssertEqual(config.voiceMode.fastModelWords, ["haiku", "flash", "mini", "fast", "lite"])
+        XCTAssertEqual(config.voiceMode.silenceSeconds, 20)
         XCTAssertEqual(config.jobs.retentionDays, 30)
         XCTAssertEqual(config.automations.ownRunLimit, 50)
         XCTAssertEqual(config.automations.keptThreads, 50)
@@ -28,7 +27,7 @@ final class FixedNumbersConfigTests: XCTestCase {
         config.memory.digestMinutes = 0
         config.memory.maxClaimsPerEntity = 0
         config.memory.noteMaxLength = 10_000
-        config.voiceMode.idleShutdownMinutes = 0
+        config.voiceMode.silenceSeconds = 0
         config.jobs.retentionDays = 0
         config.automations.ownRunLimit = 0
         config.automations.keptThreads = 100_000
@@ -40,20 +39,12 @@ final class FixedNumbersConfigTests: XCTestCase {
         XCTAssertEqual(clean.memory.digestMinutes, Config.Memory.digestMinutesRange.lowerBound)
         XCTAssertEqual(clean.memory.maxClaimsPerEntity, Config.Memory.maxClaimsPerEntityRange.lowerBound)
         XCTAssertEqual(clean.memory.noteMaxLength, Config.Memory.noteMaxLengthRange.upperBound)
-        XCTAssertEqual(clean.voiceMode.idleShutdownMinutes, Config.VoiceMode.idleShutdownRange.lowerBound)
+        XCTAssertEqual(clean.voiceMode.silenceSeconds, Config.VoiceMode.silenceRange.lowerBound)
         XCTAssertEqual(clean.jobs.retentionDays, Config.Jobs.retentionDaysRange.lowerBound)
         XCTAssertEqual(clean.automations.ownRunLimit, Config.Automations.ownRunLimitRange.lowerBound)
         XCTAssertEqual(clean.automations.keptThreads, Config.Automations.keptThreadsRange.upperBound)
         XCTAssertEqual(clean.automations.runTimeoutSeconds, Config.Automations.runTimeoutSecondsRange.lowerBound)
         XCTAssertEqual(clean.meetings.transcriptCharacters, Config.Meetings.transcriptCharactersRange.lowerBound)
-    }
-
-    func testFastModelWordsAreTrimmedLowercasedDeduplicatedAndCapped() {
-        var config = Config()
-        config.voiceMode.fastModelWords = [" Haiku ", "haiku", "", "FLASH", "   "]
-        XCTAssertEqual(config.sanitized().voiceMode.fastModelWords, ["haiku", "flash"])
-        config.voiceMode.fastModelWords = (0..<40).map { "word\($0)" }
-        XCTAssertEqual(config.sanitized().voiceMode.fastModelWords.count, Config.VoiceMode.maxFastModelWords)
     }
 
     @MainActor

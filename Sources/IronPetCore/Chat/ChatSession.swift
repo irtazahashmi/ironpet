@@ -89,7 +89,8 @@ package final class ChatSession {
             reply: Reply? = nil,
             selection: FrontSelection? = nil,
             automation: String? = nil,
-            notice: Bool = false
+            notice: Bool = false,
+            spoken: Bool = false
         ) {
             self.text = text
             self.attachments = attachments
@@ -98,6 +99,7 @@ package final class ChatSession {
             self.selection = selection
             self.automation = automation
             self.notice = notice
+            self.spoken = spoken
         }
 
         package let id = UUID()
@@ -110,6 +112,8 @@ package final class ChatSession {
         package var selection: FrontSelection? = nil
         /// The id of the automation that sent the message. Those are never put back in the Mac input.
         package var automation: String? = nil
+        /// The user said it aloud, so its reply starts with a summary that is read aloud.
+        package var spoken = false
         /// A turn that only delivers pending system notices. It has no text and never reaches the draft.
         package var notice = false
         /// Whether a running turn can take it. Automations and notices wait for the turn to end.
@@ -146,7 +150,7 @@ package final class ChatSession {
     package nonisolated static let automationOrigin = ChatOrigin.automationClient
     /// A prompt or follow-up that a background job ran (`JobService`).
     package nonisolated static let jobOrigin = ChatOrigin.jobClient
-    /// Something the user said in voice mode (`FrontDesk`).
+    /// A message the user said aloud (`SpokenMessageController`).
     package nonisolated static let voiceOrigin = ChatOrigin.voiceClient
 
     package struct Approval: Identifiable {
@@ -462,12 +466,17 @@ package final class ChatSession {
     /// Reads replies aloud. The Mac passes its speech player; without one nothing is spoken.
     package let speech: SpeechOutput
     private var speechChanges: [ChangeToken] = []
-    /// The running turn was sent from the chat, not by another client or an automation; its reply is read aloud when it ends.
-    private var turnSpoken = false
+    /// The running turn was sent from the chat, not by another client or an automation, and Speak replies says its reply is
+    /// read aloud: the first line of the reply is its spoken summary.
+    private var turnSpeaksSummary = false
+    /// The summary of the running turn has been read, or skipped because the speaker is off or the Mac is quiet.
+    private var turnSummarySpoken = false
     /// True once an approval card was shown during the running turn. The user took part, so a quiet reply stays visible.
     private var turnAskedApproval = false
     /// True during a call or a meeting recording, when a reply is not read aloud on its own. Set by `AppDelegate`.
     package var isQuiet: () -> Bool = { false }
+    /// The Speak replies setting. The app wires it to the config; tests leave Automatic.
+    package var speakRepliesSetting: () -> Config.SpeakReplies = { .automatic }
     /// False for an agent that is not the active one: its replies show as text and are not read aloud on their own. The speaker button
     /// on a reply still works. Set by `AppDelegate`; a chat with no other agent beside it always speaks.
     package var speaksReplies: () -> Bool = { true }
@@ -690,6 +699,20 @@ package final class ChatSession {
         }
     }
 
+    /// One moment of a sample conversation, for the `--render-videos` clips: running while `activity` or `approval` is set,
+    /// otherwise done, or idle with no items.
+    package func showPreview(_ items: [Item], activity: String? = nil, approval: (title: String, detail: String)? = nil, ranFor: TimeInterval? = nil) {
+        workspace = URL(fileURLWithPath: "/Users/you/code/demo-app")
+        needsWorkspace = false
+        self.items = items
+        let running = activity != nil || approval != nil
+        state = running ? .running : items.isEmpty ? .idle : .done
+        self.activity = approval == nil ? activity : "Waiting for you"
+        runStartedAt = running ? Date().addingTimeInterval(-(ranFor ?? 4)) : nil
+        lastRunDuration = running ? nil : ranFor
+        approvals = approval.map { [Approval(title: $0.title, detail: $0.detail, responders: [])] } ?? []
+    }
+
     /// A reply with every text block, for the markdown previews.
     package static let sampleMarkdown = """
     ## Plan
@@ -738,15 +761,6 @@ package final class ChatSession {
     }()
 
     /// The prompt the agent receives for a reply: the original quoted in full, then the user's text.
-    /// Tells the agent that replies are read aloud while voice mode is on. It goes at the end of the prompt the agent gets, so
-    /// the stored message and the cached prefix stay the same.
-    package static func withVoiceMode(_ prompt: String, on: Bool) -> String {
-        guard on else { return prompt }
-        return prompt + "\n\n" + voiceModeNote
-    }
-
-    package static let voiceModeNote = "[Voice mode is on: your replies are read aloud. Keep the answer to a few plain spoken sentences, with no markdown, code blocks, tables or long lists.]"
-
     package static func replyPrompt(_ reply: Reply, text: String) -> String {
         var original = reply.text
         var note = ""
@@ -862,16 +876,21 @@ package final class ChatSession {
     /// Takes a message typed in a thread whose background job is still running (thread id, text). Returns false when no
     /// job runs there, so the chat sends it itself.
     package var jobFollowUp: ((String, String) -> Bool)?
-    /// Whether voice mode is on, so every turn tells the agent its replies are read aloud. The app wires it to the config;
-    /// tests leave it off, so they do not depend on the user's config.json.
-    package var voiceModeOn: () -> Bool = { false }
+    /// Whether a reply to a message sent from the chat is read aloud: the Speak replies setting against how the message was
+    /// sent, and the speaker being on. Such a turn tells the agent to start its reply with a summary.
+    /// A turn is running whose reply is read aloud, so a job it starts has its updates said.
+    package var readsReply: Bool { isRunning && turnSpeaksSummary }
+
+    private func replySpoken(afterSpokenMessage spoken: Bool) -> Bool {
+        speech.isEnabled() && speakRepliesSetting().speaks(afterSpokenMessage: spoken)
+    }
 
     /// What happened to a message typed on this Mac.
     package enum LocalSend: String, Codable { case ignored, sent, queued, toJob, needsFolder }
 
     /// A message typed on this Mac. A running turn queues it, a running background job in this thread takes it, and with no
     /// folder chosen it is refused so the picker can show. The caller keeps the draft until the answer says it was taken.
-    package func submitLocal(_ text: String, files: [URL], reply: Reply?, selection: FrontSelection? = nil) -> LocalSend {
+    package func submitLocal(_ text: String, files: [URL], reply: Reply?, selection: FrontSelection? = nil, spoken: Bool = false) -> LocalSend {
         let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty || !files.isEmpty else { return .ignored }
         speech.stop()
@@ -885,17 +904,17 @@ package final class ChatSession {
             return .toJob
         }
         if isRunning {
-            queue.append(QueuedMessage(text: prompt, attachments: files, reply: reply, selection: selection))
+            queue.append(QueuedMessage(text: prompt, attachments: files, reply: reply, selection: selection, spoken: spoken))
             steerNext()
             return .queued
         }
-        return start(prompt: prompt, shots: files, reply: reply, selection: selection) ? .sent : .needsFolder
+        return start(prompt: prompt, shots: files, reply: reply, selection: selection, spoken: spoken) ? .sent : .needsFolder
     }
 
     /// Starts a turn. Returns false, without sending, when no folder is chosen or the hooks are missing.
     @discardableResult
     private func start(prompt: String, shots: [URL], from client: ChatOrigin? = nil, reply: Reply? = nil,
-                       selection: FrontSelection? = nil, automation: String? = nil, silent: Bool = false) -> Bool {
+                       selection: FrontSelection? = nil, automation: String? = nil, silent: Bool = false, spoken: Bool = false) -> Bool {
         var prompt = prompt
         let pendingMeta = items.flatMap { $0.meta != nil && $0.metaSent != true ? $0.meta! : [] }
         // A notice turn with nothing left to deliver (a message went first and took it) has nothing to do.
@@ -914,7 +933,7 @@ package final class ChatSession {
         }
         if background, state == .done || state == .failed { state = .idle }
         if prompt.isEmpty, !silent { prompt = client == nil ? "Help me with what's on my screen." : "Help me with the attached file." }
-        let origin = client?.client ?? (automation != nil ? Self.automationOrigin : nil)
+        let origin = client?.client ?? (automation != nil ? Self.automationOrigin : spoken ? Self.voiceOrigin : nil)
         splitReply = nil
         if !silent {
             items += shots.map { Item(kind: .screenshot($0.path), origin: origin) }
@@ -932,7 +951,8 @@ package final class ChatSession {
         var preamble: String?
         if client == nil { preamble = buildPreamble?() }
         turnOrigin = client
-        turnSpoken = client == nil && automation == nil && !silent
+        turnSpeaksSummary = client == nil && automation == nil && !silent && replySpoken(afterSpokenMessage: spoken)
+        turnSummarySpoken = false
         turnAskedApproval = false
         if let client { onTurn?(client, .started) }
         automationRun = automation
@@ -940,7 +960,7 @@ package final class ChatSession {
         // Pending notices go with this turn once. What the user, a client or a tool wrote cannot contain a genuine meta tag.
         for index in items.indices where items[index].meta != nil && items[index].metaSent != true { items[index].metaSent = true }
         let sent = MetaTag.escape(Self.outgoingPrompt(text: prompt, reply: reply, selection: selection))
-        var text = silent ? MetaTag.triggerLead : Self.withVoiceMode(sent, on: voiceModeOn())
+        var text = silent ? MetaTag.triggerLead : SpokenSummary.prompt(sent, on: turnSpeaksSummary)
         if !pendingMeta.isEmpty { text += "\n\n" + MetaTag.block(pendingMeta) }
         run(ACPTurn(prompt: text, preamble: preamble, workspace: workspace, resume: agentSessionID, model: model,
                     images: shots.filter(FolderFileIntake.isImageFile), files: shots.filter { !FolderFileIntake.isImageFile($0) }),
@@ -1083,7 +1103,8 @@ package final class ChatSession {
     private func steerTurn(_ message: QueuedMessage) -> ACPTurn {
         let prompt = Self.displayText(message)
         let sent = MetaTag.escape(Self.outgoingPrompt(text: prompt, reply: message.reply, selection: message.selection))
-        return ACPTurn(prompt: Self.withVoiceMode(sent, on: voiceModeOn()), preamble: nil, workspace: workspace ?? Self.scratchWorkspace,
+        return ACPTurn(prompt: SpokenSummary.prompt(sent, on: message.origin == nil && message.automation == nil && replySpoken(afterSpokenMessage: message.spoken)),
+                       preamble: nil, workspace: workspace ?? Self.scratchWorkspace,
                        resume: agentSessionID, model: model,
                        images: message.attachments.filter(FolderFileIntake.isImageFile), files: message.attachments.filter { !FolderFileIntake.isImageFile($0) })
     }
@@ -1092,7 +1113,7 @@ package final class ChatSession {
         steering = false
         switch outcome {
         case .delivered:
-            let origin = message.origin?.client
+            let origin = message.origin?.client ?? (message.spoken ? Self.voiceOrigin : nil)
             if isRunning, case .assistant = items.last?.kind { splitReply = items.last?.id }
             items += message.attachments.map { Item(kind: .screenshot($0.path), origin: origin) }
             let prompt = Self.displayText(message)
@@ -1123,7 +1144,7 @@ package final class ChatSession {
     private func sendNextQueued() {
         guard let next = queue.first else { return }
         if start(prompt: next.text, shots: next.attachments, from: next.origin, reply: next.reply, selection: next.selection,
-                 automation: next.automation, silent: next.notice) {
+                 automation: next.automation, silent: next.notice, spoken: next.spoken) {
             queue.removeFirst()
         } else {
             restoreQueue()
@@ -1299,7 +1320,7 @@ package final class ChatSession {
         for origin in steered { onTurn?(origin, .failed("Stopped on the Mac.")) }
         restoreQueue()
         speech.stop()
-        turnSpoken = false
+        turnSpeaksSummary = false
         turnID = nil
         acp?.cancel()
         for approval in approvals {
@@ -1521,6 +1542,8 @@ package final class ChatSession {
             restoreQueue(reason: "\(agent.name) needs a runtime download. Approve it on the Mac.")
         case .assistant, .toolStarted, .toolFinished:
             applyTranscript(event)
+            // The summary is read as soon as its line is complete, while the rest of the reply is still being written.
+            if case .assistant = event { speakSummary(final: false) }
         case .finished(let error):
             endTurn()
             if let error { items.append(Item(kind: .error(error))) }
@@ -1534,15 +1557,23 @@ package final class ChatSession {
                 let name = agentDisplayName
                 onAttention?(error == nil ? "\(name) finished your task" : "\(name)'s task failed")
             }
-            // The switch comes first: the quiet check starts polling the microphone list, which must not happen while off.
-            if error == nil, turnSpoken, !hidden, speech.isEnabled(), speaksReplies(), !isQuiet(), let answer = lastAnswerItem(),
-               case .assistant(let text) = answer.kind {
-                try? speech.speak(text, id: answer.id)
-            }
-            turnSpoken = false
+            if error == nil, !hidden { speakSummary(final: true) }
+            turnSpeaksSummary = false
             if error == nil { sendNextQueued() } else { restoreQueue(reason: "The turn before it failed, so this message did not run.") }
             rolloverIfDue()
         }
+    }
+
+    /// Reads the summary at the top of the running turn's reply, once. It is the reply's first line; a reply of one line has
+    /// it only when the turn is over. Only the summary is read: the full answer stays in the chat for the speaker button.
+    private func speakSummary(final: Bool) {
+        guard turnSpeaksSummary, !turnSummarySpoken, let start = items.lastIndex(where: { if case .user = $0.kind { return true } else { return false } }),
+              let answer = items[(start + 1)...].first(where: { if case .assistant(let text) = $0.kind { return !text.allSatisfy(\.isWhitespace) } else { return false } }),
+              case .assistant(let text) = answer.kind, let summary = SpokenSummary.summary(in: text, final: final) else { return }
+        turnSummarySpoken = true
+        // The switch comes first: the quiet check starts polling the microphone list, which must not happen while off.
+        guard speech.isEnabled(), speaksReplies(), !isQuiet() else { return }
+        try? speech.speak(summary, id: answer.id)
     }
 
     /// Updates that arrive after the turn ended, such as a background subagent's result. They join the transcript
