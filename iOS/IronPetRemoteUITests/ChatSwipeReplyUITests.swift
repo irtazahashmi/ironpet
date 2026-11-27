@@ -47,9 +47,9 @@ final class ChatSwipeReplyUITests: XCTestCase {
         app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         let tab = app.tabBars.buttons["Chat"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        XCTAssertTrue(tab.appears(timeout: 20))
         tab.tap()
-        XCTAssertTrue(app.textViews["chat-input"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.textViews["chat-input"].appears(timeout: 20))
     }
 
     private var replyBar: XCUIElement { app.descendants(matching: .any)["reply-bar"] }
@@ -66,16 +66,16 @@ final class ChatSwipeReplyUITests: XCTestCase {
     func testARightSwipeStartsAReplyAndAShortOneDoesNot() {
         openChat()
         let bubble = app.staticTexts["bubble-m-2"]
-        XCTAssertTrue(bubble.waitForExistence(timeout: 20))
+        XCTAssertTrue(bubble.appears(timeout: 20))
         attach("swipe-1-before")
 
         let restX = bubble.frame.minX
         drag(bubble, from: 40, by: 30)
-        XCTAssertFalse(replyBar.waitForExistence(timeout: 1.5), "a short swipe does nothing")
+        XCTAssertFalse(replyBar.appears(timeout: 1.5), "a short swipe does nothing")
         XCTAssertEqual(bubble.frame.minX, restX, accuracy: 1, "the message springs back to its place")
 
         drag(bubble, from: 40, by: 220)
-        XCTAssertTrue(replyBar.waitForExistence(timeout: 5), "a long swipe starts a reply")
+        XCTAssertTrue(replyBar.appears(timeout: 5), "a long swipe starts a reply")
         XCTAssertTrue(app.staticTexts["Change the timeout to ten seconds."].exists)
         attach("swipe-3-reply-started")
         app.buttons["Cancel reply"].firstMatch.tap()
@@ -92,7 +92,7 @@ final class ChatSwipeReplyUITests: XCTestCase {
 
     /// The two sideways scroll views of the reply that holds a code block and a table, code first.
     private func blocks() -> (code: XCUIElement, table: XCUIElement) {
-        XCTAssertTrue(app.staticTexts["bubble-m-3"].exists || app.buttons["bubble-m-3"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["bubble-m-3"].exists || app.buttons["bubble-m-3"].appears(timeout: 20))
         let found = app.scrollViews.allElementsBoundByIndex.filter { $0.frame.height < 90 && $0.frame.width > 250 && $0.frame.width < 330 }
         XCTAssertEqual(found.count, 2, "a code block and a table: \(app.debugDescription)")
         return (found[0], found[1])
@@ -111,7 +111,7 @@ final class ChatSwipeReplyUITests: XCTestCase {
             if name == "code" { attach("swipe-4-code-scrolled") }
             XCTAssertFalse(replyBar.exists, "a left swipe on the \(name) is not a reply")
             sweep(at: block, from: 80, to: 330)
-            XCTAssertFalse(replyBar.waitForExistence(timeout: 1.5), "a right swipe on the \(name) is not a reply")
+            XCTAssertFalse(replyBar.appears(timeout: 1.5), "a right swipe on the \(name) is not a reply")
             XCTAssertGreaterThan(contentX(block), start - 20, "the \(name) is back at its start")
         }
         attach("swipe-5-blocks")
@@ -120,24 +120,24 @@ final class ChatSwipeReplyUITests: XCTestCase {
     func testTheEdgeSwipeStillGoesBack() {
         openChat()
         let bubble = app.staticTexts["bubble-m-2"]
-        XCTAssertTrue(bubble.waitForExistence(timeout: 20))
+        XCTAssertTrue(bubble.appears(timeout: 20))
         // From the screen edge on a message of the open chat, nothing is a reply.
         let window = app.windows.firstMatch
         let edgeStart = window.coordinate(withNormalizedOffset: CGVector(dx: 2 / window.frame.width, dy: bubble.frame.midY / window.frame.height))
         edgeStart.press(forDuration: 0.05, thenDragTo: window.coordinate(withNormalizedOffset: CGVector(dx: 0.7, dy: bubble.frame.midY / window.frame.height)))
-        XCTAssertFalse(replyBar.waitForExistence(timeout: 1.5), "an edge swipe is the back swipe, not a reply")
+        XCTAssertFalse(replyBar.appears(timeout: 1.5), "an edge swipe is the back swipe, not a reply")
 
         // And on a pushed screen the edge swipe goes back.
         app.buttons["chat-more-button"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         app.buttons["threads-button"].tap()
         let thread = app.buttons["thread-th-1"]
-        XCTAssertTrue(thread.waitForExistence(timeout: 10))
+        XCTAssertTrue(thread.appears(timeout: 10))
         thread.tap()
-        XCTAssertTrue(app.staticTexts["Old answer"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.staticTexts["Old answer"].appears(timeout: 10))
         let sheet = app.windows.firstMatch
         sheet.coordinate(withNormalizedOffset: CGVector(dx: 2 / sheet.frame.width, dy: 0.5))
             .press(forDuration: 0.05, thenDragTo: sheet.coordinate(withNormalizedOffset: CGVector(dx: 0.8, dy: 0.5)))
-        XCTAssertTrue(app.buttons["thread-th-1"].waitForExistence(timeout: 10), "the edge swipe went back to the list")
+        XCTAssertTrue(app.buttons["thread-th-1"].appears(timeout: 10), "the edge swipe went back to the list")
         attach("swipe-6-back")
     }
 }

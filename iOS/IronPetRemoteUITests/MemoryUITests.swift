@@ -28,27 +28,27 @@ final class MemoryUITests: XCTestCase {
         app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         let more = app.tabBars.buttons["More"]
-        XCTAssertTrue(more.waitForExistence(timeout: 20))
+        XCTAssertTrue(more.appears(timeout: 20))
         more.tap()
         let row = app.buttons["more-memory"]
-        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        XCTAssertTrue(row.appears(timeout: 10))
         row.tap()
     }
 
     func testBrowseFilterOpenAPageAndFollowALink() {
         openMemory()
-        XCTAssertTrue(app.buttons["memory-row-page_4e91b0"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["memory-row-page_4e91b0"].appears(timeout: 20))
         XCTAssertFalse(app.staticTexts["memory-count"].exists, "the list shows no count label")
         attach("memory-list")
         app.buttons["memory-chip-people"].tap()
-        XCTAssertTrue(app.buttons["memory-row-page_9594cc"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["memory-row-page_9594cc"].appears(timeout: 10))
         XCTAssertFalse(app.buttons["memory-row-page_4e91b0"].exists)
         app.buttons["memory-chip-people"].tap()
         app.buttons["memory-row-page_4e91b0"].tap()
         let link = app.buttons["memory-link-page_9594cc"]
-        XCTAssertTrue(link.waitForExistence(timeout: 10))
+        XCTAssertTrue(link.appears(timeout: 10))
         attach("memory-page")
         link.tap()
-        XCTAssertTrue(app.navigationBars["Maya Chen"].waitForExistence(timeout: 10), "following a link pushes the linked page")
+        XCTAssertTrue(app.navigationBars["Maya Chen"].appears(timeout: 10), "following a link pushes the linked page")
     }
 }
