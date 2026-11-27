@@ -607,7 +607,7 @@ package final class ACPBackend {
         if let meta = Self.toolRulesMeta(turn) { params["_meta"] = meta }
         let sessionCapabilities = capabilities["sessionCapabilities"] as? JSON ?? [:]
         if sessionCapabilities["additionalDirectories"] != nil, !restricted {
-            let folders = [Paths.screenshots]
+            let folders = ChatPreviewRoots.ironPetExtraFolders
             for dir in folders { try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true) }
             params["additionalDirectories"] = folders.map(\.path)
         }
