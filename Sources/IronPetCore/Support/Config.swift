@@ -199,17 +199,22 @@ package struct Config: Codable, Equatable {
     /// Spoken messages: a shortcut records one utterance through ironpet's microphone and sends it to the primary chat.
     /// The key keeps its old name, `voiceMode`, so existing config files still load.
     package struct VoiceMode: Codable, Equatable {
-        package init(silenceSeconds: Int = 20, speakJobUpdates: Bool = true) {
+        package init(silenceSeconds: Int = 20, endPauseSeconds: Double = VoiceMode.defaultEndPauseSeconds, speakJobUpdates: Bool = true) {
             self.silenceSeconds = silenceSeconds
+            self.endPauseSeconds = endPauseSeconds
             self.speakJobUpdates = speakJobUpdates
         }
 
         /// Listening stops after this long with nothing said.
         package var silenceSeconds = 20
+        /// A spoken message is sent after this long without speech, once something was said.
+        package var endPauseSeconds = VoiceMode.defaultEndPauseSeconds
         /// Speak up when a job started during a spoken turn finishes, fails or needs an OK.
         package var speakJobUpdates = true
 
         package static let silenceRange = 5...120
+        package static let defaultEndPauseSeconds = 2.5
+        package static let endPauseRange = 1.0...10.0
     }
 
     /// Meeting transcripts: the mic and one app's audio go to the voice server in chunks, and an agent summarizes the
@@ -836,6 +841,8 @@ package struct Config: Codable, Equatable {
             ? min(Speech.speedRange.upperBound, max(Speech.speedRange.lowerBound, c.speech.speed)) : Speech.defaultSpeed
         if c.hotkeys.voiceMode == Hotkeys.previousVoiceMode { c.hotkeys.voiceMode = Hotkeys.defaultVoiceMode }
         c.voiceMode.silenceSeconds = min(VoiceMode.silenceRange.upperBound, max(VoiceMode.silenceRange.lowerBound, c.voiceMode.silenceSeconds))
+        c.voiceMode.endPauseSeconds = c.voiceMode.endPauseSeconds.isFinite
+            ? min(VoiceMode.endPauseRange.upperBound, max(VoiceMode.endPauseRange.lowerBound, c.voiceMode.endPauseSeconds)) : VoiceMode.defaultEndPauseSeconds
         if c.meetings.summaryModel?.trimmingCharacters(in: .whitespaces).isEmpty == true { c.meetings.summaryModel = nil }
         c.meetings.ignoredMicApps = MicIgnoreList.normalized(c.meetings.ignoredMicApps)
         c.screenCapture.retentionDays = min(365, max(1, c.screenCapture.retentionDays))

@@ -29,6 +29,7 @@ final class SpokenMessageRecorderTests: XCTestCase {
     private var ended = 0
     /// Silence timers fire when the test calls `elapse()`.
     private var elapse: (() -> Void)?
+    private var sleeps: [TimeInterval] = []
 
     override func setUp() async throws {
         recorder = SpokenMessageRecorder()
@@ -41,7 +42,10 @@ final class SpokenMessageRecorderTests: XCTestCase {
         recorder.makeMic = { [unowned self] in mic }
         recorder.transcribe = { wav in String(decoding: wav, as: UTF8.self) }
         recorder.silenceSeconds = { 20 }
-        recorder.silenceSleep = { [unowned self] _ in
+        sleeps = []
+        recorder.endPauseSeconds = { 2.5 }
+        recorder.silenceSleep = { [unowned self] seconds in
+            sleeps.append(seconds)
             try await withCheckedThrowingContinuation { (gate: CheckedContinuation<Void, Error>) in
                 elapse = { gate.resume() }
             }
@@ -68,10 +72,54 @@ final class SpokenMessageRecorderTests: XCTestCase {
         mic.startTalking()
         mic.finishTalking("what changed in the last hour")
         await settle()
+        XCTAssertEqual(messages, [], "a short pause does not send yet")
+        elapse?()
+        await settle()
         XCTAssertEqual(messages, ["what changed in the last hour"])
         XCTAssertEqual(recorder.state, .idle)
         XCTAssertTrue(mic.stopped, "the microphone closes once the message is complete")
         XCTAssertEqual(ended, 1)
+    }
+
+    func testAShortPauseInTheMiddleKeepsOneMessage() async {
+        await listen()
+        mic.startTalking()
+        mic.finishTalking("what changed")
+        await settle()
+        mic.startTalking()
+        mic.finishTalking("in the last hour")
+        await settle()
+        XCTAssertEqual(messages, [])
+        XCTAssertEqual(recorder.state, .listening)
+        elapse?()
+        await settle()
+        XCTAssertEqual(messages, ["what changed in the last hour"])
+    }
+
+    func testTheMessageIsSentAfterTheConfiguredEndPause() async {
+        recorder.endPauseSeconds = { 4 }
+        await listen()
+        mic.startTalking()
+        mic.finishTalking("hello")
+        await settle()
+        XCTAssertEqual(sleeps.last, 4)
+        elapse?()
+        await settle()
+        XCTAssertEqual(messages, ["hello"])
+    }
+
+    func testTheDefaultEndPauseIsTwoAndAHalfSeconds() {
+        XCTAssertEqual(Config().voiceMode.endPauseSeconds, 2.5)
+    }
+
+    func testSecondPressAfterAPauseSendsEverythingSaidAtOnce() async {
+        await listen()
+        mic.startTalking()
+        mic.finishTalking("one")
+        await settle()
+        recorder.press()
+        await settle()
+        XCTAssertEqual(messages, ["one"])
     }
 
     func testSecondPressWhileSpeakingEndsTheUtteranceAndSendsIt() async {
@@ -82,6 +130,18 @@ final class SpokenMessageRecorderTests: XCTestCase {
         mic.finishTalking("send this now")
         await settle()
         XCTAssertEqual(messages, ["send this now"])
+    }
+
+    func testSecondPressWhileSpeakingSendsEarlierUtterancesToo() async {
+        await listen()
+        mic.startTalking()
+        mic.finishTalking("first")
+        await settle()
+        mic.startTalking()
+        recorder.press()
+        mic.finishTalking("second")
+        await settle()
+        XCTAssertEqual(messages, ["first second"])
     }
 
     func testSecondPressBeforeAnyWordDiscardsTheRecording() async {
@@ -150,6 +210,8 @@ final class SpokenMessageRecorderTests: XCTestCase {
         mic.startTalking()
         mic.finishTalking("hello")
         await settle()
+        elapse?()
+        await settle()
         XCTAssertEqual(messages, [])
         XCTAssertEqual(recorder.state, .idle)
         XCTAssertTrue(failures.first?.contains("server down") == true)
@@ -161,6 +223,8 @@ final class SpokenMessageRecorderTests: XCTestCase {
         mic.startTalking()
         mic.finishTalking("hello")
         await settle()
+        elapse?()
+        await settle()
         XCTAssertEqual(messages, [])
         XCTAssertEqual(failures, ["I didn't catch that."])
     }
@@ -170,6 +234,8 @@ final class SpokenMessageRecorderTests: XCTestCase {
         await listen()
         mic.startTalking()
         mic.finishTalking("hello")
+        await settle()
+        elapse?()
         await settle()
         XCTAssertEqual(recorder.state, .transcribing)
         recorder.press()

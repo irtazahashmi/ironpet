@@ -307,7 +307,7 @@ Open **Settings** (<kbd>⌘,</kbd> or right-click Ghost → Settings…) to rena
   "integrations": { "trackAgents": true, "shareMCPSignIns": false },
   "voice": { "enabled": false, "baseUrl": "http://localhost:8000/v1", "model": "mlx-community/parakeet-tdt-0.6b-v3", "holdToTalk": true },
   "speech": { "speakReplies": "automatic", "model": "mlx-community/Kokoro-82M-bf16", "voice": "am_puck", "speed": 1.0 },
-  "voiceMode": { "silenceSeconds": 20, "speakJobUpdates": true },
+  "voiceMode": { "silenceSeconds": 20, "endPauseSeconds": 2.5, "speakJobUpdates": true },
   "meetings": { "enabled": false, "lastApp": "", "summaryAgent": "claude", "summaryModel": null, "autoSummary": true, "offerToRecordCalls": true, "recogniseSpeakers": false, "transcriptCharacters": 300000 },
   "telegram": { "enabled": false, "allowedUsers": [] },
   "screenCapture": { "enabled": false, "ocr": false, "retentionDays": 30, "excludedApps": [] },
@@ -451,6 +451,7 @@ Press <kbd>⌃⇧V</kbd> anywhere and talk. Ghost looks up, attentive, with a sm
 | --- | --- | --- |
 | Shortcut | `hotkeys.voiceMode` | Default `ctrl+shift+v`, registered only while voice notes are on. Config files that still hold the old default `cmd+opt+ctrl+v` move to the new one |
 | Stop after silence | `voiceMode.silenceSeconds` | Default 20, 5 to 120. Listening stops if you say nothing for this long |
+| Send after a pause | `voiceMode.endPauseSeconds` | Default 2.5, 1 to 10. A spoken message is sent after this long without speech. Shorter pauses keep the message going, and a second press of the shortcut sends it at once |
 | Speak job updates | `voiceMode.speakJobUpdates` | Default on |
 
 - **The microphone** is open only while listening, with macOS voice processing on. Esc or the pill's button discards the message. Pressing the shortcut while Ghost is speaking stops him and starts listening.

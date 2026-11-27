@@ -261,4 +261,37 @@ final class ChatSpeechTests: XCTestCase {
         await type("interrupting")
         XCTAssertNil(session.speech.speakingID)
     }
+
+    // MARK: The finished bubble
+
+    func testASpokenSummarySkipsTheFinishedBubble() async {
+        var bubbles: [String] = []
+        session.isVisible = false
+        session.onAttention = { bubbles.append($0) }
+        await say("what changed?")
+        await answer(0, "Two files changed.\n\nDetails follow.")
+        XCTAssertEqual(spoken, ["Two files changed."])
+        XCTAssertEqual(bubbles, [])
+    }
+
+    func testAFailedSpokenTurnStillShowsTheFailureBubble() async {
+        var bubbles: [String] = []
+        session.isVisible = false
+        session.onAttention = { bubbles.append($0) }
+        await say("what changed?")
+        await answer(0, "Two files changed.", error: "boom")
+        XCTAssertEqual(bubbles.count, 1)
+        XCTAssertTrue(bubbles[0].contains("failed"))
+    }
+
+    func testATypedTurnWithTheSpeakerOffStillShowsTheFinishedBubble() async {
+        var bubbles: [String] = []
+        session.isVisible = false
+        session.speech.isEnabled = { false }
+        session.onAttention = { bubbles.append($0) }
+        await type("typed while hidden")
+        await answer(0, "Done.")
+        XCTAssertEqual(bubbles.count, 1)
+        XCTAssertTrue(bubbles[0].contains("finished your task"))
+    }
 }

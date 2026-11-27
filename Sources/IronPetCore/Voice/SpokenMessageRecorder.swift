@@ -1,9 +1,10 @@
 import Foundation
 import IronPetKit
 
-/// Records one spoken message for the primary chat. The voice shortcut starts listening; the message ends on silence, on a
-/// second press of the shortcut, or never if nothing is said for `silenceSeconds`. The recording is transcribed and handed to
-/// `onMessage`, which sends it to the chat like typed text. Esc discards it.
+/// Records one spoken message for the primary chat. The voice shortcut starts listening. Utterances the microphone cuts at
+/// short pauses are collected into one message, which ends after `endPauseSeconds` without speech or on a second press of
+/// the shortcut. Nothing said for `silenceSeconds` ends listening. The utterances are transcribed, joined and handed to
+/// `onMessage`, which sends them to the chat like typed text. Esc discards them.
 @MainActor
 package final class SpokenMessageRecorder: ObservableObject {
     package enum State: String { case idle, listening, transcribing }
@@ -14,6 +15,8 @@ package final class SpokenMessageRecorder: ObservableObject {
 
     /// Listening gives up after this long without speech. `Config.voiceMode.silenceSeconds` in the app.
     package var silenceSeconds: () -> TimeInterval = { TimeInterval(ConfigStore.shared.config.voiceMode.silenceSeconds) }
+    /// After something was said, the pause that ends the message. `Config.voiceMode.endPauseSeconds` in the app.
+    package var endPauseSeconds: () -> TimeInterval = { ConfigStore.shared.config.voiceMode.endPauseSeconds }
     /// Waits out the silence. Tests replace it so listening does not depend on the wall clock.
     package var silenceSleep: (TimeInterval) async throws -> Void = { try await Task.sleep(for: .seconds($0)) }
     /// Why the pet must not listen right now ("a call", "a meeting recording"), or nil.
@@ -39,6 +42,11 @@ package final class SpokenMessageRecorder: ObservableObject {
     package private(set) var mic: ConversationListening?
     private var work: Task<Void, Never>?
     private var silence: Task<Void, Never>?
+    private var endPause: Task<Void, Never>?
+    /// The utterances of the message so far, in order.
+    private var utterances: [Data] = []
+    /// A second press cut the utterance in progress: the message is sent as soon as it arrives.
+    private var sendOnUtterance = false
     private var quietWatch: Task<Void, Never>?
     /// Bumped by every end, so a transcription that was overtaken drops its result.
     private var generation = 0
@@ -66,7 +74,14 @@ package final class SpokenMessageRecorder: ObservableObject {
         case .idle:
             start()
         case .listening:
-            if userSpeaking { mic?.cutNow() } else { cancel() }
+            if userSpeaking {
+                sendOnUtterance = true
+                mic?.cutNow()
+            } else if utterances.isEmpty {
+                cancel()
+            } else {
+                send()
+            }
         case .transcribing:
             break
         }
@@ -95,6 +110,8 @@ package final class SpokenMessageRecorder: ObservableObject {
             mic = opened
             heard = nil
             userSpeaking = false
+            utterances = []
+            sendOnUtterance = false
             state = .listening
             armSilence()
             watchQuiet()
@@ -126,10 +143,13 @@ package final class SpokenMessageRecorder: ObservableObject {
 
     private func finish() {
         silence?.cancel()
+        endPause?.cancel()
         quietWatch?.cancel()
         mic?.stop()
         mic = nil
         userSpeaking = false
+        utterances = []
+        sendOnUtterance = false
         state = .idle
         onEnded()
     }
@@ -140,20 +160,28 @@ package final class SpokenMessageRecorder: ObservableObject {
         case .speechStarted:
             userSpeaking = true
             silence?.cancel()
+            endPause?.cancel()
         case .utterance(let wav):
             userSpeaking = false
-            transcribeAndSend(wav)
+            utterances.append(wav)
+            if sendOnUtterance { send() } else { armEndPause() }
         case .discarded:
             userSpeaking = false
-            armSilence()
+            let sendNow = sendOnUtterance
+            sendOnUtterance = false
+            if utterances.isEmpty { armSilence() } else if sendNow { send() } else { armEndPause() }
         case .failed(let message):
             onFailure(message)
             cancel()
         }
     }
 
-    private func transcribeAndSend(_ wav: Data) {
+    private func send() {
         silence?.cancel()
+        endPause?.cancel()
+        let clips = utterances
+        utterances = []
+        sendOnUtterance = false
         // The microphone closes now: the message is complete, and nothing more is heard while it is transcribed.
         mic?.stop()
         mic = nil
@@ -161,9 +189,12 @@ package final class SpokenMessageRecorder: ObservableObject {
         let current = generation
         work = Task { [weak self] in
             guard let self else { return }
-            let text: String
+            var parts: [String] = []
             do {
-                text = try await transcribe(wav).trimmingCharacters(in: .whitespacesAndNewlines)
+                for wav in clips {
+                    let part = try await transcribe(wav).trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !part.isEmpty { parts.append(part) }
+                }
             } catch is CancellationError {
                 return
             } catch {
@@ -173,6 +204,7 @@ package final class SpokenMessageRecorder: ObservableObject {
             }
             guard current == generation else { return }
             work = nil
+            let text = parts.joined(separator: " ")
             guard !text.isEmpty else {
                 onFailure("I didn't catch that.")
                 return finish()
@@ -191,6 +223,17 @@ package final class SpokenMessageRecorder: ObservableObject {
             try? await sleep(seconds)
             guard let self, !Task.isCancelled, state == .listening, !userSpeaking else { return }
             cancel()
+        }
+    }
+
+    private func armEndPause() {
+        endPause?.cancel()
+        let seconds = endPauseSeconds()
+        let sleep = silenceSleep
+        endPause = Task { [weak self] in
+            try? await sleep(seconds)
+            guard let self, !Task.isCancelled, state == .listening, !userSpeaking, !utterances.isEmpty else { return }
+            send()
         }
     }
 
