@@ -23,9 +23,25 @@ swift test                # unit tests: config parsing, shortcuts, hook install/
 # run them locally before merging chat, window or settings changes.
 ./scripts/install.sh      # release build, install, restart
 ./scripts/screenshots.sh  # render the README screenshots from sample data
+./scripts/videos.sh       # render the website's clips from sample data
 ```
 
 Check your change in the installed app, not just with `swift build`. Things like global hotkeys, Screen Recording and notifications only behave properly from `/Applications/IronPet.app`, signed with the `ironpet-dev` identity that `install.sh` creates.
+
+### Website
+
+`web/` is the ironpet.ai site: Next.js with a static export, docs and blog posts as Markdown in `web/content/`, and the FAQ in `web/content/faq.json`. It needs Node 22 or newer.
+
+```bash
+cd web
+npm ci
+npm run dev     # http://localhost:3000
+npm run build   # static site in web/out
+```
+
+Both commands first copy `docs/screenshots/` and the app icon into `web/public/`, so the site uses the README's screenshots. Ghost's sprite sheet, `web/public/pet/ghost.webp`, is committed because the site builds on Linux; after changing `tools/make_pet.swift`, regenerate it with `web/scripts/make-pet.sh` (needs `cwebp`). The download links read the latest GitHub release at build time.
+
+The homepage clips in `web/public/videos/` (an MP4 and a JPEG poster each) are committed too. `./scripts/videos.sh` renders them with `IronPet --render-videos` from the same sample data as the screenshots: the window clips open a real ironpet window on screen and record it as its sample stores change, so leave the Mac alone for the minute it takes. `./scripts/videos.sh chat agents` renders only those clips. Re-render a clip when the view it shows changes.
 
 ### iOS app
 
