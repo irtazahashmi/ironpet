@@ -21,9 +21,9 @@ final class ChatStreamingUITests: XCTestCase {
         app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         let tab = app.tabBars.buttons["Chat"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        XCTAssertTrue(tab.appears(timeout: 20))
         tab.tap()
-        XCTAssertTrue(app.textViews["chat-input"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.textViews["chat-input"].appears(timeout: 20))
     }
 
     /// Streams 30 words over 3 s and returns the distinct texts the bubble showed, sampled while it streams.
@@ -50,7 +50,7 @@ final class ChatStreamingUITests: XCTestCase {
         XCTAssertGreaterThanOrEqual(result.seen.count, 10, "intermediate texts: \(result.seen.count)")
         XCTAssertEqual(server.messageReads, 0, "the events carried the text")
         let bubble = app.staticTexts.matching(identifier: "bubble-reply").firstMatch
-        XCTAssertTrue(bubble.waitForExistence(timeout: 5))
+        XCTAssertTrue(bubble.appears(timeout: 5))
         XCTAssertEqual(bubble.label.trimmingCharacters(in: .whitespaces), result.final)
     }
 }

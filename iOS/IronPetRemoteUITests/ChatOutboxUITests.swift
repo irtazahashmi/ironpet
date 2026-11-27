@@ -21,9 +21,9 @@ final class ChatOutboxUITests: XCTestCase {
         app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         let tab = app.tabBars.buttons["Chat"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        XCTAssertTrue(tab.appears(timeout: 20))
         tab.tap()
-        XCTAssertTrue(app.textViews["chat-input"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.textViews["chat-input"].appears(timeout: 20))
     }
 
     /// The bubble of a message that waits for the connection. Its accessibility value says so, and the clock glyph is hidden from VoiceOver.
@@ -31,7 +31,7 @@ final class ChatOutboxUITests: XCTestCase {
     /// Taps a button of the long-press menu once it has stopped moving. The menu opens with a spring animation, and on a slow runner a tap
     /// at the position the button had a moment earlier lands outside the menu. That only dismisses it, and the message stays in the outbox.
     private func tapWhenSettled(_ button: XCUIElement) {
-        XCTAssertTrue(button.waitForExistence(timeout: 10), "the long-press menu has \(button.identifier)")
+        XCTAssertTrue(button.appears(timeout: 10), "the long-press menu has \(button.identifier)")
         var last = button.frame
         for _ in 0..<20 {
             Thread.sleep(forTimeInterval: 0.25)
@@ -52,13 +52,13 @@ final class ChatOutboxUITests: XCTestCase {
         input.tap()
         input.typeText("typed offline")
         app.buttons["send-button"].tap()
-        XCTAssertTrue(waitingBubble().waitForExistence(timeout: 20), "the message shows as waiting to send")
+        XCTAssertTrue(waitingBubble().appears(timeout: 20), "the message shows as waiting to send")
         XCTAssertFalse(app.buttons["outgoing-delete"].exists, "no Delete button row under the message")
         app.staticTexts["typed offline"].press(forDuration: 1)
         tapWhenSettled(app.buttons["outgoing-delete"])
         let gone = NSPredicate(format: "exists == false")
         expectation(for: gone, evaluatedWith: waitingBubble())
         waitForExpectations(timeout: 10)
-        XCTAssertTrue(app.staticTexts["typed offline"].waitForNonExistence(timeout: 5), "the message is gone from the transcript, and so is the menu preview")
+        XCTAssertTrue(app.staticTexts["typed offline"].vanishes(timeout: 5), "the message is gone from the transcript, and so is the menu preview")
     }
 }

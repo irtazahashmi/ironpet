@@ -43,9 +43,9 @@ final class ChatSelectionUITests: XCTestCase {
         app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         let tab = app.tabBars.buttons["Chat"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        XCTAssertTrue(tab.appears(timeout: 20))
         tab.tap()
-        XCTAssertTrue(app.textViews["chat-input"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.textViews["chat-input"].appears(timeout: 20))
     }
 
     /// An entry of the edit menu. The system draws it as a menu item or a button, depending on the iOS version.
@@ -58,7 +58,7 @@ final class ChatSelectionUITests: XCTestCase {
     /// The reply's element, a static text that holds all its blocks.
     private func replyText() -> XCUIElement {
         let view = app.staticTexts["bubble-m-2"]
-        XCTAssertTrue(view.waitForExistence(timeout: 20))
+        XCTAssertTrue(view.appears(timeout: 20))
         return view
     }
 
@@ -68,7 +68,7 @@ final class ChatSelectionUITests: XCTestCase {
         // The first words of the first paragraph, where the press lands on selectable text.
         text.coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.04)).press(forDuration: 1.0)
         let select = entry("Select text")
-        XCTAssertTrue(select.waitForExistence(timeout: 5), "the message menu has Select text: \(app.debugDescription)")
+        XCTAssertTrue(select.appears(timeout: 5), "the message menu has Select text: \(app.debugDescription)")
         select.tap()
     }
 
@@ -78,9 +78,9 @@ final class ChatSelectionUITests: XCTestCase {
         selectText()
         attach("selection-1-all-selected")
         let ask = entry("Ask about this")
-        XCTAssertTrue(ask.waitForExistence(timeout: 5), "the menu of the selection offers Ask about this")
+        XCTAssertTrue(ask.appears(timeout: 5), "the menu of the selection offers Ask about this")
         ask.tap()
-        XCTAssertTrue(replyBar.waitForExistence(timeout: 5), "the composer replies to the message")
+        XCTAssertTrue(replyBar.appears(timeout: 5), "the composer replies to the message")
         let quoted = app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'first paragraph' AND label CONTAINS 'alpha item'")).count
             + replyBar.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS 'first paragraph' AND label CONTAINS 'alpha item'")).count
         XCTAssertGreaterThan(quoted, 0, "the quote spans the paragraph and the list: \(replyBar.debugDescription)")
@@ -94,12 +94,12 @@ final class ChatSelectionUITests: XCTestCase {
         openChat()
         replyText().coordinate(withNormalizedOffset: CGVector(dx: 0.12, dy: 0.04)).press(forDuration: 1.0)
         for title in ["Reply", "Copy", "Read Aloud", "Select text"] {
-            XCTAssertTrue(entry(title).waitForExistence(timeout: 5), "\(title) is in the message menu")
+            XCTAssertTrue(entry(title).appears(timeout: 5), "\(title) is in the message menu")
         }
         attach("selection-3-message-menu")
         entry("Copy").tap()
         selectText()
-        XCTAssertTrue(entry("Copy").waitForExistence(timeout: 5), "Copy stays in the selection menu")
+        XCTAssertTrue(entry("Copy").appears(timeout: 5), "Copy stays in the selection menu")
         entry("Copy").tap()
     }
 
@@ -107,7 +107,7 @@ final class ChatSelectionUITests: XCTestCase {
     func testASelectionStaysWhileAnotherReplyStreams() {
         openChat()
         selectText()
-        XCTAssertTrue(entry("Ask about this").waitForExistence(timeout: 5))
+        XCTAssertTrue(entry("Ask about this").appears(timeout: 5))
         for n in 1...20 {
             server.streamChunk(item: "stream", "w\(n) ")
             Thread.sleep(forTimeInterval: 0.1)
@@ -115,7 +115,7 @@ final class ChatSelectionUITests: XCTestCase {
         server.finishTurn()
         attach("selection-5-after-stream")
         let streamed = app.descendants(matching: .any).matching(identifier: "bubble-stream").firstMatch
-        XCTAssertTrue(streamed.waitForExistence(timeout: 5))
+        XCTAssertTrue(streamed.appears(timeout: 5))
         XCTAssertTrue(streamed.label.contains("w20"), "the streamed reply kept growing: \(streamed.label)")
     }
 }

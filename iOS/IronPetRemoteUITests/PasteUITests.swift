@@ -35,9 +35,9 @@ final class PasteUITests: XCTestCase {
 
     private func openChat() {
         let tab = app.tabBars.buttons["Chat"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        XCTAssertTrue(tab.appears(timeout: 20))
         tab.tap()
-        XCTAssertTrue(input.waitForExistence(timeout: 20))
+        XCTAssertTrue(input.appears(timeout: 20))
     }
 
     private var input: XCUIElement { app.textViews["chat-input"] }
@@ -89,8 +89,8 @@ final class PasteUITests: XCTestCase {
         input.tap()
         input.press(forDuration: 1.2)
         let candidates = [app.menuItems["Paste"], app.buttons["Paste"]]
-        let paste = candidates.first { $0.waitForExistence(timeout: 3) } ?? candidates[0]
-        XCTAssertTrue(paste.waitForExistence(timeout: 5), "the Paste menu item shows when the clipboard holds an image")
+        let paste = candidates.first { $0.appears(timeout: 3) } ?? candidates[0]
+        XCTAssertTrue(paste.appears(timeout: 5), "the Paste menu item shows when the clipboard holds an image")
         paste.tap()
         // The permission alert is not in the app's hierarchy, so a tap on the app lets the monitor see it.
         app.tap()
@@ -104,7 +104,7 @@ final class PasteUITests: XCTestCase {
         input.typeText("keep me")
         copyImage()
         pasteFromMenu()
-        XCTAssertTrue(any("attachment-thumbnail-0").waitForExistence(timeout: 10))
+        XCTAssertTrue(any("attachment-thumbnail-0").appears(timeout: 10))
         XCTAssertEqual(input.value as? String, "keep me")
         attach("pasted-thumbnail")
     }
@@ -117,7 +117,7 @@ final class PasteUITests: XCTestCase {
         copyImage()
         input.typeKey("v", modifierFlags: .command)
         app.tap()
-        XCTAssertTrue(any("attachment-thumbnail-0").waitForExistence(timeout: 10))
+        XCTAssertTrue(any("attachment-thumbnail-0").appears(timeout: 10))
     }
 
     // S3
@@ -137,9 +137,9 @@ final class PasteUITests: XCTestCase {
         openChat()
         copyImage()
         pasteFromMenu()
-        XCTAssertTrue(any("attachment-thumbnail-0").waitForExistence(timeout: 10))
+        XCTAssertTrue(any("attachment-thumbnail-0").appears(timeout: 10))
         app.buttons["attachment-remove-0"].tap()
-        XCTAssertTrue(any("attachment-thumbnail-0").waitForNonExistence(timeout: 5))
+        XCTAssertTrue(any("attachment-thumbnail-0").vanishes(timeout: 5))
         input.tap()
         input.typeText("only text")
         app.buttons["send-button"].tap()
@@ -154,18 +154,18 @@ final class PasteUITests: XCTestCase {
         openChat()
         copyImage()
         pasteFromMenu()
-        XCTAssertTrue(any("attachment-thumbnail-0").waitForExistence(timeout: 10))
+        XCTAssertTrue(any("attachment-thumbnail-0").appears(timeout: 10))
         input.tap()
         input.typeText("what is this")
         app.buttons["send-button"].tap()
-        XCTAssertTrue(any("attachment-thumbnail-0").waitForNonExistence(timeout: 10), "the thumbnail leaves the composer on send")
+        XCTAssertTrue(any("attachment-thumbnail-0").vanishes(timeout: 10), "the thumbnail leaves the composer on send")
         let sent = NSPredicate { _, _ in self.server.requests.contains { $0.path == "/v1/chat/current/messages" && ($0.json["upload_ids"] as? [String])?.count == 1 } }
         wait(for: [XCTNSPredicateExpectation(predicate: sent, object: nil)], timeout: 10)
         let upload = server.requests.first { $0.path == "/v1/uploads" }
         XCTAssertEqual(upload?.headers["content-type"], "image/jpeg")
         XCTAssertTrue(((upload?.headers["x-file-name"] ?? "").removingPercentEncoding ?? "").hasSuffix(".jpg"))
         let photo = app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'photo-'")).firstMatch
-        XCTAssertTrue(photo.waitForExistence(timeout: 10), "the transcript shows the image")
+        XCTAssertTrue(photo.appears(timeout: 10), "the transcript shows the image")
         XCTAssertFalse(app.descendants(matching: .any).matching(NSPredicate(format: "identifier BEGINSWITH 'chip-'")).firstMatch.exists)
         attach("sent-image")
     }
@@ -184,14 +184,14 @@ final class PasteUITests: XCTestCase {
         pair()
         openChat()
         let photo = any("photo-\(name)")
-        XCTAssertTrue(photo.waitForExistence(timeout: 20), "the Mac's screenshot shows as a thumbnail")
+        XCTAssertTrue(photo.appears(timeout: 20), "the Mac's screenshot shows as a thumbnail")
         XCTAssertFalse(any("chip-\(name)").exists, "the chip is gone")
         attach("mac-screenshot-thumbnail")
         photo.tap()
-        XCTAssertTrue(any("image-viewer-picture").waitForExistence(timeout: 10), "a tap opens the full image")
+        XCTAssertTrue(any("image-viewer-picture").appears(timeout: 10), "a tap opens the full image")
         attach("mac-screenshot-full")
         app.buttons["image-viewer-done"].firstMatch.tap()
-        XCTAssertTrue(any("image-viewer-picture").waitForNonExistence(timeout: 10))
+        XCTAssertTrue(any("image-viewer-picture").vanishes(timeout: 10))
         XCTAssertEqual(server.count("GET /v1/chat/messages/shot-1/file"), 1, "one download serves the thumbnail and the full picture")
     }
 
@@ -203,8 +203,8 @@ final class PasteUITests: XCTestCase {
         pair()
         openChat()
         let chip = any("chip-\(name)")
-        XCTAssertTrue(chip.waitForExistence(timeout: 20))
-        XCTAssertTrue(app.staticTexts["the file is no longer on the Mac"].waitForExistence(timeout: 10))
+        XCTAssertTrue(chip.appears(timeout: 20))
+        XCTAssertTrue(app.staticTexts["the file is no longer on the Mac"].appears(timeout: 10))
     }
 
     // S9, S13
@@ -216,17 +216,17 @@ final class PasteUITests: XCTestCase {
         pair()
         openChat()
         assertAppearance()
-        XCTAssertTrue(any("attach-button").waitForExistence(timeout: 10))
+        XCTAssertTrue(any("attach-button").appears(timeout: 10))
         XCTAssertTrue(app.buttons["send-button"].exists, "the send capsule is always shown")
         XCTAssertFalse(app.buttons["send-button"].isEnabled, "and is disabled on an empty draft")
         XCTAssertFalse(app.buttons["stop-button"].exists)
         attach("composer-empty-\(name)")
         input.tap()
         input.typeText("a draft")
-        XCTAssertTrue(app.buttons["send-button"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["send-button"].appears(timeout: 5))
         copyImage()
         pasteFromMenu()
-        XCTAssertTrue(any("attachment-thumbnail-0").waitForExistence(timeout: 10))
+        XCTAssertTrue(any("attachment-thumbnail-0").appears(timeout: 10))
         attach("composer-draft-thumbnail-\(name)")
         // Stop replaces Send while a turn runs and nothing is typed, so empty the draft first.
         any("attachment-remove-0").tap()
@@ -238,12 +238,12 @@ final class PasteUITests: XCTestCase {
         server.chat = snapshot
         server.publish(RemoteEvent.chatState)
         let stop = app.buttons["stop-button"]
-        XCTAssertTrue(stop.waitForExistence(timeout: 10))
+        XCTAssertTrue(stop.appears(timeout: 10))
         attach("composer-running-\(name)")
         stop.tap()
         let stopped = NSPredicate { _, _ in self.server.requests.contains { $0.line == "POST /v1/chat/current/stop" } }
         wait(for: [XCTNSPredicateExpectation(predicate: stopped, object: nil)], timeout: 10)
-        XCTAssertTrue(stop.waitForNonExistence(timeout: 10))
+        XCTAssertTrue(stop.vanishes(timeout: 10))
     }
 
     // S8
@@ -254,7 +254,7 @@ final class PasteUITests: XCTestCase {
         server.pet = RemotePet(name: "Ghost", mood: "idle", badge: 0, tricks: [], background: "paws")
         pair()
         openChat()
-        XCTAssertTrue(any("chat-background-paws").waitForExistence(timeout: 20), "the chat follows the pet resource's background")
+        XCTAssertTrue(any("chat-background-paws").appears(timeout: 20), "the chat follows the pet resource's background")
         assertAppearance()
         attach("background-paws-\(dark ? "dark" : "light")")
     }
@@ -290,20 +290,20 @@ final class ChatModeUITests: XCTestCase {
         app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         let tab = app.tabBars.buttons["Chat"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        XCTAssertTrue(tab.appears(timeout: 20))
         tab.tap()
         let more = app.buttons["chat-more-button"]
-        XCTAssertTrue(more.waitForExistence(timeout: 20))
+        XCTAssertTrue(more.appears(timeout: 20))
         more.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         let settings = app.buttons["chat-settings-button"]
-        XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        XCTAssertTrue(settings.appears(timeout: 10))
         settings.tap()
         XCTAssertFalse(app.switches["settings-auto"].exists, "no invented auto toggle")
         // Four modes do not fit the half-height sheet, so open it to full height.
         let grabber = app.buttons["Sheet Grabber"]
-        if grabber.waitForExistence(timeout: 5) { grabber.swipeUp() }
+        if grabber.appears(timeout: 5) { grabber.swipeUp() }
         let accept = app.buttons["settings-mode-acceptEdits"]
-        XCTAssertTrue(accept.waitForExistence(timeout: 10), "the agent's own list")
+        XCTAssertTrue(accept.appears(timeout: 10), "the agent's own list")
         XCTAssertTrue(app.buttons["settings-mode-bypassPermissions"].exists)
         // SwiftUI repeats the identifier on the selected row, so find it by its label.
         XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Default'")).firstMatch.isSelected, "the mode in force is selected")
@@ -330,9 +330,9 @@ final class AttachPhotoUITests: XCTestCase {
         app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         let tab = app.tabBars.buttons["Chat"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        XCTAssertTrue(tab.appears(timeout: 20))
         tab.tap()
-        XCTAssertTrue(app.textViews["chat-input"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.textViews["chat-input"].appears(timeout: 20))
     }
 
     override func tearDown() { server.stop() }
@@ -345,11 +345,11 @@ final class AttachPhotoUITests: XCTestCase {
         // A tap at the button's centre. A plain `tap()` scrolls to the element first, which fails on some simulators.
         app.buttons["attach-button"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         let photo = app.buttons["Photo"]
-        XCTAssertTrue(photo.waitForExistence(timeout: 5), "the menu offers Photo")
+        XCTAssertTrue(photo.appears(timeout: 5), "the menu offers Photo")
         photo.tap()
         // The grid's cells are labelled "Photo, <date>". The first image in the sheet is the privacy banner's icon.
         let image = app.scrollViews.images.matching(NSPredicate(format: "label BEGINSWITH 'Photo'")).firstMatch
-        guard image.waitForExistence(timeout: 15) else { throw XCTSkip("the simulator's photo library is empty") }
+        guard image.appears(timeout: 15) else { throw XCTSkip("the simulator's photo library is empty") }
         // The cell exists as soon as the sheet starts to slide in. The picker runs out of process, so `isHittable` is never true and a
         // plain `tap()` fails on it. Wait for the cell's frame to stop moving, then tap its centre.
         var frame = image.frame
@@ -368,7 +368,7 @@ final class AttachPhotoUITests: XCTestCase {
             if let button = ["Add", "Done"].map({ app.buttons[$0] }).first(where: { $0.exists }) { button.tap(); break }
             Thread.sleep(forTimeInterval: 0.25)
         }
-        XCTAssertTrue(any("attachment-thumbnail-0").waitForExistence(timeout: 15), "the picked photo shows in the composer")
+        XCTAssertTrue(any("attachment-thumbnail-0").appears(timeout: 15), "the picked photo shows in the composer")
     }
 
     // S1
@@ -387,7 +387,7 @@ final class AttachPhotoUITests: XCTestCase {
         let composerBefore = app.textViews["chat-input"].frame.height
         app.buttons["send-button"].tap()
         let retry = app.buttons["upload-retry"]
-        XCTAssertTrue(retry.waitForExistence(timeout: 15), "the failed badge shows on the attachment")
+        XCTAssertTrue(retry.appears(timeout: 15), "the failed badge shows on the attachment")
         XCTAssertTrue(retry.label.hasPrefix("Retry upload"))
         XCTAssertFalse(any("upload-error").exists, "no text row in the composer")
         XCTAssertFalse(any("chat-error").exists, "no row above the transcript")
@@ -397,7 +397,7 @@ final class AttachPhotoUITests: XCTestCase {
         retry.tap()
         let sent = NSPredicate { _, _ in self.server.count("POST /v1/chat/current/messages") == 1 }
         wait(for: [XCTNSPredicateExpectation(predicate: sent, object: nil)], timeout: 15)
-        XCTAssertTrue(retry.waitForNonExistence(timeout: 10))
+        XCTAssertTrue(retry.vanishes(timeout: 10))
         XCTAssertEqual(server.count("POST /v1/chat/current/messages"), 1)
     }
 }
