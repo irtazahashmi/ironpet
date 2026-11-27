@@ -121,7 +121,7 @@ Pair and revoke devices in Settings → Devices. See [iPhone](/docs/iphone/).
 ## Voice, screen and meetings
 
 - **Voice** (`voice`) is covered in [Voice notes](/docs/voice/#voice-notes), **speech** (`speech`) in [Spoken replies](/docs/voice/#spoken-replies), and **voice mode** (`voiceMode`) in [Voice mode](/docs/voice/#voice-mode). The API key is not in this file; it's stored in the Keychain.
-- **Screen capture** (`screenCapture`) and **desktop control** (`desktopControl`) are covered in [Screen help](/docs/screen/). Both are off by default.
+- **Screen capture** (`screenCapture`) and **desktop control** (`desktopControl`) are covered in [Screen help](/docs/screen/) and [Desktop control](/docs/desktop/). Both are off by default.
 - **Meetings** (`meetings`, `hotkeys.meeting`) are covered in [Meetings](/docs/meetings/#settings).
 
 ## Memory

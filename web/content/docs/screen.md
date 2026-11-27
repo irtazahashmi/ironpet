@@ -5,7 +5,7 @@ section: Features
 order: 8
 ---
 
-Ghost can look at your screen in three ways. Screenshot shortcuts open a chat about what you're looking at. Screen capture, off by default, keeps searchable text of the windows you use. Desktop control, also off by default, lets your agents operate other Mac apps.
+Ghost can look at your screen in three ways. Screenshot shortcuts open a chat about what you're looking at. Screen capture, off by default, keeps searchable text of the windows you use. Desktop control, also off by default, lets your agents operate other Mac apps; see [Desktop control](/docs/desktop/).
 
 ## Screenshot shortcuts
 
@@ -49,18 +49,4 @@ Pause capture from the pet menu or Settings. The **Screen** section of the ironp
 
 ## Desktop control
 
-Desktop control lets the agents you run in ironpet read and operate other Mac apps through Accessibility. It needs nothing extra installed and uses the Accessibility access ironpet already has. Turn it on under **Settings → Screen → Desktop control**.
-
-Agents get twelve `desktop_*` MCP tools: they can read a window, find elements, press buttons, set or type text, pick options, tick checkboxes, expand rows, focus elements, press keys in one app, open web addresses in a browser, and take a screenshot of one window. The bundled `ironpet-desktop` skill describes them. ironpet sends no mouse events and doesn't move your pointer.
-
-Safety rules that no setting overrides:
-
-- Password fields are never operated. Password managers, apps on the screen capture exclusion list and private browser windows are never read or operated. Nothing works while capture is paused or the screen is locked.
-- An action on an element or window whose text says send, pay, delete, submit or buy (and similar words such as purchase, check out and transfer) waits for you to press **Approve** in a bubble. **Reject**, or no answer in two minutes, fails the action.
-- Pressing <kbd>⌘↩</kbd>, <kbd>⌘Q</kbd> or <kbd>⌘W</kbd> always waits for **Approve**.
-- Only http and https addresses can be opened.
-- Every action is logged. Settings → Screen → Desktop control lists the latest ones, and the log is kept for 30 days.
-
-The chat's own approval card still applies on top of this, unless the agent's mode doesn't ask.
-
-The check for words like "send" reads text, so a button with only an icon, or a label in another language, doesn't trigger it. See [SECURITY.md](https://github.com/irtazahashmi/ironpet/blob/main/SECURITY.md) for the limits.
+Desktop control, off by default, lets your agents read and operate other Mac apps through Accessibility, with approval for anything that sends, pays or deletes. It has its own page: [Desktop control](/docs/desktop/).
