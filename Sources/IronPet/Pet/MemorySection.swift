@@ -616,7 +616,8 @@ private struct MemoryDetailView: View {
 
     private var bannerText: Text {
         let dupes = detail.possibleDuplicates
-        var text = Text(dupes.count == 1 ? "Another page may be this person: " : "\(dupes.count == 2 ? "Two" : "\(dupes.count)") other pages may be this person: ")
+        let what = detail.entity.type == .person ? "person" : "page"
+        var text = Text(dupes.count == 1 ? "Another page may be this \(what): " : "\(dupes.count == 2 ? "Two" : "\(dupes.count)") other pages may be this \(what): ")
         for (index, dupe) in dupes.enumerated() {
             var name = AttributedString(dupe.name)
             name.foregroundColor = .accentColor

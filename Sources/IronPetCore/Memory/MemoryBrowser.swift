@@ -276,11 +276,13 @@ extension EntityMemoryStore {
                                                                 count: link.count, lastSeen: link.lastSeen))
         }
         var duplicates: [MemoryDuplicate] = []
-        if entity.type == .person, let first = Self.firstWord(entity.name) {
-            for other in all where other.type == .person && other.id != entity.id && Self.firstWord(other.name) == first {
-                let count = claims(of: other.id).count
-                if count > 0 { duplicates.append(MemoryDuplicate(page: other.id, name: other.name, facts: count)) }
-            }
+        // People that share a first name, and pages of any type whose names are variants of each other.
+        let first = entity.type == .person ? Self.firstWord(entity.name) : nil
+        for other in all where other.type == entity.type && other.id != entity.id {
+            let sameFirst = first != nil && Self.firstWord(other.name) == first
+            guard sameFirst || EntityMatcher.mayBeSame(entity.record, other.record) else { continue }
+            let count = claims(of: other.id).count
+            if count > 0 { duplicates.append(MemoryDuplicate(page: other.id, name: other.name, facts: count)) }
         }
         return MemoryDetail(entity: entity, title: entity.type == .me ? "About me" : entity.name, facts: facts, earlier: history(of: entity.id),
                             linkGroups: order.map { MemoryLinkGroup(title: $0, items: groups[$0] ?? []) }, possibleDuplicates: duplicates)
