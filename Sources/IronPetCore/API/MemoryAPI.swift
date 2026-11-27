@@ -17,6 +17,9 @@ package final class MemoryAPI {
         self.pages = pages ?? { EntityMemoryStore.shared }
     }
 
+    /// Gives the cleanup a model to place notes with. The app owner sets it; without one the cleanup offers only what its checks find.
+    package var cleanupClassifier: (@MainActor () -> MemoryCleanup.Classifier?)?
+
     package func handles(_ name: String) -> Bool { MemoryMCP.names.contains(name) }
 
     /// Runs one `memory_*` tool. `caller` names a session that is not the user's chat, such as `automation:<id>`.
@@ -84,6 +87,19 @@ package final class MemoryAPI {
     package func mergePages(_ others: [String], into keep: String) -> Result<EntityMemoryStore.PageMerge, MemoryError> {
         pages().mergePages(others, into: keep)
     }
+
+    // MARK: Cleanup
+
+    /// Runs the cleanup and returns what it proposes. Nothing changes until `applyCleanup`.
+    package func cleanup() async -> MemoryCleanup.Run {
+        await MemoryCleanup.propose(in: pages(), classify: cleanupClassifier?())
+    }
+
+    /// Does one proposal the user approved.
+    package func applyCleanup(_ proposal: MemoryCleanup.Proposal) -> Result<String, MemoryError> { MemoryCleanup.apply(proposal, in: pages()) }
+
+    /// Records that the user refused a proposal, so the next cleanup does not offer it again.
+    package func skipCleanup(_ proposal: MemoryCleanup.Proposal) { MemoryCleanup.skip(proposal, in: pages()) }
 
     /// Puts a change back. Refuses when the page has changed since.
     package func undo(_ change: MemoryChange) -> Result<Void, MemoryError> { pages().undo(change) }

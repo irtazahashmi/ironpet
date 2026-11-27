@@ -339,6 +339,14 @@ package final class MemoryReflector {
                     continue
                 }
                 replaced += proposal.replaces.count
+                // A project note that names no project waits for the cleanup instead of landing on the chat's folder page.
+                if proposal.scope == .project, MemoryNote.personName(proposal.entity) == nil, input.project != nil {
+                    switch store.park(proposal.text, folder: input.project?.name, source: input.source) {
+                    case .success(let note): outcome.saved.append(note.text)
+                    case .failure(let failure): outcome.dropped.append("\(proposal.text) (\(failure.message))")
+                    }
+                    continue
+                }
                 switch store.replace(proposal.replaces, with: proposal.text, scope: proposal.scope, person: proposal.person,
                                      project: input.project, entity: proposal.entity, source: input.source) {
                 case .success(let note):
@@ -505,6 +513,20 @@ package final class MemoryReflector {
             outcome.saved = ["moved \(moved) note\(moved == 1 ? "" : "s") to the page they are about"]
         }
         return outcome
+    }
+
+    /// The model side of the cleanup: asks the agent which page each note is about and which pages name one thing. Nil answers when the
+    /// agent fails or does not answer with the cleanup JSON.
+    package func cleanupClassifier(agent: String) -> MemoryCleanup.Classifier? {
+        guard config().reflect, let found = config().reader(for: agent) else { return nil }
+        let reader = Reader(agent: found.agent, model: found.model)
+        return { [self] batch, entities in
+            let notes = batch.map { "\($0.ref) (on \($0.page)): \($0.text)" }.joined(separator: "\n")
+            let pages = Self.pageList(entities).map { "<pages>\n\($0)\n</pages>" } ?? ""
+            let prompt = Prompts.render(id: "memory-cleanup", ["pet": petName(), "pages": pages, "notes": notes])
+            guard case .success(let text) = await runner(prompt, reader) else { return nil }
+            return MemoryCleanup.parse(text)
+        }
     }
 
     // MARK: Prompt and answer

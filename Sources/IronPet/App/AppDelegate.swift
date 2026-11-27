@@ -680,6 +680,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             signals.add(signal, notify: !signals.signals.contains { $0.id == signal.id })
         }
         memory = reflector
+        api.memory?.cleanupClassifier = { [weak reflector] in
+            guard let reflector, let agent = reflector.digestReaderAgent() else { return nil }
+            return reflector.cleanupClassifier(agent: agent)
+        }
         let memorySettings = MemorySettingsModel(api: api.memory ?? MemoryAPI(services: { nil }), reflector: reflector)
         memorySettings.spawner = platform.processes
         settingsModel.memory = memorySettings
