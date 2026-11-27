@@ -649,6 +649,14 @@ private struct ApprovalCard: View {
     }
 }
 
+/// The title with its icon, or the title alone when `titleOnly` is set.
+private struct SubmitLabelStyle: LabelStyle {
+    let titleOnly: Bool
+    @ViewBuilder func makeBody(configuration: Configuration) -> some View {
+        if titleOnly { configuration.title } else { HStack(spacing: 6) { configuration.icon; configuration.title } }
+    }
+}
+
 private struct FormCard: View {
     let form: RemoteForm
     let model: ChatModel
@@ -656,6 +664,7 @@ private struct FormCard: View {
     var agentName: String?
     @State private var typed: [String: String] = [:]
     @State private var pager: ElicitationPager?
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
 
     private var current: ElicitationPager { pager ?? ElicitationPager(pageCount: form.pages.count) }
     private var pending: Bool { model.submittingForms.contains(form.id) }
@@ -678,43 +687,60 @@ private struct FormCard: View {
                     if shown { content } else { content.hidden() }
                 }
             }
-            HStack {
-                if page.isPaged {
-                    Button { move { $0.back() } } label: { Image(systemName: "chevron.left") }.buttonStyle(.bordered).disabled(!page.canGoBack)
-                        .accessibilityLabel("Back").accessibilityIdentifier("back-\(form.id)")
-                    Text(page.label).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(.secondary)
-                        .accessibilityIdentifier("page-\(form.id)")
-                }
-                // Next and Submit share one slot and the unused one stays in the layout, so the row is as tall on every page
-                // and the card does not grow on the last page.
-                let nextButton = Button { move { $0.forward() } } label: { Image(systemName: SharedSymbols.chevron) }.buttonStyle(.bordered)
-                    .accessibilityLabel("Next").accessibilityIdentifier("next-\(form.id)")
-                let submitButton = Button { submit() } label: {
-                    if pending { ProgressView().frame(minWidth: 70) } else { Label("Submit", systemImage: SharedSymbols.allow).frame(minWidth: 70) }
-                }.buttonStyle(.borderedProminent)
-                    .disabled((!page.isPaged && !form.canSubmit) || pending)
-                    .accessibilityIdentifier("submit-\(form.id)")
-                if page.isPaged {
-                    ZStack(alignment: .leading) {
-                        if page.isLast { nextButton.hidden() } else { nextButton }
-                        if page.isLast { submitButton } else { submitButton.hidden() }
-                    }
-                } else {
-                    submitButton
-                }
-                // On a paged form the row also holds Back, the page label and Submit, so Skip shrinks to its icon to stay on one line.
-                Button { Task { await model.skip(form) } } label: {
-                    if page.isPaged { Label("Skip", systemImage: SharedSymbols.skip).labelStyle(.iconOnly) }
-                    else { Label("Skip", systemImage: SharedSymbols.skip).frame(minWidth: 70) }
-                }.buttonStyle(.bordered).disabled(pending).accessibilityLabel("Skip")
-                    .accessibilityIdentifier("skip-\(form.id)")
-            }
+            controls(page)
         }
         .padding(12).frame(maxWidth: .infinity, alignment: .leading)
         .background(Color.orange.opacity(0.12), in: RoundedRectangle(cornerRadius: 12))
         .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(Color.orange.opacity(0.5)))
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("form-\(form.id)")
+    }
+
+    /// The control row. At accessibility text sizes Back, the page label and Skip sit above the Next and Submit slot, so Submit keeps its
+    /// label on one line instead of hyphenating it.
+    @ViewBuilder
+    private func controls(_ page: ElicitationPager) -> some View {
+        let stacked = page.isPaged && dynamicTypeSize.isAccessibilitySize
+        let backButton = Button { move { $0.back() } } label: { Image(systemName: "chevron.left") }.buttonStyle(.bordered).disabled(!page.canGoBack)
+            .accessibilityLabel("Back").accessibilityIdentifier("back-\(form.id)")
+        let pageLabel = Text(page.label).font(.system(size: 11.5).monospacedDigit()).foregroundStyle(.secondary)
+            .accessibilityIdentifier("page-\(form.id)")
+        // Next and Submit share one slot and the unused one stays in the layout, so the row is as tall on every page
+        // and the card does not grow on the last page.
+        let nextButton = Button { move { $0.forward() } } label: { Image(systemName: SharedSymbols.chevron) }.buttonStyle(.bordered)
+            .accessibilityLabel("Next").accessibilityIdentifier("next-\(form.id)")
+        let submitButton = Button { submit() } label: {
+            if pending { ProgressView().frame(minWidth: 70) }
+            else {
+                // One line that the row cannot compress, so the button is as tall as Back and Skip. The icon goes at accessibility sizes.
+                Label("Submit", systemImage: SharedSymbols.allow)
+                    .labelStyle(SubmitLabelStyle(titleOnly: dynamicTypeSize.isAccessibilitySize))
+                    .lineLimit(1).fixedSize(horizontal: true, vertical: false).frame(minWidth: 70)
+            }
+        }.buttonStyle(.borderedProminent)
+            .disabled((!page.isPaged && !form.canSubmit) || pending)
+            .accessibilityIdentifier("submit-\(form.id)")
+        let slot = ZStack(alignment: .leading) {
+            if page.isLast { nextButton.hidden() } else { nextButton }
+            if page.isLast { submitButton } else { submitButton.hidden() }
+        }
+        // On a paged form the row also holds Back, the page label and Submit, so Skip shrinks to its icon to stay on one line.
+        let skipButton = Button { Task { await model.skip(form) } } label: {
+            if page.isPaged { Label("Skip", systemImage: SharedSymbols.skip).labelStyle(.iconOnly) }
+            else { Label("Skip", systemImage: SharedSymbols.skip).frame(minWidth: 70) }
+        }.buttonStyle(.bordered).disabled(pending).accessibilityLabel("Skip")
+            .accessibilityIdentifier("skip-\(form.id)")
+        if stacked {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack { backButton; pageLabel; Spacer(); skipButton }
+                slot
+            }
+        } else {
+            HStack {
+                if page.isPaged { backButton; pageLabel; slot } else { submitButton }
+                skipButton
+            }
+        }
     }
 
     /// Sends the text typed on the shown page, so it survives the page change and reaches the Mac.
