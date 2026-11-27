@@ -688,6 +688,10 @@ private struct SpokenMessageSettings: View {
                     in: Config.VoiceMode.silenceRange, step: 5) {
                 Text("Stop listening after \(settings.silenceSeconds) s of silence")
             }
+            Stepper(value: Binding(get: { settings.endPauseSeconds }, set: { value in store.update { $0.voiceMode.endPauseSeconds = value } }),
+                    in: Config.VoiceMode.endPauseRange, step: 0.5) {
+                Text("Send the message after \(settings.endPauseSeconds, specifier: "%.1f") s of silence")
+            }
             Toggle("Speak job updates", isOn: Binding(get: { settings.speakJobUpdates },
                                                       set: { on in store.update { $0.voiceMode.speakJobUpdates = on } }))
         } header: {

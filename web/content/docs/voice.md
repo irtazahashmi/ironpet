@@ -114,6 +114,7 @@ It records one message per press and doesn't keep listening afterwards. It needs
 | --- | --- | --- |
 | Spoken message shortcut | `hotkeys.voiceMode` | Default `ctrl+shift+v`, registered only while voice notes are on. Config files that still hold the old default `cmd+opt+ctrl+v` move to the new one |
 | Stop after silence | `voiceMode.silenceSeconds` | Default 20, 5 to 120. Listening stops if you say nothing for this long |
+| Send after a pause | `voiceMode.endPauseSeconds` | Default 2.5, 1 to 10. A spoken message is sent after this long without speech. Shorter pauses keep the message going, and a second press of the shortcut sends it at once |
 | Speak job updates | `voiceMode.speakJobUpdates` | Default on |
 
 - **The microphone** is open only while listening, with macOS voice processing on. <kbd>Esc</kbd> or the pill's button discards the message. Pressing the shortcut while your pet is speaking stops it and starts listening.

@@ -471,6 +471,8 @@ package final class ChatSession {
     private var turnSpeaksSummary = false
     /// The summary of the running turn has been read, or skipped because the speaker is off or the Mac is quiet.
     private var turnSummarySpoken = false
+    /// The summary of the running turn was actually handed to the speaker, not skipped.
+    private var turnSummaryRead = false
     /// True once an approval card was shown during the running turn. The user took part, so a quiet reply stays visible.
     private var turnAskedApproval = false
     /// True during a call or a meeting recording, when a reply is not read aloud on its own. Set by `AppDelegate`.
@@ -953,6 +955,7 @@ package final class ChatSession {
         turnOrigin = client
         turnSpeaksSummary = client == nil && automation == nil && !silent && replySpoken(afterSpokenMessage: spoken)
         turnSummarySpoken = false
+        turnSummaryRead = false
         turnAskedApproval = false
         if let client { onTurn?(client, .started) }
         automationRun = automation
@@ -1553,11 +1556,12 @@ package final class ChatSession {
             if let threadID { onTurnEnded?(threadID) }
             // Before the queue moves on: the next message replaces the origin this turn belongs to.
             finishTurn(error: error, noChange: hidden)
-            if !isVisible, !hidden {
+            if error == nil, !hidden { speakSummary(final: true) }
+            // A reply that was read aloud needs no "finished" bubble. Failures and unspoken turns still get one.
+            if !isVisible, !hidden, error != nil || !turnSummaryRead {
                 let name = agentDisplayName
                 onAttention?(error == nil ? "\(name) finished your task" : "\(name)'s task failed")
             }
-            if error == nil, !hidden { speakSummary(final: true) }
             turnSpeaksSummary = false
             if error == nil { sendNextQueued() } else { restoreQueue(reason: "The turn before it failed, so this message did not run.") }
             rolloverIfDue()
@@ -1573,6 +1577,7 @@ package final class ChatSession {
         turnSummarySpoken = true
         // The switch comes first: the quiet check starts polling the microphone list, which must not happen while off.
         guard speech.isEnabled(), speaksReplies(), !isQuiet() else { return }
+        turnSummaryRead = true
         try? speech.speak(summary, id: answer.id)
     }
 

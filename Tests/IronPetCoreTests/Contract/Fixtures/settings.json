@@ -154,6 +154,7 @@
             "model" : "mlx-community/parakeet-tdt-0.6b-v3"
           },
           "voiceMode" : {
+            "endPauseSeconds" : 2.5,
             "silenceSeconds" : 20,
             "speakJobUpdates" : true
           },
@@ -324,6 +325,7 @@
             "model" : "mlx-community/parakeet-tdt-0.6b-v3"
           },
           "voiceMode" : {
+            "endPauseSeconds" : 2.5,
             "silenceSeconds" : 20,
             "speakJobUpdates" : true
           },
@@ -491,6 +493,7 @@
             "model" : "mlx-community/parakeet-tdt-0.6b-v3"
           },
           "voiceMode" : {
+            "endPauseSeconds" : 2.5,
             "silenceSeconds" : 20,
             "speakJobUpdates" : true
           },
