@@ -20,7 +20,7 @@ Website, docs and downloads: [ironpet.ai](https://ironpet.ai).
 - **Automations.** Break reminders, scheduled jobs, PR, CI and Sentry alerts, watchers and background jobs, which your agent can create for you. [Automations](https://ironpet.ai/docs/automations/), [Alerts](https://ironpet.ai/docs/alerts/)
 - **Inbox and dashboards.** Action items from meetings and what watchers find wait in the Inbox; ask Ghost for a small dashboard and it appears in the sidebar. [Inbox](https://ironpet.ai/docs/inbox/), [Dashboards](https://ironpet.ai/docs/dashboards/)
 - **Meetings.** Transcripts and summaries of your calls, with speakers recognised on your Mac. [Meetings](https://ironpet.ai/docs/meetings/)
-- **Several pets, iPhone and Telegram.** Give each agent a pet of its own, and reach Ghost from a paired iPhone or a Telegram bot. [Pets](https://ironpet.ai/docs/pets/), [iPhone](https://ironpet.ai/docs/iphone/), [Telegram](https://ironpet.ai/docs/telegram/)
+- **Several pets, iPhone and Telegram.** Add pets that each run a chat of their own, and reach your pet from a paired iPhone or a Telegram bot. [Pets](https://ironpet.ai/docs/pets/), [iPhone](https://ironpet.ai/docs/iphone/), [Telegram](https://ironpet.ai/docs/telegram/)
 
 Voice, screen capture, desktop control, meetings, the iPhone API and Telegram stay off until you turn them on. See [Privacy](https://ironpet.ai/docs/privacy/) and [SECURITY.md](SECURITY.md).
 
@@ -35,7 +35,7 @@ Voice, screen capture, desktop control, meetings, the iPhone API and Telegram st
 | <img src="docs/screenshots/memory.png" alt="Ghost's memory page about Maya Chen, with three facts, their sources and a link to her project"> | <img src="docs/screenshots/welcome-back.png" alt="Ghost waving with a welcome back bubble that lists what happened while you were away"> |
 | **Memory:** facts about you, your projects and people | **Welcome back:** what happened while you were away |
 | <img src="docs/screenshots/two-pets.png" alt="Ghost and Bunny, two pets for two agents, side by side"> | <img src="docs/screenshots/agent-switcher.png" alt="Bunny's chat, with the agent switcher in its header"> |
-| **Several pets:** one for each agent | **Their own chats:** switch between them in the header |
+| **Several pets:** each with its own chat | **Their own chats:** switch between them in the header |
 
 ## Install
 

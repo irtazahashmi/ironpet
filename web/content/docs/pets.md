@@ -24,7 +24,7 @@ Picking a pet also renames it, but only while the name is still a default one (a
 
 ## Several pets
 
-Each pet is an agent of its own. **Add pet** in Settings → General → Pets makes a new one, and clicking a pet opens its details: its name, its image, the harness it runs (Cursor, Claude Code, Codex and the others you have), the model (empty for the harness's default) and its own instructions.
+One pet is enough: it watches every agent session, and its chat can switch agents with the agent picker. More pets let you keep separate chats side by side, each with its own setup. **Add pet** in Settings → General → Pets makes a new one, and clicking a pet opens its details: its name, its image, the harness it runs (Cursor, Claude Code, Codex and the others you have), the model (empty for the harness's default) and its own instructions.
 
 Every pet that is on runs its own chat and stands on your screen, so Bunny can work in Claude Code while Ghost works in Cursor. Each one asks for approvals in its own bubble, and clicking a pet opens its chat. When two or more pets are on, the chat header has a switcher between them. Voice notes and spoken replies follow the pet you clicked last.
 

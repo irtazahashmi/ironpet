@@ -36,8 +36,8 @@ const features: { title: string; body: string; clip: Clip; link: { href: string;
     link: { href: "/docs/alerts/", label: "Alerts" },
   },
   {
-    title: "One pet for each agent.",
-    body: "Add a pet and it runs an agent of its own, with its own harness, model and instructions. Bunny can work in Claude Code while Ghost works in Cursor, each asking you in its own bubble.",
+    title: "Add more pets if you like.",
+    body: "One pet watches all your agents and its chat can switch between them. Add more and each runs a chat of its own, with its own harness, model and instructions: Bunny can work in Claude Code while Ghost works in Cursor, each asking you in its own bubble.",
     clip: { name: "multi", width: 1054, height: 1060, label: "Ghost finishes a task while Bunny asks before running a command" },
     link: { href: "/docs/pets/#several-pets", label: "Several pets" },
   },
