@@ -476,7 +476,7 @@ package final class MemoryReflector {
         let projectPage = project.map(EntityMemoryStore.projectID)
         var notes: [(String, String)] = []
         for page in touched {
-            let label = page.type == .me ? "me.md" : "\(page.type.rawValue) \(page.name)"
+            let label = page.type == .me ? "me.md" : page.id == projectPage ? "project \(page.name)" : "page \(page.type.rawValue) \(page.name)"
             let facts = Self.factList(store.claims(of: page.id), about: text)
             if facts.isEmpty, page.id != projectPage { continue }
             notes.append((label, facts))
