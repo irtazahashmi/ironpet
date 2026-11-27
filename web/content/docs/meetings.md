@@ -11,15 +11,15 @@ Turn them on under **Settings → Meetings**. The switch turns on only after the
 
 With the feature off there is no menu item, no shortcut and no panel, and macOS is never asked for microphone or screen access.
 
-Recording people without their consent is illegal in many places. The first meeting shows a notice about consent, and the recording status always shows beside Ghost.
+Recording people without their consent is illegal in many places. The first meeting shows a notice about consent, and the recording status always shows beside your pet.
 
 ## Recording a meeting
 
-Choose **Start meeting transcript…** from Ghost's menu, or press the meeting shortcut if you set one. A small panel asks which app to record. A running Zoom, Teams, Webex, Slack or FaceTime is preselected, then your last choice, then a running browser. **All system audio** is always offered, and ironpet's own sound is always left out. The first time, macOS asks for Microphone and Screen & System Audio Recording access.
+Choose **Start meeting transcript…** from your pet's menu, or press the meeting shortcut if you set one. A small panel asks which app to record. A running Zoom, Teams, Webex, Slack or FaceTime is preselected, then your last choice, then a running browser. **All system audio** is always offered, and ironpet's own sound is always left out. The first time, macOS asks for Microphone and Screen & System Audio Recording access.
 
-While recording, a bubble next to Ghost shows a recording dot, the elapsed time, a live level for Me (your microphone) and Them (the app), the last few transcript lines, and **Stop** and **Cancel**. Cancel asks first, then deletes the meeting folder. If you close the bubble (the × on hover), Ghost shows a red **Recording** button until the meeting ends. Click it to show the bubble again.
+While recording, a bubble next to your pet shows a recording dot, the elapsed time, a live level for Me (your microphone) and Them (the app), the last few transcript lines, and **Stop** and **Cancel**. Cancel asks first, then deletes the meeting folder. If you close the bubble (the × on hover), your pet shows a red **Recording** button until the meeting ends. Click it to show the bubble again.
 
-With **Offer to record calls** on (the default), when another app holds the microphone for about 10 seconds, Ghost asks whether to record it. Nothing records until you click **Record**.
+With **Offer to record calls** on (the default), when another app holds the microphone for about 10 seconds, your pet asks whether to record it. Nothing records until you click **Record**.
 
 ## Files
 
@@ -55,11 +55,11 @@ Action items marked `owner: Me` go to the [Inbox](/docs/inbox/#meetings), and on
 
 ## Past meetings
 
-The Transcripts section of the ironpet window lists past meetings with their summary and transcript, **Ask Ghost**, **Regenerate** and **Move to Trash**.
+The Transcripts section of the ironpet window lists past meetings with their summary and transcript, **Ask** (with your pet's name), **Regenerate** and **Move to Trash**.
 
 ### Regenerate
 
-**Regenerate**, the circular arrow next to **Ask Ghost**, rebuilds a past meeting from its saved audio, for example after you named a voice or changed the transcription model. It has two choices:
+**Regenerate**, the circular arrow next to **Ask**, rebuilds a past meeting from its saved audio, for example after you named a voice or changed the transcription model. It has two choices:
 
 - **Transcript and summary**, the default click, transcribes every `mic-NNN.wav` and `them-NNN.wav` chunk again with the server and model from Settings → Voice, names the voices from the voice store when speaker recognition is on, and runs the summary agent and model from Settings → Meetings.
 - **Summary only** skips the audio and summarises the current `transcript.md` again, which is what you want after naming a speaker.

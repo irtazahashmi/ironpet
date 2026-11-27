@@ -19,7 +19,7 @@ ironpet keeps everything in one folder, `~/.ironpet/`. Delete the folder to eras
 | `meetings/` | One folder per meeting: WAV chunks, `transcript.md`, `summary.md` |
 | `memory-export/` | Markdown copies of the memory pages, written by Settings → Memory → Export to Markdown; nothing reads them back |
 | `memory/` | Notes from earlier versions, read once into the database and not read again |
-| `prompts/` | The prompts Ghost sends to agents on its own: `<id>.md` is the text in use, `.defaults/` the default each one was made from. Edit them in Settings → Prompts; see [SPEC.md](https://github.com/irtazahashmi/ironpet/blob/main/SPEC.md#prompts) |
+| `prompts/` | The prompts your pet sends to agents on its own: `<id>.md` is the text in use, `.defaults/` the default each one was made from. Edit them in Settings → Prompts; see [SPEC.md](https://github.com/irtazahashmi/ironpet/blob/main/SPEC.md#prompts) |
 | `dashboards/` | One folder per dashboard (`manifest.json`, `main.js`, `storage.json`) and `approvals.json`, which holds what you approved for each |
 | `telegram/files/` | Files and voice downloads from Telegram chats |
 | `remote/` | Remote API identity key and files a paired phone uploaded |

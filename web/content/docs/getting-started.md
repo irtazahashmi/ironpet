@@ -5,7 +5,7 @@ section: Basics
 order: 1
 ---
 
-ironpet puts Ghost, a small direwolf in a Night's Watch cloak, on your Mac desktop. He watches your coding agents, asks you before they run commands, and opens a chat when you click him. This page covers what you need, how to install it, and what happens on first launch.
+ironpet puts a pet on your Mac desktop. The default is Ghost, a small direwolf in a Night's Watch cloak. It watches your coding agents, asks you before they run commands, and opens a chat when you click it. This page covers what you need, how to install it, and what happens on first launch.
 
 ## Requirements
 
@@ -62,9 +62,9 @@ macOS ties Screen Recording, Accessibility, Automation and Microphone permission
 
 ## First launch
 
-On first launch a welcome window asks what Ghost may do:
+On first launch a welcome window asks what your pet may do:
 
-- **Track coding agents** (on by default). Ghost watches the agents it finds on your Mac. ironpet merges a hook into each agent's own config, for example `~/.cursor/hooks.json` and `~/.claude/settings.json`, and backs up the original next to it as `*.ironpet-backup`. Codex also needs you to trust the hooks once in its `/hooks` screen.
+- **Track coding agents** (on by default). Your pet watches the agents it finds on your Mac. ironpet merges a hook into each agent's own config, for example `~/.cursor/hooks.json` and `~/.claude/settings.json`, and backs up the original next to it as `*.ironpet-backup`. Codex also needs you to trust the hooks once in its `/hooks` screen.
 - **Launch at login.**
 - **Break reminders.**
 - **GitHub alerts**, which need the `gh` CLI, signed in.
@@ -73,13 +73,13 @@ Nothing outside `~/.ironpet` changes until you press **Start**, and you can chan
 
 ## Optional setup
 
-- **MCP servers.** Ghost's chat can use the MCP servers you have in Cursor (`~/.cursor/mcp.json`). To sign in to them once instead of in every project, turn on right-click → Integrations → **Share MCP sign-ins across folders**. See [Chat](/docs/chat/#mcp-servers).
+- **MCP servers.** Your pet's chat can use the MCP servers you have in Cursor (`~/.cursor/mcp.json`). To sign in to them once instead of in every project, turn on right-click → Integrations → **Share MCP sign-ins across folders**. See [Chat](/docs/chat/#mcp-servers).
 - **GitHub alerts.** If you didn't tick them in the welcome window, ask your agent for them under ironpet window → Automations → **New automation…**. They need the `gh` CLI, signed in. See [Alerts](/docs/alerts/#github-alerts).
 - **Sentry alerts.** Run `./scripts/configure_sentry.sh` from the repository. See [Alerts](/docs/alerts/#sentry-alerts).
 
 ## Bubbles and macOS notifications
 
-Ghost speaks in bubbles beside him instead of macOS notifications. Approvals stay until you answer, reminders stay for 3 minutes, and everything else fades after 15 to 45 seconds, but not while the pointer is over them.
+Your pet speaks in bubbles beside it instead of macOS notifications. Approvals stay until you answer, reminders stay for 3 minutes, and everything else fades after 15 to 45 seconds, but not while the pointer is over them.
 
 To get macOS notifications as well, turn on right-click → **Also show macOS notifications**. Then set ironpet's notification style to **Alerts** in System Settings → Notifications, so the Allow and Deny buttons stay on screen. See [Notifications](/docs/notifications/).
 
@@ -100,7 +100,7 @@ macOS asks for these permissions as you use the features, not all at once:
 ## Next steps
 
 - [Using ironpet](/docs/using-ironpet/) lists the shortcuts and the main actions.
-- [Agents](/docs/agents/) explains what Ghost shows while your agents work.
-- [Chat](/docs/chat/) covers talking to an agent through Ghost.
+- [Agents](/docs/agents/) explains what your pet shows while your agents work.
+- [Chat](/docs/chat/) covers talking to an agent through your pet.
 - [Alerts](/docs/alerts/) sets up PR, CI and Sentry alerts.
 - [Privacy](/docs/privacy/) explains what stays on your Mac.

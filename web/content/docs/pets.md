@@ -1,11 +1,11 @@
 ---
 title: Pets
-description: Rename Ghost, switch to one of six bundled pets, or have your agent build a new one.
+description: Rename your pet, switch to one of six bundled pets, or have your agent build a new one.
 section: Features
 order: 16
 ---
 
-Ghost is the default, but you can rename him or pick another pet. Open **Settings → General → Pets**, click a pet and pick its image from the animated tiles.
+Ghost is the default, but you can rename it or pick another pet. Open **Settings → General → Pets**, click a pet and pick its image from the animated tiles.
 
 ## The six pets
 
@@ -18,13 +18,13 @@ Ghost is the default, but you can rename him or pick another pet. Open **Setting
 | `bunny` | Lilac bunny with long ears and a cotton tail |
 | `cat` | Grey tabby with green eyes and a curly tail |
 
-The pets are drawn in code, not from image files: the build generates each sprite sheet into the app, and every pet has all of Ghost's animations. With Reduce Motion on, the tiles show one still frame.
+The pets are drawn in code, not from image files: the build generates each sprite sheet into the app, and every pet has the same animations. With Reduce Motion on, the tiles show one still frame.
 
 Picking a pet also renames it, but only while the name is still a default one (a built-in pet's name or the previous pet's name). A name you typed stays. You can rename the pet in Settings, or with `pet.name` in [`config.json`](/docs/configuration/).
 
 ## Several pets
 
-Each pet is an agent of its own. **Add pet** in Settings → General → Pets makes a new one, and clicking a pet opens its details: its name, its image, the harness it runs (Cursor, Claude Code, Codex and the others you have), the model (empty for the harness's default) and its own instructions.
+One pet is enough: it watches every agent session, and its chat can switch agents with the agent picker. More pets let you keep separate chats side by side, each with its own setup. **Add pet** in Settings → General → Pets makes a new one, and clicking a pet opens its details: its name, its image, the harness it runs (Cursor, Claude Code, Codex and the others you have), the model (empty for the harness's default) and its own instructions.
 
 Every pet that is on runs its own chat and stands on your screen, so Bunny can work in Claude Code while Ghost works in Cursor. Each one asks for approvals in its own bubble, and clicking a pet opens its chat. When two or more pets are on, the chat header has a switcher between them. Voice notes and spoken replies follow the pet you clicked last.
 

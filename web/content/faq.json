@@ -1,11 +1,11 @@
 [
   {
     "q": "What is ironpet?",
-    "a": "ironpet is a desktop pet for macOS. Ghost, a small direwolf in a Night's Watch cloak, floats above your windows, shows what your coding agents are doing, asks you before they run commands, and opens a chat with them when you click him."
+    "a": "ironpet is a desktop pet for macOS. The pet (Ghost by default, a small direwolf in a Night's Watch cloak) floats above your windows, shows what your coding agents are doing, asks you before they run commands, and opens a chat with them when you click it."
   },
   {
     "q": "Which coding agents does it work with?",
-    "a": "Ghost watches Cursor (IDE and CLI), Claude Code, Codex, Gemini CLI, GitHub Copilot and Pi. The chat works with Cursor, Claude Code, Codex, Gemini CLI, OpenCode and any other agent from the ACP registry that you have installed."
+    "a": "Your pet watches Cursor (IDE and CLI), Claude Code, Codex, Gemini CLI, GitHub Copilot and Pi. The chat works with Cursor, Claude Code, Codex, Gemini CLI, OpenCode and any other agent from the ACP registry that you have installed."
   },
   {
     "q": "Does it need API keys, and what does it cost?",
@@ -32,16 +32,16 @@
     "a": "No. The hooks that report agent status never block an agent: they have a one-second timeout and always succeed."
   },
   {
-    "q": "How do I move Ghost?",
-    "a": "Drag him. He stays where you leave him."
+    "q": "How do I move my pet?",
+    "a": "Drag it. It stays where you leave it."
   },
   {
     "q": "Can I change the pet?",
-    "a": "Yes. Open Settings, then General, then Pets, to rename him or pick one of six bundled pets: Ghost, Mochi the mint wolf, a hamster, a panda, a bunny and a cat. You can also add your own sprite sheet, or click Build a new pet to have your agent draw one."
+    "a": "Yes. Open Settings, then General, then Pets, to rename it or pick one of six bundled pets: Ghost, Mochi the mint wolf, a hamster, a panda, a bunny and a cat. You can also add your own sprite sheet, or click Build a new pet to have your agent draw one."
   },
   {
     "q": "Does it work on iPhone?",
-    "a": "Yes. Install the IronPet app from TestFlight and pair it in Settings, then Devices on the Mac. The phone can show Ghost, chat, answer approvals and show your Inbox, agents and alerts, and it talks only to your Mac over your Wi-Fi or Tailscale."
+    "a": "Yes. Install the IronPet app from TestFlight and pair it in Settings, then Devices on the Mac. The phone can show your pet, chat, answer approvals and show your Inbox, agents and alerts, and it talks only to your Mac over your Wi-Fi or Tailscale."
   },
   {
     "q": "How do updates work?",

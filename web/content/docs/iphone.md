@@ -1,6 +1,6 @@
 ---
 title: iPhone
-description: Pair an iPhone to see Ghost, chat, answer approvals and check your Inbox away from the Mac.
+description: Pair an iPhone to see your pet, chat, answer approvals and check your Inbox away from the Mac.
 section: Features
 order: 14
 ---
@@ -13,7 +13,7 @@ There's no public cloud involved. The phone talks only to your Mac, over your Wi
 
 1. Install **IronPet** from TestFlight (bundle id `dev.ironpet.app`).
 2. On the Mac, open **Settings → Devices**, turn on the remote API, and leave the page open. It shows a pairing code as a QR code and a copyable `ironpet://` link. The code works once, for five minutes.
-3. On the phone, scan the code or paste the link. Allow the device when Ghost asks on the Mac.
+3. On the phone, scan the code or paste the link. Allow the device when your pet asks on the Mac.
 
 Revoke any device from the same Settings page.
 

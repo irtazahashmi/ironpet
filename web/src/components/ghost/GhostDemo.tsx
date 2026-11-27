@@ -170,7 +170,7 @@ export function GhostDemo() {
     switch (name) {
       case "wave":
         play(rows.waving);
-        say({ title: "Hi, I'm Ghost.", body: "Drag me anywhere. In the app, a click on me opens the chat.", ttl: 5000 });
+        say({ title: "Hi, I'm your pet.", body: "Drag me anywhere. In the app, a click on me opens the chat.", ttl: 5000 });
         break;
       case "working":
         setAgent("working");
@@ -198,7 +198,7 @@ export function GhostDemo() {
       case "failed":
         setAgent("failed");
         setBase(rows.failed);
-        say({ title: "CI failed: irtaza/ironpet #84", body: "Ask Ghost starts a chat that looks into it.", ttl: 6500, onExpire: rest });
+        say({ title: "CI failed: irtaza/ironpet #84", body: "Ask starts a chat that looks into it.", ttl: 6500, onExpire: rest });
         break;
       case "water":
       case "stretch": {
@@ -371,7 +371,7 @@ export function GhostDemo() {
       play(rows.jumping);
       if (!droppedOnce.current) {
         droppedOnce.current = true;
-        say({ title: "He stays where you leave him.", body: "Same as on your desktop.", ttl: 3500 });
+        say({ title: "It stays where you leave it.", body: "Same as on your desktop.", ttl: 3500 });
       }
     } else if (!cancelled) {
       act("wave");
@@ -420,7 +420,7 @@ export function GhostDemo() {
   return (
     <div className="demo">
       <div className="desktop-wrap">
-        <div className="desktop" aria-label="A demo desktop with an agent session and Ghost">
+        <div className="desktop" aria-label="A demo desktop with an agent session and the pet">
           <div className="desktop-menubar" aria-hidden="true">
             <span className="desktop-app">Terminal</span>
             <span>Shell</span>
@@ -435,7 +435,7 @@ export function GhostDemo() {
         </div>
       </div>
 
-      <div className="acts" role="group" aria-label="Show what Ghost does">
+      <div className="acts" role="group" aria-label="Show what the pet does">
         <span className="acts-label">Try it</span>
         {acts.map(({ act: name, label }) => (
           <button key={name} type="button" className="chip" onClick={() => act(name)}>
@@ -443,7 +443,7 @@ export function GhostDemo() {
           </button>
         ))}
       </div>
-      <p className="acts-hint">Drag Ghost anywhere on the page. With the keyboard, Tab to him and use the arrow keys.</p>
+      <p className="acts-hint">Drag the pet anywhere on the page. With the keyboard, Tab to it and use the arrow keys.</p>
 
       {live &&
         createPortal(
@@ -452,7 +452,7 @@ export function GhostDemo() {
               type="button"
               className={`pet${dragging ? " is-dragging" : ""}`}
               style={{ left: pos.x, top: pos.y }}
-              aria-label="Ghost, the ironpet pet. Press to wave; arrow keys move him."
+              aria-label="The ironpet pet. Press to wave; arrow keys move it."
               onPointerDown={onPointerDown}
               onPointerMove={onPointerMove}
               onPointerUp={() => onPointerUp(false)}

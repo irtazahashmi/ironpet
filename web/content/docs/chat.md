@@ -1,11 +1,11 @@
 ---
 title: Chat
-description: Talk to Cursor, Claude Code, Codex and other agents through Ghost, and approve what they do.
+description: Talk to Cursor, Claude Code, Codex and other agents through your pet, and approve what they do.
 section: Features
 order: 5
 ---
 
-Press <kbd>⌥⌘G</kbd> or click Ghost to open the ironpet window on Chat. The chat talks to a coding agent over the [Agent Client Protocol](https://agentclientprotocol.com) (ACP) in your current project, using the agent's own sign-in.
+Press <kbd>⌥⌘G</kbd> or click your pet to open the ironpet window on Chat. The chat talks to a coding agent over the [Agent Client Protocol](https://agentclientprotocol.com) (ACP) in your current project, using the agent's own sign-in.
 
 ## Which agents
 
@@ -15,13 +15,13 @@ If an agent says you need to sign in, ironpet shows a button. For an agent that 
 
 ## Picking an agent, a model and a project
 
-The chat has an agent picker and a model picker. The models come from the agent. ironpet detects the project folder you're working in. When you open the chat from an app that isn't about code, such as a browser or Slack, Ghost asks which project the question is about, or you can pick **No project** for a general question. Work that isn't about code runs in `~/.ironpet/scratch`.
+The chat has an agent picker and a model picker. The models come from the agent. ironpet detects the project folder you're working in. When you open the chat from an app that isn't about code, such as a browser or Slack, your pet asks which project the question is about, or you can pick **No project** for a general question. Work that isn't about code runs in `~/.ironpet/scratch`.
 
 With several pets on, each pet runs its own chat, and the chat header switches between them. See [Pets](/docs/pets/).
 
 ## Approvals
 
-File edits and shell commands wait for **Allow** or **Deny** whenever the agent asks for permission. The card appears in the chat, or right in Ghost's bubble when the chat is closed. <kbd>⌘↩</kbd> allows.
+File edits and shell commands wait for **Allow** or **Deny** whenever the agent asks for permission. The card appears in the chat, or right in your pet's bubble when the chat is closed. <kbd>⌘↩</kbd> allows.
 
 ironpet adds no rules of its own. Whatever the agent asks about shows up as a card with the agent's own options, such as allow once, allow always or approve a plan. ironpet answers none of them itself.
 
@@ -52,9 +52,9 @@ Claude Code keeps every session in one file that only grows. When that file pass
 
 ## MCP servers
 
-Ghost's chat can use the MCP servers you have in Cursor (`~/.cursor/mcp.json`). The Cursor CLI stores MCP sign-ins per folder, so normally you sign in with `cursor-agent mcp login <name>` in each project.
+Your pet's chat can use the MCP servers you have in Cursor (`~/.cursor/mcp.json`). The Cursor CLI stores MCP sign-ins per folder, so normally you sign in with `cursor-agent mcp login <name>` in each project.
 
-Turn on right-click → Integrations → **Share MCP sign-ins across folders** to sign in once. Ghost then copies your sign-ins into whichever folder a chat runs in. It's off by default because it copies OAuth tokens; see [SECURITY.md](https://github.com/irtazahashmi/ironpet/blob/main/SECURITY.md).
+Turn on right-click → Integrations → **Share MCP sign-ins across folders** to sign in once. Your pet then copies your sign-ins into whichever folder a chat runs in. It's off by default because it copies OAuth tokens; see [SECURITY.md](https://github.com/irtazahashmi/ironpet/blob/main/SECURITY.md).
 
 Read-only MCP tools (`get…`, `list…`, `search…`, `find…`) run freely. Any other MCP tool waits for **Allow / Deny**, and whatever the agent asks about shows a card.
 

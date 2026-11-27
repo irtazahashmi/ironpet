@@ -5,7 +5,7 @@ section: Reference
 order: 17
 ---
 
-Most settings are in the Settings window (<kbd>⌘,</kbd> or right-click Ghost → Settings…), where you can rename the pet, pick another from the pet gallery, change or turn off shortcuts, tune reminders and turn integrations on. Everything is stored in `~/.ironpet/config.json`, which you can also edit by hand or keep in your dotfiles. Changes apply within a couple of seconds.
+Most settings are in the Settings window (<kbd>⌘,</kbd> or right-click your pet → Settings…), where you can rename the pet, pick another from the pet gallery, change or turn off shortcuts, tune reminders and turn integrations on. Everything is stored in `~/.ironpet/config.json`, which you can also edit by hand or keep in your dotfiles. Changes apply within a couple of seconds.
 
 List only the keys you want to change. Anything missing uses the default.
 

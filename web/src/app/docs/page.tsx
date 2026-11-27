@@ -4,7 +4,7 @@ import { docSections, getDocs } from "@/lib/content";
 
 export const metadata: Metadata = {
   title: "Docs",
-  description: "How to install ironpet and use everything Ghost can do.",
+  description: "How to install ironpet and use everything your pet can do.",
 };
 
 export default function DocsIndex() {
@@ -13,7 +13,7 @@ export default function DocsIndex() {
     <div className="page">
       <header className="page-head">
         <h1>Docs</h1>
-        <p>Everything Ghost can do, and how to set it up. New here? Start with Getting started.</p>
+        <p>Everything your pet can do, and how to set it up. New here? Start with Getting started.</p>
       </header>
       <div className="docs-index">
         {docSections.map((section) => {

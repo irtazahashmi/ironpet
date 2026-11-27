@@ -9,7 +9,7 @@ How you remove ironpet depends on how you installed it. Each way removes only ir
 
 ## Installed from the DMG
 
-1. Quit ironpet (right-click Ghost → Quit ironpet).
+1. Quit ironpet (right-click your pet → Quit ironpet).
 2. Remove its hooks and login item:
 
    ```bash

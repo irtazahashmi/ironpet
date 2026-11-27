@@ -1,11 +1,11 @@
 ---
 title: Notifications
-description: How Ghost's speech bubbles work, how to get macOS notifications too, and the welcome back summary.
+description: How your pet's speech bubbles work, how to get macOS notifications too, and the welcome back summary.
 section: Features
 order: 12
 ---
 
-Ghost speaks in bubbles beside him instead of macOS notifications. Every bubble is also stored in the Notifications section of the ironpet window, so a long result doesn't have to fit in the bubble: the bubble shows a title and a short summary, and the stored entry keeps the full text.
+Your pet speaks in bubbles beside it instead of macOS notifications. Every bubble is also stored in the Notifications section of the ironpet window, so a long result doesn't have to fit in the bubble: the bubble shows a title and a short summary, and the stored entry keeps the full text.
 
 ## Bubbles
 
@@ -70,11 +70,11 @@ Notification text is data, never instructions. The tools only read; they don't m
 
 ## macOS notifications
 
-To get macOS notifications as well, turn on right-click Ghost → **Also show macOS notifications**. Then set ironpet's notification style to **Alerts** in System Settings → Notifications, so the **Allow** and **Deny** buttons stay on screen. macOS asks for the Notifications permission only when this is on.
+To get macOS notifications as well, turn on right-click your pet → **Also show macOS notifications**. Then set ironpet's notification style to **Alerts** in System Settings → Notifications, so the **Allow** and **Deny** buttons stay on screen. macOS asks for the Notifications permission only when this is on.
 
 ## Welcome back
 
-When you come back after being away, Ghost sums up what happened meanwhile in one bubble instead of the ones you missed: "demo-app is waiting for you", "CI failed: irtaza/ironpet #84", "2 agents finished". Each line opens what it names.
+When you come back after being away, your pet sums up what happened meanwhile in one bubble instead of the ones you missed: "demo-app is waiting for you", "CI failed: irtaza/ironpet #84", "2 agents finished". Each line opens what it names.
 
 - **Away** means 5 minutes idle by default (the same idle time as the break reminders, `reminders.idleResetMinutes`), or after the Mac slept.
 - A call (any app using the microphone, even with meeting transcripts off) or a meeting recording doesn't count as away.

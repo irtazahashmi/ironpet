@@ -1,11 +1,11 @@
 ---
 title: Telegram
-description: Chat with Ghost from Telegram through a bot of your own.
+description: Chat with your pet from Telegram through a bot of your own.
 section: Features
 order: 15
 ---
 
-You can send messages to Ghost's chat from Telegram, through a bot you create. It's off by default. Turn it on in **Settings → Integrations**.
+You can send messages to your pet's chat from Telegram, through a bot you create. It's off by default. Turn it on in **Settings → Integrations**.
 
 ironpet long-polls Telegram's Bot API (`api.telegram.org`) for your own bot, so there's no webhook and no public URL. Only messages from users you allow reach the chat.
 
@@ -14,7 +14,7 @@ ironpet long-polls Telegram's Bot API (`api.telegram.org`) for your own bot, so 
 1. In Telegram, message @BotFather, send `/newbot` and copy the token.
 2. In **Settings → Integrations**, paste the token, press **Save**, then **Test**. The token goes to the Keychain (`ironpet.telegram`), never to `~/.ironpet`.
 3. Turn on **Chat from Telegram**.
-4. Message your bot `/start`. A bubble next to Ghost asks **Allow** or **Deny**. While nobody is allowed yet, that's the only way anyone can ask. You can also add a user id by hand in Settings.
+4. Message your bot `/start`. A bubble next to your pet asks **Allow** or **Deny**. While nobody is allowed yet, that's the only way anyone can ask. You can also add a user id by hand in Settings.
 
 Allowed users are kept in `telegram.allowedUsers` in `config.json`. An allowed user can start turns in your chat, so treat their account like your own and keep the list short.
 

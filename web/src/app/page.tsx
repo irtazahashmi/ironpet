@@ -19,7 +19,7 @@ const windowClip = { width: 1752, height: 1312 };
 const features: { title: string; body: string; clip: Clip; link: { href: string; label: string } }[] = [
   {
     title: "Knows what every agent is doing.",
-    body: "Sessions from Cursor, Claude Code, Codex, Gemini CLI, GitHub Copilot and Pi report to Ghost through hooks. He shows the most urgent one, needs input, failed, done or working, and tells you in a bubble what the agent did. Click a session to jump to its terminal tab or editor.",
+    body: "Sessions from Cursor, Claude Code, Codex, Gemini CLI, GitHub Copilot and Pi report to your pet through hooks. It shows the most urgent one, needs input, failed, done or working, and tells you in a bubble what the agent did. Click a session to jump to its terminal tab or editor.",
     clip: { name: "agents", ...windowClip, label: "The Agents section as four agents work: one asks for input, one fails and two finish" },
     link: { href: "/docs/agents/", label: "Watching agents" },
   },
@@ -31,13 +31,13 @@ const features: { title: string; body: string; clip: Clip; link: { href: string;
   },
   {
     title: "Catches CI, reviews and Sentry.",
-    body: "Opt in to GitHub and Sentry alerts and Ghost tells you when CI fails or passes, a review comes in, or an issue escalates. Ask Ghost on any alert starts a chat that looks into it.",
-    clip: { name: "alerts", ...windowClip, label: "Pull request alerts arrive, then Ghost explains in the chat why CI failed" },
+    body: "Opt in to GitHub and Sentry alerts and your pet tells you when CI fails or passes, a review comes in, or an issue escalates. The Ask button on any alert starts a chat that looks into it.",
+    clip: { name: "alerts", ...windowClip, label: "Pull request alerts arrive, then the pet explains in the chat why CI failed" },
     link: { href: "/docs/alerts/", label: "Alerts" },
   },
   {
-    title: "One pet for each agent.",
-    body: "Add a pet and it runs an agent of its own, with its own harness, model and instructions. Bunny can work in Claude Code while Ghost works in Cursor, each asking you in its own bubble.",
+    title: "Add more pets if you like.",
+    body: "One pet watches all your agents and its chat can switch between them. Add more and each runs a chat of its own, with its own harness, model and instructions: Bunny can work in Claude Code while Ghost works in Cursor, each asking you in its own bubble.",
     clip: { name: "multi", width: 1054, height: 1060, label: "Ghost finishes a task while Bunny asks before running a command" },
     link: { href: "/docs/pets/#several-pets", label: "Several pets" },
   },
@@ -49,26 +49,26 @@ const features: { title: string; body: string; clip: Clip; link: { href: string;
   },
   {
     title: "Remembers what matters.",
-    body: "When a chat goes quiet, Ghost saves the lasting facts about you, your projects and the people you work with as notes you can read and edit. Every new chat starts with them.",
+    body: "When a chat goes quiet, your pet saves the lasting facts about you, your projects and the people you work with as notes you can read and edit. Every new chat starts with them.",
     clip: { name: "memory", ...windowClip, label: "After a chat about Maya, the Memory section gains a page about her, linked to her project" },
     link: { href: "/docs/memory/", label: "Memory" },
   },
   {
     title: "Builds you dashboards.",
-    body: "Ask for “a board of what needs me today” and Ghost writes a small native app that sits in the sidebar, with its own data and buttons that act. It reaches only what you approve.",
-    clip: { name: "dashboards", ...windowClip, label: "Ghost writes a Work dashboard from a chat message, and it opens from the sidebar" },
+    body: "Ask for “a board of what needs me today” and your pet writes a small native app that sits in the sidebar, with its own data and buttons that act. It reaches only what you approve.",
+    clip: { name: "dashboards", ...windowClip, label: "The pet writes a Work dashboard from a chat message, and it opens from the sidebar" },
     link: { href: "/docs/dashboards/", label: "Dashboards" },
   },
   {
     title: "Catches you up.",
-    body: "Step away, and Ghost sums up what happened in one bubble: who's waiting, what failed, what finished. It's built from what ironpet already recorded on your Mac, and nothing is sent anywhere.",
-    clip: { name: "welcome", width: 1054, height: 684, label: "Ghost waves with a welcome back bubble listing what happened while you were away" },
+    body: "Step away, and your pet sums up what happened in one bubble: who's waiting, what failed, what finished. It's built from what ironpet already recorded on your Mac, and nothing is sent anywhere.",
+    clip: { name: "welcome", width: 1054, height: 684, label: "The pet waves with a welcome back bubble listing what happened while you were away" },
     link: { href: "/docs/using-ironpet/#welcome-back", label: "Welcome back" },
   },
   {
     title: "Looks after you, too.",
-    body: "Water, stretch and eye breaks, counted only while you're at the keyboard. While an agent works they come a little early, so you take the break while you'd be waiting anyway. Ghost drinks along with you.",
-    clip: { name: "pet", width: 1054, height: 746, label: "Ghost works, cheers when the agent finishes, asks before a command, then drinks water with a break reminder" },
+    body: "Water, stretch and eye breaks, counted only while you're at the keyboard. While an agent works they come a little early, so you take the break while you'd be waiting anyway. Your pet drinks along with you.",
+    clip: { name: "pet", width: 1054, height: 746, label: "The pet works, cheers when the agent finishes, asks before a command, then drinks water with a break reminder" },
     link: { href: "/docs/automations/", label: "Reminders and automations" },
   },
 ];
@@ -79,7 +79,7 @@ const more = [
   { title: "Runs automations", body: "Reminders, watchers and scheduled jobs that an agent can set up for you.", href: "/docs/automations/" },
   { title: "Takes meeting notes", body: "Records and transcribes meetings, then writes a summary with action items.", href: "/docs/meetings/" },
   { title: "Comes with you", body: "Pair an iPhone to chat, approve and check on agents away from the Mac.", href: "/docs/iphone/" },
-  { title: "Answers on Telegram", body: "Chat with Ghost from Telegram when you're away from your desk.", href: "/docs/telegram/" },
+  { title: "Answers on Telegram", body: "Chat with your pet from Telegram when you're away from your desk.", href: "/docs/telegram/" },
 ];
 
 export default async function Home() {
@@ -92,9 +92,9 @@ export default async function Home() {
         <div className="hero-glow" aria-hidden="true" />
         <div className="hero-copy">
           <p className="eyebrow">a little pet that watches your coding agents</p>
-          <h1>Your agents work. Ghost keeps watch.</h1>
+          <h1>Your agents work. Your pet keeps watch.</h1>
           <p className="lede">
-            ironpet is a desktop pet for macOS. Ghost tells you when Cursor, Claude Code or Codex needs you, shows you every
+            ironpet is a desktop pet for macOS. It tells you when Cursor, Claude Code or Codex needs you, shows you every
             command an agent asks to run, and chats with your agents right from your desktop.
           </p>
           <DownloadButtons release={release} />
@@ -125,7 +125,7 @@ export default async function Home() {
 
       <section className="section" aria-labelledby="features-title">
         <h2 id="features-title" className="section-title">
-          What Ghost does
+          What your pet does
         </h2>
         <div className="features">
           {features.map((f) => (
@@ -205,7 +205,7 @@ export default async function Home() {
       )}
 
       <section className="section cta" aria-labelledby="cta-title">
-        <h2 id="cta-title">Ghost is one download away.</h2>
+        <h2 id="cta-title">Your pet is one download away.</h2>
         <DownloadButtons release={release} centered />
       </section>
     </>

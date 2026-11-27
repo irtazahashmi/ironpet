@@ -1,11 +1,11 @@
 ---
 title: Agents
-description: How Ghost watches your coding agents, what his states mean, and how to jump to a session.
+description: How your pet watches your coding agents, what its states mean, and how to jump to a session.
 section: Features
 order: 4
 ---
 
-Ghost watches the coding agents you start yourself and shows you which ones need you. Sessions report to him through hooks, and the Agents section of the ironpet window lists every one, most urgent first.
+Your pet watches the coding agents you start yourself and shows you which ones need you. Sessions report to it through hooks, and the Agents section of the ironpet window lists every one, most urgent first.
 
 ## Which agents
 
@@ -32,7 +32,7 @@ Hooks never slow down or block an agent: they have a one-second timeout and alwa
 
 ## States and the badge
 
-Ghost shows the most urgent state across your sessions, with a count badge:
+Your pet shows the most urgent state across your sessions, with a count badge:
 
 - **Needs input**: an agent is waiting for you.
 - **Failed**: a turn ended with an error.
@@ -41,10 +41,10 @@ Ghost shows the most urgent state across your sessions, with a count badge:
 
 ## Speech bubbles
 
-Ghost also tells you in a speech bubble next to him, with a one-line summary of what the agent did, such as "Edited 3 files · Fixed the flaky login test." See [Notifications](/docs/notifications/) for how long bubbles stay and how to get macOS notifications as well.
+Your pet also tells you in a speech bubble next to it, with a one-line summary of what the agent did, such as "Edited 3 files · Fixed the flaky login test." See [Notifications](/docs/notifications/) for how long bubbles stay and how to get macOS notifications as well.
 
 ## Opening a session
 
-Click Ghost when something needs attention, or right-click → Show agents, to open the Agents section. Clicking a session jumps to its iTerm tab, or opens its folder in the app that started the agent.
+Click your pet when something needs attention, or right-click → Show agents, to open the Agents section. Clicking a session jumps to its iTerm tab, or opens its folder in the app that started the agent.
 
 You can pick a fixed app instead under Settings → General (the `openIn` key). The picker offers Cursor, VS Code, Zed, Band, Windsurf, Xcode, Finder, Orca, cmux, T3 Code, herdr, Claude and Codex when they're installed, plus any custom editors you add in [Configuration](/docs/configuration/). Orca opens the session's worktree. cmux, T3 Code, herdr, Claude and Codex open the exact tab or thread of the session when the hook saw its id, and otherwise only bring the app forward.
