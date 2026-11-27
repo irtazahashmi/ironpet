@@ -119,17 +119,14 @@ enum PreviewVideos {
     /// Four agents at work: one asks for input, one fails, two finish.
     private static func agentsClip() -> Take {
         let w = Desk()
-        var step = 0
-        // New ids each step: the Agents list keeps a row's old content when the row moves to another group while it is shown.
         func list(_ apiServer: (AgentStatus, String?, String?), demo: AgentStatus, docs: AgentStatus) -> [AgentSession] {
-            step += 1
-            return [
-                session("1.\(step)", .claude, apiServer.0, "api-server", prompt: "Add rate limiting to the public endpoints", detail: apiServer.1,
+            [
+                session("1", .claude, apiServer.0, "api-server", prompt: "Add rate limiting to the public endpoints", detail: apiServer.1,
                         reply: apiServer.2, minutes: 3),
-                session("2.\(step)", .cursor, .running, "web-app", prompt: "Make the settings page work on mobile", detail: "Editing SettingsPage.tsx", minutes: 2),
-                session("3.\(step)", .claude, demo, "demo-app", prompt: "Why is the login test flaky?", detail: demo == .running ? "Ran npm test -- login" : nil,
+                session("2", .cursor, .running, "web-app", prompt: "Make the settings page work on mobile", detail: "Editing SettingsPage.tsx", minutes: 2),
+                session("3", .claude, demo, "demo-app", prompt: "Why is the login test flaky?", detail: demo == .running ? "Ran npm test -- login" : nil,
                         edited: demo == .done ? ["a", "b", "c"] : [], reply: demo == .done ? "Fixed the flaky login test." : nil, minutes: 6),
-                session("4.\(step)", .codex, docs, "docs-site", prompt: "Upgrade to the new docs theme", detail: docs == .running ? "Running npm run build" : nil,
+                session("4", .codex, docs, "docs-site", prompt: "Upgrade to the new docs theme", detail: docs == .running ? "Running npm run build" : nil,
                         reply: docs == .failed ? "The build fails because the theme needs Node 20." : nil, minutes: 11),
             ]
         }
