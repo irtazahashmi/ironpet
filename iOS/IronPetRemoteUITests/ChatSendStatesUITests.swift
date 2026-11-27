@@ -123,7 +123,8 @@ final class ChatSendStatesUITests: XCTestCase {
     func testTheWorkingRowKeepsItsSizeWhenTheElapsedTimeStartsInDark() { workingRow(dark: true) }
 
     private func workingRow(dark: Bool) {
-        server.chat.items = (1...6).map { RemoteChatItem(id: "old-\($0)", kind: $0 % 2 == 0 ? "assistant" : "user", date: Date(), text: "Earlier message number \($0)") }
+        // The last message is the reader's own, so no reply text is streaming and the working row shows.
+        server.chat.items = (1...6).map { RemoteChatItem(id: "old-\($0)", kind: $0 % 2 == 0 ? "user" : "assistant", date: Date(), text: "Earlier message number \($0)") }
         launch(dark: dark)
         XCTAssertTrue(bubble("Earlier message number 6").waitForExistence(timeout: 20))
         server.chat.running = true

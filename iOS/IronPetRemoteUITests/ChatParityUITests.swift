@@ -162,8 +162,7 @@ final class ChatParityUITests: XCTestCase {
         server.publish(RemoteEvent.chatState)
         server.streamChunk(item: "m-stream", "First words. ")
         XCTAssertTrue(any("stop-button").waitForExistence(timeout: 10), "Stop shows while the turn runs")
-        XCTAssertTrue(any("running-row").waitForExistence(timeout: 10), "the working row shows under the reply")
-        XCTAssertTrue(any("elapsed").waitForExistence(timeout: 10))
+        XCTAssertTrue(any("running-row").waitForNonExistence(timeout: 10), "the working row hides while reply text streams")
         for index in 1...40 { server.streamChunk(item: "m-stream", "word\(index) ") }
         let bubble = any("bubble-m-stream")
         XCTAssertTrue(bubble.waitForExistence(timeout: 10))
