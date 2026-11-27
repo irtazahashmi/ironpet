@@ -1,8 +1,8 @@
 import Foundation
 
 /// Loudness samples for the waveform. The audio thread records peaks; the main thread calls `tick` at a fixed rate to
-/// turn them into evenly spaced bars. The waveform view reads it on its own display-rate timeline, so drawing
-/// never goes through `@Published` and never re-renders the chat.
+/// turn them into evenly spaced bars. Views read it on their own timer or timeline, so drawing never goes through
+/// `@Published` and never re-renders the chat.
 public final class LevelBuffer: @unchecked Sendable {
     public init() {}
 
@@ -14,6 +14,15 @@ public final class LevelBuffer: @unchecked Sendable {
     private var bars: [Float] = []
     private var previous: Float = 0
     private var lastTick: TimeInterval = ProcessInfo.processInfo.systemUptime
+    private var changes = 0
+
+    /// Counts the ticks that produced a bar different from the one before, plus each reset. It only grows. A view that
+    /// polls it can skip a redraw when the number has not moved, as during silence.
+    public var generation: Int {
+        lock.lock()
+        defer { lock.unlock() }
+        return changes
+    }
 
     /// Called from the audio thread.
     public func record(_ level: Float) {
@@ -28,6 +37,7 @@ public final class LevelBuffer: @unchecked Sendable {
         let bar = max(peak, previous * 0.7)
         previous = bar
         peak = 0
+        if bar != (bars.last ?? 0) { changes += 1 }
         bars.append(bar)
         if bars.count > Self.capacity { bars.removeFirst(bars.count - Self.capacity) }
         lastTick = ProcessInfo.processInfo.systemUptime
@@ -49,6 +59,7 @@ public final class LevelBuffer: @unchecked Sendable {
         peak = 0
         previous = 0
         bars = []
+        changes += 1
         lastTick = ProcessInfo.processInfo.systemUptime
         lock.unlock()
     }
