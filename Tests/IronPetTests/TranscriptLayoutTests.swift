@@ -404,6 +404,9 @@ final class TranscriptResizeTests: XCTestCase {
 
     func testResizeAtBottomStaysAtBottom() throws {
         let panel = try open()
+        // The composer's height (queued rows, the background capsule) sits in the scrollable range, so the resting gap is not zero.
+        // What a resize must not change is that gap.
+        let startGap = geometry(panel).map { $0.content - $0.viewport - $0.offset } ?? 0
         if let g = geometry(panel) { print("RESIZE start: offset \(g.offset) content \(g.content) viewport \(g.viewport)") }
         let stats = liveResize(panel, widths: [520, 760, 400, 560])
         if let g = geometry(panel) { print("RESIZE just after: offset \(g.offset) content \(g.content) viewport \(g.viewport)") }
@@ -412,7 +415,7 @@ final class TranscriptResizeTests: XCTestCase {
         let gap = g.content - g.viewport - g.offset
         print("RESIZE bottom: gap \(gap) pt, mean frame cpu \(stats.mean * 1000) ms, worst \(stats.worst * 1000) ms")
         panel.close()
-        XCTAssertLessThan(abs(gap), 60, "left the bottom after a resize")
+        XCTAssertLessThan(abs(gap - startGap), 60, "left the bottom after a resize")
         XCTAssertLessThan(stats.mean, 0.1)
     }
 

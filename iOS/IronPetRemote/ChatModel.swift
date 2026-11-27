@@ -236,6 +236,11 @@ final class ChatModel: SocketModel {
     /// Forms whose Submit or Skip is on its way to the Mac. The card shows them as pending and ignores a second tap.
     private(set) var submittingForms: Set<String> = []
     var queue: [RemoteQueued] { snapshot?.queue ?? [] }
+    /// The Mac's background work list, as the Mac last sent it.
+    var background: [RemoteBackgroundItem] { snapshot?.background ?? [] }
+    /// Failed rows the user has opened the sheet on. The capsule stops showing them as new.
+    private(set) var seenFailures: Set<String> = []
+    var capsule: BackgroundCapsule { .make(states: background.map { ($0.id, $0.state) }, seenFailures: seenFailures) }
     var running: Bool { snapshot?.running ?? false }
     var title: String { snapshot?.title ?? "Chat" }
 
@@ -955,6 +960,17 @@ final class ChatModel: SocketModel {
             guard let first = try await group.next() else { throw CancellationError() }
             return first
         }
+    }
+
+    /// The sheet opened: failed rows count as seen.
+    func openBackground() { seenFailures.formUnion(background.filter { $0.state == "failed" }.map(\.id)) }
+
+    func stopBackground(_ id: String) async {
+        if await run({ try await self.client.stopBackground(id: id, agentId: self.agentId) }) != nil { await reload() }
+    }
+
+    func clearFinishedBackground() async {
+        if await run({ try await self.client.clearFinishedBackground(agentId: self.agentId) }) != nil { await reload() }
     }
 
     func stopTurn() async {

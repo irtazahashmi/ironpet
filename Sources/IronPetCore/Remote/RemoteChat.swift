@@ -182,6 +182,7 @@ package struct RemoteChat {
             "items": page.map(json), "approvals": snapshot.approvals.map(json),
             "forms": snapshot.forms.map(json), "queue": snapshot.queue.map(json)
         ]
+        if !snapshot.background.isEmpty { object["background"] = snapshot.background.map(json) }
         if includeHasMore { object["has_more"] = hasMore }
         if let id = status.threadID { object["thread_id"] = id }
         if let model = options.model { object["model"] = model }
@@ -372,6 +373,17 @@ package struct RemoteChat {
         return ["stopped": true]
     }
 
+    /// Stops one background row and clears finished ones, for the phone's sheet.
+    package func stopBackground(_ id: String) async -> [String: Any] {
+        await chat.stopBackground(id)
+        return ["stopped": true]
+    }
+
+    package func clearFinishedBackground() async -> [String: Any] {
+        await chat.clearFinishedBackground()
+        return ["cleared": true]
+    }
+
     // MARK: Threads
 
     /// A running turn or a waiting question blocks it, since opening a thread would stop them.
@@ -550,6 +562,18 @@ package struct RemoteChat {
         if let agentId = approval.agentId { object["agent_id"] = agentId }
         if let agentName = approval.agentName { object["agent_name"] = agentName }
         return object
+    }
+
+    private nonisolated static func json(_ item: BackgroundItem) -> [String: Any] {
+        var object: [String: Any] = ["id": item.id, "kind": item.kind.rawValue, "title": item.title, "state": item.state.rawValue, "steps": item.steps,
+                                     "started_at": iso(item.startedAt), "can_stop": item.stoppable, "lines": item.lines]
+        object["now"] = item.now
+        object["ended_at"] = item.endedAt.map(iso)
+        object["waiting_for"] = item.waitingFor
+        object["result"] = item.result
+        object["output_file"] = item.outputFile
+        object["stop_hint"] = item.stopHint
+        return object.filter { !($0.value is NSNull) }.mapValues { $0 }
     }
 
     private nonisolated static func json(_ queued: ChatQueuedInfo) -> [String: Any] {

@@ -57,6 +57,7 @@ struct ChatView: View {
                                     .background(.thinMaterial).accessibilityIdentifier("chat-notice")
                             }
                             if let voice { VoiceNotice(voice: voice) }
+                            BackgroundCapsuleRow(model: model)
                             Composer(model: model, showFiles: $showFiles, showPhotos: $showPhotos, focused: $focused)
                         }
                     }

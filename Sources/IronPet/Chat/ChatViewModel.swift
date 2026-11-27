@@ -62,6 +62,10 @@ final class ChatViewModel: ObservableObject {
     @Published private(set) var approvals: [ChatApprovalInfo] = []
     @Published private(set) var forms: [ChatFormInfo] = []
     @Published private(set) var queue: [ChatQueuedInfo] = []
+    /// The background work list in display order, and what the capsule above the input shows.
+    @Published private(set) var background: [BackgroundItem] = []
+    @Published private(set) var backgroundIndicator: BackgroundIndicator = .idle
+    @Published private(set) var backgroundIdleSummary = "Nothing ran in the background."
     @Published private(set) var history: [ChatThreadInfo] = []
     @Published private(set) var options: ChatOptions
 
@@ -162,6 +166,7 @@ final class ChatViewModel: ObservableObject {
             read { await $0.refreshMessages() }
         case (.chatState, "approvals"?): read { $0.approvals = await $0.api.approvals(); await $0.refreshStatus() }
         case (.chatState, "forms"?): read { $0.forms = await $0.api.forms(); await $0.refreshStatus() }
+        case (.chatState, "background"?): read { await $0.refreshBackground() }
         case (.chatState, "queue"?): read { $0.queue = await $0.api.queue(); await $0.refreshStatus() }
         case (.chatState, "options"?): read { await $0.refreshOptions(); await $0.refreshCommands() }
         case (.chatState, "commands"?): read { await $0.refreshCommands() }
@@ -180,6 +185,9 @@ final class ChatViewModel: ObservableObject {
         approvals = snapshot.approvals
         forms = snapshot.forms
         queue = snapshot.queue
+        background = snapshot.background
+        backgroundIndicator = snapshot.backgroundIndicator
+        backgroundIdleSummary = api.backgroundIdleSummary()
         history = snapshot.threads
         options = snapshot.options
     }
@@ -194,6 +202,18 @@ final class ChatViewModel: ObservableObject {
     }
 
     func refreshStatus() async { status = await api.status() }
+
+    func refreshBackground() async {
+        let work = await api.backgroundWork()
+        background = work.items
+        backgroundIndicator = work.indicator
+        backgroundIdleSummary = api.backgroundIdleSummary()
+    }
+
+    /// The list opened: failures count as seen.
+    func openBackground() { read { await $0.api.openBackground(); await $0.refreshBackground() } }
+    func clearFinishedBackground() { read { await $0.api.clearFinishedBackground(); await $0.refreshBackground() } }
+    func stopBackground(_ id: String) { read { await $0.api.stopBackground(id); await $0.refreshBackground() } }
 
     /// Fetches the commands for the popup, only while the input is a slash. The popup's filter, highlight and selection are this
     /// window's own.

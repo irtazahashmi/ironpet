@@ -33,6 +33,7 @@ enum PreviewRenderer {
             session.loadPreview(preview)
             render(ChatView(session: Self.chatModel(session)).frame(width: 520, height: 640).panel(), to: dir, file)
         }
+        renderBackgroundWork(to: dir)
         // The composer while a voice note records.
         for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
             let session = ChatSession(restore: false)
@@ -441,6 +442,54 @@ enum PreviewRenderer {
         let file = dir.appendingPathComponent("\(name).png")
         try? rep.representation(using: .png, properties: [:])?.write(to: file)
         print("wrote \(file.path)")
+    }
+
+    /// A chat with every kind of background work, built from made-up events the way the adapter reports them.
+    private static func backgroundSession(queued: Bool, work: Bool) -> ChatSession {
+        let session = ChatSession(restore: false)
+        session.loadPreview(.done)
+        let start = Date()
+        var clock = start.addingTimeInterval(-760)
+        session.backgroundClock = { clock }
+        if queued {
+            session.turnRunner = { _, _ in }
+            _ = session.submitLocal("Check the release notes", files: [], reply: nil)
+            _ = session.submitLocal("Then open the PR when the tests pass", files: [], reply: nil)
+        }
+        guard work else { return session }
+        session.handleBackground(.toolStarted(id: "agent-1", summary: "Draft Langfuse prompts RFC"))
+        for (index, step) in ["Read docs/prompts/README.md", "Ran `langfuse prompts list --limit 20`", "Ran `gh pr view 5990`"].enumerated() {
+            session.handleBackground(.subagentTool(parent: "agent-1", id: "s\(index)", summary: step, ok: index < 2 ? true : nil))
+        }
+        clock = start.addingTimeInterval(-540)
+        session.handleBackground(.asyncTask(AsyncTaskUpdate(phase: .spawned, id: "sh-1", taskType: "shell", description: "Run ChatSession tests", canStop: true)))
+        session.handleBackground(.asyncTask(AsyncTaskUpdate(phase: .state, id: "sh-1", summary: "Executed 48 tests, with 0 failures", state: "completed")))
+        session.handleBackground(.asyncTask(AsyncTaskUpdate(phase: .spawned, id: "sh-2", taskType: "shell", description: "npm run dev", canStop: true)))
+        session.handleBackground(.asyncTask(AsyncTaskUpdate(phase: .spawned, id: "mon-1", taskType: "monitor", description: "Watch IronPet main CI", canStop: false)))
+        session.handleBackground(.asyncTask(AsyncTaskUpdate(phase: .spawned, id: "wf-1", taskType: "workflow", description: "Review PR 402", canStop: true)))
+        session.handleBackground(.asyncTask(AsyncTaskUpdate(phase: .progress, id: "wf-1", summary: "Summarising review comments", lastToolName: "Grep", toolCalls: 31)))
+        session.handleBackground(.toolStarted(id: "agent-2", summary: "Design new IronPet inbox"))
+        session.handleBackground(.subagentTool(parent: "agent-2", id: "d1", summary: "Write 01-inbox.html", ok: nil))
+        session.handleBackground(.toolFinished(id: "agent-2", ok: false))
+        session.syncJobs([Job(id: "job-demo", title: "Run screen review over today's captures", prompt: "review", folder: "/Users/you/code/demo-app", agent: "claude",
+                              state: .needsApproval, lastStep: "Run tasks update 412", waitingFor: "Allow ironpet tasks update 412?", created: clock, started: clock)])
+        clock = start
+        return session
+    }
+
+    /// The capsule above the input in each state with queued messages beside it, the popover with six kinds of work, and the sheet on the phone.
+    private static func renderBackgroundWork(to dir: URL) {
+        for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
+            render(ChatView(session: chatModel(backgroundSession(queued: false, work: false))).frame(width: 520, height: 640).panel(), to: dir,
+                   "chat-background-idle" + suffix, scheme: scheme)
+            render(ChatView(session: chatModel(backgroundSession(queued: true, work: true))).frame(width: 520, height: 640).panel(), to: dir,
+                   "chat-background-queued" + suffix, scheme: scheme)
+            let list = BackgroundPopover(session: chatModel(backgroundSession(queued: false, work: true)), expanded: ["agent-1"])
+                .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .padding(16)
+                .background { ChatBackdrop() }
+            render(list, to: dir, "background-list" + suffix, scheme: scheme)
+        }
     }
 
     /// A dashboard open in the window and the approval sheet, from made-up data. ironpet ships no dashboards: these exist only here.

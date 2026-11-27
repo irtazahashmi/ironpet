@@ -524,10 +524,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let service = JobService(database: database)
         service.spawner = platform.processes
         service.currentAgent = { [weak self] in self.map { ($0.chat.agent, $0.chat.model) } }
-        service.onChange = { [weak self] job in
+        service.onChange = { [weak self, weak service] job in
             self?.store.setJob(Job.sessionKey(job.id), job.agentSession)
             self?.spokenMessages.jobChanged(job)
+            if let service { self?.chat.syncJobs(service.jobs) }
         }
+        chat.jobStopper = { [weak service] id in _ = try? service?.stop(id) }
         service.onThreadSaved = { [weak self] thread in self?.chat.threadSaved(thread) }
         service.permissions = backgroundPermissions
         service.sessionBusy = { [weak self] thread in self.map { $0.chat.isRunning && $0.chat.threadID == thread } ?? false }
@@ -549,6 +551,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return (try? service.followUp(job.id, message: text)) != nil
         }
         jobs = service
+        chat.syncJobs(service.jobs)
     }
 
     /// Spoken messages for the primary chat. It stays quiet during calls and meeting recordings, and job updates are not

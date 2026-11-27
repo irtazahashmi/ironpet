@@ -630,6 +630,8 @@ audio, or an area that is not on the wire yet.
 | `GET /v1/chat/threads/:id` | none |
 | `POST /v1/chat/current/messages` | `chat.send` |
 | `POST /v1/chat/current/stop` | `chat.stop` |
+| `POST /v1/chat/background/:id/stop` | none |
+| `POST /v1/chat/background/clear` | none |
 | `POST /v1/chat/open/:id` | `chat.openThread` |
 | `POST /v1/chat/new` | `chat.newChat` |
 | `PATCH /v1/chat/options` | `chat.setAgent`, `chat.setModel`, `chat.useFolder`, `chat.useNoProject`, `chat.setMode` |
