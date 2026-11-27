@@ -138,11 +138,11 @@ final class MemoryMCPTests: XCTestCase {
 
     func testTheCLIMergesThroughTheSameTool() throws {
         _ = store.remember("Lives in Berlin", scope: .people, person: "Irtaza Hashimi", source: "chat:a")
-        _ = store.remember("Writes Swift", scope: .people, person: "Irtaza", source: "chat:a")
-        let request = try MemoryCLI.request(["merge", "Irtaza Hashimi", "Irtaza"])
+        _ = store.remember("Writes Swift", scope: .people, person: "Irtaza Hashmi", source: "chat:a")
+        let request = try MemoryCLI.request(["merge", "Irtaza Hashimi", "Irtaza Hashmi"])
         XCTAssertEqual(request.op, "merge")
         XCTAssertEqual(request.args["keep"] as? String, "Irtaza Hashimi")
-        XCTAssertEqual(request.args["merge"] as? [String], ["Irtaza"])
+        XCTAssertEqual(request.args["merge"] as? [String], ["Irtaza Hashmi"])
         XCTAssertThrowsError(try MemoryCLI.request(["merge", "Irtaza"]))
         XCTAssertThrowsError(try MemoryCLI.request(["forget", "x"]))
 
@@ -152,7 +152,7 @@ final class MemoryMCPTests: XCTestCase {
         XCTAssertEqual(object["ok"] as? Bool, true, "\(object)")
         XCTAssertEqual((object["result"] as? [String: Any])?["facts"] as? Int, 2)
         XCTAssertEqual(store.entities().filter { $0.type == .person }.map(\.name), ["Irtaza Hashimi"])
-        let failed = MemoryMCP.handleCLI(Data(#"{"op":"merge","args":{"keep":"Nobody","merge":["Irtaza"]}}"#.utf8), api: MemoryAPI(services: { [services] in services }))
+        let failed = MemoryMCP.handleCLI(Data(#"{"op":"merge","args":{"keep":"Nobody","merge":["Irtaza Hashmi"]}}"#.utf8), api: MemoryAPI(services: { [services] in services }))
         XCTAssertEqual((try JSONSerialization.jsonObject(with: failed.body) as? [String: Any])?["ok"] as? Bool, false)
     }
 

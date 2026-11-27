@@ -465,10 +465,14 @@ package final class EntityMemoryStore: MemoryStore {
         }
         let identifiers = seen.identifiers.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty && !WorkItemGuard.isWorkItem($0) }
         let known = records()
+        if seen.type == .person, Self.isUser(name, in: known) { return .success("me") }
         let id: String
         switch EntityMatcher.match(name: name, identifiers: identifiers, type: seen.type, in: known) {
         case .found(let found): id = found
-        case .none: id = seen.type == .person ? EntityMatcher.personID(name) : Self.namedID(seen.type, name)
+        case .none:
+            if let other = Self.otherType(name, seen.type, in: known) { id = other.id } else {
+                id = seen.type == .person ? EntityMatcher.personID(name) : Self.namedID(seen.type, name)
+            }
         case .ambiguous(let ids):
             return .failure(MemoryError(message: "more than one page matches \(name): \(names(ids).joined(separator: ", ")). Say which."))
         }
@@ -480,7 +484,7 @@ package final class EntityMemoryStore: MemoryStore {
         }
         do {
             try database.write { db in
-                try Self.ensureEntity(db, Target(id: id, type: seen.type, name: name, identifiers: identifiers, person: nil))
+                try Self.ensureEntity(db, Target(id: id, type: known.first { $0.id == id }?.type ?? seen.type, name: name, identifiers: identifiers, person: nil))
                 let row = try db.rows("SELECT name, aliases, sources FROM memory_entities WHERE id = ?", [id]).first
                 let own = EntityMatcher.normalize(row?[0] as? String ?? name)
                 var all = Self.lines(row?[1] as? String)
@@ -884,6 +888,9 @@ package final class EntityMemoryStore: MemoryStore {
             return .success(Target(id: "me", type: .me, name: "About me", identifiers: [], person: nil))
         case .people:
             guard let name = MemoryNote.personName(person) else { return .failure(MemoryError(message: "a note about a person needs the person's name")) }
+            if Self.isUser(name, in: records()) {
+                return .success(Target(id: "me", type: .me, name: "About me", identifiers: [], person: nil))
+            }
             switch EntityMatcher.match(name: name, type: .person, in: records()) {
             case .found(let id):
                 let existing = entities().first { $0.id == id }
@@ -915,10 +922,30 @@ package final class EntityMemoryStore: MemoryStore {
             guard let existing = entities().first(where: { $0.id == id }) else { return .failure(MemoryError(message: "no page named \(name)")) }
             return .success(Target(id: id, type: type, name: existing.name, identifiers: [], person: nil))
         case .none:
+            // A page of another type with the name is still that page: it keeps its type, and the note goes on it.
+            if let other = Self.otherType(name, type, in: records()) { return .success(Target(id: other.id, type: other.type, name: other.name, identifiers: [], person: nil)) }
             return .success(Target(id: Self.namedID(type, name), type: type, name: name, identifiers: [], person: nil))
         case .ambiguous(let ids):
             return .failure(MemoryError(message: "more than one \(type.label.lowercased()) matches \(name): \(names(ids).joined(separator: ", ")). Say which."))
         }
+    }
+
+    /// The page of another type that a name finds by its name, alias or acronym. Never the user's page or a person's, and only when
+    /// exactly one page fits, so a new page is not made for a name an existing page already has.
+    private static func otherType(_ name: String, _ type: EntityType, in known: [EntityRecord]) -> EntityRecord? {
+        let others = known.filter { $0.type != type && $0.type != .me && $0.type != .person }
+        // The same name on another type is deliberately another page ("Band" the app and "Band" the team).
+        let exact = EntityMatcher.normalize(name)
+        guard !others.contains(where: { ([$0.name] + $0.aliases).contains { EntityMatcher.normalize($0) == exact } }),
+              case .found(let id) = EntityMatcher.match(name: name, in: others) else { return nil }
+        return others.first { $0.id == id }
+    }
+
+    /// True when the name is one of the user's own: the name or an alias of the `me` page.
+    private static func isUser(_ name: String, in known: [EntityRecord]) -> Bool {
+        guard let me = known.first(where: { $0.type == .me }) else { return false }
+        let wanted = EntityMatcher.fold(name)
+        return !wanted.isEmpty && ([me.name] + me.aliases).contains { EntityMatcher.fold($0) == wanted }
     }
 
     /// The id of a page made from a name: `project:ironpet`, `org:acme`. A project found by its repo has `project:<repo key>` instead.
