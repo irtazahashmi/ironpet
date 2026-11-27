@@ -174,8 +174,13 @@ final class PetController: NSObject {
 
     /// For `/test/window`.
     var windowState: [String: Any] {
-        ["visible": isWindowVisible, "section": windowModel.section.rawValue, "todayShown": windowModel.todayShown,
+        ["visible": isWindowVisible, "section": windowModel.section.rawValue, "todayShown": windowModel.todayShown, "agentsTracked": windowModel.agentsTracked,
          "briefKind": windowModel.briefKind.rawValue, "focusMeeting": windowModel.focusMeeting ?? ""]
+    }
+
+    /// Lists or hides the Agents row: the device tracks coding agents.
+    func setAgentsTracked(_ tracked: Bool) {
+        if windowModel.agentsTracked != tracked { windowModel.agentsTracked = tracked }
     }
 
     /// Lists or hides the Today row: a brief or recap automation is on.
@@ -325,7 +330,9 @@ final class PetController: NSObject {
     /// already open.
     func showWindow(_ section: IronPetSection?) {
         lastActivity = Date()
-        windowModel.section = section ?? IronPetSection.needingAttention(agents: agentList, alerts: alertList, tasks: taskList)
+        let tracked = windowModel.agentsTracked
+        windowModel.section = section?.opened(agentsTracked: tracked)
+            ?? IronPetSection.needingAttention(agents: agentList, alerts: alertList, tasks: taskList, agentsTracked: tracked)
         settings?.refresh()
         NSApp.activate()
         window.show(near: panel.frame)
@@ -446,9 +453,11 @@ final class PetController: NSObject {
             item.target = self
             menu.addItem(item)
         }
-        let agents = NSMenuItem(title: "Show agents", action: #selector(showAgents(_:)), keyEquivalent: "")
-        agents.target = self
-        menu.addItem(agents)
+        if windowModel.agentsTracked {
+            let agents = NSMenuItem(title: "Show agents", action: #selector(showAgents(_:)), keyEquivalent: "")
+            agents.target = self
+            menu.addItem(agents)
+        }
         menu.addItem(tricksMenuItem())
         menu.addItem(.separator())
         extraMenuItems().forEach(menu.addItem)

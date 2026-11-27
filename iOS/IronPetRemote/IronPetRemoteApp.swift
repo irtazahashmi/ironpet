@@ -160,6 +160,9 @@ struct MainTabs: View {
         return base.appendingPathComponent("assets", isDirectory: true)
     }
 
+    /// Whether the Mac tracks coding agents. Off removes the Agents tab. Reads as on until the Mac has answered.
+    private var tracksAgents: Bool { phoneSettings.config?.agents.trackAgents ?? true }
+
     var body: some View {
         TabView(selection: $tab) {
             PetView(model: pet, today: today, app: model, client: client, open: open)
@@ -171,8 +174,10 @@ struct MainTabs: View {
                 .tabItem { Label("Chat", systemImage: AppTab.chat.symbol) }.badge(chats.waitingCount).tag(AppTab.chat)
             InboxView(model: inbox)
                 .tabItem { Label("Inbox", systemImage: AppTab.tasks.symbol) }.tag(AppTab.tasks)
-            AgentsView(model: agents)
-                .tabItem { Label("Agents", systemImage: AppTab.agents.symbol) }.tag(AppTab.agents)
+            if tracksAgents {
+                AgentsView(model: agents)
+                    .tabItem { Label("Agents", systemImage: AppTab.agents.symbol) }.tag(AppTab.agents)
+            }
             MoreView(dashboards: dashboards, makeDashboard: makeDashboardModel, alerts: alerts, automations: automations, meetings: meetings, memory: memory, screen: screen, settings: phoneSettings, phoneAgent: phoneAgent, path: $morePath)
                 .tabItem { Label("More", systemImage: AppTab.more.symbol) }.badge(alerts.alerts.count + automations.automations.filter(\.waitsForApproval).count + dashboards.badge)
                 .tag(AppTab.more)
@@ -188,7 +193,7 @@ struct MainTabs: View {
         .tint(pet.accent)
         .environment(\.macAccent, pet.accent ?? .accentColor)
         // The alert count and the waiting approvals are on their tabs before the user opens it.
-        .task { network.startPathMonitor(); alerts.start(); dashboards.start(); chat.start(); chats.start(); pet.start(); automations.start(); phoneAgent.start(); voice.onTranscript = { [chat] text, mode in if mode == .draft { chat.insertDictation(text) } }; voice.onSend = { [chat] in chat.voiceEvent($0) }; chat.resendVoice = { [voice] in await voice.resend($0) }; chat.transcribeSaved = { [voice] in await voice.transcribeSaved($0, $1) }; voice.hasComposerContent = { [chat] in chat.hasComposerContent }; voice.hasEarlierMessages = { [chat] in chat.hasEarlierMessages }; voice.start() }
+        .task { network.startPathMonitor(); phoneSettings.start(); alerts.start(); dashboards.start(); chat.start(); chats.start(); pet.start(); automations.start(); phoneAgent.start(); voice.onTranscript = { [chat] text, mode in if mode == .draft { chat.insertDictation(text) } }; voice.onSend = { [chat] in chat.voiceEvent($0) }; chat.resendVoice = { [voice] in await voice.resend($0) }; chat.transcribeSaved = { [voice] in await voice.transcribeSaved($0, $1) }; voice.hasComposerContent = { [chat] in chat.hasComposerContent }; voice.hasEarlierMessages = { [chat] in chat.hasEarlierMessages }; voice.start() }
         // The five minutes count from the app going to the background, whichever screen is open. Watching only inside the Meetings
         // screen would leave the text unlocked after the person left it and then left the app.
         .onChange(of: scenePhase) { _, phase in
@@ -197,6 +202,8 @@ struct MainTabs: View {
             meetings.gate.scenePhaseChanged(phase)
             screen.gate.scenePhaseChanged(phase)
         }
+        // The tab bar loses Agents when the Mac turns tracking off; leave the tab first so the selection never points at nothing.
+        .onChange(of: tracksAgents) { _, tracks in if !tracks, tab == .agents { tab = .pet } }
         // A background changed on the Mac shows when the Chat tab opens.
         .onChange(of: tab) { _, next in if next == .chat { Task { await pet.reloadPet(applyMood: false); await chats.refresh() } } }
         // Leaving the tabs (unpair or a 401) must close the socket, which otherwise keeps reconnecting with the old token.
@@ -211,7 +218,7 @@ struct MainTabs: View {
 
     /// A Today item opens the tab that holds its target. A session opens its detail.
     private func open(_ target: TodayTarget) {
-        guard let next = AppTab.tab(for: target) else { return }
+        guard let next = AppTab.tab(for: target), next != .agents || tracksAgents else { return }
         if target.type == .session { agents.pendingDetail = target.id }
         if let destination = MoreDestination.destination(for: target) { morePath = [destination] }
         tab = next

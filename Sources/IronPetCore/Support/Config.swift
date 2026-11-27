@@ -433,13 +433,33 @@ package struct Config: Codable, Equatable {
             claudeHooks: Bool = false,
             hooks: [String: Bool] = [:],
             githubAlerts: Bool = false,
-            shareMCPSignIns: Bool = false
+            shareMCPSignIns: Bool = false,
+            trackAgents: Bool = true
         ) {
             self.cursorHooks = cursorHooks
             self.claudeHooks = claudeHooks
             self.hooks = hooks
             self.githubAlerts = githubAlerts
             self.shareMCPSignIns = shareMCPSignIns
+            self.trackAgents = trackAgents
+        }
+
+        /// The device-level switch for watching coding agents. Off removes ironpet's hooks from every agent's config, ignores
+        /// hook events and hides the Agents section on the Mac and the phone. The per-agent choices below are kept, so turning it
+        /// back on restores them. On by default, so an install that predates the switch keeps tracking.
+        package var trackAgents = true
+
+        /// The agents whose hooks ironpet keeps installed: none while tracking is off, else the ones the user chose.
+        package var activeAgents: [HookInstaller.Agent] {
+            trackAgents ? HookInstaller.Agent.allCases.filter(watches) : []
+        }
+
+        /// Turns tracking on or off. Turning it on with no agent chosen yet chooses every agent in `found`, so the user does not
+        /// have to tick them one by one; agents the user already chose stay as they are.
+        package mutating func setTracking(_ on: Bool, found: [HookInstaller.Agent]) {
+            trackAgents = on
+            guard on, !HookInstaller.Agent.allCases.contains(where: watches) else { return }
+            for agent in found { setWatches(true, agent) }
         }
 
         /// Status hooks in `~/.cursor/hooks.json`.

@@ -214,6 +214,16 @@ public struct RemoteConfig: Codable, Equatable, Sendable {
         public init(background: String = "default") { self.background = background }
     }
 
+    /// Whether the Mac tracks coding agents. Shown only: hooks are not changed from the phone. A Mac that predates the switch
+    /// does not send it, which reads as on.
+    public struct Agents: Codable, Equatable, Sendable {
+        public var trackAgents: Bool
+        public init(trackAgents: Bool = true) { self.trackAgents = trackAgents }
+        public init(from decoder: Decoder) throws {
+            trackAgents = try decoder.container(keyedBy: CodingKeys.self).decodeIfPresent(Bool.self, forKey: .trackAgents) ?? true
+        }
+    }
+
     public var pet: Pet
     public var reminders: Reminders
     public var tasks: Tasks
@@ -224,11 +234,26 @@ public struct RemoteConfig: Codable, Equatable, Sendable {
     public var screenCapture: Switch
     /// Shown, and the phone can only turn it off.
     public var meetings: Switch
+    public var agents: Agents
 
     public init(pet: Pet = Pet(), reminders: Reminders = Reminders(), tasks: Tasks = Tasks(), welcomeBack: Switch = Switch(enabled: true),
-                speech: Speech = Speech(), chat: Chat = Chat(), screenCapture: Switch = Switch(), meetings: Switch = Switch()) {
+                speech: Speech = Speech(), chat: Chat = Chat(), screenCapture: Switch = Switch(), meetings: Switch = Switch(),
+                agents: Agents = Agents()) {
         self.pet = pet; self.reminders = reminders; self.tasks = tasks; self.welcomeBack = welcomeBack; self.speech = speech
-        self.chat = chat; self.screenCapture = screenCapture; self.meetings = meetings
+        self.chat = chat; self.screenCapture = screenCapture; self.meetings = meetings; self.agents = agents
+    }
+
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        pet = try c.decode(Pet.self, forKey: .pet)
+        reminders = try c.decode(Reminders.self, forKey: .reminders)
+        tasks = try c.decode(Tasks.self, forKey: .tasks)
+        welcomeBack = try c.decode(Switch.self, forKey: .welcomeBack)
+        speech = try c.decode(Speech.self, forKey: .speech)
+        chat = try c.decode(Chat.self, forKey: .chat)
+        screenCapture = try c.decode(Switch.self, forKey: .screenCapture)
+        meetings = try c.decode(Switch.self, forKey: .meetings)
+        agents = try c.decodeIfPresent(Agents.self, forKey: .agents) ?? Agents()
     }
 }
 

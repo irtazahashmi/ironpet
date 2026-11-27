@@ -50,7 +50,8 @@
             "hooks" : {
 
             },
-            "shareMCPSignIns" : false
+            "shareMCPSignIns" : false,
+            "trackAgents" : true
           },
           "jobs" : {
             "maxRunning" : 3,
@@ -230,7 +231,8 @@
             "hooks" : {
 
             },
-            "shareMCPSignIns" : false
+            "shareMCPSignIns" : false,
+            "trackAgents" : true
           },
           "jobs" : {
             "maxRunning" : 3,
@@ -407,7 +409,8 @@
             "hooks" : {
 
             },
-            "shareMCPSignIns" : false
+            "shareMCPSignIns" : false,
+            "trackAgents" : true
           },
           "jobs" : {
             "maxRunning" : 3,

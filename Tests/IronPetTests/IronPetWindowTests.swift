@@ -45,6 +45,40 @@ final class IronPetWindowTests: XCTestCase {
         XCTAssertEqual(IronPetSection.needingAttention(agents: AgentsAPI(store: sessions()), alerts: AlertsAPI(store: signals(0)), tasks: TasksAPI(store: tasks())), .agents)
     }
 
+    // S2 and S5
+    func testTrackingOffDropsAgentsFromTheRowsAndTheShortcutsWithoutTouchingTheUsersHideChoice() {
+        let off = IronPetSection.shown(chat: true, transcripts: true, automations: true, agents: false)
+        XCTAssertFalse(off.contains(.agents))
+        XCTAssertEqual(IronPetSection.forShortcut("2", in: off), .alerts)
+        var layout = SidebarLayout()
+        layout.setHidden(.alerts, true)
+        XCTAssertEqual(layout.visible(off).first(where: { $0 != .chat }), .notifications)
+        XCTAssertFalse(layout.isHidden(.agents), "tracking off is not the user's own choice")
+        let on = IronPetSection.shown(chat: true, transcripts: true, automations: true)
+        XCTAssertTrue(layout.visible(on).contains(.agents))
+        XCTAssertFalse(layout.visible(on).contains(.alerts), "their own hide choice returns with tracking")
+    }
+
+    func testALinkToAgentsOpensChatWhileTrackingIsOff() {
+        XCTAssertEqual(IronPetSection.agents.opened(agentsTracked: true), .agents)
+        XCTAssertEqual(IronPetSection.agents.opened(agentsTracked: false), .chat)
+        XCTAssertEqual(IronPetSection.alerts.opened(agentsTracked: false), .alerts)
+    }
+
+    func testNoAttentionPageIsAgentsWhileTrackingIsOff() {
+        let sessions = AgentsAPI(store: sessions(.needsInput))
+        let alerts = AlertsAPI(store: signals(0))
+        let tasks = TasksAPI(store: tasks())
+        XCTAssertEqual(IronPetSection.needingAttention(agents: sessions, alerts: alerts, tasks: tasks, agentsTracked: false), .chat)
+    }
+
+    @MainActor func testTurningTrackingOffMovesAnOpenAgentsPageToChat() {
+        let model = IronPetWindowModel(defaults: UserDefaults(suiteName: "ironpet-tracking-\(UUID().uuidString)")!)
+        model.section = .agents
+        model.agentsTracked = false
+        XCTAssertEqual(model.section, .chat)
+    }
+
     func testBubblesWaitOnTheSectionsThatShowWhatTheyWouldAnnounce() {
         XCTAssertEqual(IronPetSection.allCases.filter(\.hidesBubbles), [.chat, .agents, .alerts, .notifications, .inbox, .actions, .today])
     }
