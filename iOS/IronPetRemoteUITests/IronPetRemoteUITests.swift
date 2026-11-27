@@ -34,13 +34,14 @@ final class IronPetRemoteUITests: XCTestCase {
         openTab("Inbox")
 
         XCTAssertTrue(app.staticTexts["Send the notes to Bo"].waitForExistence(timeout: 20), "the Inbox opens after Allow")
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'Meeting'")).firstMatch.exists, "a row names its origin")
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH 'MEETING'")).firstMatch.exists, "the items are grouped by origin")
         XCTAssertTrue(app.buttons["done-s-1"].exists)
-        XCTAssertTrue(app.buttons["remove-s-1"].exists)
+        XCTAssertFalse(app.buttons["remove-s-1"].exists, "Remove is a swipe, not a button on the row")
         XCTAssertFalse(app.buttons["section-done"].exists, "there is no task list")
 
         app.buttons["done-s-1"].tap()
         XCTAssertTrue(app.staticTexts["Send the notes to Bo"].waitForNonExistence(timeout: 10), "Done takes the item off the list")
+        app.descendants(matching: .any)["inbox-s-2"].swipeLeft()
         app.buttons["remove-s-2"].tap()
         XCTAssertTrue(app.staticTexts["Check the flaky build"].waitForNonExistence(timeout: 10), "Remove takes the item off the list")
         XCTAssertTrue(app.staticTexts["Inbox is empty"].waitForExistence(timeout: 10))

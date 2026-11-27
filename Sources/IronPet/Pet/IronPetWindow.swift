@@ -571,7 +571,7 @@ struct IronPetWindowView: View {
                     InboxView(tasks: tasks, onOpenMeeting: { folder in
                         model.focusMeeting = folder
                         model.section = .transcripts
-                    })
+                    }, onOpenChat: actions.onOpenThread)
                 case .transcripts:
                     if let meetings {
                         TranscriptsView(meetings: meetings, focus: $model.focusMeeting)
@@ -667,7 +667,7 @@ struct PageHeaderFrames: PreferenceKey, Equatable {
     }
 }
 
-private struct FrameReader: View {
+struct FrameReader: View {
     enum Role { case header, title }
     let role: Role
 

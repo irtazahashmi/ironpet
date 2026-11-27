@@ -801,7 +801,7 @@ package final class AutomationService {
         guard !key.isEmpty else { return "a resolve_task needs an id" }
         do {
             let reason = try TaskStore.validReason((action["reason"] as? String) ?? "")
-            if let item = tasks.item(named: key, scopes: [a.id]) { try tasks.resolve(item.id, reason: reason) }
+            if let item = tasks.item(named: key, scopes: [a.id]) { try tasks.resolve(item.id, reason: reason, by: a.name) }
             return nil
         } catch {
             return error.localizedDescription
