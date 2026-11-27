@@ -115,6 +115,11 @@ package final class MemoryIndex: @unchecked Sendable { // `database` serializes 
         .init(601, "memory: the sources that mentioned a page", sql: """
             ALTER TABLE memory_entities ADD COLUMN sources TEXT NOT NULL DEFAULT '';
             """),
+        // Project notes from a chat that named no project wait here until the cleanup files them.
+        .init(602, "memory: notes waiting for the cleanup to name their page", sql: """
+            CREATE TABLE memory_unsorted(id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, date TEXT NOT NULL DEFAULT '',
+                                         source TEXT NOT NULL DEFAULT '', folder TEXT NOT NULL DEFAULT '');
+            """),
     ]
 
     package enum Kind: String, CaseIterable, Codable {

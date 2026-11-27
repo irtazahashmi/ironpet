@@ -155,6 +155,42 @@ final class MemorySectionModel: ObservableObject {
         }
     }
 
+    // MARK: Cleanup
+
+    @Published private(set) var proposals: [MemoryCleanup.Proposal] = []
+    @Published private(set) var cleaning = false
+    /// What the last run or approval said.
+    @Published private(set) var cleanupMessage: String?
+
+    /// Runs the cleanup. It only proposes; each proposal waits for the user.
+    func runCleanup() async {
+        guard let api = provider(), !cleaning else { return }
+        cleaning = true
+        cleanupMessage = nil
+        let run = await api.cleanup()
+        proposals = run.proposals
+        cleanupMessage = run.proposals.isEmpty ? "Nothing to clean up." : nil
+        if run.modelFailed { cleanupMessage = "The agent did not answer, so only the checks that need no agent ran." }
+        cleaning = false
+    }
+
+    func approve(_ proposal: MemoryCleanup.Proposal) {
+        guard let api = provider() else { return }
+        switch api.applyCleanup(proposal) {
+        case .success(let text): cleanupMessage = text
+        case .failure(let failure): cleanupMessage = failure.message
+        }
+        proposals.removeAll { $0.id == proposal.id }
+        nav.reset()
+        detail = nil
+        reload()
+    }
+
+    func skip(_ proposal: MemoryCleanup.Proposal) {
+        provider()?.skipCleanup(proposal)
+        proposals.removeAll { $0.id == proposal.id }
+    }
+
     /// Where a page's Markdown goes. Nil when the page is gone.
     func markdown(of id: String) -> (name: String, text: String)? {
         provider()?.detail(id).map { ($0.title, $0.markdown) }
@@ -169,6 +205,7 @@ struct MemorySection: View {
     let onOpenSettings: () -> Void
 
     @State private var pendingForget: MemoryRow?
+    @State private var showCleanup = false
     @FocusState private var searchFocused: Bool
 
     var body: some View {
@@ -184,6 +221,7 @@ struct MemorySection: View {
             }
         }
         .background { shortcuts }
+        .sheet(isPresented: $showCleanup) { MemoryCleanupSheet(model: model) { showCleanup = false } }
         .onAppear { model.reload() }
         .task(id: model.query) {
             if model.query == model.applied { return }
@@ -238,7 +276,12 @@ struct MemorySection: View {
     }
 
     private var controls: some View {
-        HStack(spacing: 6) { chips }
+        HStack(spacing: 6) {
+            chips
+            Button { showCleanup = true } label: { Label("Clean up", systemImage: "wand.and.stars") }
+                .controlSize(.small)
+                .help("Propose moving notes and merging or deleting pages. Nothing changes until you approve it.")
+        }
     }
 
     private var chips: some View {
@@ -797,5 +840,55 @@ private struct SourceChip: View {
         .buttonStyle(.plain)
         .disabled(source.kind == .user || source.kind == .other)
         .help(source.kind == .user || source.kind == .other ? source.label : "Open \(source.label.lowercased())")
+    }
+}
+
+// MARK: - Cleanup
+
+/// The proposals of one cleanup run. The user approves or skips each; a skipped one is not offered again.
+private struct MemoryCleanupSheet: View {
+    @ObservedObject var model: MemorySectionModel
+    let onClose: () -> Void
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Text("Clean up memory").font(.headline)
+                Spacer()
+                Button("Done", action: onClose).keyboardShortcut(.cancelAction)
+            }
+            if model.cleaning {
+                ProgressView("Looking for notes on the wrong page and duplicate pages").controlSize(.small)
+            } else if model.proposals.isEmpty {
+                Text(model.cleanupMessage ?? "Run the cleanup to see what it would change.").font(.caption).foregroundStyle(.secondary)
+            }
+            if let message = model.cleanupMessage, !model.proposals.isEmpty {
+                Text(message).font(.caption).foregroundStyle(.secondary)
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 8) {
+                    ForEach(model.proposals) { proposal in
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(proposal.title).font(.system(size: 12.5, weight: .medium))
+                            Text(proposal.detail).font(.caption).foregroundStyle(.secondary)
+                            HStack {
+                                Button("Approve") { model.approve(proposal) }.controlSize(.small)
+                                Button("Skip") { model.skip(proposal) }.controlSize(.small)
+                            }
+                        }
+                        .padding(8)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(RoundedRectangle(cornerRadius: 8).fill(Color.secondary.opacity(0.08)))
+                    }
+                }
+            }
+            HStack {
+                Button("Run again") { Task { await model.runCleanup() } }.disabled(model.cleaning)
+                Spacer()
+            }
+        }
+        .padding(16)
+        .frame(width: 460, height: 420)
+        .task { await model.runCleanup() }
     }
 }

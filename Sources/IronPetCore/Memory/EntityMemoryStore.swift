@@ -645,6 +645,75 @@ package final class EntityMemoryStore: MemoryStore {
         return moved
     }
 
+    // MARK: Unsorted notes and page deletion, for the cleanup
+
+    /// A project note from a chat that named no project. It waits for the cleanup instead of landing on the chat's folder page.
+    package struct UnsortedNote: Equatable, Identifiable {
+        package let id: Int64
+        package let text: String
+        package let date: String
+        package let source: String
+        /// The name of the folder the chat ran in, as a hint for the cleanup.
+        package let folder: String
+    }
+
+    /// Keeps a note that names no project until the cleanup files it. Returns the note as it was cleaned, or why it was refused.
+    package func park(_ raw: String, folder: String?, source: String) -> Result<MemoryNote, MemoryError> {
+        let text: String
+        switch MemoryNote.clean(raw) {
+        case .success(let cleaned): text = cleaned
+        case .failure(let rejection): return .failure(MemoryError(message: rejection.message))
+        }
+        let day = MemoryNote.day(now(), calendar: calendar)
+        let key = MemoryNote.normalized(text)
+        do {
+            try database.write { db in
+                let waiting = try db.rows("SELECT text FROM memory_unsorted").compactMap { $0[0] as? String }
+                guard !waiting.contains(where: { MemoryNote.normalized($0) == key }) else { return }
+                try db.execute("INSERT INTO memory_unsorted(text, date, source, folder) VALUES(?, ?, ?, ?)", [text, day, source, folder ?? ""])
+            }
+        } catch {
+            return .failure(MemoryError(message: "could not keep the note: \(error.localizedDescription)"))
+        }
+        return .success(MemoryNote(text: text, date: day, source: source))
+    }
+
+    /// The notes waiting for the cleanup, oldest first.
+    package func unsorted() -> [UnsortedNote] {
+        ((try? database.read { try $0.rows("SELECT id, text, date, source, folder FROM memory_unsorted ORDER BY id") }) ?? []).compactMap { row in
+            guard let id = row[0] as? Int64, let text = row[1] as? String else { return nil }
+            return UnsortedNote(id: id, text: text, date: row[2] as? String ?? "", source: row[3] as? String ?? "", folder: row[4] as? String ?? "")
+        }
+    }
+
+    /// Files a waiting note on the page it is about, then removes it from the waiting list. A refused note stays waiting.
+    @discardableResult
+    package func file(unsorted id: Int64, scope: MemoryScope, entity: String, source: String) -> Bool {
+        guard let note = unsorted().first(where: { $0.id == id }), scope.namedType != nil else { return false }
+        guard case .success = replace([], with: note.text, scope: scope, entity: entity, source: note.source.isEmpty ? source : note.source) else { return false }
+        discard(unsorted: id)
+        return true
+    }
+
+    /// Drops a waiting note the user does not want kept.
+    package func discard(unsorted id: Int64) {
+        try? database.write { try $0.execute("DELETE FROM memory_unsorted WHERE id = ?", [id]) }
+    }
+
+    /// Deletes a page: forgets its facts (the change log keeps them, so Undo brings them back) and its links, then removes the page when
+    /// no earlier fact refers to it. A page with history stays, empty and out of the list. Never the user's page.
+    @discardableResult
+    package func deletePage(_ key: String, source: String) -> Bool {
+        guard let entity = entities().first(where: { $0.id == key || $0.ref == key }), entity.type != .me else { return false }
+        guard forgetPage(entity.id, source: source) else { return false }
+        guard history(of: entity.id).isEmpty else { return true }
+        _ = try? database.write { db in
+            try db.execute("DELETE FROM memory_links WHERE from_entity = ? OR to_entity = ?", [entity.id, entity.id])
+            try db.execute("DELETE FROM memory_entities WHERE id = ?", [entity.id])
+        }
+        return true
+    }
+
     /// Pins or unpins a valid claim. A pinned claim is not replaced, and a replacement is added beside it.
     @discardableResult
     package func setPinned(_ claim: Int64, _ pinned: Bool) -> Bool {
@@ -664,6 +733,7 @@ package final class EntityMemoryStore: MemoryStore {
             try db.execute("DELETE FROM memory_links")
             try db.execute("DELETE FROM memory_claims")
             try db.execute("DELETE FROM memory_entities")
+            try db.execute("DELETE FROM memory_unsorted")
         }
         index.clearNotes()
         for folder in [LegacyMemoryFiles.directory, Self.exportDirectory] {

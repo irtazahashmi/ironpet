@@ -25,6 +25,8 @@ package enum Prompts {
                    placeholders: ["pet", "kind", "scopes", "notes", "rule", "input", "maxLength", "maxNotes"], required: []),
         PromptInfo(id: "memory-resort", title: "Memory: moving notes to the page they are about",
                    placeholders: ["pet", "pages", "notes"], required: []),
+        PromptInfo(id: "memory-cleanup", title: "Memory: cleanup of misfiled notes and duplicate pages",
+                   placeholders: ["pet", "pages", "notes"], required: []),
         PromptInfo(id: "memory-merge", title: "Memory: merging a long page", placeholders: ["pet", "claims", "maxLength"], required: []),
         PromptInfo(id: "session-handoff", title: "Chat: handoff to a new session", placeholders: [], required: []),
         PromptInfo(id: "automation-new", title: "Automations: asking the chat agent to create one", placeholders: ["request", "cli"], required: ["request"]),

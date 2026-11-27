@@ -64,11 +64,12 @@ final class MemoryEntitiesTests: XCTestCase {
         XCTAssertTrue(texts(repoPage).isEmpty, "the chat's repo is only a hint")
     }
 
-    func testAProjectNoteWithoutAnEntityStaysOnTheChatsRepo() async {
+    func testAProjectNoteWithoutAnEntityWaitsForTheCleanupInsteadOfLandingOnTheChatsRepo() async {
         chat("t1", "Tests run with swift test")
         answers = [#"{"notes":[{"scope":"project","text":"Tests run with swift test.","replaces":[]}],"links":[]}"#]
         await digest()
-        XCTAssertEqual(texts(repoPage), ["Tests run with swift test."])
+        XCTAssertTrue(texts(repoPage).isEmpty)
+        XCTAssertEqual(store.unsorted().map(\.text), ["Tests run with swift test."])
     }
 
     func testACompanyAToolAndATopicAreFiledUnderTheirOwnTypes() async {
