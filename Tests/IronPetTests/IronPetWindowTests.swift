@@ -406,6 +406,21 @@ final class IronPetWindowTests: XCTestCase {
         XCTAssertFalse(IronPetWindowModel(defaults: defaults).sidebarCollapsed)
     }
 
+    // The rail calls the same model method as a drop in the expanded sidebar, so the order is shared and saved.
+    func testAMoveMadeWhileCollapsedIsTheOrderTheExpandedSidebarAndShortcutsUse() {
+        let defaults = freshDefaults()
+        let all = IronPetSection.shown(chat: true, transcripts: true, automations: true)
+        let model = IronPetWindowModel(defaults: defaults)
+        model.toggleSidebar()
+        XCTAssertTrue(model.sidebarCollapsed)
+        model.moveRow(.inbox, before: .agents, in: all)
+        model.toggleSidebar()
+        let expected = model.sidebarRows(all)
+        XCTAssertEqual(Array(expected.prefix(3)), [.chat, .inbox, .agents])
+        XCTAssertEqual(IronPetWindowModel(defaults: defaults).sidebarRows(all), expected)
+        XCTAssertEqual(IronPetSection.forShortcut("2", in: expected), .inbox)
+    }
+
     func testCollapsingSurvivesClosingAndReopeningTheWindow() throws {
         try CISkip.unlessLocal()
         let defaults = freshDefaults()

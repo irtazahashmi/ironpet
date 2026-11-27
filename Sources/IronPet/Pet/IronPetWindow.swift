@@ -473,24 +473,25 @@ struct IronPetWindowView: View {
                 }
                 let selected = model.selectedRowID == row.id
                 let tint = row.tint.map(DashboardColors.color)
-                Button { model.clearRailTip(); select(row) } label: {
-                    Image(systemName: row.symbol)
-                        .font(.system(size: 21))
-                        .frame(width: 40, height: 38)
-                        .background {
-                            if selected {
-                                RoundedRectangle(cornerRadius: 10).fill((tint ?? Color.accentColor).opacity(0.28))
-                            }
+                // A tap gesture, not a Button: a Button takes the mouse-down, so `.onDrag` never starts on it.
+                Image(systemName: row.symbol)
+                    .font(.system(size: 21))
+                    .frame(width: 40, height: 38)
+                    .background {
+                        if selected {
+                            RoundedRectangle(cornerRadius: 10).fill((tint ?? Color.accentColor).opacity(0.28))
                         }
-                        .overlay(alignment: .topTrailing) { railBadge(row.count) }
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(tint ?? (selected ? Color.accentColor : Color.primary))
-                .railHover(model, name: row.title, shortcut: row.section == .dashboard ? nil : row.section.shortcutLabel(in: shown))
-                .accessibilityLabel(row.title)
-                .contextMenu { dashboardMenu(row) }
-                .railReorder(row, model: model, available: available, dragged: $draggedRail)
+                    }
+                    .overlay(alignment: .topTrailing) { railBadge(row.count) }
+                    .contentShape(Rectangle())
+                    .onTapGesture { model.clearRailTip(); select(row) }
+                    .foregroundStyle(tint ?? (selected ? Color.accentColor : Color.primary))
+                    .railHover(model, name: row.title, shortcut: row.section == .dashboard ? nil : row.section.shortcutLabel(in: shown))
+                    .accessibilityLabel(row.title)
+                    .accessibilityAddTraits(.isButton)
+                    .blocksWindowDrag()
+                    .contextMenu { dashboardMenu(row) }
+                    .railReorder(row, model: model, available: available, dragged: $draggedRail)
             }
             Spacer(minLength: 0)
             Button(action: { model.clearRailTip(); actions.onSettings() }) {
@@ -823,4 +824,32 @@ private extension View {
             self
         }
     }
+}
+
+/// The window moves when dragged by its background, which would take a press on a rail icon before `.onDrag` sees it.
+/// While the pointer is over the icon, the window stops being movable by its background.
+private struct BlocksWindowDrag: ViewModifier {
+    @State private var window = WindowBox()
+
+    func body(content: Content) -> some View {
+        content
+            .background(WindowReader(box: window))
+            .onHover { hovering in window.window?.isMovableByWindowBackground = !hovering }
+            .onDisappear { window.window?.isMovableByWindowBackground = true }
+    }
+}
+
+private final class WindowBox { weak var window: NSWindow? }
+
+private struct WindowReader: NSViewRepresentable {
+    let box: WindowBox
+
+    func makeNSView(context: Context) -> NSView { NSView() }
+    func updateNSView(_ view: NSView, context: Context) {
+        DispatchQueue.main.async { box.window = view.window }
+    }
+}
+
+private extension View {
+    func blocksWindowDrag() -> some View { modifier(BlocksWindowDrag()) }
 }
