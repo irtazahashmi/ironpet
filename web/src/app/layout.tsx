@@ -12,7 +12,7 @@ export const metadata: Metadata = {
   description:
     "ironpet is a macOS desktop pet that watches Cursor, Claude Code, Codex and other coding agents, tells you when they need you, and chats with them. Free and open source.",
   icons: { icon: "/icon.png", apple: "/icon.png" },
-  openGraph: { siteName: "ironpet", type: "website", images: ["/icon.png"] },
+  openGraph: { siteName: "ironpet", type: "website" },
 };
 
 export const viewport: Viewport = {
