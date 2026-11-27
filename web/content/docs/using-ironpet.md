@@ -19,6 +19,7 @@ Most of ironpet is one click or one shortcut away. Click Ghost or press <kbd>⌥
 | Open a record named in chat | Click its id, such as `meeting_9f3c1e` or `notif_…`. On the Mac the id opens that record in its section; on the iPhone it opens the record's details |
 | Copy a record's id | A meeting, automation, capture, notification or memory page shows its id under the date. Click the copy button next to it, then paste the id in a chat or a note |
 | Settings | <kbd>⌘,</kbd>, the Settings row in the ironpet window, right-click Ghost → Settings…, or the Dock icon menu |
+| Morning brief and recap | Create an automation with a `digest` action (`brief` or `recap`) in ironpet window → Automations, or ask your agent for one, and pick the time there. The bubble's **Open**, or the Today row, shows each item; click one to open its Inbox item, session, alert link or meeting. See [Automations](/docs/automations/) |
 | Pair an iPhone | Settings → Devices: turn on the remote API and scan the QR code with the IronPet TestFlight app. See [iPhone](/docs/iphone/) |
 | Make Ghost do tricks (wave, dance, zoomies, nap, say something…) | Right-click Ghost → Actions |
 
@@ -33,13 +34,15 @@ The ironpet window has a sidebar with these sections:
 - **Alerts**: PR, CI and Sentry alerts. See [Alerts](/docs/alerts/).
 - **Notifications**: every bubble Ghost showed. See [Notifications](/docs/notifications/).
 - **Inbox**: things that need a decision from you. See [Inbox](/docs/inbox/).
-- **Transcripts**: past meetings with their summary and transcript. See [Meetings](/docs/meetings/).
+- **Transcripts**: past meetings with their summary and transcript, plus **Ask Ghost**, **Regenerate** and **Move to Trash**. See [Meetings](/docs/meetings/).
 - **Screen**: recent screen captures, when screen capture is on. See [Screen help](/docs/screen/).
 - **Actions** and **Automations**. See [Automations](/docs/automations/).
 - **Today**, shown while a morning brief or recap is on.
 - One row for each dashboard you asked Ghost to build.
 
 The Memory section, with the brain icon, sits after Automations. See [Memory](/docs/memory/).
+
+The Settings row sits at the bottom of the sidebar and opens Settings in its own window.
 
 The window is resizable and stays open on Chat when you switch apps.
 
@@ -53,7 +56,7 @@ Drag an icon to move it. Right-click the sidebar for a list of every section wit
 
 ### Collapsing the sidebar
 
-<kbd>⌃⌘S</kbd> shrinks the sidebar to a narrow rail of section icons and back. Hovering an icon briefly shows its name and its <kbd>⌘</kbd> number, and count badges stay on the icons. You can also drag the sidebar's edge: narrower than about 117 pt collapses it, and dragging the rail's edge wider expands it. ironpet remembers the expanded width (156 to 300 pt) and whether the sidebar was collapsed.
+<kbd>⌃⌘S</kbd> shrinks the sidebar to a 78 pt rail of section icons and back. Hovering an icon briefly shows its name and its <kbd>⌘</kbd> number, and count badges stay on the icons. You can also drag the sidebar's edge: narrower than about 117 pt collapses it, and dragging the rail's edge wider expands it. ironpet remembers the expanded width (156 to 300 pt) and whether the sidebar was collapsed.
 
 ## Settings
 
@@ -65,4 +68,4 @@ Ask Ghost for a small app of your own, such as "a board of my agents grouped by 
 
 ## Welcome back
 
-When you come back after being away (5 minutes by default, or after the Mac slept), Ghost sums up what happened meanwhile in one bubble instead of the ones you missed: "demo-app is waiting for you", "CI failed: you/demo-app #84", "2 agents finished". Each line opens what it names. It is built from what ironpet already recorded on your Mac, so no agent runs and nothing is sent anywhere. A call or a meeting recording doesn't count as away. Turn it off in Settings → General.
+When you come back after being away (5 minutes by default, the same idle time as the break reminders, or after the Mac slept), Ghost sums up what happened meanwhile in one bubble instead of the ones you missed: "demo-app is waiting for you", "CI failed: you/demo-app #84", "2 agents finished". Each line opens what it names. It is built from what ironpet already recorded on your Mac, so no agent runs and nothing is sent anywhere. A call (any app using the microphone, even with meeting transcripts off) or a meeting recording doesn't count as away. Turn it off in Settings → General (`welcomeBack.enabled`).

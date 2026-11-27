@@ -1,6 +1,6 @@
 # AGENTS.md
 
-Instructions for AI agents working in this repository: ironpet, a macOS desktop pet (Swift, AppKit and SwiftUI) that watches coding agents and chats with them. `README.md` explains what it does, `SPEC.md` how it is built, and `CONTRIBUTING.md` how to build and test it.
+Instructions for AI agents working in this repository: ironpet, a macOS desktop pet (Swift, AppKit and SwiftUI) that watches coding agents and chats with them. `README.md` is a short overview, the docs in `web/content/docs/` (published on ironpet.ai) explain every feature and setting, `SPEC.md` how it is built, and `CONTRIBUTING.md` how to build and test it.
 
 ## Workflows
 

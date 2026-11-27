@@ -26,9 +26,9 @@ When you turn on watching for an agent, ironpet adds a small hook to that agent'
 
 ironpet backs up each config it edits next to the original as `*.ironpet-backup`. Turning off watching for an agent removes its hook.
 
-Hooks never slow down or block an agent: they have a one-second timeout and always succeed. They only report sessions you started yourself. A chat that ironpet runs for you is skipped, so it isn't listed twice.
+Hooks never slow down or block an agent: they have a one-second timeout and always succeed. They only report sessions you started yourself. A chat that ironpet runs for you over ACP sets `IRONPET_ACP_RUN=1`, and the hook skips it, so it isn't listed twice.
 
-**Track coding agents** in Settings → General (`integrations.trackAgents`) turns all of it off at once. It removes ironpet's hooks from every agent, ignores hook events still arriving from running sessions, and hides the Agents section on the Mac and the iPhone. Your per-agent choices come back when you turn it on again.
+**Track coding agents** in Settings → General (`integrations.trackAgents`, on by default) turns all of it off at once. It removes ironpet's hooks from every agent, ignores hook events still arriving from running sessions, and hides the Agents section on the Mac and the iPhone. Your per-agent choices come back when you turn it on again.
 
 ## States and the badge
 

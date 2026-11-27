@@ -33,7 +33,7 @@ Run the setup script from the repository:
 
 It asks for your Sentry host, org, projects and an auth token with the `event:read` and `project:read` scopes. It checks the token, stores it in the Keychain, and saves the rest in `~/.ironpet/sentry.json`.
 
-A Sentry alert watches new and escalating issues. Alerts use Sentry's REST API for polling. **Ask Ghost** on an alert then investigates through the Sentry MCP.
+A Sentry alert watches new and escalating issues, using the host and org from `~/.ironpet/sentry.json` and the token in the Keychain. Alerts poll Sentry's REST API, which is cheap and exact. **Ask Ghost** on an alert then investigates through the Sentry MCP.
 
 ## Alerts are automations
 
