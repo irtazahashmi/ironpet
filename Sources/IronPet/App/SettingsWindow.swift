@@ -476,7 +476,7 @@ struct VoiceSettings: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             SpokenReplySettings(voiceAPI: model.voice)
-            VoiceModeSettings(model: model)
+            SpokenMessageSettings(model: model)
             Section {
                 TextField("Base URL", text: $baseUrl)
                     .onSubmit(saveServer)
@@ -519,7 +519,7 @@ struct VoiceSettings: View {
             } header: {
                 Text("Server")
             } footer: {
-                Text("One OpenAI-style server does both: /audio/transcriptions for voice notes and /audio/speech for replies. ironpet ships no models. Nothing is sent while both switches are off; with a remote server, recordings and reply text leave your Mac. The key is kept in your Keychain. For mlx-audio with Kokoro, run: uvx --from \"mlx-audio[server]\" --with \"misaki[en]\" mlx_audio.server")
+                Text("One OpenAI-style server does both: /audio/transcriptions for voice notes and /audio/speech for replies. ironpet ships no models. Nothing is sent while voice notes are off and Speak replies is Never; with a remote server, recordings and reply text leave your Mac. The key is kept in your Keychain. For mlx-audio with Kokoro, run: uvx --from \"mlx-audio[server]\" --with \"misaki[en]\" mlx_audio.server")
                     .font(.caption).foregroundStyle(.secondary)
                     .textSelection(.enabled)
             }
@@ -566,7 +566,7 @@ struct VoiceSettings: View {
     }()
 }
 
-/// The spoken replies section of the Voice page: the switch, the voice and Preview. The speech model is under Server.
+/// The spoken replies section of the Voice page: Speak replies, the voice and Preview. The speech model is under Server.
 private struct SpokenReplySettings: View {
     let voiceAPI: VoiceAPI?
     @ObservedObject private var store = SettingsAPI.live
@@ -587,8 +587,12 @@ private struct SpokenReplySettings: View {
 
     var body: some View {
         Section {
-            Toggle("Read replies aloud automatically", isOn: Binding(get: { store.config.speech.enabled }, set: setEnabled))
-                .disabled(previewing)
+            Picker("Speak replies", selection: Binding(get: { store.config.speech.speakReplies }, set: setSpeakReplies)) {
+                Text("Automatic").tag(Config.SpeakReplies.automatic)
+                Text("Always").tag(Config.SpeakReplies.always)
+                Text("Never").tag(Config.SpeakReplies.never)
+            }
+            .disabled(previewing)
             if voices.isEmpty {
                 TextField("Voice", text: voice)
             } else {
@@ -623,13 +627,13 @@ private struct SpokenReplySettings: View {
         } header: {
             Text("\(store.config.pet.name) talks back")
         } footer: {
-            Text("With the switch on, each reply to your chat messages is read aloud, up to about a minute, skipping code, tables and emoji, and stays silent during calls and meeting recordings. With it off, nothing is read until you press a reply's speaker button, which uses the same voice, speed and speech model. Esc, the button or your next message stops it.")
+            Text("A reply that is read aloud starts with a short spoken summary; the full answer stays in the chat. Automatic reads it after a message you said with the voice shortcut and stays silent after typed messages. Always reads it after every message. Never reads nothing until you press a reply's speaker button, which reads the whole reply with the same voice, speed and speech model. Nothing is read during calls and meeting recordings. Esc, the button or your next message stops it.")
                 .font(.caption).foregroundStyle(.secondary)
         }
-        .task(id: "\(store.config.speech.enabled) \(store.config.voice.baseUrl) \(store.config.speech.model)") {
+        .task(id: "\(store.config.speech.speakReplies.rawValue) \(store.config.voice.baseUrl) \(store.config.speech.model)") {
             // Only with the feature on: opening the page must not contact the server. Waits for typing to pause, so
             // every keystroke in the model field doesn't ask the server either.
-            guard store.config.speech.enabled else { return }
+            guard store.config.speech.speakReplies != .never else { return }
             try? await Task.sleep(nanoseconds: 500_000_000)
             guard !Task.isCancelled else { return }
             let list = await (voiceAPI ?? fallback).voices()
@@ -637,17 +641,18 @@ private struct SpokenReplySettings: View {
         }
     }
 
-    /// Speaks one line with the saved settings. Turning the switch on goes through here, so a server that cannot
+    /// Speaks one line with the saved settings. Turning speech on goes through here, so a server that cannot
     /// speak shows up now and not after the next reply.
-    private func preview(thenEnable enable: Bool = false) {
+    private func preview(thenSet setting: Config.SpeakReplies? = nil) {
         previewing = true
         result = nil
         let api = voiceAPI ?? fallback
         let line = "Hi, I'm \(store.config.pet.name). This is how I'll read your replies."
+        let enable = setting != nil
         Task {
             do {
                 try await api.preview(line)
-                if enable { store.update { $0.speech.enabled = true } }
+                if let setting { store.update { $0.speech.speakReplies = setting } }
                 result = (true, enable ? "Replies will be read aloud." : "The server spoke the preview.")
             } catch is CancellationError {
                 result = nil
@@ -658,91 +663,38 @@ private struct SpokenReplySettings: View {
         }
     }
 
-    private func setEnabled(_ on: Bool) {
-        guard on else {
+    private func setSpeakReplies(_ value: Config.SpeakReplies) {
+        // Moving between Automatic and Always, or to Never, needs no check: the server already spoke, or nothing is spoken.
+        guard store.config.speech.speakReplies == .never, value != .never else {
             result = nil
-            store.update { $0.speech.enabled = false }
+            store.update { $0.speech.speakReplies = value }
             return
         }
-        preview(thenEnable: true)
+        preview(thenSet: value)
     }
 }
 
-/// The voice mode section of the Voice page. Turning it on first checks that the server transcribes and speaks.
-private struct VoiceModeSettings: View {
+/// The spoken messages section of the Voice page: the shortcut that records a message for the chat.
+private struct SpokenMessageSettings: View {
     @ObservedObject var model: SettingsModel
     @ObservedObject private var store = SettingsAPI.live
-    @State private var modelName = SettingsAPI.live.config.voiceMode.model
-    @State private var checking = false
-    @State private var result: (ok: Bool, text: String)?
-    @StateObject private var player = VoiceAPI.standalone(settings: .live)
 
     private var settings: Config.VoiceMode { store.config.voiceMode }
-    private var name: String { store.config.pet.name }
 
     var body: some View {
         Section {
-            Toggle("Voice mode", isOn: Binding(get: { settings.enabled }, set: setEnabled))
-                .disabled(checking)
-            if checking {
-                HStack(spacing: 6) {
-                    ProgressView().controlSize(.small)
-                    Text("Checking that the server can hear and speak…").font(.caption).foregroundStyle(.secondary)
-                }
+            ShortcutRow(title: "Spoken message shortcut", path: \.voiceMode, model: model)
+            Stepper(value: Binding(get: { settings.silenceSeconds }, set: { value in store.update { $0.voiceMode.silenceSeconds = value } }),
+                    in: Config.VoiceMode.silenceRange, step: 5) {
+                Text("Stop listening after \(settings.silenceSeconds) s of silence")
             }
-            if let result {
-                Text(result.text)
-                    .font(.caption)
-                    .foregroundStyle(result.ok ? Color.green : Color.red)
-                    .textSelection(.enabled)
-            }
-            Group {
-                ShortcutRow(title: "Voice mode shortcut", path: \.voiceMode, model: model)
-                Picker("Listen with", selection: Binding(get: { settings.listenWith },
-                                                         set: { value in store.update { $0.voiceMode.listenWith = value } })) {
-                    Text("Microphone").tag(Config.VoiceMode.ironpet)
-                    Text("Wispr Flow").tag(Config.VoiceMode.wispr)
-                }
-                if settings.listenWith == Config.VoiceMode.wispr, !WisprBridge.isAvailable {
-                    Text("Wispr Flow isn't installed, or hasn't dictated anything yet.").font(.caption).foregroundStyle(.orange)
-                }
-                TextField("Model", text: $modelName, prompt: Text("The harness's fastest"))
-                    .onSubmit(saveModel)
-                    .onChange(of: modelName) { saveModel() }
-                Stepper(value: Binding(get: { settings.silenceSeconds }, set: { value in store.update { $0.voiceMode.silenceSeconds = value } }),
-                        in: Config.VoiceMode.silenceRange, step: 5) {
-                    Text("End after \(settings.silenceSeconds) s of silence")
-                }
-                Toggle("Speak job updates", isOn: Binding(get: { settings.speakJobUpdates },
-                                                          set: { on in store.update { $0.voiceMode.speakJobUpdates = on } }))
-            }
-            .disabled(!settings.enabled)
+            Toggle("Speak job updates", isOn: Binding(get: { settings.speakJobUpdates },
+                                                      set: { on in store.update { $0.voiceMode.speakJobUpdates = on } }))
         } header: {
-            Text("Conversation")
+            Text("Talk to the chat")
         } footer: {
-            Text("Press the shortcut and talk. \(name) answers out loud and keeps listening until you say bye, press Esc, or stay quiet for the time above; talking over \(name) cuts it off. The microphone is on only during a conversation. What you say goes to the voice server, then to the chat's pet, and the reply goes back to the voice server to be spoken. Longer work goes to background jobs. Anything the pet asks permission for waits for you to answer the alert, and a spoken yes never approves it. With Wispr Flow, its dictation is sent as soon as it lands and the app you were in gets focus back at the end. Voice mode doesn't listen or speak during calls and meeting recordings.")
+            Text("Press the shortcut and talk. When you stop, or press it again, what you said is sent to the chat as a message, in the same conversation as the messages you type. The microphone is on only while listening, Esc discards the message, and pressing the shortcut while \(store.config.pet.name) speaks stops it and listens. It needs voice notes on, since the same server transcribes it, and it doesn't listen during calls and meeting recordings. Control+Shift+V is Paste and Match Style in many apps; choose another shortcut here if that matters to you. Jobs the chat starts while a reply is being read aloud say when they are done, failed or need an OK, unless Speak replies is Never.")
                 .font(.caption).foregroundStyle(.secondary)
-        }
-    }
-
-    private func saveModel() {
-        let trimmed = modelName.trimmingCharacters(in: .whitespacesAndNewlines)
-        if trimmed != settings.model { store.update { $0.voiceMode.model = trimmed } }
-    }
-
-    /// Turning it on transcribes the test clip and speaks one line, so a server that can't do either shows up now.
-    private func setEnabled(_ on: Bool) {
-        result = nil
-        guard on else { return store.update { $0.voiceMode.enabled = false } }
-        checking = true
-        Task {
-            defer { checking = false }
-            player.voiceKey = model.voiceKey
-            switch await VoiceModeController.enable(using: player) {
-            case .on: result = (true, "Voice mode is on.")
-            case .cancelled: break
-            case .failed(let message): result = (false, message)
-            }
         }
     }
 }

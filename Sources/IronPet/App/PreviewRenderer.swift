@@ -198,7 +198,6 @@ enum PreviewRenderer {
         // Automations needs the app's settings model; this one is built from sample automations in a temp folder.
         let settingsModel = sampleSettings(chat: chat, config: patterned)
         settingsModel.capture = ScreenAPI(service: CaptureService(store: capturesStore, config: { ConfigStore.shared.config.screenCapture }))
-        patterned.voiceMode.enabled = true
         ConfigStore.shared.usePreview(patterned)
         renderDashboards(to: dir, chat: chat, sessions: sessions, signals: signals, tasks: tasks, meetings: meetings, settings: settingsModel, brief: brief)
         for section in IronPetSection.allCases where section != .dashboard {
@@ -302,11 +301,10 @@ enum PreviewRenderer {
         PromptStore.defaultText = shippedDefault
         PromptStore.directory = savedFolder
         try? FileManager.default.removeItem(at: promptFolder)
-        // Settings → Voice with spoken replies on, and a reply being read aloud with its Stop button showing.
+        // Settings → Voice with Speak replies on Automatic, and a reply being read aloud with its Stop button showing.
         var speechOn = patterned
         speechOn.voice.enabled = true
-        speechOn.speech.enabled = true
-        speechOn.voiceMode.enabled = true
+        speechOn.speech.speakReplies = .automatic
         ConfigStore.shared.usePreview(speechOn)
         for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
             render(VoiceSettings(model: settingsModel).frame(width: 560, height: 1500).panel(), to: dir, "settings-voice" + suffix, scheme: scheme)
@@ -339,16 +337,13 @@ enum PreviewRenderer {
                 render(AutomationLogView(model: logModel).frame(width: 860, height: 520).panel(), to: dir, "automation-logs" + suffix, scheme: scheme)
             }
         }
-        // Voice mode's pill in each state, with what was heard.
-        let pills: [(VoiceConversation.State, VoiceConversation.Mode, String?, String)] = [
-            (.listening, .microphone, nil, "listening"), (.thinking, .microphone, "What's going on with my jobs?", "thinking"),
-            (.speaking, .microphone, "What's going on with my jobs?", "speaking"), (.listening, .wispr, nil, "wispr"),
-        ]
-        for (state, mode, heard, name) in pills {
-            let conversation = VoiceConversation(frontDesk: FrontDesk())
-            conversation.loadPreview(state: state, mode: mode, heard: heard)
+        // The spoken message pill while it listens and while it transcribes.
+        let pills: [(SpokenMessageRecorder.State, String?, String)] = [(.listening, nil, "listening"), (.transcribing, "What's going on with my jobs?", "transcribing")]
+        for (state, heard, name) in pills {
+            let recorder = SpokenMessageRecorder()
+            recorder.loadPreview(state: state, heard: heard)
             for (suffix, scheme) in [("", ColorScheme.dark), ("-light", .light)] {
-                render(VoicePillView(conversation: conversation, petName: "Ghost", onEnd: {}).padding(16),
+                render(VoicePillView(recorder: recorder, petName: "Ghost", onEnd: {}).padding(16),
                        to: dir, "voice-pill-\(name)" + suffix, scheme: scheme)
             }
         }

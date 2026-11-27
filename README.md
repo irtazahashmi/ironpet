@@ -13,7 +13,7 @@ A desktop pet for macOS that keeps an eye on your coding agents and does small t
 - **Watches your agents.** Sessions of Cursor (IDE and CLI), Claude Code, Codex, Gemini CLI, GitHub Copilot and Pi report to the pet through hooks (only the agents installed on your Mac are offered). Ghost shows the most urgent state (needs input, failed, done, working) with a count badge, tells you in a speech bubble next to him, with a one-line summary of what the agent did ("Edited 3 files · Fixed the flaky login test."), and clicking a session jumps to its iTerm tab, or opens its folder in the app that started the agent (or one you pick in Settings).
 - **PR, CI and Sentry alerts** (opt-in). Not set up by default. Ask your agent for them (ironpet window → Automations → **New automation…**), or tick GitHub alerts in the welcome window. They are script automations you can read and change in `automations.json`. A GitHub one can poll every host `gh` is logged in to for your PRs' CI failing or passing, approvals, changes requested and new review requests. A Sentry one can watch new and escalating issues, using the host and org from `~/.ironpet/sentry.json` and the token in the Keychain (`scripts/configure_sentry.sh` saves both). Each alert has **Open** and **Ask Ghost**, which starts a chat to investigate it.
 - **Quick chat.** <kbd>⌥⌘G</kbd> or a click on Ghost opens the ironpet window on Chat, which talks to a coding agent over the [Agent Client Protocol](https://agentclientprotocol.com) in your current project: Cursor, Claude Code, Codex, Gemini CLI, OpenCode and any other agent from the [ACP registry](https://github.com/agentclientprotocol/registry) that you have installed. File edits and shell commands wait for **Allow / Deny** whenever the agent asks for permission (in the chat, or right in Ghost's bubble when the chat is closed); the chat's **Mode** picker lists the permission modes the agent itself offers (Claude Code's default, plan, acceptEdits, auto and bypassPermissions, for example), starts in the mode you configured in that agent, and remembers your pick per agent. ironpet adds no modes and no rules of its own: whatever the agent asks about shows up as a card with the agent's own options, such as allow once, allow always or approve a plan. While a turn is running, a message you type goes into that turn when the agent supports steering; otherwise it waits in the queue until the turn ends.
-- **Voice.** Hold <kbd>fn</kbd> with [Wispr Flow](https://wisprflow.ai) while the chat is open; the dictation is sent automatically. Or turn on **voice notes** (opt-in, see [Voice notes](#voice-notes)): a microphone button and a voice shortcut record your voice, a transcription server you choose turns it into text, and the text lands in the chat input. With **spoken replies** on (opt-in, see [Spoken replies](#spoken-replies)), Ghost reads his chat answers aloud with a voice from your speech server (local by default), and any reply has a speaker button. **Voice mode** (opt-in, see [Voice mode](#voice-mode)) is a hands-free conversation on <kbd>⌃⌥⌘V</kbd>: Ghost listens, answers out loud and hands longer work to background jobs.
+- **Voice.** Hold <kbd>fn</kbd> with [Wispr Flow](https://wisprflow.ai) while the chat is open; the dictation is sent automatically. Or turn on **voice notes** (opt-in, see [Voice notes](#voice-notes)): a microphone button and a voice shortcut record your voice, a transcription server you choose turns it into text, and the text lands in the chat input. With **Speak replies** (see [Spoken replies](#spoken-replies)), Ghost reads a reply's summary aloud with a voice from your speech server (local by default), and any reply has a speaker button. Press <kbd>⌃⇧V</kbd> and **talk to the chat** (see [Talking to the chat](#talking-to-the-chat)): what you say is a message in the same conversation as the ones you type, and the reply starts with a short summary that Ghost reads aloud.
 - **Screen help.** <kbd>⇧⌥⌘G</kbd> captures the front window, <kbd>⌃⌥⌘G</kbd> a region you drag, and opens a chat with the screenshot attached. Opening chat with text selected in another app (when Accessibility is already allowed) attaches that selection as a removable chip so you can ask about it without pasting.
 - **Remembers.** Chats are saved and can be reopened. Ghost learns about you, your projects and the people you work with without being asked: when a chat goes quiet, a background pass saves the lasting facts as markdown notes you can read and edit, and every new chat starts with them. Ask "what did we decide about…" and he searches past chats, meetings and notes. The Memory section of the ironpet window, and of the phone app, lists every page he keeps. See [Memory](#memory).
 - **Break reminders and automations.** Drink water (45 min), stretch (60 min) and rest your eyes (20 min), counted only while you're at the keyboard; stepping away for 5 minutes resets them. While an agent is working they can come a little early, so you take the break while you'd be waiting anyway. Ghost drinks or stretches along with you. His bubble has **Done** and **Snooze 10 min**. These are ordinary [automations](#automations), so an agent can add, change, pause and delete reminders, scheduled jobs and watchers for you. Toggle or pause them under right-click → Automations.
@@ -71,7 +71,7 @@ macOS will ask for these permissions as you use the features:
 | Automation → iTerm2 | Jumping to the right iTerm tab, reading its folder |
 | Screen Recording | Screenshots, and telling Cursor windows apart when several are open |
 | Accessibility | Screen capture and desktop control (both off by default). Also used, when already allowed, to attach the frontmost app's text selection when you open chat |
-| Microphone | Voice notes, voice mode and meeting transcripts (each off by default) |
+| Microphone | Voice notes, spoken messages and meeting transcripts (each off by default) |
 | Input Monitoring | Only when you choose Fn as the dictation shortcut. ironpet listens for Fn and never blocks it |
 | Screen & System Audio Recording | The other party's audio in a meeting transcript (off by default) |
 
@@ -294,7 +294,7 @@ Open **Settings** (<kbd>⌘,</kbd> or right-click Ghost → Settings…) to rena
     "captureRegion": "cmd+opt+ctrl+g",
     "voice": "cmd+opt+v",
     "meeting": "",
-    "voiceMode": "cmd+opt+ctrl+v",
+    "voiceMode": "ctrl+shift+v",
     "copyVersion": ""
   },
   "reminders": { "paused": false, "idleResetMinutes": 5, "snoozeMinutes": 10 },
@@ -306,8 +306,8 @@ Open **Settings** (<kbd>⌘,</kbd> or right-click Ghost → Settings…) to rena
   "window": { "autoHide": false, "appearance": "system" },
   "integrations": { "trackAgents": true, "shareMCPSignIns": false },
   "voice": { "enabled": false, "baseUrl": "http://localhost:8000/v1", "model": "mlx-community/parakeet-tdt-0.6b-v3", "holdToTalk": true },
-  "speech": { "enabled": false, "model": "mlx-community/Kokoro-82M-bf16", "voice": "am_puck", "speed": 1.0 },
-  "voiceMode": { "enabled": false, "listenWith": "ironpet", "model": "", "silenceSeconds": 20, "speakJobUpdates": true, "idleShutdownMinutes": 10, "fastModelWords": ["haiku", "flash", "mini", "fast", "lite"] },
+  "speech": { "speakReplies": "automatic", "model": "mlx-community/Kokoro-82M-bf16", "voice": "am_puck", "speed": 1.0 },
+  "voiceMode": { "silenceSeconds": 20, "speakJobUpdates": true },
   "meetings": { "enabled": false, "lastApp": "", "summaryAgent": "claude", "summaryModel": null, "autoSummary": true, "offerToRecordCalls": true, "recogniseSpeakers": false, "transcriptCharacters": 300000 },
   "telegram": { "enabled": false, "allowedUsers": [] },
   "screenCapture": { "enabled": false, "ocr": false, "retentionDays": 30, "excludedApps": [] },
@@ -337,7 +337,7 @@ Open **Settings** (<kbd>⌘,</kbd> or right-click Ghost → Settings…) to rena
 - **Telegram** (`telegram`) is covered in [Telegram](#telegram). The bot token is not in this file; it is stored in the Keychain.
 - **Updates** (`updates`): `checkAutomatically` (on: asks GitHub once a day whether a newer release exists) and `installAutomatically` (on: downloads it in the background and installs it when no agent turn, voice note or meeting recording is running, or when you click the arrow badge on the pet). Both are in Settings → General → Updates, with Check now. A build from `scripts/install.sh` never updates. See [SECURITY.md](SECURITY.md).
 - **Remote API** (`remote`): `enabled` (off by default), `port` (47380; not 47321 to 47340), `address` (empty uses the first line of the Network list in Settings → Devices, Tailscale first; otherwise an address from that list, an IPv4 address of this Mac, or the URL of your own HTTPS front such as `https://mac.tailnet.ts.net`) and `machineName` (empty uses the name from System Settings). An older `baseUrl` moves to `address` when the config loads. Pair and revoke devices in Settings → Devices. See [Devices (iPhone)](#devices-iphone), [SPEC.md](SPEC.md#remote-api) and [SECURITY.md](SECURITY.md).
-- **Voice** (`voice`) is covered in [Voice notes](#voice-notes), **speech** (`speech`, including `speech.speed`) in [Spoken replies](#spoken-replies), and **voice mode** (`voiceMode`) in [Voice mode](#voice-mode). The API key is not in this file; it is stored in the Keychain.
+- **Voice** (`voice`) is covered in [Voice notes](#voice-notes), **speech** (`speech`, including `speech.speed`) in [Spoken replies](#spoken-replies), and **spoken messages** (`voiceMode`, `hotkeys.voiceMode`) in [Talking to the chat](#talking-to-the-chat). The API key is not in this file; it is stored in the Keychain.
 - **Screen capture** (`screenCapture`) and **desktop control** (`desktopControl`) are covered in [Screen capture](#screen-capture) and [Desktop control](#desktop-control). Both are off by default.
 - **Meetings** (`meetings`, `hotkeys.meeting`) are covered in [Meeting transcripts](#meeting-transcripts).
 - **Memory** (`memory`): `reflect` (on by default) learns from chats, `reflectAgent` is `null` (or empty) for each chat's own agent, or an agent id to have only that agent's text read by it, `reflectModel` is `null` for the agent's cheap model (`haiku` for Claude Code, the default for the others) or a model id for the picked agent (ignored without one), `digestMinutes` (15 to 1,440, default 60) is how often the digest reads what is new, `learnFromScreen` (default `false`) also reads the text of new screen captures, and `maxClaimsPerEntity` (10 to 200, default 30) is the page size above which the digest merges a page's oldest facts. `reflectMaxNotes` (1 to 20, default 8) caps the notes one pass saves, `reflectMaxInputChars` (2,000 to 200,000, default 24,000) is how much of a chat it reads, and `reflectTimeoutSeconds` (30 to 1,800, default 180) is how long it waits for the agent. `recallBytesMe`, `recallBytesProject` and `recallBytesPeople` (500 to 50,000 bytes, defaults 4,000, 6,000 and 2,000) are how much of each file goes into a chat's context, and `noteMaxLength` (40 to 2,000 characters, default 240) is the longest note. See [Memory](#memory).
@@ -414,18 +414,19 @@ To record, click the microphone button in the chat input (click again to stop) o
 
 ### Spoken replies
 
-Ghost can answer out loud. Every reply has a speaker button below it (shown on hover) and a Read Aloud menu item, whatever the switch says; they use the speech model and voice below. Reading each reply automatically is off by default. Turn it on under **Settings → Voice → Ghost talks back**: pick a voice and press **Preview**, and the switch turns on once the preview plays. They use the server, base URL and key above, with their own model (**Speech model** in the Server section) and voice (`POST {baseUrl}/audio/speech`). Voice notes don't have to be on.
+Ghost can answer out loud. A reply that is read aloud starts with a one or two sentence summary on its own first line; Ghost reads that line and the full answer stays in the chat, links, lists and paths included. The agent writes the summary as part of the reply, so speech starts without a second model call, as soon as the first line is complete. Every reply also has a speaker button below it (shown on hover) and a Read Aloud menu item that reads the whole reply, whatever the setting says. Set it under **Settings → Voice → Ghost talks back**: pick a voice and press **Preview**; choosing Automatic or Always from Never turns on only after the preview plays. They use the server, base URL and key above, with their own model (**Speech model** in the Server section) and voice (`POST {baseUrl}/audio/speech`). Voice notes don't have to be on.
 
 | Setting | `config.json` key | Notes |
 | --- | --- | --- |
-| Read replies aloud automatically | `speech.enabled` | Default off. The speaker button works either way |
+| Speak replies | `speech.speakReplies` | `automatic` (default), `always` or `never`. Automatic reads the summary only after a message you said with the talk shortcut. Always reads it after every message you send from the chat. Never reads nothing on its own. The speaker button works in all three |
 | Speech model | `speech.model` | Default `mlx-community/Kokoro-82M-bf16` |
 | Voice | `speech.voice` | Default `am_puck`. Settings lists the model's voices when the server offers `/audio/voices` (mlx-audio does), and a text field otherwise |
 | Speed | `speech.speed` | Default `1.0`, from 0.5 to 2.0. Sent with each speech request |
 
-- **What is read.** The reply to every message you send from the chat, typed, dictated or as a voice note, is read aloud when the turn ends. Replies to Telegram messages and automations are not. Every reply also gets a speaker button next to Reply (and **Read Aloud** in its right-click menu) that reads it on demand; click it again to stop. Only the prose is read: code blocks, tables, bare links and emoji are skipped, and reading stops after about a minute.
-- **When he stops.** Esc in the chat, a new voice note, sending a message, or the speaker button. A reply is not read on its own during a call (any other app using the microphone) or while a meeting is recording. The speaker button still works then.
-- **Where the text goes.** The reply's text goes to the base URL above. With the local server it stays on your Mac.
+- **Upgrading.** Older config files have `speech.enabled` (read aloud) and `voiceMode.enabled` (voice mode). Both are ignored and every file starts on Automatic, whatever those switches were, so nothing is read after a typed message until you choose Always.
+- **What is read.** Only the summary, never the full answer. A typed message after a spoken one is not read in Automatic, and its prompt does not ask for a summary. Replies to Telegram messages and automations are never read. Code, tables, bare links and emoji are skipped in what is read. If the reply has no line break, the one line is read once the turn ends.
+- **When he stops.** Esc in the chat, a new voice note, sending a message, pressing the talk shortcut, or the speaker button. A reply is not read on its own during a call (any other app using the microphone) or while a meeting is recording. The speaker button still works then.
+- **Where the text goes.** The summary's text goes to the base URL above. With the local server it stays on your Mac.
 
 | Provider | Base URL | Speech model | Voices |
 | --- | --- | --- | --- |
@@ -440,29 +441,24 @@ uvx --from "mlx-audio[server]" --with "misaki[en]" mlx_audio.server
 
 The same server still transcribes voice notes and meetings. The first spoken reply after the server starts downloads Kokoro (about 330 MB, once) and loads it, which takes a while; after that a sentence takes well under a second.
 
-### Voice mode
+### Talking to the chat
 
-A spoken conversation with Ghost, hands free. Voice mode is off by default. Turn it on under **Settings → Voice → Conversation**; the switch turns on only after the server transcribes a test clip and speaks one line. Then press <kbd>⌃⌥⌘V</kbd> anywhere, and Ghost looks up at you, attentive, with a small pill by him that says **Listening…**. Talk, stop, and Ghost answers out loud and listens again. It ends when you say "bye" or "that's all", press <kbd>Esc</kbd> or the shortcut again, or say nothing for 20 seconds. Talking over Ghost cuts him off.
+Press <kbd>⌃⇧V</kbd> anywhere and talk. Ghost looks up, attentive, with a small pill by him that says **Listening…**. When you stop talking, or press the shortcut again, what you said is transcribed and sent to the chat as a message with a microphone badge, in the same thread, history and agent session as the messages you type, so the agent sees the earlier turns as context. If Speak replies is Automatic or Always, the reply starts with a short summary that Ghost reads aloud while the full answer is written in the chat. It records one message per press; it does not keep listening afterwards. It needs **voice notes** on, because the same server transcribes it, and goes to the chat of the active agent, as voice notes do.
 
-Ghost is a front desk in voice mode. He answers quick questions himself ("what's going on", "anything need me", "what's on today") from ironpet's status and memory tools, and hands real work ("fix the flaky login test in ironpet") to a [background job](#background-jobs), then tells you in one sentence what he started. A job started by voice waits until Ghost has told you about it and 5 seconds more, so "cancel that" or "no, wait" stops it before it does anything. When a voice job finishes, fails or needs your OK, Ghost says so, unless you're on a call, recording a meeting or away. Every conversation is saved as a chat thread with a microphone badge, and Ghost's memory learns from it when it ends, as it does from a chat.
-
-Voice mode has no sidebar page. Its controls are in **Settings → Voice** (Listen with, Speak job updates, the on/off switch), and it starts from its shortcut (`hotkeys.voiceMode`). Past voice conversations are in Chat's **Previous chats** menu, marked with a microphone.
+<kbd>⌃⇧V</kbd> is Paste and Match Style in many Mac apps. ironpet's global shortcut takes it over everywhere while voice notes are on. If that gets in your way, change or clear it under **Settings → Voice → Talk to the chat**, or set `hotkeys.voiceMode` to another shortcut, or to an empty string to turn it off.
 
 | Setting | `config.json` key | Notes |
 | --- | --- | --- |
-| Voice mode | `voiceMode.enabled` | Default off |
-| Shortcut | `hotkeys.voiceMode` | Default `cmd+opt+ctrl+v`, registered only while voice mode is on |
-| Listen with | `voiceMode.listenWith` | `ironpet` (Microphone in Settings: Ghost hears when you stop talking) or `wispr` (Wispr Flow's dictation is sent as soon as it lands) |
-| Model | `voiceMode.model` | Empty uses the agent's fastest model (Haiku, Flash or a mini), else the chat's |
-| End after silence | `voiceMode.silenceSeconds` | Default 20, 5 to 120 |
-| Close when idle | `voiceMode.idleShutdownMinutes` | Default 10, 1 to 120. The front desk's agent process is closed after this long with no conversation |
-| Fast model words | `voiceMode.fastModelWords` | Default `haiku`, `flash`, `mini`, `fast`, `lite`. With no model set, the first model whose id or name has one of these words is used; up to 20 words, lowercased |
+| Shortcut | `hotkeys.voiceMode` | Default `ctrl+shift+v`, registered only while voice notes are on. Config files that still hold the old default `cmd+opt+ctrl+v` move to the new one |
+| Stop after silence | `voiceMode.silenceSeconds` | Default 20, 5 to 120. Listening stops if you say nothing for this long |
 | Speak job updates | `voiceMode.speakJobUpdates` | Default on |
 
-- **The microphone** is open only during a conversation, with macOS voice processing on, so Ghost's own voice is cancelled from what it hears. Ghost's reply goes to the speech server and plays through the same audio engine.
-- **With Wispr Flow**, ironpet takes focus while the pill is up so Wispr types into it, sends each dictation as soon as it lands, and gives focus back to the app you were in when the conversation ends. There's no pause detection or barge-in in this mode.
-- **What Ghost won't do by voice.** A spoken yes never approves anything: a job's Allow and Deny stay buttons in its bubble. Before starting something that sends a message, email or comment to someone, Ghost reads it back and waits for you to say yes. The voice session itself only reads and uses ironpet's tools; anything that edits or runs something goes to a job.
-- **When he stays quiet.** Voice mode won't start during a call (another app holding the microphone) or a meeting recording, and ends if one starts.
+- **The microphone** is open only while listening, with macOS voice processing on. Esc or the pill's button discards the message. Pressing the shortcut while Ghost is speaking stops him and starts listening.
+- **Jobs.** When the chat starts a [background job](#background-jobs) during a reply that is being read aloud, Ghost says when it is done, fails or needs your OK, unless Speak replies is Never, you're on a call, recording a meeting or away.
+- **What a spoken message can't do.** A spoken yes never approves anything: approvals stay buttons in an alert or a bubble. A spoken message gets the same permissions as a typed one.
+- **When he stays quiet.** The shortcut won't start during a call (another app holding the microphone) or a meeting recording, and stops if one starts.
+- **Old voice conversations.** Conversations saved before this change are still in Chat's **Previous chats** menu, marked with a microphone.
+- **Removed.** The separate voice mode switch, its model and Wispr Flow listening, and the front desk agent are gone. Wispr Flow still dictates into the chat input as before.
 
 ## Your data
 

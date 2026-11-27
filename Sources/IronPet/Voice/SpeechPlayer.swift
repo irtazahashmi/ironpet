@@ -19,7 +19,7 @@ final class SpeechPlayer: ObservableObject {
     /// A failed request, shown in the chat. Not called for a stop.
     var onFailure: ((String) -> Void)?
 
-    var isEnabled: () -> Bool = { ConfigStore.shared.config.speech.enabled }
+    var isEnabled: () -> Bool = { ConfigStore.shared.config.speech.speakReplies != .never }
     /// The voice server's key. `AppDelegate` sets the Mac one.
     var voiceKey = VoiceKey.unsupported
     lazy var synthesize: (String) async throws -> Data = { [weak self] in try await SpeechPlayer.synthesizer(voiceKey: self?.voiceKey ?? .unsupported).speak($0) }
@@ -62,7 +62,7 @@ final class SpeechPlayer: ObservableObject {
         }
     }
 
-    /// Reads `markdown` and returns once it has been spoken, for voice mode, which has its own switch. Throws what the
+    /// Reads `markdown` and returns once it has been spoken, for spoken job updates. Throws what the
     /// server answered, or `CancellationError` when `stop()` cut it short.
     func say(_ markdown: String) async throws {
         stop()

@@ -52,7 +52,7 @@ package struct ChatThread: Codable, Identifiable {
     package var runs: Int? = nil
     /// The id of the background job whose transcript this thread holds (`JobService`).
     package var job: String? = nil
-    /// True for a voice-mode conversation (`FrontDesk`).
+    /// True for a conversation saved by the former voice mode. New spoken messages go into ordinary threads.
     package var voice: Bool? = nil
 
     /// The agent session the thread runs on now. Nil means `id`, which is how a thread saved before rollover existed

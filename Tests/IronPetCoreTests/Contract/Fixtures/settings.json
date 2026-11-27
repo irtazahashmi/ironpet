@@ -41,7 +41,7 @@
             "dictation" : "ctrl+opt+space",
             "meeting" : "",
             "voice" : "cmd+opt+v",
-            "voiceMode" : "cmd+opt+ctrl+v"
+            "voiceMode" : "ctrl+shift+v"
           },
           "integrations" : {
             "claudeHooks" : false,
@@ -124,8 +124,8 @@
             "autoUpdate" : true
           },
           "speech" : {
-            "enabled" : false,
             "model" : "mlx-community/Kokoro-82M-bf16",
+            "speakReplies" : "automatic",
             "speed" : 1,
             "voice" : "am_puck"
           },
@@ -154,17 +154,6 @@
             "model" : "mlx-community/parakeet-tdt-0.6b-v3"
           },
           "voiceMode" : {
-            "enabled" : false,
-            "fastModelWords" : [
-              "haiku",
-              "flash",
-              "mini",
-              "fast",
-              "lite"
-            ],
-            "idleShutdownMinutes" : 10,
-            "listenWith" : "ironpet",
-            "model" : "",
             "silenceSeconds" : 20,
             "speakJobUpdates" : true
           },
@@ -185,7 +174,7 @@
         "jsonrpc" : "2.0",
         "method" : "settings.patch",
         "params" : {
-          "patch" : "{\"speech\":{\"enabled\":true}}"
+          "patch" : "{\"speech\":{\"speakReplies\":\"always\"}}"
         }
       },
       "response" : {
@@ -222,7 +211,7 @@
             "dictation" : "ctrl+opt+space",
             "meeting" : "",
             "voice" : "cmd+opt+v",
-            "voiceMode" : "cmd+opt+ctrl+v"
+            "voiceMode" : "ctrl+shift+v"
           },
           "integrations" : {
             "claudeHooks" : false,
@@ -305,8 +294,8 @@
             "autoUpdate" : true
           },
           "speech" : {
-            "enabled" : true,
             "model" : "mlx-community/Kokoro-82M-bf16",
+            "speakReplies" : "always",
             "speed" : 1,
             "voice" : "am_puck"
           },
@@ -335,17 +324,6 @@
             "model" : "mlx-community/parakeet-tdt-0.6b-v3"
           },
           "voiceMode" : {
-            "enabled" : false,
-            "fastModelWords" : [
-              "haiku",
-              "flash",
-              "mini",
-              "fast",
-              "lite"
-            ],
-            "idleShutdownMinutes" : 10,
-            "listenWith" : "ironpet",
-            "model" : "",
             "silenceSeconds" : 20,
             "speakJobUpdates" : true
           },
@@ -400,7 +378,7 @@
             "dictation" : "ctrl+opt+space",
             "meeting" : "",
             "voice" : "cmd+opt+v",
-            "voiceMode" : "cmd+opt+ctrl+v"
+            "voiceMode" : "ctrl+shift+v"
           },
           "integrations" : {
             "claudeHooks" : false,
@@ -483,8 +461,8 @@
             "autoUpdate" : true
           },
           "speech" : {
-            "enabled" : true,
             "model" : "mlx-community/Kokoro-82M-bf16",
+            "speakReplies" : "always",
             "speed" : 1,
             "voice" : "am_puck"
           },
@@ -513,17 +491,6 @@
             "model" : "mlx-community/parakeet-tdt-0.6b-v3"
           },
           "voiceMode" : {
-            "enabled" : false,
-            "fastModelWords" : [
-              "haiku",
-              "flash",
-              "mini",
-              "fast",
-              "lite"
-            ],
-            "idleShutdownMinutes" : 10,
-            "listenWith" : "ironpet",
-            "model" : "",
             "silenceSeconds" : 20,
             "speakJobUpdates" : true
           },
