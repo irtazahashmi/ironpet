@@ -1,23 +1,23 @@
 ---
 title: Memory
-description: How Ghost learns about you, your projects and the people you work with, and how to see and edit what he keeps.
+description: How your pet learns about you, your projects and the people you work with, and how to see and edit what it keeps.
 section: Features
 order: 9
 ---
 
-Ghost learns about you, your projects and the people you work with without being asked, and every new chat starts with what he knows. Chats are saved and can be reopened, and when you ask "what did we decide about…" he searches past chats, meetings and notes. You can see every page he keeps in the Memory section of the ironpet window or the phone app, and change or delete any of it.
+Your pet learns about you, your projects and the people you work with without being asked, and every new chat starts with what it knows. Chats are saved and can be reopened, and when you ask "what did we decide about…" it searches past chats, meetings and notes. You can see every page it keeps in the Memory section of the ironpet window or the phone app, and change or delete any of it.
 
-## What Ghost keeps
+## What your pet keeps
 
-Memory is a set of pages in `~/.ironpet/ironpet.db`: one for you, one per person, one per project, and one for anything else Ghost is told about, such as an organization, a topic or a tool. A page holds dated claims, such as "Prefers pnpm over npm", each with the day it was last said and where it came from (a chat, a meeting or an automation).
+Memory is a set of pages in `~/.ironpet/ironpet.db`: one for you, one per person, one per project, and one for anything else your pet is told about, such as an organization, a topic or a tool. A page holds dated claims, such as "Prefers pnpm over npm", each with the day it was last said and where it came from (a chat, a meeting or an automation).
 
 A project is its git repository, identified by its `origin` remote, so every worktree and clone of a repo shares one page. A folder without a remote has its own page.
 
 A note goes on the page of what it is about, which can be a project, an organization, a topic or a tool, not only the repo a chat ran in. A ticket, issue or PR is never a page of its own: its facts go on the project it belongs to, with the reference kept in the note. A note that only says where one task stands, such as a PR waiting for review, is not kept.
 
-Once, after updating, Ghost moves notes he had filed under a repo to the page they are about, and logs each move so it can be undone.
+Once, after updating, your pet moves notes it had filed under a repo to the page they are about, and logs each move so it can be undone.
 
-## How he learns
+## How it learns
 
 Once an hour (`memory.digestMinutes`, 60 by default), ironpet reads what is new since the last pass and sends it to the agent that already had it:
 
@@ -43,7 +43,7 @@ Turn learning off with **Learn from chats** in Settings → Memory (`memory.refl
 
 Every new chat starts with up to about 4 KB of your own claims, 6 KB of the current project's and 2 KB about people (the people the first message names, then the most recently noted). Claims are added newest first, and only whole claims.
 
-Say "forget that I use pnpm" and Ghost removes the claim and tells you what went. The removed claim stays in the page's history until you undo it.
+Say "forget that I use pnpm" and your pet removes the claim and tells you what went. The removed claim stays in the page's history until you undo it.
 
 ### Memory tools
 
@@ -56,7 +56,7 @@ The agent in a chat can use these tools:
 | `memory_merge` | Folds duplicate pages of one type into one (`keep`, `merge`); see [Merging pages](#merging-pages) |
 | `memory_page` | Reads one page with its claims and where each came from |
 | `memory_links` | Lists how a page links to others |
-| `memory_search`, `memory_get` | Look up past chats with any agent (your messages and Ghost's, not tool output), meeting summaries and transcripts, claims, and your screen captures when screen capture is on |
+| `memory_search`, `memory_get` | Look up past chats with any agent (your messages and your pet's, not tool output), meeting summaries and transcripts, claims, and your screen captures when screen capture is on |
 
 Only `memory_merge` asks for approval, because it can't be undone. The others run without asking when the agent names ironpet's server: they only write claims, and a forgotten claim is kept in history.
 
@@ -68,7 +68,7 @@ The Memory section sits in the ironpet window after Automations, with the brain 
 
 It lists every page that has a fact or a recorded mention, newest update first, with chips for People, Projects, Organizations, Topics and Tools, and a search over names, aliases, identifiers and fact text (case and accents ignored).
 
-A person, organization, project, tool or topic Ghost sees in a chat, a meeting summary or on screen gets a page at its first mention, even before any fact is filed on it. Such a page shows "Mentioned in N places, no notes yet" and lists the sources. A person appears in the list from their second mention.
+A person, organization, project, tool or topic your pet sees in a chat, a meeting summary or on screen gets a page at its first mention, even before any fact is filed on it. Such a page shows "Mentioned in N places, no notes yet" and lists the sources. A person appears in the list from their second mention.
 
 A page shows its facts (pinned first), the facts it replaced under **Earlier**, and its links grouped by type. On a page you can:
 

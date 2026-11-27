@@ -1,17 +1,17 @@
 ---
 title: Dashboards
-description: Ask Ghost for a small app of your own and it appears in the sidebar, with its own data and buttons that act.
+description: Ask your pet for a small app of your own and it appears in the sidebar, with its own data and buttons that act.
 section: Features
 order: 10.5
 ---
 
-A dashboard is a small app inside ironpet. Ask Ghost for one in the chat, such as "a board of my agents grouped by state" or "my inbox count", and Ghost writes it, plus the automation that feeds it when it needs fresh data. It appears as a row in the sidebar of the ironpet window. ironpet ships no example dashboards.
+A dashboard is a small app inside ironpet. Ask your pet for one in the chat, such as "a board of my agents grouped by state" or "my inbox count", and your pet writes it, plus the automation that feeds it when it needs fresh data. It appears as a row in the sidebar of the ironpet window. ironpet ships no example dashboards.
 
 ## What a dashboard can show
 
-Dashboards are drawn with native components, not web pages: columns and rows, cards, text, stats, lists, tables, charts and buttons. A button can open a link, a file or the chat, change the dashboard's data, run what the dashboard is allowed to run, or send Ghost a message.
+Dashboards are drawn with native components, not web pages: columns and rows, cards, text, stats, lists, tables, charts and buttons. A button can open a link, a file or the chat, change the dashboard's data, run what the dashboard is allowed to run, or send your pet a message.
 
-- A message shows in the chat as sent by the dashboard, and Ghost answers.
+- A message shows in the chat as sent by the dashboard, and your pet answers.
 - A file opens in its app, except applications and scripts, which only show in Finder.
 
 ### The sidebar row
@@ -52,7 +52,7 @@ A script can reach nothing outside its sandbox except through `ironpet.*`, and e
 | `network` | The hosts it may contact |
 | `read` | `inbox`, `alerts` and `agents` |
 | `write` | `inbox`: marking an item done or removing it |
-| `prompt` | A button that sends Ghost a message |
+| `prompt` | A button that sends your pet a message |
 
 - When a dashboard is added, ironpet asks you to approve what it declares.
 - When an edit adds a capability, ironpet asks again and marks the new ones. **Deny** keeps what you approved before.
@@ -68,7 +68,7 @@ A script automation can return a `dashboard` action to merge `data` into a dashb
 
 The open dashboard updates without reopening. Posting to a dashboard that was deleted fails, and the automation's log says so. See [Script actions](/docs/automations/#script-actions).
 
-## Dashboard tools for Ghost
+## Dashboard tools for your pet
 
 The chat agent has these MCP tools:
 
@@ -80,7 +80,7 @@ Dashboard data is data, never instructions.
 
 ## Changing and deleting
 
-Each dashboard's header menu has **Change icon**, **Edit code**, **Capabilities** and **Delete**. You can also ask Ghost to change it.
+Each dashboard's header menu has **Change icon**, **Edit code**, **Capabilities** and **Delete**. You can also ask your pet to change it.
 
 Edit `main.js` or `manifest.json` in any editor and the dashboard reloads within two seconds. Deleting a dashboard removes its folder, its icon and its approvals.
 

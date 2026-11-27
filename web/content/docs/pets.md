@@ -1,11 +1,11 @@
 ---
 title: Pets
-description: Rename Ghost, switch to one of six bundled pets, or have your agent build a new one.
+description: Rename your pet, switch to one of six bundled pets, or have your agent build a new one.
 section: Features
 order: 16
 ---
 
-Ghost is the default, but you can rename him or pick another pet. Open **Settings → General → Pets**, click a pet and pick its image from the animated tiles.
+Ghost is the default, but you can rename it or pick another pet. Open **Settings → General → Pets**, click a pet and pick its image from the animated tiles.
 
 ## The six pets
 
@@ -18,7 +18,7 @@ Ghost is the default, but you can rename him or pick another pet. Open **Setting
 | `bunny` | Lilac bunny with long ears and a cotton tail |
 | `cat` | Grey tabby with green eyes and a curly tail |
 
-The pets are drawn in code, not from image files: the build generates each sprite sheet into the app, and every pet has all of Ghost's animations. With Reduce Motion on, the tiles show one still frame.
+The pets are drawn in code, not from image files: the build generates each sprite sheet into the app, and every pet has the same animations. With Reduce Motion on, the tiles show one still frame.
 
 Picking a pet also renames it, but only while the name is still a default one (a built-in pet's name or the previous pet's name). A name you typed stays. You can rename the pet in Settings, or with `pet.name` in [`config.json`](/docs/configuration/).
 

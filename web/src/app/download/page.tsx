@@ -22,7 +22,7 @@ export default async function DownloadPage() {
           <span className="option-tag">Mac with Apple silicon</span>
           <h2>Download the app</h2>
           <p>
-            Open the DMG and drag IronPet to Applications. On first launch a welcome window asks what Ghost may do; nothing
+            Open the DMG and drag IronPet to Applications. On first launch a welcome window asks what your pet may do; nothing
             outside <code>~/.ironpet</code> changes until you press Start. The app keeps itself up to date.
           </p>
           <a className="button primary" href={release.dmgUrl}>

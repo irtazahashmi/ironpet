@@ -1,11 +1,11 @@
 ---
 title: Voice
-description: Dictate to Ghost with Wispr Flow or voice notes, hear his replies, talk to the chat, and dictate into any app.
+description: Dictate to your pet with Wispr Flow or voice notes, hear its replies, talk to the chat, and dictate into any app.
 section: Features
 order: 7
 ---
 
-You can talk to Ghost instead of typing, and he can answer out loud. Wispr Flow works with no setup. Voice notes, dictation in other apps and talking to the chat are off until you turn on voice notes, and they use a transcription server you choose, set up in **Settings → Voice**. Spoken replies start on **Automatic**, which reads a reply only after a message you said aloud, so no reply text goes to a speech server until you talk to the chat or press a reply's speaker button.
+You can talk to your pet instead of typing, and it can answer out loud. Wispr Flow works with no setup. Voice notes, dictation in other apps and talking to the chat are off until you turn on voice notes, and they use a transcription server you choose, set up in **Settings → Voice**. Spoken replies start on **Automatic**, which reads a reply only after a message you said aloud, so no reply text goes to a speech server until you talk to the chat or press a reply's speaker button.
 
 ## Wispr Flow
 
@@ -15,7 +15,7 @@ Hold <kbd>fn</kbd> with [Wispr Flow](https://wisprflow.ai) while the chat is ope
 
 Voice notes are off by default. ironpet ships and downloads no speech model. It records the microphone as a 16 kHz mono WAV and posts it to any server that speaks the OpenAI transcription API (`POST {baseUrl}/audio/transcriptions`, with `file`, `model` and `response_format=json`). With the feature off, the microphone is never opened, no permission is requested and nothing is sent.
 
-Turn on **Voice notes** under **Settings → Voice → Talk to Ghost**, then fill in the **Server** section below it:
+Turn on **Voice notes** under **Settings → Voice → Talk to …** (your pet's name), then fill in the **Server** section below it:
 
 | Setting | `config.json` key | Notes |
 | --- | --- | --- |
@@ -71,11 +71,11 @@ Dictation uses the same transcription server as voice notes and needs Microphone
 
 ## Spoken replies
 
-Ghost can answer out loud. A reply that is read aloud starts with a one or two sentence summary on its own first line. Ghost reads that line, and the full answer stays in the chat, links, lists and paths included. The agent writes the summary as part of the reply, so speech starts without a second model call, as soon as the first line is complete.
+Your pet can answer out loud. A reply that is read aloud starts with a one or two sentence summary on its own first line. Your pet reads that line, and the full answer stays in the chat, links, lists and paths included. The agent writes the summary as part of the reply, so speech starts without a second model call, as soon as the first line is complete.
 
 Every reply also has a speaker button below it (shown on hover) and a **Read Aloud** menu item that reads the whole reply, whatever **Speak replies** says.
 
-Set it up under **Settings → Voice → Ghost talks back**: pick a voice and press **Preview**. Switching from Never to Automatic or Always takes effect only after the preview plays. Spoken replies use the server, base URL and key from [Voice notes](#voice-notes), with their own model (**Speech model** in the **Server** section) and voice (`POST {baseUrl}/audio/speech`). Voice notes don't have to be on.
+Set it up under **Settings → Voice → … talks back** (your pet's name): pick a voice and press **Preview**. Switching from Never to Automatic or Always takes effect only after the preview plays. Spoken replies use the server, base URL and key from [Voice notes](#voice-notes), with their own model (**Speech model** in the **Server** section) and voice (`POST {baseUrl}/audio/speech`). Voice notes don't have to be on.
 
 | Setting | `config.json` key | Notes |
 | --- | --- | --- |
@@ -86,7 +86,7 @@ Set it up under **Settings → Voice → Ghost talks back**: pick a voice and pr
 
 - **Upgrading.** Older config files have `speech.enabled` (read aloud) and `voiceMode.enabled` (voice mode). Both are ignored, and every file starts on Automatic whatever those switches were, so nothing is read after a typed message until you choose Always.
 - **What is read.** Only the summary, never the full answer. A typed message after a spoken one isn't read in Automatic, and its prompt doesn't ask for a summary. Replies to Telegram messages and automations are never read. Code, tables, bare links and emoji are skipped in what is read. If the reply has no line break, the one line is read once the turn ends.
-- **When he stops.** <kbd>Esc</kbd> in the chat, a new voice note, sending a message, pressing the talk shortcut, or the speaker button. A reply isn't read on its own during a call (any other app using the microphone) or while a meeting is recording. The speaker button still works then. Apps you list under **Never treat as a call** in [Meetings](/docs/meetings/#settings) don't count as a call.
+- **When it stops.** <kbd>Esc</kbd> in the chat, a new voice note, sending a message, pressing the talk shortcut, or the speaker button. A reply isn't read on its own during a call (any other app using the microphone) or while a meeting is recording. The speaker button still works then. Apps you list under **Never treat as a call** in [Meetings](/docs/meetings/#settings) don't count as a call.
 - **Where the text goes.** The summary's text goes to the base URL above. With a local server it stays on your Mac.
 
 | Provider | Base URL | Speech model | Voices |
@@ -104,7 +104,7 @@ The same server still transcribes voice notes and meetings. The first spoken rep
 
 ## Talking to the chat
 
-Press <kbd>⌃⇧V</kbd> anywhere and talk. Ghost looks up, attentive, with a small pill by him that says **Listening…**. When you stop talking, or press the shortcut again, what you said is transcribed and sent to the chat as a message with a microphone badge. It lands in the same thread, history and agent session as the messages you type, so the agent sees the earlier turns as context. If **Speak replies** is Automatic or Always, the reply starts with a short summary that Ghost reads aloud while the full answer is written in the chat.
+Press <kbd>⌃⇧V</kbd> anywhere and talk. Your pet looks up, attentive, with a small pill by it that says **Listening…**. When you stop talking, or press the shortcut again, what you said is transcribed and sent to the chat as a message with a microphone badge. It lands in the same thread, history and agent session as the messages you type, so the agent sees the earlier turns as context. If **Speak replies** is Automatic or Always, the reply starts with a short summary that your pet reads aloud while the full answer is written in the chat.
 
 It records one message per press and doesn't keep listening afterwards. It needs voice notes on, because the same server transcribes it, and it goes to the chat of the active agent, as voice notes do.
 
@@ -116,9 +116,9 @@ It records one message per press and doesn't keep listening afterwards. It needs
 | Stop after silence | `voiceMode.silenceSeconds` | Default 20, 5 to 120. Listening stops if you say nothing for this long |
 | Speak job updates | `voiceMode.speakJobUpdates` | Default on |
 
-- **The microphone** is open only while listening, with macOS voice processing on. <kbd>Esc</kbd> or the pill's button discards the message. Pressing the shortcut while Ghost is speaking stops him and starts listening.
-- **Jobs.** When the chat starts a [background job](/docs/automations/#background-jobs) during a reply that is being read aloud, Ghost says when it's done, fails or needs your OK, unless Speak replies is Never, or you're on a call, recording a meeting or away.
+- **The microphone** is open only while listening, with macOS voice processing on. <kbd>Esc</kbd> or the pill's button discards the message. Pressing the shortcut while your pet is speaking stops it and starts listening.
+- **Jobs.** When the chat starts a [background job](/docs/automations/#background-jobs) during a reply that is being read aloud, your pet says when it's done, fails or needs your OK, unless Speak replies is Never, or you're on a call, recording a meeting or away.
 - **What a spoken message can't do.** A spoken yes never approves anything: approvals stay buttons in an alert or a bubble. A spoken message gets the same permissions as a typed one.
-- **When he stays quiet.** The shortcut won't start during a call (another app holding the microphone) or a meeting recording, and stops if one starts.
+- **When it stays quiet.** The shortcut won't start during a call (another app holding the microphone) or a meeting recording, and stops if one starts.
 - **Old voice conversations.** Conversations saved before this change are still in Chat's **Previous chats** menu, marked with a microphone.
 - **Removed.** The separate voice mode switch, its model, Wispr Flow listening and the front desk agent are gone. Wispr Flow still dictates into the chat input as before.

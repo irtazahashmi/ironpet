@@ -17,7 +17,7 @@ Three reminders are offered in the welcome window:
 - **Stretch** every 60 minutes.
 - **Rest your eyes** every 20 minutes.
 
-They count only while you're at the keyboard, and stepping away for 5 minutes resets them. While an agent is working they can come a little early, so you take the break while you'd be waiting anyway. Ghost drinks or stretches along with you. His bubble has **Done** and **Snooze 10 min**.
+They count only while you're at the keyboard, and stepping away for 5 minutes resets them. While an agent is working they can come a little early, so you take the break while you'd be waiting anyway. Your pet drinks or stretches along with you. Its bubble has **Done** and **Snooze 10 min**.
 
 The idle time and the snooze length stay in `config.json` as `reminders.idleResetMinutes` (5) and `reminders.snoozeMinutes` (10). See [Configuration](/docs/configuration/).
 
@@ -116,7 +116,7 @@ The return value is `{state, actions}`. `state` is any JSON, up to 256 KiB, and 
 `actions` run in order, up to 20 per run. Each has a `type`:
 
 - **`bubble`** shows a short-lived popup: `title`, `body`, `severity` (`info`, `good`, `warn`, `bad`), `url` (adds an **Open** button), `symbol`, `expiresSeconds`, `notification`, `description` (the full text, markdown, up to 64 KiB, shown in [Notifications](/docs/notifications/)) and `links` (see [Links](/docs/notifications/#links)). A bubble with the same `id` replaces the old one.
-- **`alert`** keeps an open item in the alerts list, which also drives Ghost's mood and badge: `id`, `title`, `subtitle`, `label`, `severity`, `url`, `ask` (the prompt for **Ask Ghost**), `version`, `description` and `links` (kept with the notification that announces it). A new or changed alert also gets a bubble, except on the first run, which is quiet. An alert listed again unchanged is left alone, even if you dismissed it. `{type: "alert", id, resolved: true}` removes it. See [Alerts](/docs/alerts/).
+- **`alert`** keeps an open item in the alerts list, which also drives your pet's mood and badge: `id`, `title`, `subtitle`, `label`, `severity`, `url`, `ask` (the prompt for **Ask**, the button with your pet's name), `version`, `description` and `links` (kept with the notification that announces it). A new or changed alert also gets a bubble, except on the first run, which is quiet. An alert listed again unchanged is left alone, even if you dismissed it. `{type: "alert", id, resolved: true}` removes it. See [Alerts](/docs/alerts/).
 - **`prompt`** asks an agent in a background session and shows the answer: `prompt`, `title`, `agent`, `model`.
 - **`chat`** posts a system notice to the main chat, the same notice as a `prompt` action with `report: "chat"`: `text` (up to 64 KiB) and `title`. It starts a turn, and a newer notice from the same automation replaces one the agent hasn't read yet.
 - **`suggest_task`** adds an Inbox item from something a watcher found, such as an email, a Slack message or an issue: `id` (stable for that thing), `title`, `due` (`YYYY-MM-DD`), `notes`, `url`. The same `id` from the same automation is added once, even after you marked it done or removed it. Titles are cut at 200 characters and notes at 2000, control characters are removed, and at most 10 are taken per run. The first run adds them quietly; after that each run with something new shows one bubble. See [Inbox](/docs/inbox/#watchers).
@@ -220,14 +220,14 @@ An agent that can write files on your Mac can edit that database too, so treat a
 Settings → Automations → **Ask the pet to fix automations that fail** (`automations.autoFix` in `config.json`, on by default). When a poll, script, shell command or prompt fails, ironpet sends it to the current chat in the background and asks your agent to find the cause and fix the automation with the automation tools.
 
 - The error from the run goes in the message marked as data, not instructions.
-- Ghost says when the agent needs you.
+- Your pet says when the agent needs you.
 - It asks once per failing stretch, at most every 6 hours per automation, and not for paused automations or ones still waiting for approval.
 - A changed command, script or prompt still waits for your **Approve**.
 - If the chat is busy, a bubble offers to send it instead.
 
 ## Logs and history
 
-ironpet window → Automations has a **Show logs** button. Each row's menu also has **Show logs…**, and so does right-click Ghost → Automations. The logs window lists every poll and script run, quiet ones included, plus every reminder, shell command and prompt that ran: time, how long it took, the outcome and the output. That's the exit code, stdout and stderr of a poll, the `console.log` lines and actions of a script, or the error of a failed run. Filter by automation or show only problems.
+ironpet window → Automations has a **Show logs** button. Each row's menu also has **Show logs…**, and so does right-click your pet → Automations. The logs window lists every poll and script run, quiet ones included, plus every reminder, shell command and prompt that ran: time, how long it took, the outcome and the output. That's the exit code, stdout and stderr of a poll, the `console.log` lines and actions of a script, or the error of a failed run. Filter by automation or show only problems.
 
 - Logs are kept for 14 days by default. Set it under Settings → Automations → **Keep logs for**, or `automations.logRetentionDays` in `config.json` (1 to 365).
 - At most 2000 lines are kept per automation.
@@ -235,7 +235,7 @@ ironpet window → Automations has a **Show logs** button. Each row's menu also 
 
 ## Automation tools for agents
 
-Ghost's chat agents get these MCP tools: `automations_list`, `automations_get`, `automations_create`, `automations_update`, `automations_delete`, `automations_pause`, `automations_resume`, `automations_run_now` and `automations_history`.
+Your pet's chat agents get these MCP tools: `automations_list`, `automations_get`, `automations_create`, `automations_update`, `automations_delete`, `automations_pause`, `automations_resume`, `automations_run_now` and `automations_history`.
 
 They reach the app through `IronPet mcp`, a stdio MCP server that forwards to the running app. To add it to another agent, for example Claude Code:
 
@@ -249,15 +249,15 @@ You can also post to `http://127.0.0.1:<port>/mcp`, with the port in `~/.ironpet
 
 ## Skills
 
-ironpet ships agent skills. The first one, `ironpet-automations`, shows an agent how to create automations: which trigger to pick, the script format, the safety rules and how to debug a run. When you ask Ghost to check or watch something regularly, it uses this skill, and puts the prompt in a skill of its own when it needs one.
+ironpet ships agent skills. The first one, `ironpet-automations`, shows an agent how to create automations: which trigger to pick, the script format, the safety rules and how to debug a run. When you ask your pet to check or watch something regularly, it uses this skill, and puts the prompt in a skill of its own when it needs one.
 
 ### Managing skills
 
 Manage them in Settings → General → **Skills**: **Install**, **Update**, **Reinstall** and **Remove** for each skill, and a switch, **Install and update skills automatically**, on by default.
 
 - **Where they go.** ironpet installs one real copy in `~/.agents/skills/<name>`, which Codex, Cline, Pi, Warp, Zed and other agents read directly, and a relative symlink from the skills folder of every other agent found on your Mac (`~/.claude/skills`, `~/.cursor/skills`, `~/.gemini/skills`, and so on). A folder with the same name that ironpet didn't write is left alone.
-- **Automatic updates on.** Skills that are missing or out of date are installed or updated at launch for the agents found on your Mac, and Ghost says so in one bubble.
-- **Automatic updates off.** When an agent is installed and a skill is missing or old, Ghost shows one bubble for all of them with an **Install** (or **Update**) button.
+- **Automatic updates on.** Skills that are missing or out of date are installed or updated at launch for the agents found on your Mac, and your pet says so in one bubble.
+- **Automatic updates off.** When an agent is installed and a skill is missing or old, your pet shows one bubble for all of them with an **Install** (or **Update**) button.
 - **Not now.** A skill you decline with **Not now** stays out, and quiet, until its text changes.
 
 From the terminal:
@@ -301,7 +301,7 @@ The terminal counts as an agent for approval.
 
 ## Background jobs
 
-Ask Ghost to do something that takes a while ("fix the flaky login test in ironpet", "write up last week's PRs") and the chat agent can hand it to a background job with `jobs_start` instead of doing it in the chat. A job is its own agent session, with the chat's agent and model, in one folder. It shows in the Agents section as "Background job" with its last step, and Ghost tells you when it finishes or fails.
+Ask your pet to do something that takes a while ("fix the flaky login test in ironpet", "write up last week's PRs") and the chat agent can hand it to a background job with `jobs_start` instead of doing it in the chat. A job is its own agent session, with the chat's agent and model, in one folder. It shows in the Agents section as "Background job" with its last step, and your pet tells you when it finishes or fails.
 
 ### Which folder
 
@@ -315,7 +315,7 @@ After `jobs.permissionTimeoutMinutes` (10 by default) without an answer, the age
 
 ### Talking to a job
 
-- Ask Ghost how it's going (`jobs_list`, `jobs_get`), open its transcript in the chat (`jobs_open`), add to it (`jobs_followup`) or stop it (`jobs_stop`).
+- Ask your pet how it's going (`jobs_list`, `jobs_get`), open its transcript in the chat (`jobs_open`), add to it (`jobs_followup`) or stop it (`jobs_stop`).
 - Starting, adding to and stopping a job asks first when the chat's mode asks about tools.
 - Click the job's row to read its transcript in the chat. A message typed there goes to the job while it runs.
 
@@ -327,7 +327,7 @@ After `jobs.permissionTimeoutMinutes` (10 by default) without an answer, the age
 
 ### What's going on
 
-Ask "anything need me?" and Ghost answers with `status_overview`, which gathers the agent sessions that need you or are running, jobs, Inbox items, open alerts and recent meetings in one call. `status_sessions`, `status_alerts`, `status_today` (the brief or the recap) and `status_meetings` (with your open action items) give the details. The status tools run without an approval card.
+Ask "anything need me?" and your pet answers with `status_overview`, which gathers the agent sessions that need you or are running, jobs, Inbox items, open alerts and recent meetings in one call. `status_sessions`, `status_alerts`, `status_today` (the brief or the recap) and `status_meetings` (with your open action items) give the details. The status tools run without an approval card.
 
 ### Memory
 

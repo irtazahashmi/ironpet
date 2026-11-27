@@ -5,9 +5,9 @@ section: Features
 order: 10
 ---
 
-The Inbox holds things that need a decision from you: action items from your meetings, and things your watchers or agents found, such as an email that needs a reply or an issue. Click Ghost, then **Inbox** in the sidebar. The iPhone's Inbox tab shows the same list.
+The Inbox holds things that need a decision from you: action items from your meetings, and things your watchers or agents found, such as an email that needs a reply or an issue. Click your pet, then **Inbox** in the sidebar. The iPhone's Inbox tab shows the same list.
 
-ironpet has no task list. If you tell Ghost in the chat what you did, he can save that as a [memory](/docs/memory/) note instead.
+ironpet has no task list. If you tell your pet in the chat what you did, it can save that as a [memory](/docs/memory/) note instead.
 
 ## Items
 

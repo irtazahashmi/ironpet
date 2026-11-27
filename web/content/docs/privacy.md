@@ -39,7 +39,7 @@ The agent decides when to ask for permission. Approvals are ACP `session/request
 | Screen capture | Settings → Screen |
 | Desktop control | Settings → Screen |
 | Telegram | Settings → Integrations |
-| Also show macOS notifications | Right-click Ghost |
+| Also show macOS notifications | Right-click your pet |
 
 With a feature off, its permission is never requested. For example, with voice notes off the microphone is never opened and nothing is sent.
 

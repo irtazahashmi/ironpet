@@ -1,11 +1,11 @@
 ---
 title: Screen help
-description: Ask Ghost about a window or region, let agents search what you've seen, and let them operate other apps.
+description: Ask your pet about a window or region, let agents search what you've seen, and let them operate other apps.
 section: Features
 order: 8
 ---
 
-Ghost can look at your screen in three ways. Screenshot shortcuts open a chat about what you're looking at. Screen capture, off by default, keeps searchable text of the windows you use. Desktop control, also off by default, lets your agents operate other Mac apps; see [Desktop control](/docs/desktop/).
+Your pet can look at your screen in three ways. Screenshot shortcuts open a chat about what you're looking at. Screen capture, off by default, keeps searchable text of the windows you use. Desktop control, also off by default, lets your agents operate other Mac apps; see [Desktop control](/docs/desktop/).
 
 ## Screenshot shortcuts
 
