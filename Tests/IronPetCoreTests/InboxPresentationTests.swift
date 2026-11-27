@@ -16,7 +16,7 @@ final class InboxPresentationTests: XCTestCase {
     }
 
     /// S5: three origin groups with counts, newest first.
-    func testItemsFromChatMeetingAndScreenFormThreeGroupsNewestFirst() {
+    func testItemsFromChatMeetingAndScreenFormThreeGroupsNewestFirst() async {
         let meeting = TaskSuggestion(id: "m", title: "Send the notes", origin: .meeting(URL(fileURLWithPath: "/tmp/m/1")), created: base.addingTimeInterval(-3000))
         let groups = TaskSuggestion.groups([item("a", "Old chat item", ageMinutes: 300), meeting, item("c", "Screen item", ageMinutes: 9, kind: .capture),
                                             item("b", "New chat item", ageMinutes: 6)])
@@ -27,13 +27,13 @@ final class InboxPresentationTests: XCTestCase {
     }
 
     /// S6: only an item with a url has Open, and Open is that url.
-    func testOnlyAnItemWithAUrlHasAnOpenButton() {
+    func testOnlyAnItemWithAUrlHasAnOpenButton() async {
         XCTAssertEqual(item("a", "With link", ageMinutes: 1, url: "https://x.dev/1").openURL?.absoluteString, "https://x.dev/1")
         XCTAssertNil(item("b", "No link", ageMinutes: 1).openURL)
         XCTAssertNil(item("c", "File link", ageMinutes: 1, url: "file:///etc/hosts").openURL)
     }
 
-    func testTheRowNamesTheOtherSources() {
+    func testTheRowNamesTheOtherSources() async {
         let merged = item("a", "Merged", ageMinutes: 1, sources: [InboxSource(kind: .chat, ref: "chat:t-a", label: "Chat"),
                                                                    InboxSource(kind: .agent, ref: "r", url: URL(string: "https://x.dev/1"), label: "Agent")])
         XCTAssertEqual(merged.otherSourcesLabel, "and Agent")
@@ -41,7 +41,7 @@ final class InboxPresentationTests: XCTestCase {
     }
 
     /// S7: the origin line is the stored reason with the chat as a link. The page shows no id, and Notes come before Sources.
-    func testTheOriginLineOfAScanItemLinksItsChat() throws {
+    func testTheOriginLineOfAScanItemLinksItsChat() async throws {
         let scanned = item("a", "Test the flow", ageMinutes: 5)
         XCTAssertEqual(scanned.chatThread, "t-a")
         XCTAssertEqual(scanned.originLine.segments, [.text("Found by the inbox scan in a "), .chat(thread: "t-a"), .text(" between the user and Bunny")])
@@ -53,14 +53,14 @@ final class InboxPresentationTests: XCTestCase {
         XCTAssertFalse(shown.contains(scanned.id + "-"), shown)
     }
 
-    func testAnItemWithoutAStoredReasonSaysWhereItCameFrom() {
+    func testAnItemWithoutAStoredReasonSaysWhereItCameFrom() async {
         let bare = TaskSuggestion(id: "m", title: "Send", origin: .meeting(URL(fileURLWithPath: "/tmp/m/1")), created: base)
         XCTAssertEqual(bare.originLine.plain(time: "t"), "From a meeting, t")
         XCTAssertNil(bare.chatThread)
     }
 
     /// S9: a resolved item reads "Resolved by <who> at <time>", with its evidence under it.
-    func testAResolvedItemSaysWhoResolvedItAndShowsTheReason() {
+    func testAResolvedItemSaysWhoResolvedItAndShowsTheReason() async {
         let record = ResolvedSuggestion(id: "a", title: "Answer the prompt", reason: "PR 398 merged", resolved: base, created: base.addingTimeInterval(-3600),
                                         sources: [InboxSource(kind: .chat, ref: "chat:t-1", label: "Chat")], resolvedBy: "Inbox scan")
         XCTAssertEqual(record.statusLine(time: "16:31"), "Resolved by Inbox scan at 16:31")
@@ -70,7 +70,7 @@ final class InboxPresentationTests: XCTestCase {
     }
 
     /// The Resolved today section lists what was resolved since local midnight.
-    func testResolvedTodayHoldsOnlyTodaysItems() throws {
+    func testResolvedTodayHoldsOnlyTodaysItems() async throws {
         var clock = Date(timeIntervalSince1970: 1_800_000_000)
         let store = TaskStore(database: Database.open(path: nil, migrations: AppMigrations.all).database, now: { clock })
         let api = TasksAPI(store: store)
