@@ -363,6 +363,7 @@ package final class TaskStore {
             // 2. The caller named an existing item, or the url is one an item already has: add a source to it.
             if scope != nil {
                 var target: TaskSuggestion?
+                var byURL = false
                 if let named = draft.sameAs?.trimmingCharacters(in: .whitespacesAndNewlines), !named.isEmpty {
                     guard let found = items.first(where: { $0.id == named }) ?? self.itemForKey(named, scope: scope, items: items, pending: pendingKeys) else {
                         filings.append(SuggestFiling(change: .ignored("same_as \"\(named)\" is not an item in the inbox. It may have been done, removed or resolved, or the id is wrong. Nothing was added.")))
@@ -371,10 +372,11 @@ package final class TaskStore {
                     target = found
                 } else if let url = draft.url {
                     target = items.first { $0.sources.contains { $0.url.map(InboxSource.normalized) == InboxSource.normalized(url) } }
+                    byURL = true
                 }
                 if let target {
                     var changed = target
-                    _ = Self.apply(draft, source: source, to: &changed, replaceTitle: false)
+                    _ = Self.apply(draft, source: source, to: &changed, replaceTitle: false, keepDue: byURL)
                     replace(changed)
                     if !writes.contains(where: { $0.0.id == changed.id }) { writes.append((changed, false, nil)) }
                     pendingKeys[key] = .some(changed.id)
@@ -445,10 +447,11 @@ package final class TaskStore {
 
     /// Applies a draft to an item the draft is about. Returns whether anything changed. Text the draft leaves out stays as it is, so a
     /// follow-up that only carries a new due date keeps the title and notes. A merge keeps the title and the notes that are there.
-    private static func apply(_ draft: TaskSuggestion.Draft, source: InboxSource, to item: inout TaskSuggestion, replaceTitle: Bool) -> Bool {
+    private static func apply(_ draft: TaskSuggestion.Draft, source: InboxSource, to item: inout TaskSuggestion, replaceTitle: Bool, keepDue: Bool = false) -> Bool {
         let before = item
         if replaceTitle, let title = try? TaskValidator.title(draft.title) { item.title = title }
-        if let due = draft.due { item.due = due }
+        // A merge by url keeps the due date the item has, since the url can match something that only looks the same.
+        if let due = draft.due, !keepDue { item.due = due }
         if !draft.notes.isEmpty, replaceTitle || item.notes.isEmpty { item.notes = draft.notes }
         // An update takes the new page. A merge keeps the page the item has, and the new one is listed as a source.
         if let url = draft.url, replaceTitle || item.url == nil { item.url = url }

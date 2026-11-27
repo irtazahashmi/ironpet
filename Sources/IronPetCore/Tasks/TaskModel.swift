@@ -66,10 +66,12 @@ package struct InboxSource: Equatable, Codable {
         return !ref.isEmpty && ref == other.ref
     }
 
-    /// A url compared without its fragment, a trailing slash or the case of its scheme and host.
+    /// A url compared without a trailing slash, the case of its scheme and host, or a fragment that is only a page anchor. A fragment that
+    /// names something (it has a path or a digit, like Gmail `#inbox/<id>` or GitHub `#issuecomment-<n>`) stays, because it is the only
+    /// part that tells two messages or comments apart.
     package static func normalized(_ url: URL) -> String {
         guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url.absoluteString }
-        parts.fragment = nil
+        if let fragment = parts.fragment, !fragment.contains("/"), !fragment.contains(where: \.isNumber) { parts.fragment = nil }
         parts.scheme = parts.scheme?.lowercased()
         parts.host = parts.host?.lowercased()
         if parts.path.count > 1, parts.path.hasSuffix("/") { parts.path.removeLast() }
