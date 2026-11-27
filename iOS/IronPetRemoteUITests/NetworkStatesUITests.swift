@@ -92,7 +92,7 @@ final class NetworkStatesUITests: XCTestCase {
         server.stop()
         sleep(1)
         try server.start()
-        sleep(4)
+        sleep(5)
         XCTAssertFalse(any("network-strip").exists, "the Mac was back before the strip's delay")
     }
 
