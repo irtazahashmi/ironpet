@@ -149,4 +149,30 @@ final class MemoryCleanupTests: XCTestCase {
         XCTAssertEqual(answer?.merges, [.init(keep: "A", others: ["B"])])
         XCTAssertNil(MemoryCleanup.parse("not json"))
     }
+
+    func testNearDuplicateNotesOnOnePageAreProposedAsOneMergePerGroup() async throws {
+        // Written the way an older build did, which stored every rewording.
+        let orcaTexts = [NearDuplicateTests.bloated] + NearDuplicateTests.restatements + [NearDuplicateTests.branches]
+        for (index, text) in orcaTexts.enumerated() {
+            _ = try store.importPage(id: "tool:orca", type: .tool, name: "Orca", identifiers: [], mentions: 1,
+                                     notes: [MemoryNote(text: text, date: "2026-11-27", source: "chat:\(index)")])
+        }
+        for (index, text) in [NearDuplicateTests.jiraA, NearDuplicateTests.jiraB].enumerated() {
+            _ = try store.importPage(id: "tool:jira", type: .tool, name: "Jira", identifiers: [], mentions: 1,
+                                     notes: [MemoryNote(text: text, date: "2026-11-27", source: "chat:j\(index)")])
+        }
+        let run = await MemoryCleanup.propose(in: store, classify: nil)
+        let merges = run.proposals.filter { $0.id.hasPrefix("notes:") }
+        XCTAssertEqual(merges.count, 2)
+        XCTAssertEqual(store.claims(of: "tool:orca").count, 5, "nothing changes before approval")
+        let orca = try XCTUnwrap(merges.first { $0.id.hasPrefix("notes:tool:orca:") })
+        _ = try MemoryCleanup.apply(orca, in: store).get()
+        let left = store.claims(of: "tool:orca")
+        XCTAssertEqual(left.count, 2, "the merged note and the different Orca fact")
+        let merged = try XCTUnwrap(left.first { $0.text != NearDuplicateTests.branches })
+        XCTAssertEqual(Set(merged.sources), ["chat:0", "chat:1", "chat:2", "chat:3"])
+        let change = try XCTUnwrap(store.recentChanges().first)
+        try store.undo(change).get()
+        XCTAssertEqual(store.claims(of: "tool:orca").count, 5, "Undo brings the old notes back")
+    }
 }

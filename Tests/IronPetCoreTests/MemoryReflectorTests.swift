@@ -16,6 +16,8 @@ final class MemoryReflectorTests: XCTestCase {
     private var readers: [MemoryReflector.Reader] = []
     /// Answers the fake agent gives, in order. Out of answers, it says there is nothing to keep.
     private var answers: [Result<String, MemoryReflector.RunError>] = []
+    /// Runs while the fake agent is "answering", to play another pass that moves a cursor.
+    private var whileAnswering: (() -> Void)?
     private var config = Config.Memory()
     private var clock = Date(timeIntervalSince1970: 1_795_000_000)
     private var workspace: URL!
@@ -30,6 +32,7 @@ final class MemoryReflectorTests: XCTestCase {
         reflector = MemoryReflector(store: store, index: index) { [unowned self] prompt, reader in
             prompts.append(prompt)
             readers.append(reader)
+            whileAnswering?()
             return answers.isEmpty ? .success(#"{"notes":[],"links":[]}"#) : answers.removeFirst()
         }
         reflector.config = { [unowned self] in config }
@@ -220,6 +223,43 @@ final class MemoryReflectorTests: XCTestCase {
         XCTAssertEqual(posted.map(\.id), ["memory-ambiguous:ana"])
         XCTAssertEqual(posted.first?.title, "Which Ana?")
         XCTAssertNotNil(posted.first?.ask)
+    }
+
+    // MARK: Near-duplicates and a second pass
+
+    func testAPassWhoseCursorMovedWhileTheAgentAnsweredWritesNothing() async {
+        chat("t1", [.init(kind: .user("Orca is bloated")), .init(kind: .assistant("Noted."))])
+        let other = "00000000-0000-0000-0000-000000000001"
+        whileAnswering = { [unowned self] in index.setCursor("t1", item: other, at: clock) }
+        answers = [notes(#"{"notes":[{"scope":"tool","entity":"Orca","text":"Finds Orca bloated with features.","replaces":[]}],"links":[]}"#)]
+        await digest()
+        XCTAssertEqual(prompts.count, 1)
+        XCTAssertTrue(store.claims(of: "tool:orca").isEmpty)
+        XCTAssertEqual(index.cursor("t1")?.item, other, "the cursor stays where the other pass put it")
+    }
+
+    func testAScreenPassWhoseCursorMovedWritesNothing() async {
+        config.learnFromScreen = true
+        captures = [StoredCapture(id: 7, at: clock, app: "a", appName: "Orca", window: "Board", trigger: "timer", text: "Orca board is full of panels")]
+        whileAnswering = { [unowned self] in index.setCursor("screen", item: "9", at: clock) }
+        answers = [notes(#"{"notes":[{"scope":"tool","entity":"Orca","text":"Orca shows many panels at once.","replaces":[]}],"links":[]}"#)]
+        await digest()
+        XCTAssertEqual(prompts.count, 1)
+        XCTAssertTrue(store.claims(of: "tool:orca").isEmpty)
+        XCTAssertEqual(index.cursor("screen")?.item, "9")
+    }
+
+    func testTheDigestPromptCarriesTheNotesOfThePagesTheChatNames() async throws {
+        _ = try store.remember("Finds Orca bloated with features he does not need.", scope: .tool, entity: "Orca", source: "chat:a").get()
+        _ = try store.remember("Pays invoices in 30 days.", scope: .org, entity: "Acme", source: "chat:a").get()
+        chat("t1", [.init(kind: .user("Orca still feels heavy")), .init(kind: .assistant("Noted."))])
+        await digest()
+        XCTAssertEqual(prompts.count, 1)
+        XCTAssertTrue(prompts[0].contains("<notes file=\"page tool Orca\">"))
+        XCTAssertTrue(prompts[0].contains("Finds Orca bloated with features he does not need."))
+        XCTAssertFalse(prompts[0].contains("Pays invoices in 30 days."), "a page the chat does not name is not sent")
+        XCTAssertTrue(prompts[0].contains("same thing as an existing note in other words"))
+        XCTAssertTrue(prompts[0].contains("\"replaces\""))
     }
 
     // MARK: Merge pass

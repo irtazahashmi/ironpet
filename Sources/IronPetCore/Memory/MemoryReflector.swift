@@ -60,6 +60,8 @@ package final class MemoryReflector {
     package static var timeout: TimeInterval { TimeInterval(ConfigStore.shared.config.memory.reflectTimeoutSeconds) }
     /// Most entities one pass may record, so a long meeting cannot fill the memory with pages.
     package static let maxEntities = 10
+    /// Bytes of notes from the pages the chat text names (tools, organizations, topics, other projects) that a digest prompt carries.
+    package static let namedPagesBytes = 6000
     /// Most merges one pass of the merge job may make.
     package static let maxMerges = 5
     /// Most of a page's oldest facts one merge pass shows the agent.
@@ -293,6 +295,9 @@ package final class MemoryReflector {
             return outcome
         }
         let reader = Reader(agent: found.agent, model: found.model)
+        // Another pass (a second app on the same database) may read the same messages while the agent answers. The cursors are read
+        // again after the answer; when one moved, that pass owns these messages and this one writes nothing.
+        let cursorsBefore = input.cursors.map { index.cursor($0.key)?.item }
         // The agent of a meeting summary or an automation answer never got a preamble, so it gets no notes either. Outside text can't
         // write me.md or replace notes, and the store drops a note it already has.
         let notes = input.outside ? [] : currentNotes(input.project, about: input.text)
@@ -311,6 +316,10 @@ package final class MemoryReflector {
             NSLog("ironpet: memory reflection failed: \(failure.message)")
             return outcome
         case .success(let answer):
+            guard input.cursors.map({ index.cursor($0.key)?.item }) == cursorsBefore else {
+                outcome.skipped = true
+                return outcome
+            }
             guard let proposals = Self.parse(answer) else {
                 outcome.error = "the agent did not answer with the notes JSON"
                 return outcome
@@ -463,6 +472,11 @@ package final class MemoryReflector {
         var notes = [("me.md", recall(.me))]
         if let project { notes.append(("project \(project.name)", recall(.project))) }
         notes.append(("people.md", recall(.people)))
+        // The pages the text names, so a restated note can be named in "replaces". The chat's own project page is already above.
+        let own = project.map { EntityMemoryStore.projectID($0) }
+        for page in store.namedPageNotes(naming: text, excluding: own, bytes: Self.namedPagesBytes) {
+            notes.append(("page \(page.page)", page.notes))
+        }
         if let pages = Self.pageList(store.entities()) { notes.append(("pages", pages)) }
         return notes
     }

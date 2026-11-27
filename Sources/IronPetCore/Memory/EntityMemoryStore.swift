@@ -226,6 +226,19 @@ package final class EntityMemoryStore: MemoryStore {
                     return .success(Written(claim: same.id, removed: removed, note: MemoryNote(text: same.text, date: day, source: source),
                                             target: target, bumped: true))
                 }
+                // The same fact in other words: the claim already on this page moves to today and gains the source, and its text stays. Only
+                // valid, unpinned claims that this call does not replace count, so a pinned note is never touched.
+                let replacedIDs = Set(removed.map(\.id))
+                let candidates = valid.filter { !$0.pinned && !replacedIDs.contains($0.id) }
+                if let near = NearDuplicate.best(for: text, in: candidates, text: \.text) {
+                    try db.execute("UPDATE memory_claims SET date = ?, sources = ? WHERE id = ?",
+                                   [day, Self.joined(Self.merged(near.sources, [source])), near.id])
+                    for stale in removed {
+                        try db.execute("UPDATE memory_claims SET invalid_at = ? WHERE id = ?", [at.timeIntervalSince1970, stale.id])
+                    }
+                    return .success(Written(claim: near.id, removed: removed, note: MemoryNote(text: near.text, date: day, source: source),
+                                            target: target, bumped: true))
+                }
                 try db.execute("INSERT INTO memory_claims(entity, text, date, sources, invalid_at, pinned, ref, node_id, agent_id) VALUES(?, ?, ?, ?, NULL, 0, ?, ?, ?)",
                                [target.id, text, day, source, try Self.reference(.claim, db)] + Provenance.current(db).columns)
                 let claim = try Self.lastID(db)
@@ -771,6 +784,31 @@ package final class EntityMemoryStore: MemoryStore {
         }
     }
 
+    /// The notes of the organization, topic, tool and project pages whose name or alias the text names, so the digest agent can put a
+    /// restated note's exact text in `replaces`. `excluding` is a page the caller already sends. Each page gets at most `bytes / 2`
+    /// and the pages together at most `bytes`; a page with no note is left out.
+    package func namedPageNotes(naming message: String, excluding: String? = nil, bytes: Int) -> [(page: String, notes: String)] {
+        let text = message.lowercased()
+        let words = Set(text.split { !$0.isLetter && !$0.isNumber && $0 != "-" && $0 != "'" }.map(String.init))
+        func names(_ page: MemoryEntity) -> Bool {
+            ([page.name] + page.aliases).contains { name in
+                let lower = name.lowercased()
+                guard lower.count >= 3 else { return false }
+                return lower.contains(" ") ? text.contains(lower) : words.contains(lower)
+            }
+        }
+        var left = bytes
+        var result: [(page: String, notes: String)] = []
+        for page in entities() where [.org, .topic, .tool, .project].contains(page.type) && page.id != excluding && names(page) {
+            guard left > 0 else { break }
+            let notes = Self.budget(self.notes(of: page.id), bytes: min(left, bytes / 2), grouped: false)
+            guard !notes.isEmpty else { continue }
+            result.append((page: "\(page.type.rawValue) \(page.name)", notes: notes))
+            left -= notes.utf8.count
+        }
+        return result
+    }
+
     package func location(_ scope: MemoryScope, project: ProjectKey?, entity: String? = nil) -> String? {
         switch scope {
         case .me: return "me"
@@ -1021,7 +1059,7 @@ package final class EntityMemoryStore: MemoryStore {
     /// The id of a page made from a name: `project:ironpet`, `org:acme`. A project found by its repo has `project:<repo key>` instead.
     private static func namedID(_ type: EntityType, _ name: String) -> String { type.rawValue + ":" + EntityMatcher.normalize(name) }
 
-    private static func projectID(_ project: ProjectKey) -> String { "project:" + project.key }
+    package static func projectID(_ project: ProjectKey) -> String { "project:" + project.key }
 
     private static func title(_ target: Target) -> String {
         switch target.type {
