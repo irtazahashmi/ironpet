@@ -9,22 +9,22 @@ ironpet puts Ghost, a small direwolf in a Night's Watch cloak, on your Mac deskt
 
 ## Requirements
 
-- macOS 14 or later.
+- macOS 14 or later, on Apple Silicon or Intel.
 - At least one agent CLI that speaks the [Agent Client Protocol](https://agentclientprotocol.com) (ACP), installed and signed in. `cursor-agent`, `gemini`, `opencode` and many more run as they are. `claude`, `codex` and `pi` run through small adapters bundled in the app, which need Node 22 or newer on your `PATH`. Without Node, ironpet offers a one-time Bun download and asks before making it.
 - Optional: iTerm2 and [Wispr Flow](https://wisprflow.ai).
 
 To build from source you also need:
 
-- Xcode command line tools (Swift 5.10 or newer). With the macOS 27 SDK, use full Xcode instead, selected with `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`.
+- Xcode command line tools (Swift 5.10 or newer). With the macOS 27 SDK, use full Xcode instead, selected with `sudo xcode-select -s /Applications/Xcode.app/Contents/Developer`, because SwiftUI's macros ship only with Xcode.
 - [Bun](https://bun.sh) and npm, which bundle the chat adapters.
 
 ## Install
 
-There are three ways to install ironpet. The download and Homebrew builds are for Apple Silicon only. On an Intel Mac, build from source.
+There are three ways to install ironpet. The download and Homebrew builds are for Apple Silicon only (the release notes say so). On an Intel Mac, build from source.
 
 ### Download the DMG (Apple Silicon)
 
-Download `IronPet-<version>.dmg` from the [Releases](https://github.com/irtazahashmi/ironpet/releases) page, open it and drag IronPet to Applications. You can check the download against its checksum file:
+Download `IronPet-<version>.dmg` from the [Releases](https://github.com/irtazahashmi/ironpet/releases) page, open it and drag IronPet to Applications. The download needs the same [requirements](#requirements) as a source build, except Bun, npm and the command line tools. You can check the download against its checksum file:
 
 ```bash
 shasum -a 256 -c IronPet-<version>.dmg.sha256
@@ -44,7 +44,7 @@ Homebrew installs the same notarized release:
 brew install --cask irtazahashmi/ironpet/ironpet
 ```
 
-See the [tap](https://github.com/irtazahashmi/homebrew-ironpet) for details.
+To uninstall, run `brew uninstall --cask ironpet`, or add `--zap` to delete its preferences too. See the [tap](https://github.com/irtazahashmi/homebrew-ironpet) for details.
 
 ### Build from source (Apple Silicon or Intel)
 
@@ -71,6 +71,18 @@ On first launch a welcome window asks what Ghost may do:
 
 Nothing outside `~/.ironpet` changes until you press **Start**, and you can change every choice later in Settings.
 
+## Optional setup
+
+- **MCP servers.** Ghost's chat can use the MCP servers you have in Cursor (`~/.cursor/mcp.json`). To sign in to them once instead of in every project, turn on right-click → Integrations → **Share MCP sign-ins across folders**. See [Chat](/docs/chat/#mcp-servers).
+- **GitHub alerts.** If you didn't tick them in the welcome window, ask your agent for them under ironpet window → Automations → **New automation…**. They need the `gh` CLI, signed in. See [Alerts](/docs/alerts/#github-alerts).
+- **Sentry alerts.** Run `./scripts/configure_sentry.sh` from the repository. See [Alerts](/docs/alerts/#sentry-alerts).
+
+## Bubbles and macOS notifications
+
+Ghost speaks in bubbles beside him instead of macOS notifications. Approvals stay until you answer, reminders stay for 3 minutes, and everything else fades after 15 to 45 seconds, but not while the pointer is over them.
+
+To get macOS notifications as well, turn on right-click → **Also show macOS notifications**. Then set ironpet's notification style to **Alerts** in System Settings → Notifications, so the Allow and Deny buttons stay on screen. See [Notifications](/docs/notifications/).
+
 ## Permissions
 
 macOS asks for these permissions as you use the features, not all at once:
@@ -81,7 +93,7 @@ macOS asks for these permissions as you use the features, not all at once:
 | Automation → iTerm2 | Jumping to the right iTerm tab, reading its folder |
 | Screen Recording | Screenshots, and telling Cursor windows apart when several are open |
 | Accessibility | Screen capture and desktop control (both off by default). Also used, when already allowed, to attach the frontmost app's text selection when you open chat |
-| Microphone | Voice notes, voice mode and meeting transcripts (each off by default) |
+| Microphone | Voice notes, spoken messages and meeting transcripts (each off by default) |
 | Input Monitoring | Only when you choose Fn as the dictation shortcut. ironpet listens for Fn and never blocks it |
 | Screen & System Audio Recording | The other party's audio in a meeting transcript (off by default) |
 
@@ -90,4 +102,5 @@ macOS asks for these permissions as you use the features, not all at once:
 - [Using ironpet](/docs/using-ironpet/) lists the shortcuts and the main actions.
 - [Agents](/docs/agents/) explains what Ghost shows while your agents work.
 - [Chat](/docs/chat/) covers talking to an agent through Ghost.
+- [Alerts](/docs/alerts/) sets up PR, CI and Sentry alerts.
 - [Privacy](/docs/privacy/) explains what stays on your Mac.
