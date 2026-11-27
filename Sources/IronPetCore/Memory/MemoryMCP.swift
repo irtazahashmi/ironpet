@@ -277,6 +277,7 @@ package enum MemoryMCP {
         [
             "entity": page.entity.name, "id": page.entity.id, "ref": page.entity.ref, "type": page.entity.type.rawValue,
             "aliases": page.entity.aliases,
+            "mentions": page.entity.mentions, "mentionSources": page.entity.sources,
             "claims": page.claims.map(claimJSON),
             "links": page.links.map(linkJSON),
         ]

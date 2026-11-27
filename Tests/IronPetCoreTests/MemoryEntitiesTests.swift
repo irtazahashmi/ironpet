@@ -233,6 +233,174 @@ final class MemoryEntitiesTests: XCTestCase {
         XCTAssertTrue(texts("org:acme").isEmpty)
     }
 
+    // MARK: Entity pages on first mention (#368)
+
+    private func meeting(_ summary: String) throws -> URL {
+        let folder = dir.appendingPathComponent("2026-11-20 10-00 Sync")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        try summary.write(to: folder.appendingPathComponent("summary.md"), atomically: true, encoding: .utf8)
+        return folder
+    }
+
+    func testAColleagueFromAnOrganizationGetsBothPagesAndALink() async throws {
+        let folder = try meeting("Ana Silva from Epic Games joined and explained the licensing terms.")
+        answers = [#"""
+        {"notes":[],"entities":[{"name":"Ana Silva","type":"person"},{"name":"Epic Games","type":"organization"}],
+        "links":[{"from":"Ana Silva","type":"works_at","to":"Epic Games"}]}
+        """#]
+        _ = await reflector.reflectNow(.meeting(folder, agent: "claude"))
+        let org = try XCTUnwrap(store.entities().first { $0.name == "Epic Games" })
+        let person = try XCTUnwrap(store.entities().first { $0.name == "Ana Silva" })
+        XCTAssertEqual(org.type, .org)
+        XCTAssertEqual(person.type, .person)
+        let link = try XCTUnwrap(store.page(ref: person.ref)?.links.first)
+        XCTAssertEqual([link.from, link.to, link.type], [person.id, org.id, "works_at"])
+        XCTAssertTrue(prompts[0].contains("\"entities\""))
+        XCTAssertTrue(prompts[0].contains("works_at"))
+    }
+
+    func testALinkToAnUnlistedUnknownNameStaysSkipped() async {
+        chat("t1", "Ana works at Nowhere Inc")
+        answers = [#"{"notes":[],"entities":[{"name":"Ana","type":"person"}],"links":[{"from":"Ana","type":"works_at","to":"Nowhere Inc"}]}"#]
+        await digest()
+        XCTAssertNil(store.entities().first { $0.name == "Nowhere Inc" })
+        XCTAssertTrue(store.page(ref: store.entities().first { $0.name == "Ana" }?.ref ?? "")?.links.isEmpty ?? false)
+    }
+
+    func testAnAbbreviationInBracketsBecomesAnAlias() async throws {
+        chat("t1", "The Self Service Portal (SSP) needs SSO")
+        answers = [#"""
+        {"notes":[{"scope":"project","entity":"SSP","text":"Needs SSO login.","replaces":[]}],
+        "entities":[{"name":"Self Service Portal","type":"project","aliases":["SSP"]}],"links":[]}
+        """#]
+        await digest()
+        let page = try store.page("SSP").get()
+        XCTAssertEqual(page.entity.name, "Self Service Portal")
+        XCTAssertEqual(page.entity.aliases, ["SSP"])
+        XCTAssertEqual(try store.page("Self Service Portal").get().entity.ref, page.entity.ref)
+        XCTAssertEqual(store.page(ref: page.entity.ref)?.entity.id, page.entity.id)
+        XCTAssertEqual(texts(page.entity.id), ["Needs SSO login."], "the note goes on the main name, not a second page")
+        XCTAssertEqual(store.entities().filter { $0.type == .project }.count, 1)
+    }
+
+    func testANoteLandsOnThePersonWhoseEmailIsOnAKnownPage() async throws {
+        _ = try store.importPage(id: EntityMatcher.personID("Ana Silva"), type: .person, name: "Ana Silva", identifiers: ["ana@acme.com"],
+                                 mentions: 2, notes: [MemoryNote(text: "Leads the platform team.", date: "2026-10-01", source: "chat:a")])
+        let folder = try meeting("Attendees: ana@acme.com. A. Silva said the review is on Friday.")
+        answers = [#"""
+        {"notes":[{"scope":"people","person":"A. Silva","text":"Reviews on Fridays.","replaces":[]}],
+        "entities":[{"name":"A. Silva","type":"person","identifiers":["ana@acme.com"]}],"links":[]}
+        """#]
+        _ = await reflector.reflectNow(.meeting(folder, agent: "claude"))
+        XCTAssertEqual(texts("person:ana silva").sorted(), ["Leads the platform team.", "Reviews on Fridays."])
+        XCTAssertEqual(store.entities().filter { $0.type == .person }.count, 1)
+    }
+
+    func testANoteNamingThePersonByEmailLandsOnThePage() async throws {
+        _ = try store.importPage(id: EntityMatcher.personID("Ana Silva"), type: .person, name: "Ana Silva", identifiers: ["ana@acme.com"],
+                                 mentions: 2, notes: [])
+        let folder = try meeting("Attendees: ana@acme.com. Review is on Friday.")
+        answers = [#"{"notes":[{"scope":"people","person":"ana@acme.com","text":"Reviews on Fridays.","replaces":[]}],"links":[]}"#]
+        _ = await reflector.reflectNow(.meeting(folder, agent: "claude"))
+        XCTAssertEqual(texts("person:ana silva"), ["Reviews on Fridays."])
+        XCTAssertEqual(store.entities().filter { $0.type == .person }.count, 1)
+    }
+
+    func testAnOrganizationWithNoFactGetsAnEmptyPageThatRecordsWhereItCameUp() async throws {
+        chat("t1", "We got a quote from Initech")
+        answers = [#"{"notes":[],"entities":[{"name":"Initech","type":"org"}],"links":[]}"#]
+        await digest()
+        let page = try store.page("Initech").get()
+        XCTAssertEqual(page.entity.type, .org)
+        XCTAssertTrue(page.claims.isEmpty)
+        XCTAssertEqual(page.entity.mentions, 1)
+        XCTAssertEqual(page.entity.sources, ["chat:t1"])
+        XCTAssertEqual(MemoryMCP.pageJSON(page)["mentionSources"] as? [String], ["chat:t1"])
+        let row = try XCTUnwrap(store.browseRows().first { $0.name == "Initech" })
+        XCTAssertEqual(row.factCount, 0)
+        XCTAssertEqual(row.summary, "Mentioned in 1 place, no notes yet.")
+        XCTAssertTrue(try XCTUnwrap(store.detail(page.entity.id)).markdown.contains("Mentioned in: chat:t1"))
+    }
+
+    func testTheSameSourceIsNotCountedTwiceButANewOneIs() async throws {
+        let seen = EntityMemoryStore.SeenEntity(name: "Initech", type: .org)
+        store.noteMention(seen, source: "chat:a")
+        store.noteMention(seen, source: "chat:a")
+        store.noteMention(seen, source: "chat:b")
+        let entity = try XCTUnwrap(store.entities().first { $0.name == "Initech" })
+        XCTAssertEqual(entity.mentions, 2)
+        XCTAssertEqual(entity.sources, ["chat:a", "chat:b"])
+    }
+
+    func testAPersonMentionedOnceStaysAStub() async throws {
+        chat("t1", "Bob joined the call")
+        answers = [#"{"notes":[],"entities":[{"name":"Bob","type":"person"}],"links":[]}"#]
+        await digest()
+        XCTAssertEqual(try XCTUnwrap(store.entities().first { $0.name == "Bob" }).isStub, true)
+        XCTAssertNil(store.browseRows().first { $0.name == "Bob" }, "a stub with no fact stays off the list")
+        store.noteMention(EntityMemoryStore.SeenEntity(name: "Bob", type: .person), source: "chat:t2")
+        XCTAssertNotNil(store.browseRows().first { $0.name == "Bob" })
+    }
+
+    func testAPageWithANoteAndAMentionFromOneChatCountsOnce() async throws {
+        chat("t1", "Acme pays late")
+        answers = [#"{"notes":[{"scope":"org","entity":"Acme","text":"Pays late.","replaces":[]}],"entities":[{"name":"Acme","type":"org"}],"links":[]}"#]
+        await digest()
+        XCTAssertEqual(store.entities().first { $0.id == "org:acme" }?.mentions, 1)
+    }
+
+    func testAWorkItemIsNeverAnEntityOrALinkEnd() async {
+        chat("t1", "SSP-10435 and #304 for Self Service Portal")
+        answers = [#"""
+        {"notes":[],"entities":[{"name":"SSP-10435","type":"project"},{"name":"#304","type":"topic"},{"name":"ironpet#304","type":"tool"},
+        {"name":"Self Service Portal","type":"project","aliases":["SSP-10435"]}],
+        "links":[{"from":"SSP-10435","type":"part_of","to":"Self Service Portal"},{"from":"#304","type":"part_of","to":"Self Service Portal"}]}
+        """#]
+        await digest()
+        XCTAssertEqual(store.entities().filter { $0.type != .me }.map(\.name), ["Self Service Portal"])
+        XCTAssertEqual(store.entities().first { $0.type == .project }?.aliases, [])
+        XCTAssertTrue(store.page(ref: store.entities().first { $0.type == .project }?.ref ?? "")?.links.isEmpty ?? false)
+    }
+
+    func testOnePassRecordsAtMostMaxEntitiesAndSkipsTheUserAndUnknownTypes() async {
+        chat("t1", "many names")
+        let many = (1...15).map { #"{"name":"Org \#($0)","type":"org"}"# }.joined(separator: ",")
+        answers = [#"{"notes":[],"entities":[{"name":"Me","type":"me"},{"name":"X","type":"spaceship"},\#(many)],"links":[]}"#]
+        await digest()
+        XCTAssertEqual(store.entities().filter { $0.type == .org }.count, MemoryReflector.maxEntities)
+        XCTAssertEqual(store.entities().filter { $0.type == .me }.count, 1)
+    }
+
+    func testAMentionOnlyPageIsRemovedLikeAnyOtherPage() async throws {
+        chat("t1", "We got a quote from Initech")
+        answers = [#"{"notes":[],"entities":[{"name":"Initech","type":"org"}],"links":[]}"#]
+        await digest()
+        let page = try XCTUnwrap(store.entities().first { $0.name == "Initech" })
+        try store.remember("Sells copiers", scope: .org, entity: "Initech Ltd", source: "chat:b").get()
+        let merged = try store.mergePages([page.id], into: "Initech Ltd").get()
+        XCTAssertEqual(merged.merged.map(\.name), ["Initech"])
+        XCTAssertNil(store.entities().first { $0.id == page.id })
+        XCTAssertTrue(try XCTUnwrap(store.entities().first { $0.name == "Initech Ltd" }).sources.contains(page.sources[0]))
+    }
+
+    func testForgettingAMentionOnlyPageTakesItOffTheList() async throws {
+        chat("t1", "We got a quote from Initech")
+        answers = [#"{"notes":[],"entities":[{"name":"Initech","type":"org"}],"links":[]}"#]
+        await digest()
+        XCTAssertNotNil(store.browseRows().first { $0.name == "Initech" })
+        XCTAssertTrue(store.forgetPage("org:initech", source: "settings"))
+        XCTAssertNil(store.browseRows().first { $0.name == "Initech" })
+    }
+
+    func testPagesFromBeforeTheSourcesColumnHaveNoSources() throws {
+        try store.remember("Pays late", scope: .org, entity: "Acme", source: "chat:a").get()
+        XCTAssertEqual(store.entities().first { $0.id == "org:acme" }?.sources, ["chat:a"])
+        let old = try store.importPage(id: "org:old", type: .org, name: "Old", identifiers: [], mentions: 1, notes: [MemoryNote(text: "Was here.", date: "2026-01-01", source: "chat:z")])
+        XCTAssertEqual(old, 1)
+        XCTAssertEqual(store.entities().first { $0.id == "org:old" }?.sources, [])
+        XCTAssertEqual(store.browseRows().first { $0.id == "org:old" }?.factCount, 1)
+    }
+
     // MARK: S5
 
     private func seedMisfiled() throws -> [String: Int64] {

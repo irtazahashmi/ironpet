@@ -37,6 +37,8 @@ package struct MemoryEntity: Equatable, Identifiable, Codable {
     package let identifiers: [String]
     /// How many times it has come up. A new entity is a stub until it has come up `EntityMemoryStore.stubMentions` times.
     package let mentions: Int
+    /// Where it was mentioned (`chat:ab12cd34`, `meeting:<folder>`), oldest first, at most `EntityMemoryStore.maxSources`.
+    package var sources: [String] = []
 
     package var isStub: Bool { type == .person && mentions < EntityMemoryStore.stubMentions }
     package var record: EntityRecord { EntityRecord(id: id, type: type, name: name, aliases: aliases, identifiers: identifiers) }
@@ -67,6 +69,8 @@ package struct EntityPage: Equatable {
 package final class EntityMemoryStore: MemoryStore {
     /// How many times a person must come up before the preamble names them unasked, so one-off names stay out.
     package nonisolated static let stubMentions = 2
+    /// How many mention sources a page keeps. The oldest drop first.
+    package nonisolated static let maxSources = 20
     /// Where Export writes Markdown copies of the pages. Read at each export, so a test can point it at a temp folder.
     package nonisolated(unsafe) static var exportDirectory = Paths.root.appendingPathComponent("memory-export")
 
@@ -210,6 +214,7 @@ package final class EntityMemoryStore: MemoryStore {
                 }
                 try Self.ensureEntity(db, target)
                 try db.execute("UPDATE memory_entities SET mentions = mentions + 1 WHERE id = ?", [target.id])
+                try Self.addSource(db, target.id, source)
                 // The same fact again: its claim moves to today and gains the source, and no second copy is added. Older claims it makes
                 // wrong are still invalidated.
                 if let same = valid.first(where: { MemoryNote.normalized($0.text) == key }) {
@@ -356,6 +361,7 @@ package final class EntityMemoryStore: MemoryStore {
                 var aliases = kept.aliases
                 var identifiers = kept.identifiers
                 var mentions = kept.mentions
+                var mentionSources = kept.sources
                 var merged: [PageMerge.Merged] = []
                 var moved: [Int64] = []
                 for page in pages {
@@ -392,13 +398,14 @@ package final class EntityMemoryStore: MemoryStore {
                     aliases = Self.merged(aliases, [page.name] + page.aliases)
                     identifiers = Self.merged(identifiers, page.identifiers)
                     mentions += page.mentions
+                    mentionSources = Array(Self.merged(mentionSources, page.sources).suffix(Self.maxSources))
                     try db.execute("DELETE FROM memory_entities WHERE id = ?", [page.id])
                     merged.append(PageMerge.Merged(name: page.name, facts: valid.count, links: linked))
                 }
                 let own = EntityMatcher.normalize(kept.name)
                 aliases.removeAll { EntityMatcher.normalize($0) == own }
-                try db.execute("UPDATE memory_entities SET aliases = ?, identifiers = ?, mentions = ? WHERE id = ?",
-                               [Self.joined(aliases), Self.joined(identifiers), Int64(mentions), kept.id])
+                try db.execute("UPDATE memory_entities SET aliases = ?, identifiers = ?, mentions = ?, sources = ? WHERE id = ?",
+                               [Self.joined(aliases), Self.joined(identifiers), Int64(mentions), Self.joined(mentionSources), kept.id])
                 return (merged, moved)
             }
             // The search index titles each fact with its page, so the moved facts take the kept page's title.
@@ -431,6 +438,65 @@ package final class EntityMemoryStore: MemoryStore {
         } catch {
             return false
         }
+    }
+
+    /// An entity a reflection pass saw: a name, its type, other names it goes by, and keys such as an email address.
+    package struct SeenEntity: Equatable {
+        package init(name: String, type: EntityType, aliases: [String] = [], identifiers: [String] = []) {
+            self.name = name
+            self.type = type
+            self.aliases = aliases
+            self.identifiers = identifiers
+        }
+
+        package var name: String
+        package var type: EntityType
+        package var aliases: [String]
+        package var identifiers: [String]
+    }
+
+    /// Records that an entity came up in `source`, with no fact. A known name, alias or identifier finds its page; otherwise a page is
+    /// made. A new alias or identifier is added to the page, and a source the page does not have yet counts as one more mention. A work
+    /// item, the user's own page, and a name that fits more than one page of the type are refused. Returns the page's id.
+    @discardableResult
+    package func noteMention(_ seen: SeenEntity, source: String) -> Result<String, MemoryError> {
+        guard seen.type != .me, !WorkItemGuard.isWorkItem(seen.name), let name = MemoryNote.personName(seen.name) else {
+            return .failure(MemoryError(message: "\(seen.name) cannot be a page"))
+        }
+        let identifiers = seen.identifiers.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty && !WorkItemGuard.isWorkItem($0) }
+        let known = records()
+        let id: String
+        switch EntityMatcher.match(name: name, identifiers: identifiers, type: seen.type, in: known) {
+        case .found(let found): id = found
+        case .none: id = seen.type == .person ? EntityMatcher.personID(name) : Self.namedID(seen.type, name)
+        case .ambiguous(let ids):
+            return .failure(MemoryError(message: "more than one page matches \(name): \(names(ids).joined(separator: ", ")). Say which."))
+        }
+        // An alias that already names another page of the type would make both ambiguous, so it is not taken.
+        let aliases = seen.aliases.compactMap(MemoryNote.personName).filter { alias in
+            guard !WorkItemGuard.isWorkItem(alias) else { return false }
+            if case .found(let other) = EntityMatcher.match(name: alias, type: seen.type, in: known) { return other == id }
+            return !known.contains { $0.type == seen.type && $0.id != id && EntityMatcher.normalize($0.name) == EntityMatcher.normalize(alias) }
+        }
+        do {
+            try database.write { db in
+                try Self.ensureEntity(db, Target(id: id, type: seen.type, name: name, identifiers: identifiers, person: nil))
+                let row = try db.rows("SELECT name, aliases, sources FROM memory_entities WHERE id = ?", [id]).first
+                let own = EntityMatcher.normalize(row?[0] as? String ?? name)
+                var all = Self.lines(row?[1] as? String)
+                for alias in aliases where EntityMatcher.normalize(alias) != own && !all.contains(where: { EntityMatcher.normalize($0) == EntityMatcher.normalize(alias) }) {
+                    all.append(alias)
+                }
+                try db.execute("UPDATE memory_entities SET aliases = ? WHERE id = ?", [Self.joined(all), id])
+                if !Self.lines(row?[2] as? String).contains(source) {
+                    try db.execute("UPDATE memory_entities SET mentions = mentions + 1 WHERE id = ?", [id])
+                    try Self.addSource(db, id, source)
+                }
+            }
+        } catch {
+            return .failure(MemoryError(message: "could not note the mention: \(error.localizedDescription)"))
+        }
+        return .success(id)
     }
 
     /// The pages a person's name could mean, when it matches more than one. Nil when it matches none or one, so nothing needs asking.
@@ -894,6 +960,13 @@ package final class EntityMemoryStore: MemoryStore {
         })
     }
 
+    /// Adds `source` to a page's mention sources, once, keeping the newest `maxSources`.
+    private static func addSource(_ db: Database.Connection, _ id: String, _ source: String) throws {
+        let current = lines(try db.rows("SELECT sources FROM memory_entities WHERE id = ?", [id]).first?.first as? String)
+        guard !current.contains(source) else { return }
+        try db.execute("UPDATE memory_entities SET sources = ? WHERE id = ?", [joined(Array((current + [source]).suffix(maxSources))), id])
+    }
+
     private static func ensureEntity(_ db: Database.Connection, _ target: Target) throws {
         try db.execute("INSERT OR IGNORE INTO memory_entities(id, type, name, aliases, identifiers, mentions, ref) VALUES(?, ?, ?, '', '', 0, ?)",
                        [target.id, target.type.rawValue, target.name, try reference(.page, db)])
@@ -904,11 +977,11 @@ package final class EntityMemoryStore: MemoryStore {
     }
 
     private static func entityRows(_ db: Database.Connection) throws -> [MemoryEntity] {
-        try db.rows("SELECT id, type, name, aliases, identifiers, mentions, ref FROM memory_entities").compactMap { row in
+        try db.rows("SELECT id, type, name, aliases, identifiers, mentions, ref, sources FROM memory_entities").compactMap { row in
             guard let id = row[0] as? String, let type = (row[1] as? String).flatMap(EntityType.init(rawValue:)),
                   let name = row[2] as? String, let ref = row[6] as? String else { return nil }
             return MemoryEntity(id: id, ref: ref, type: type, name: name, aliases: lines(row[3] as? String),
-                                identifiers: lines(row[4] as? String), mentions: Int(row[5] as? Int64 ?? 0))
+                                identifiers: lines(row[4] as? String), mentions: Int(row[5] as? Int64 ?? 0), sources: lines(row[7] as? String))
         }
     }
 

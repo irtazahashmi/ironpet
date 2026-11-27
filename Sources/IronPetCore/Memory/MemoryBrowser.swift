@@ -104,14 +104,16 @@ package enum MemoryBrowser {
         text.range(of: needle, options: [.caseInsensitive, .diacriticInsensitive]) != nil
     }
 
-    /// The rows of every page that has a fact, newest update first. A page with no fact is a stub and stays out.
+    /// The rows of every page that has a fact or a recorded mention, newest update first. A page with neither stays out.
     package static func rows(entities: [MemoryEntity], claims: [String: [MemoryClaim]]) -> [MemoryRow] {
         entities.compactMap { entity -> MemoryRow? in
             let facts = claims[entity.id] ?? []
-            guard !facts.isEmpty else { return nil }
-            let shown = facts.first(where: \.pinned) ?? facts[0]
+            // A person seen once is a stub and stays out of the list until a second source or a fact, so one-off names do not fill it.
+            guard !facts.isEmpty || (!entity.sources.isEmpty && !entity.isStub) else { return nil }
+            let shown = facts.first(where: \.pinned) ?? facts.first
+            let mentioned = "Mentioned in \(entity.sources.count) place\(entity.sources.count == 1 ? "" : "s"), no notes yet."
             return MemoryRow(id: entity.id, ref: entity.ref, type: entity.type, name: entity.type == .me ? "About me" : entity.name,
-                             summary: shown.text, factCount: facts.count, updated: day(facts.map(\.date).max() ?? ""),
+                             summary: shown?.text ?? mentioned, factCount: facts.count, updated: day(facts.map(\.date).max() ?? ""),
                              aliases: entity.aliases, identifiers: entity.identifiers, facts: facts.map(\.text), matchedInFact: false)
         }
         .sorted { a, b in
@@ -208,6 +210,7 @@ package struct MemoryDetail: Equatable {
         var lines = ["# \(title)", "", "Type: \(entity.type.label)"]
         if !entity.aliases.isEmpty { lines.append("Also known as: " + entity.aliases.joined(separator: ", ")) }
         if !entity.identifiers.isEmpty { lines.append("Identifiers: " + entity.identifiers.joined(separator: ", ")) }
+        if !entity.sources.isEmpty { lines.append("Mentioned in: " + entity.sources.joined(separator: ", ")) }
         lines += ["", "## Facts", ""]
         lines += facts.map { "- " + $0.text + ($0.date.isEmpty ? "" : " (\($0.date))") + ($0.pinned ? " [pinned]" : "") }
         if !earlier.isEmpty {
@@ -236,6 +239,7 @@ extension MemoryLink {
             "knows": ("Knows", "Known by"),
             "reports_to": ("Reports to", "Manager of"),
             "member_of": ("Member of", "Has members"),
+            "works_at": ("Works at", "Employs"),
         ]
         if let pair = table[type] { return outgoing ? pair.0 : pair.1 }
         let words = type.replacingOccurrences(of: "_", with: " ")
@@ -314,6 +318,8 @@ extension EntityMemoryStore {
         let valid = claims(of: entity.id)
         _ = try? database.write { db in
             try db.execute("DELETE FROM memory_links WHERE from_entity = ? OR to_entity = ?", [entity.id, entity.id])
+            // A page that only records where it was mentioned leaves the list too.
+            try db.execute("UPDATE memory_entities SET sources = '' WHERE id = ?", [entity.id])
         }
         return valid.isEmpty || invalidate(valid, source: source)
     }

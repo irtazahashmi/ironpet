@@ -111,6 +111,10 @@ package final class MemoryIndex: @unchecked Sendable { // `database` serializes 
             ALTER TABLE memory_changes ADD COLUMN node_id TEXT;
             ALTER TABLE memory_changes ADD COLUMN agent_id TEXT;
             """),
+        // Where a page was mentioned, one source per line. Existing pages start with none.
+        .init(601, "memory: the sources that mentioned a page", sql: """
+            ALTER TABLE memory_entities ADD COLUMN sources TEXT NOT NULL DEFAULT '';
+            """),
     ]
 
     package enum Kind: String, CaseIterable, Codable {
