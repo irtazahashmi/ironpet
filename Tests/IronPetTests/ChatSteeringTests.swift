@@ -143,4 +143,61 @@ final class ChatSteeringTests: XCTestCase {
         XCTAssertEqual(session.queue.count, 1)
         XCTAssertTrue(steered.isEmpty)
     }
+
+    private var assistantTexts: [String] {
+        session.items.compactMap { if case .assistant(let text) = $0.kind { text } else { nil } }
+    }
+
+    func testReplyStreamingWhenAMessageIsSentStaysInOneBubbleAboveIt() async {
+        await type("first")
+        deliver[0](.assistant("Its workt"))
+        await type("okay let's build the debt")
+        await waitUntil("the steered message") { userTexts.count == 2 }
+        deliver[0](.assistant("ree is ready."))
+        deliver[0](.finished(error: nil))
+        await settle()
+        XCTAssertEqual(assistantTexts, ["Its worktree is ready."])
+        let kinds = session.items.map { item -> String in
+            switch item.kind { case .user: "user"; case .assistant: "assistant"; default: "other" }
+        }
+        XCTAssertEqual(kinds, ["user", "assistant", "user"])
+    }
+
+    func testSenderIsToldTheWholeReplyWhenItGrewAboveASteeredMessage() async {
+        var events: [ChatSession.TurnEvent] = []
+        session.onTurn = { _, event in events.append(event) }
+        await type("first")
+        let phone = ChatOrigin(client: "ios", ref: "phone-1")
+        deliver[0](.assistant("Its workt"))
+        session.submit("from the phone", from: phone)
+        await waitUntil("the steered message") { userTexts.count == 2 }
+        deliver[0](.assistant("ree is ready."))
+        deliver[0](.finished(error: nil))
+        await settle()
+        XCTAssertTrue(events.contains(.finished("Its worktree is ready.")))
+    }
+
+    func testAToolStepAfterTheMessageStartsANewReplyBelowIt() async {
+        await type("first")
+        deliver[0](.assistant("Looking."))
+        await type("also check the tests")
+        await waitUntil("the steered message") { userTexts.count == 2 }
+        deliver[0](.toolStarted(id: "t1", summary: "Ran swift test"))
+        deliver[0](.assistant("Passed."))
+        XCTAssertEqual(assistantTexts, ["Looking.", "Passed."])
+        XCTAssertEqual(session.items.last.map { if case .assistant = $0.kind { true } else { false } }, true)
+    }
+
+    func testTheNextTurnAfterAFinishedReplyOpensANewReplyBelowTheMessage() async {
+        await type("first")
+        deliver[0](.assistant("Its workt"))
+        await type("second")
+        await waitUntil("the steered message") { userTexts.count == 2 }
+        deliver[0](.finished(error: nil))
+        await settle()
+        await type("third")
+        deliver[1](.assistant("Answer."))
+        XCTAssertEqual(assistantTexts, ["Its workt", "Answer."])
+        XCTAssertEqual(session.items.last.map { if case .assistant = $0.kind { true } else { false } }, true)
+    }
 }
