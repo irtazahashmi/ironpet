@@ -235,6 +235,18 @@ final class ChatViewModel: ObservableObject {
 
     var isRunning: Bool { status.running }
     var runStartedAt: Date? { status.runStartedAt }
+    /// True while a run is going, nothing waits for the user, and the reply is not streaming text right now.
+    var showsTyping: Bool {
+        Self.showsTyping(running: isRunning, lastItem: items.last, hasApprovals: !approvals.isEmpty, hasForms: !forms.isEmpty)
+    }
+
+    /// The dots mean "working, no text coming in". They hide while the newest item is reply text, and come back when a tool or
+    /// command item follows it, until the next text chunk arrives.
+    static func showsTyping(running: Bool, lastItem: ChatItem?, hasApprovals: Bool, hasForms: Bool) -> Bool {
+        guard running, !hasApprovals, !hasForms else { return false }
+        if case .assistant(let text)? = lastItem?.kind, !text.isEmpty { return false }
+        return true
+    }
     var agent: ChatNamedInfo { options.agent }
     var agents: [ChatNamedInfo] { options.agents }
     var models: [ChatModel] { options.models.map { ChatModel(id: $0.id, name: $0.name) } }

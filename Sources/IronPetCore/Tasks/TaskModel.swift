@@ -1,24 +1,11 @@
 import Foundation
-import enum IronPetKit.SharedSymbols
+import IronPetKit
 
 /// Where an inbox item came from. Shown as a symbol in the list.
 package enum TaskSource: String, CaseIterable, Codable {
     case chat, telegram, meeting, automation, cli, agent, user, capture, email, pr
 
-    package var symbol: String {
-        switch self {
-        case .chat: return "bubble.left"
-        case .telegram: return "paperplane"
-        case .meeting: return SharedSymbols.meetings
-        case .automation: return SharedSymbols.automations
-        case .cli: return "terminal"
-        case .agent: return "sparkles"
-        case .user: return "person"
-        case .capture: return "text.viewfinder"
-        case .email: return "envelope"
-        case .pr: return "arrow.triangle.pull"
-        }
-    }
+    package var symbol: String { InboxKinds.symbol(rawValue) }
 
     /// The kinds an agent may name in an item's `origin`. Telegram and the CLI are ways in, not origins.
     package static let originKinds: [TaskSource] = [.chat, .agent, .meeting, .capture, .automation, .email, .pr, .user]
@@ -79,10 +66,12 @@ package struct InboxSource: Equatable, Codable {
         return !ref.isEmpty && ref == other.ref
     }
 
-    /// A url compared without its fragment, a trailing slash or the case of its scheme and host.
+    /// A url compared without a trailing slash, the case of its scheme and host, or a fragment that is only a page anchor. A fragment that
+    /// names something (it has a path or a digit, like Gmail `#inbox/<id>` or GitHub `#issuecomment-<n>`) stays, because it is the only
+    /// part that tells two messages or comments apart.
     package static func normalized(_ url: URL) -> String {
         guard var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return url.absoluteString }
-        parts.fragment = nil
+        if let fragment = parts.fragment, !fragment.contains("/"), !fragment.contains(where: \.isNumber) { parts.fragment = nil }
         parts.scheme = parts.scheme?.lowercased()
         parts.host = parts.host?.lowercased()
         if parts.path.count > 1, parts.path.hasSuffix("/") { parts.path.removeLast() }
@@ -90,20 +79,7 @@ package struct InboxSource: Equatable, Codable {
     }
 
     /// The word on the link button for a source an agent named.
-    package static func displayName(_ kind: TaskSource) -> String {
-        switch kind {
-        case .email: return "Email"
-        case .pr: return "Pull request"
-        case .meeting: return "Meeting"
-        case .capture: return "Screen capture"
-        case .chat: return "Chat"
-        case .automation: return "Watcher"
-        case .telegram: return "Telegram"
-        case .cli: return "CLI"
-        case .agent: return "Agent"
-        case .user: return "You"
-        }
-    }
+    package static func displayName(_ kind: TaskSource) -> String { InboxKinds.title(kind.rawValue) }
 }
 
 /// What happened to one draft an agent or watcher filed.
@@ -137,7 +113,9 @@ package struct SuggestFiling: Equatable {
 
 /// An inbox item that left the list because its source resolved it, with the reason.
 package struct ResolvedSuggestion: Identifiable, Equatable, Codable {
-    package init(id: String, title: String, reason: String, resolved: Date, created: Date, due: String? = nil, sources: [InboxSource] = []) {
+    package init(id: String, title: String, reason: String, resolved: Date, created: Date, due: String? = nil, sources: [InboxSource] = [],
+                 resolvedBy: String? = nil) {
+        self.resolvedBy = resolvedBy
         self.id = id
         self.title = title
         self.reason = reason
@@ -154,6 +132,11 @@ package struct ResolvedSuggestion: Identifiable, Equatable, Codable {
     package var created: Date
     package var due: String?
     package var sources: [InboxSource]
+    /// Who resolved the item: the inbox scan, an automation by its name, or an agent. Nil for an item resolved before this was stored.
+    package var resolvedBy: String?
+
+    /// `resolvedBy`, or "unknown" for an item resolved before the resolver was stored.
+    package var resolverLabel: String { resolvedBy ?? "unknown" }
 }
 
 /// An inbox item: an action item from a meeting summary, or something a watcher automation or an agent found, that waits until the
@@ -374,6 +357,8 @@ package enum TaskValidator {
     package static let maxTitle = 200
     package static let maxNotes = 4096
     package static let maxWaitingOn = 100
+    /// What the error says when a resolve has no reason. A resolve is a claim that something was settled, so it needs the evidence.
+    package static let reasonRequired = "reason is required: say what you checked that settled this item, for example \"PR 398 merged, checked with gh\""
 
     package static func title(_ value: Any?) throws -> String {
         guard let raw = value as? String else { throw TaskError(message: "title must be a string") }

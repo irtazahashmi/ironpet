@@ -2,6 +2,7 @@ import AppKit
 import XCTest
 @testable import IronPet
 @testable import IronPetCore
+import IronPetKit
 
 @MainActor
 final class DictationTests: XCTestCase {
@@ -213,5 +214,64 @@ final class DictationTests: XCTestCase {
     private func waitFor(_ condition: @escaping () -> Bool) async throws {
         for _ in 0..<150 where !condition() { try await Task.sleep(for: .milliseconds(20)) }
         XCTAssertTrue(condition())
+    }
+}
+
+@MainActor
+final class DotMeterDriverTests: XCTestCase {
+    func testHiddenMeterNeverDraws() {
+        let levels = LevelBuffer()
+        let driver = DotMeterDriver(levels: levels, slow: false)
+        for step in 0..<40 {
+            levels.record(Float(step % 5) / 5)
+            levels.tick()
+            driver.poll()
+        }
+        XCTAssertEqual(driver.drawCount, 0)
+    }
+
+    func testSilenceDoesNotDraw() {
+        let levels = LevelBuffer()
+        let driver = DotMeterDriver(levels: levels, slow: false)
+        driver.setVisible(true)
+        driver.poll()
+        let first = driver.drawCount
+        for _ in 0..<200 {
+            levels.tick()
+            driver.poll()
+        }
+        XCTAssertEqual(driver.drawCount, first)
+        driver.setVisible(false)
+    }
+
+    func testChangingLevelsDrawAtMostTwentyTimesASecond() {
+        // A fixed stream of changing levels: 25 ticks a second for 10 s, polled at the live interval.
+        let levels = LevelBuffer()
+        let driver = DotMeterDriver(levels: levels, slow: false)
+        driver.setVisible(true)
+        let seconds = 10.0
+        var now = 0.0
+        var nextTick = 0.0
+        var ticks = 0
+        while now < seconds {
+            if now >= nextTick {
+                levels.record(ticks.isMultiple(of: 2) ? 0.9 : 0.2)
+                levels.tick()
+                ticks += 1
+                nextTick += LevelBuffer.tickInterval
+            }
+            driver.poll()
+            now += DotMeterDriver.liveInterval
+        }
+        XCTAssertGreaterThan(driver.drawCount, 0)
+        XCTAssertLessThanOrEqual(Double(driver.drawCount) / seconds, 20.5)
+        driver.setVisible(false)
+    }
+
+    func testReduceMotionAndPausedUseSlowPath() {
+        XCTAssertEqual(DotMeterDriver.interval(slow: true, quietFor: 0), DotMeterDriver.slowInterval)
+        XCTAssertEqual(DotMeterDriver.interval(slow: false, quietFor: 10), DotMeterDriver.slowInterval)
+        XCTAssertEqual(DotMeterDriver.interval(slow: false, quietFor: 0), DotMeterDriver.liveInterval)
+        XCTAssertLessThan(DotMeterDriver.liveInterval, DotMeterDriver.slowInterval)
     }
 }

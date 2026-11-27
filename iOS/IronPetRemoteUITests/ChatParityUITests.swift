@@ -66,9 +66,9 @@ final class ChatParityUITests: XCTestCase {
 
     private func openChat() {
         let tab = app.tabBars.buttons["Chat"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        XCTAssertTrue(tab.appears(timeout: 20))
         tab.tap()
-        XCTAssertTrue(app.textViews["chat-input"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.textViews["chat-input"].appears(timeout: 20))
     }
 
     /// The bubble of a message that waits for the connection. Its accessibility value says so, and the clock glyph is hidden from VoiceOver.
@@ -109,20 +109,20 @@ final class ChatParityUITests: XCTestCase {
         pair()
         openChat()
         // The chat opens at its newest message: the error row, the long message and its "Show more".
-        XCTAssertTrue(any("f-error").exists || app.staticTexts["The agent stopped: it could not reach the model."].waitForExistence(timeout: 20))
+        XCTAssertTrue(any("f-error").exists || app.staticTexts["The agent stopped: it could not reach the model."].appears(timeout: 20))
         attach("parity-bottom-\(name)")
 
         let toggle = any("collapse-toggle-f-long")
-        XCTAssertTrue(toggle.waitForExistence(timeout: 10), "a long message collapses and offers Show more")
+        XCTAssertTrue(toggle.appears(timeout: 10), "a long message collapses and offers Show more")
         XCTAssertTrue(toggle.label.hasPrefix("Show more"))
         let preview = any("bubble-f-long").label
         XCTAssertLessThan(preview.count, ChatMessageCollapse.maxCharacters, "the collapsed bubble holds only the start of the message")
         toggle.tap()
-        XCTAssertTrue(app.buttons["Show less"].waitForExistence(timeout: 5), "a tap expands it")
+        XCTAssertTrue(app.buttons["Show less"].appears(timeout: 5), "a tap expands it")
         XCTAssertGreaterThan(any("bubble-f-long").label.count, ChatMessageCollapse.maxCharacters)
         attach("parity-long-expanded-\(name)")
         app.buttons["Show less"].tap()
-        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Show more'")).firstMatch.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons.matching(NSPredicate(format: "label BEGINSWITH 'Show more'")).firstMatch.appears(timeout: 5))
 
         // The notice row: one muted line, and a tap shows the rest.
         let notice = any("notice-label")
@@ -130,7 +130,7 @@ final class ChatParityUITests: XCTestCase {
         XCTAssertTrue(notice.isHittable)
         XCTAssertFalse(any("notice-detail").exists)
         notice.tap()
-        XCTAssertTrue(any("notice-detail").waitForExistence(timeout: 5))
+        XCTAssertTrue(any("notice-detail").appears(timeout: 5))
         attach("parity-notice-\(name)")
 
         // The reply: heading, list, table, code block and quote.
@@ -145,7 +145,7 @@ final class ChatParityUITests: XCTestCase {
         XCTAssertTrue(steps.isHittable)
         XCTAssertTrue(steps.label.contains("Ran 1 command"), "the folded line counts the steps: \(steps.label)")
         steps.tap()
-        XCTAssertTrue(any("tool-step-f-t3").waitForExistence(timeout: 5))
+        XCTAssertTrue(any("tool-step-f-t3").appears(timeout: 5))
         attach("parity-tools-\(name)")
     }
 
@@ -155,18 +155,17 @@ final class ChatParityUITests: XCTestCase {
         server.chat.runStarted = Date().addingTimeInterval(-9)
         pair()
         openChat()
-        XCTAssertTrue(any("bubble-old-30").waitForExistence(timeout: 20))
+        XCTAssertTrue(any("bubble-old-30").appears(timeout: 20))
         // The Mac announces a turn with chat.state, then streams chat.item events.
         server.chat.running = true
         server.chat.state = "running"
         server.publish(RemoteEvent.chatState)
         server.streamChunk(item: "m-stream", "First words. ")
-        XCTAssertTrue(any("stop-button").waitForExistence(timeout: 10), "Stop shows while the turn runs")
-        XCTAssertTrue(any("running-row").waitForExistence(timeout: 10), "the working row shows under the reply")
-        XCTAssertTrue(any("elapsed").waitForExistence(timeout: 10))
+        XCTAssertTrue(any("stop-button").appears(timeout: 10), "Stop shows while the turn runs")
+        XCTAssertTrue(any("running-row").vanishes(timeout: 10), "the working row hides while reply text streams")
         for index in 1...40 { server.streamChunk(item: "m-stream", "word\(index) ") }
         let bubble = any("bubble-m-stream")
-        XCTAssertTrue(bubble.waitForExistence(timeout: 10))
+        XCTAssertTrue(bubble.appears(timeout: 10))
         // The bubble exists after the first chunk. The other 40 are still on their way, so wait for the last one.
         let grew = XCTNSPredicateExpectation(predicate: NSPredicate(format: "label CONTAINS 'word40'"), object: bubble)
         XCTAssertEqual(XCTWaiter().wait(for: [grew], timeout: 10), .completed, "the reply grew in place: \(bubble.label)")
@@ -179,15 +178,15 @@ final class ChatParityUITests: XCTestCase {
         transcript.swipeDown(velocity: .fast)
         XCTAssertFalse(bubble.isHittable)
         for index in 41...80 { server.streamChunk(item: "m-stream", "word\(index) ") }
-        XCTAssertTrue(jump.waitForExistence(timeout: 10), "new text below a reader who scrolled up shows Jump to latest")
+        XCTAssertTrue(jump.appears(timeout: 10), "new text below a reader who scrolled up shows Jump to latest")
         XCTAssertFalse(bubble.isHittable, "the transcript stays where the reader left it")
         attach("stream-scrolled-up")
         jump.tap()
-        XCTAssertTrue(jump.waitForNonExistence(timeout: 5))
+        XCTAssertTrue(jump.vanishes(timeout: 5))
         XCTAssertTrue(bubble.isHittable)
         server.finishTurn()
-        XCTAssertTrue(any("stop-button").waitForNonExistence(timeout: 10))
-        XCTAssertTrue(any("running-row").waitForNonExistence(timeout: 10))
+        XCTAssertTrue(any("stop-button").vanishes(timeout: 10))
+        XCTAssertTrue(any("running-row").vanishes(timeout: 10))
     }
 
     // An automation row above a "Ran N commands" row sit on one leading edge, with the same height and chevron column.
@@ -202,19 +201,19 @@ final class ChatParityUITests: XCTestCase {
         openChat()
         let notice = any("notice-label")
         let tools = any("tool-steps-r-t1")
-        XCTAssertTrue(notice.waitForExistence(timeout: 20))
+        XCTAssertTrue(notice.appears(timeout: 20))
         XCTAssertTrue(tools.exists)
         XCTAssertEqual(notice.frame.minX, tools.frame.minX, accuracy: 0.5, "same leading edge")
         XCTAssertEqual(notice.frame.height, tools.frame.height, accuracy: 0.5, "same row height")
         attach("rows-closed-\(dark ? "dark" : "light")")
         notice.tap()
         tools.tap()
-        XCTAssertTrue(any("notice-detail").waitForExistence(timeout: 5))
-        XCTAssertTrue(any("tool-step-r-t1").waitForExistence(timeout: 5))
+        XCTAssertTrue(any("notice-detail").appears(timeout: 5))
+        XCTAssertTrue(any("tool-step-r-t1").appears(timeout: 5))
         attach("rows-open-\(dark ? "dark" : "light")")
         // Closing again restores the same height.
         notice.tap()
-        XCTAssertFalse(any("notice-detail").waitForExistence(timeout: 2))
+        XCTAssertFalse(any("notice-detail").appears(timeout: 2))
     }
 
     // S5
@@ -224,12 +223,12 @@ final class ChatParityUITests: XCTestCase {
         server.chat.state = "failed"
         pair()
         openChat()
-        XCTAssertTrue(app.staticTexts["The agent stopped: it could not reach the model."].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.staticTexts["The agent stopped: it could not reach the model."].appears(timeout: 20))
         // The session line moved into the More menu.
         let more = app.buttons["chat-more-button"]
-        XCTAssertTrue(more.waitForExistence(timeout: 10))
+        XCTAssertTrue(more.appears(timeout: 10))
         more.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
-        XCTAssertTrue(any("chat-subtitle").waitForExistence(timeout: 5))
+        XCTAssertTrue(any("chat-subtitle").appears(timeout: 5))
         XCTAssertTrue(any("chat-subtitle").label.contains("Failed"))
         app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         attach("error-reply")
@@ -239,7 +238,7 @@ final class ChatParityUITests: XCTestCase {
         input.tap()
         input.typeText("hello?")
         app.buttons["send-button"].tap()
-        XCTAssertTrue(waitingBubble().waitForExistence(timeout: 20), "an unreachable Mac leaves the message waiting on its row")
+        XCTAssertTrue(waitingBubble().appears(timeout: 20), "an unreachable Mac leaves the message waiting on its row")
         XCTAssertFalse(any("chat-error").exists, "no banner for a failed send")
         XCTAssertFalse(any("chat-connection-lost").exists)
         attach("connection-lost")

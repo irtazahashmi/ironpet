@@ -24,22 +24,22 @@ final class BackgroundUITests: XCTestCase {
         app.launch()
         app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
-        XCTAssertTrue(app.tabBars.buttons["Chat"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.tabBars.buttons["Chat"].appears(timeout: 20))
     }
 
     private func any(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id] }
 
     private func openChat() {
         app.tabBars.buttons["Chat"].tap()
-        XCTAssertTrue(app.textViews["chat-input"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.textViews["chat-input"].appears(timeout: 20))
     }
 
     private func openSettings() {
         app.tabBars.buttons["More"].tap()
         let row = app.buttons["more-settings"]
-        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        XCTAssertTrue(row.appears(timeout: 10))
         row.tap()
-        XCTAssertTrue(app.switches["reminders-paused"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.switches["reminders-paused"].appears(timeout: 20))
         reveal("background-default")
     }
 
@@ -80,10 +80,10 @@ final class BackgroundUITests: XCTestCase {
     func testABuiltInPickedOnTheMacShowsInTheChatWithoutReopeningIt() {
         pair()
         openChat()
-        XCTAssertTrue(any("chat-background-default").waitForExistence(timeout: 20))
+        XCTAssertTrue(any("chat-background-default").appears(timeout: 20))
         server.pet = RemotePet(name: "Ghost", mood: "idle", badge: 0, tricks: [], background: "paws")
         server.publish(RemoteEvent.settingsChanged)
-        XCTAssertTrue(any("chat-background-paws").waitForExistence(timeout: 10), "the push is enough, the chat stays open")
+        XCTAssertTrue(any("chat-background-paws").appears(timeout: 10), "the push is enough, the chat stays open")
     }
 
     // S2
@@ -91,7 +91,7 @@ final class BackgroundUITests: XCTestCase {
         let hash = server.setBackgroundImage(Self.photo())
         pair()
         openChat()
-        XCTAssertTrue(any("chat-background-custom").waitForExistence(timeout: 20))
+        XCTAssertTrue(any("chat-background-custom").appears(timeout: 20))
         waitFor("the image is downloaded by its hash") { self.server.requests.contains { $0.path == "/v1/assets/\(hash)" } }
         let fetch = server.requests.first { $0.path == "/v1/assets/\(hash)" }
         XCTAssertEqual(fetch?.headers["authorization"], "Bearer \(server.token)")
@@ -105,12 +105,12 @@ final class BackgroundUITests: XCTestCase {
         reveal("background-paws")
         any("background-paws").tap()
         waitFor("the phone patches the Mac's chat.background") { self.server.config.chat.background == "paws" }
-        XCTAssertTrue(any("screen-background-paws").waitForExistence(timeout: 10), "the settings screen draws it too")
+        XCTAssertTrue(any("screen-background-paws").appears(timeout: 10), "the settings screen draws it too")
         XCTAssertTrue(any("background-paws").isSelected, "the chosen background is marked selected")
         attach("settings-paws-\(dark ? "dark" : "light")")
         app.navigationBars.buttons.element(boundBy: 0).tap()
         openChat()
-        XCTAssertTrue(any("chat-background-paws").waitForExistence(timeout: 10))
+        XCTAssertTrue(any("chat-background-paws").appears(timeout: 10))
     }
 
     // S4
@@ -125,8 +125,8 @@ final class BackgroundUITests: XCTestCase {
         XCTAssertLessThanOrEqual(upload?.body.count ?? .max, 20 << 20)
         XCTAssertEqual(upload?.headers["authorization"], "Bearer \(server.token)")
         XCTAssertEqual(server.config.chat.background, "custom")
-        XCTAssertTrue(any("screen-background-custom").waitForExistence(timeout: 20), "the custom image is drawn once the phone has fetched it")
-        XCTAssertTrue(any("background-custom").waitForExistence(timeout: 10))
+        XCTAssertTrue(any("screen-background-custom").appears(timeout: 20), "the custom image is drawn once the phone has fetched it")
+        XCTAssertTrue(any("background-custom").appears(timeout: 10))
         attach("settings-custom-\(dark ? "dark" : "light")")
     }
 
@@ -135,7 +135,7 @@ final class BackgroundUITests: XCTestCase {
         server.pet = RemotePet(name: "Ghost", mood: "idle", badge: 0, tricks: [], background: "paws")
         pair()
         openChat()
-        XCTAssertTrue(any("chat-background-paws").waitForExistence(timeout: 20))
+        XCTAssertTrue(any("chat-background-paws").appears(timeout: 20))
         attach("chat-paws-\(dark ? "dark" : "light")")
     }
 
@@ -144,7 +144,7 @@ final class BackgroundUITests: XCTestCase {
         server.pet = RemotePet(name: "Ghost", mood: "idle", badge: 0, tricks: [], background: "chatter")
         pair()
         openChat()
-        XCTAssertTrue(any("chat-background-chatter").waitForExistence(timeout: 20))
+        XCTAssertTrue(any("chat-background-chatter").appears(timeout: 20))
         attach("chat-chatter-dark")
     }
 
@@ -153,10 +153,10 @@ final class BackgroundUITests: XCTestCase {
         server.pet = RemotePet(name: "Ghost", mood: "idle", badge: 0, tricks: [], background: "paws")
         pair()
         openChat()
-        XCTAssertTrue(any("chat-background-paws").waitForExistence(timeout: 20))
+        XCTAssertTrue(any("chat-background-paws").appears(timeout: 20))
         attach("chat-paws-dark")
         app.tabBars.buttons["More"].tap()
-        XCTAssertTrue(any("screen-background-paws").waitForExistence(timeout: 10))
+        XCTAssertTrue(any("screen-background-paws").appears(timeout: 10))
         attach("more-paws-dark")
     }
 
@@ -181,11 +181,11 @@ final class BackgroundUITests: XCTestCase {
         pair()
         for tab in ["Pet", "Inbox", "Agents", "More"] {
             app.tabBars.buttons[tab].tap()
-            XCTAssertTrue(any("screen-background-chatter").waitForExistence(timeout: 10), "\(tab) shows the background")
+            XCTAssertTrue(any("screen-background-chatter").appears(timeout: 10), "\(tab) shows the background")
             attach("tab-\(tab)")
         }
         openChat()
-        XCTAssertTrue(any("chat-background-chatter").waitForExistence(timeout: 10))
+        XCTAssertTrue(any("chat-background-chatter").appears(timeout: 10))
         attach("tab-Chat")
     }
 
@@ -194,9 +194,9 @@ final class BackgroundUITests: XCTestCase {
         pair()
         app.tabBars.buttons["More"].tap()
         let link = app.buttons[row]
-        XCTAssertTrue(link.waitForExistence(timeout: 10), "\(row) is listed under More")
+        XCTAssertTrue(link.appears(timeout: 10), "\(row) is listed under More")
         link.tap()
-        XCTAssertTrue(any("screen-background-chatter").waitForExistence(timeout: 10), "\(row) shows the background")
+        XCTAssertTrue(any("screen-background-chatter").appears(timeout: 10), "\(row) shows the background")
         attach(row)
     }
 

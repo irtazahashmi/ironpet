@@ -26,6 +26,8 @@ package enum MemoryCleanup {
             case merge(pages: [String], into: String)
             /// Deletes a page.
             case delete(page: String)
+            /// Merges near-duplicate notes on one page into one note with `text`. The merged notes stay in the page's history.
+            case mergeNotes(page: String, claims: [Int64], text: String)
         }
 
         /// Stable across runs, so a skipped proposal is recognised again.
@@ -83,7 +85,7 @@ package enum MemoryCleanup {
 
     /// Runs the cleanup: what the checks find, plus the model's answer for each batch of notes. Nothing is changed.
     package static func propose(in store: EntityMemoryStore, classify: Classifier? = nil) async -> Run {
-        var proposals = mergeProposals(in: store) + deleteProposals(in: store)
+        var proposals = mergeProposals(in: store) + deleteProposals(in: store) + duplicateNoteProposals(in: store)
         var failed = false
         if let classify {
             let entities = store.entities()
@@ -223,6 +225,25 @@ package enum MemoryCleanup {
         }
     }
 
+    /// Notes on one page that say the same fact in other words (`NearDuplicate`), one proposal for each group. The merged note keeps the
+    /// longest wording, the merged sources, and today's date. Pinned notes are left out.
+    private static func duplicateNoteProposals(in store: EntityMemoryStore) -> [Proposal] {
+        var proposals: [Proposal] = []
+        for page in store.entities() {
+            let claims = store.claims(of: page.id).filter { !$0.pinned }
+            for group in NearDuplicate.groups(claims.map(\.text)) {
+                let members = group.map { claims[$0] }
+                guard let longest = members.max(by: { $0.text.count < $1.text.count }) else { continue }
+                let ids = members.map(\.id).sorted()
+                proposals.append(Proposal(id: "notes:\(page.id):" + ids.map(String.init).joined(separator: "+"),
+                                          title: "Merge \(members.count) similar notes on \(page.name)",
+                                          detail: "They say the same thing in different words. Keeps \"\(longest.text)\".",
+                                          action: .mergeNotes(page: page.id, claims: ids, text: longest.text), createsPage: false))
+            }
+        }
+        return proposals
+    }
+
     /// Pages to delete: a work item that holds facts or none, and a page with no fact, no link, no mention and no history. An empty page
     /// whose name is a variant of another page is a merge instead (`mergeProposals`).
     private static func deleteProposals(in store: EntityMemoryStore) -> [Proposal] {
@@ -281,6 +302,11 @@ package enum MemoryCleanup {
         case .merge(let pages, let into):
             switch store.mergePages(pages, into: into) {
             case .success(let merged): return .success("Merged \(merged.merged.count) page\(merged.merged.count == 1 ? "" : "s") into \(merged.kept.name).")
+            case .failure(let failure): return .failure(failure)
+            }
+        case .mergeNotes(let page, let claims, let text):
+            switch store.merge(page, replacing: claims, with: text, source: source) {
+            case .success: return .success("Merged \(claims.count) notes into one.")
             case .failure(let failure): return .failure(failure)
             }
         case .delete(let page):

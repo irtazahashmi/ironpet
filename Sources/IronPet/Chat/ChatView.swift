@@ -356,7 +356,7 @@ struct ChatView: View {
                     ForEach(groupedItems, id: \.id) { group in
                         groupView(group, highlights: highlights).id(group.id).trackVisible(group.id, in: visibleRows) { checkBlank(proxy) }
                     }
-                    if session.isRunning, session.approvals.isEmpty, session.forms.isEmpty {
+                    if session.showsTyping {
                         TypingIndicator(started: session.runStartedAt).id("typing").trackVisible("typing", in: visibleRows) { checkBlank(proxy) }
                     }
                     ForEach(session.approvals) { approval in approvalCard(approval).id(approval.id).trackVisible(approval.id, in: visibleRows) { checkBlank(proxy) } }

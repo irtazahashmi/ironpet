@@ -28,15 +28,18 @@ package struct RemoveSuggestionRequest: Codable, Equatable {
     package var note: String?
 }
 
-/// Takes an inbox item off the list because its source settled it. `id` is the item's id, or the id the agent added it under.
+/// Takes an inbox item off the list because its source settled it. `id` is the item's id, or the id the agent added it under. `reason`
+/// is the evidence and must not be empty. `by` names who resolved it, such as an automation's name or an agent; it is stored and shown.
 package struct ResolveSuggestionRequest: Codable, Equatable {
-    package init(id: String, reason: String) {
+    package init(id: String, reason: String, by: String? = nil) {
         self.id = id
         self.reason = reason
+        self.by = by
     }
 
     package var id: String
     package var reason: String
+    package var by: String?
 }
 
 /// The inbox: items waiting for the user to mark them done or remove them. The one way a client reads or changes them.
@@ -88,8 +91,14 @@ package final class TasksAPI {
             guard let item = store.item(named: request.id, scopes: store.agentScopes) else {
                 throw TaskError(message: "no inbox item \"\(request.id)\"")
             }
-            return try store.resolve(item.id, reason: request.reason)
+            return try store.resolve(item.id, reason: request.reason, by: request.by ?? "API client")
         }
+    }
+
+    /// The items resolved since local midnight, newest first.
+    package func resolvedToday(now: Date = Date(), calendar: Calendar = .current) -> [ResolvedSuggestion] {
+        let start = calendar.startOfDay(for: now)
+        return store.resolved().filter { $0.resolved >= start }
     }
 
     /// The notes on an item, oldest first.

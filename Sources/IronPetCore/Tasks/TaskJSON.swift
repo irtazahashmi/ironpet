@@ -54,7 +54,7 @@ package enum TaskJSON {
     package static func json(_ r: ResolvedSuggestion) -> [String: Any] {
         let time = ISO8601DateFormatter()
         var object: [String: Any] = ["id": r.id, "title": r.title, "reason": r.reason, "resolved": time.string(from: r.resolved),
-                                     "created": time.string(from: r.created), "sources": r.sources.map(json)]
+                                     "resolved_by": r.resolverLabel, "created": time.string(from: r.created), "sources": r.sources.map(json)]
         if let due = r.due { object["due"] = due }
         return object
     }
@@ -81,6 +81,18 @@ package enum TaskJSON {
     /// The origin the CLI gives an item it adds, so it goes through the same path as an agent's `inbox_add`.
     private static func cliOrigin() -> (kind: TaskSource, ref: String) {
         (.cli, TaskRef.text(["ref": "cli", "reason": "Added with IronPet inbox add"]) ?? "")
+    }
+
+    /// Who a resolve is recorded under. The caller names itself in `resolved_by` (an automation's name, the name of the agent). Without
+    /// a name the record says how the call arrived. The name is a claim by the caller and is shown as it was given.
+    package static func resolver(_ named: Any?, by: String) -> String {
+        if let name = (named as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !name.isEmpty { return name }
+        switch by {
+        case "cli": return "CLI"
+        case "iphone": return "iPhone"
+        case "agent:mcp": return "Agent"
+        default: return by
+        }
     }
 
     /// One entry for the MCP tools (`inbox_<op>`) and tests. Arguments are JSON objects; results are JSON values.
@@ -133,8 +145,8 @@ package enum TaskJSON {
                 return .success(["noted": id, "item": detail(item, api: api)])
             case "resolve":
                 guard let name = args["id"] as? String else { throw TaskError(message: "id is required") }
-                guard let reason = args["reason"] as? String else { throw TaskError(message: "reason is required, for example \"answered\"") }
-                let record = try api.resolve(ResolveSuggestionRequest(id: name, reason: reason))
+                guard let reason = args["reason"] as? String else { throw TaskError(message: TaskValidator.reasonRequired) }
+                let record = try api.resolve(ResolveSuggestionRequest(id: name, reason: reason, by: resolver(args["resolved_by"], by: by)))
                 return .success(["resolved": json(record)])
             case "done":
                 guard let id = args["id"] as? String else { throw TaskError(message: "id is required") }

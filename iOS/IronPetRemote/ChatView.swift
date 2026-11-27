@@ -194,7 +194,7 @@ private struct Transcript: View {
         if newBelow != tracker.state.newBelow { newBelow = tracker.state.newBelow }
     }
 
-    private var showsTyping: Bool { (model.running || model.awaitingReply) && model.approvals.isEmpty && model.forms.isEmpty }
+    private var showsTyping: Bool { model.showsTyping }
 
     var body: some View {
         ScrollViewReader { proxy in

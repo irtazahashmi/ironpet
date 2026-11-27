@@ -172,7 +172,7 @@ struct MainTabs: View {
                      petName: chats.currentRecord.flatMap { $0.isDefault ? nil : $0.displayName } ?? pet.pet?.name ?? "", agents: chats)
                 .id(chats.current.agentId ?? defaultAgentID)
                 .tabItem { Label("Chat", systemImage: AppTab.chat.symbol) }.badge(chats.waitingCount).tag(AppTab.chat)
-            InboxView(model: inbox)
+            InboxView(model: inbox, onShowChat: { tab = .chat })
                 .tabItem { Label("Inbox", systemImage: AppTab.tasks.symbol) }.tag(AppTab.tasks)
             if tracksAgents {
                 AgentsView(model: agents)

@@ -188,7 +188,7 @@ package final class EntityMemoryStore: MemoryStore {
     // MARK: Writing
 
     package func replace(_ replacing: [String], with raw: String, scope: MemoryScope, person: String? = nil, project: ProjectKey? = nil,
-                         entity: String? = nil, source: String) -> Result<MemoryNote, MemoryError> {
+                         entity: String? = nil, source: String, reason: String? = nil, changeSource: String? = nil) -> Result<MemoryNote, MemoryError> {
         let text: String
         switch MemoryNote.clean(raw) {
         case .success(let cleaned): text = cleaned
@@ -203,11 +203,14 @@ package final class EntityMemoryStore: MemoryStore {
         let day = MemoryNote.day(at, calendar: calendar)
         let key = MemoryNote.normalized(text)
         let old = Set(replacing.map(MemoryNote.normalized).filter { !$0.isEmpty && $0 != key })
+        // A claim is named by its text or by its `claim_` ref, which the digest prompt lists.
+        let refs = Set(replacing.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { $0.hasPrefix("claim_") })
+        let reason = MemoryNote.cleanReason(reason)
         let outcome: Result<Written, MemoryError>
         do {
             outcome = try database.write { db -> Result<Written, MemoryError> in
                 let valid = try Self.claims(db, where: "entity = ? AND invalid_at IS NULL", [target.id])
-                let removed = valid.filter { !$0.pinned && old.contains(MemoryNote.normalized($0.text)) }
+                let removed = valid.filter { !$0.pinned && (old.contains(MemoryNote.normalized($0.text)) || refs.contains($0.ref.lowercased())) }
                 // Refused before anything is written, so a refusal leaves no page, mention or claim behind.
                 guard removed.count <= MemoryNote.maxForget else {
                     return .failure(MemoryError(message: "a note may replace at most \(MemoryNote.maxForget) others; \(removed.count) match"))
@@ -224,6 +227,19 @@ package final class EntityMemoryStore: MemoryStore {
                         try db.execute("UPDATE memory_claims SET invalid_at = ? WHERE id = ?", [at.timeIntervalSince1970, stale.id])
                     }
                     return .success(Written(claim: same.id, removed: removed, note: MemoryNote(text: same.text, date: day, source: source),
+                                            target: target, bumped: true))
+                }
+                // The same fact in other words: the claim already on this page moves to today and gains the source, and its text stays. Only
+                // valid, unpinned claims that this call does not replace count, so a pinned note is never touched.
+                let replacedIDs = Set(removed.map(\.id))
+                let candidates = valid.filter { !$0.pinned && !replacedIDs.contains($0.id) }
+                if let near = NearDuplicate.best(for: text, in: candidates, text: \.text) {
+                    try db.execute("UPDATE memory_claims SET date = ?, sources = ? WHERE id = ?",
+                                   [day, Self.joined(Self.merged(near.sources, [source])), near.id])
+                    for stale in removed {
+                        try db.execute("UPDATE memory_claims SET invalid_at = ? WHERE id = ?", [at.timeIntervalSince1970, stale.id])
+                    }
+                    return .success(Written(claim: near.id, removed: removed, note: MemoryNote(text: near.text, date: day, source: source),
                                             target: target, bumped: true))
                 }
                 try db.execute("INSERT INTO memory_claims(entity, text, date, sources, invalid_at, pinned, ref, node_id, agent_id) VALUES(?, ?, ?, ?, NULL, 0, ?, ?, ?)",
@@ -246,13 +262,13 @@ package final class EntityMemoryStore: MemoryStore {
                 // The same fact again is not a change, but each older claim it removed is logged as a forget, so Undo can bring it back.
                 for stale in written.removed {
                     index.record(at: at, file: written.target.id, section: written.target.person, action: .forgot, note: stale.note.line,
-                                 previous: String(stale.id), source: source, claim: stale.id)
+                                 previous: String(stale.id), source: changeSource ?? source, claim: stale.id, reason: reason)
                     index.removeClaim(stale.id)
                 }
             } else {
                 let previous = written.removed.isEmpty ? nil : Self.joined(written.removed.map { String($0.id) })
                 index.record(at: at, file: written.target.id, section: written.target.person, action: written.removed.isEmpty ? .added : .replaced,
-                             note: written.note.line, previous: previous, source: source, claim: written.claim)
+                             note: written.note.line, previous: previous, source: changeSource ?? source, claim: written.claim, reason: reason)
                 index.indexClaim(written.claim, title: Self.title(written.target), text: written.note.text, at: at)
                 written.removed.forEach { index.removeClaim($0.id) }
             }
@@ -771,6 +787,31 @@ package final class EntityMemoryStore: MemoryStore {
         }
     }
 
+    /// The notes of the organization, topic, tool and project pages whose name or alias the text names, so the digest agent can put a
+    /// restated note's exact text in `replaces`. `excluding` is a page the caller already sends. Each page gets at most `bytes / 2`
+    /// and the pages together at most `bytes`; a page with no note is left out.
+    package func namedPageNotes(naming message: String, excluding: String? = nil, bytes: Int) -> [(page: String, notes: String)] {
+        let text = message.lowercased()
+        let words = Set(text.split { !$0.isLetter && !$0.isNumber && $0 != "-" && $0 != "'" }.map(String.init))
+        func names(_ page: MemoryEntity) -> Bool {
+            ([page.name] + page.aliases).contains { name in
+                let lower = name.lowercased()
+                guard lower.count >= 3 else { return false }
+                return lower.contains(" ") ? text.contains(lower) : words.contains(lower)
+            }
+        }
+        var left = bytes
+        var result: [(page: String, notes: String)] = []
+        for page in entities() where [.org, .topic, .tool, .project].contains(page.type) && page.id != excluding && names(page) {
+            guard left > 0 else { break }
+            let notes = Self.budget(self.notes(of: page.id), bytes: min(left, bytes / 2), grouped: false)
+            guard !notes.isEmpty else { continue }
+            result.append((page: "\(page.type.rawValue) \(page.name)", notes: notes))
+            left -= notes.utf8.count
+        }
+        return result
+    }
+
     package func location(_ scope: MemoryScope, project: ProjectKey?, entity: String? = nil) -> String? {
         switch scope {
         case .me: return "me"
@@ -1021,7 +1062,7 @@ package final class EntityMemoryStore: MemoryStore {
     /// The id of a page made from a name: `project:ironpet`, `org:acme`. A project found by its repo has `project:<repo key>` instead.
     private static func namedID(_ type: EntityType, _ name: String) -> String { type.rawValue + ":" + EntityMatcher.normalize(name) }
 
-    private static func projectID(_ project: ProjectKey) -> String { "project:" + project.key }
+    package static func projectID(_ project: ProjectKey) -> String { "project:" + project.key }
 
     private static func title(_ target: Target) -> String {
         switch target.type {

@@ -242,6 +242,17 @@ final class ChatModel: SocketModel {
     private(set) var seenFailures: Set<String> = []
     var capsule: BackgroundCapsule { .make(states: background.map { ($0.id, $0.state) }, seenFailures: seenFailures) }
     var running: Bool { snapshot?.running ?? false }
+    /// The dots mean "working, no text coming in". They show while a run goes or a sent message waits, and hide while the newest
+    /// item is reply text. A tool or command item after the text brings them back until the next text chunk arrives.
+    var showsTyping: Bool {
+        Self.showsTyping(running: running || awaitingReply, last: displayItems.last, hasApprovals: !approvals.isEmpty, hasForms: !forms.isEmpty)
+    }
+
+    static func showsTyping(running: Bool, last: RemoteChatItem?, hasApprovals: Bool, hasForms: Bool) -> Bool {
+        guard running, !hasApprovals, !hasForms else { return false }
+        if let last, last.kind == "assistant", last.text?.isEmpty == false { return false }
+        return true
+    }
     var title: String { snapshot?.title ?? "Chat" }
 
     /// "Claude Code · demo-app · Working", for the header.

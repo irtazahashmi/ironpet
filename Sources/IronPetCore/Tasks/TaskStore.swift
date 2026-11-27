@@ -206,6 +206,12 @@ package final class TaskStore {
         .init(593, "inbox: scan cursors", sql: """
             CREATE TABLE IF NOT EXISTS inbox_scan_cursors(key TEXT PRIMARY KEY, item TEXT NOT NULL, at REAL NOT NULL) WITHOUT ROWID;
             """),
+        // Who resolved an item. Items resolved before this keep the column empty, and the Inbox says the resolver is unknown.
+        .init(594, "inbox: who resolved an item") { db in
+            if try !TaskStore.columns(db, "task_suggestion_resolved").contains("resolved_by") {
+                try db.execute("ALTER TABLE task_suggestion_resolved ADD COLUMN resolved_by TEXT")
+            }
+        },
     ]
 
     /// Where the inbox scan stopped in `key` (a chat's id, or `screen`), or nil when it has not read it.
@@ -357,6 +363,7 @@ package final class TaskStore {
             // 2. The caller named an existing item, or the url is one an item already has: add a source to it.
             if scope != nil {
                 var target: TaskSuggestion?
+                var byURL = false
                 if let named = draft.sameAs?.trimmingCharacters(in: .whitespacesAndNewlines), !named.isEmpty {
                     guard let found = items.first(where: { $0.id == named }) ?? self.itemForKey(named, scope: scope, items: items, pending: pendingKeys) else {
                         filings.append(SuggestFiling(change: .ignored("same_as \"\(named)\" is not an item in the inbox. It may have been done, removed or resolved, or the id is wrong. Nothing was added.")))
@@ -365,10 +372,11 @@ package final class TaskStore {
                     target = found
                 } else if let url = draft.url {
                     target = items.first { $0.sources.contains { $0.url.map(InboxSource.normalized) == InboxSource.normalized(url) } }
+                    byURL = true
                 }
                 if let target {
                     var changed = target
-                    _ = Self.apply(draft, source: source, to: &changed, replaceTitle: false)
+                    _ = Self.apply(draft, source: source, to: &changed, replaceTitle: false, keepDue: byURL)
                     replace(changed)
                     if !writes.contains(where: { $0.0.id == changed.id }) { writes.append((changed, false, nil)) }
                     pendingKeys[key] = .some(changed.id)
@@ -439,10 +447,11 @@ package final class TaskStore {
 
     /// Applies a draft to an item the draft is about. Returns whether anything changed. Text the draft leaves out stays as it is, so a
     /// follow-up that only carries a new due date keeps the title and notes. A merge keeps the title and the notes that are there.
-    private static func apply(_ draft: TaskSuggestion.Draft, source: InboxSource, to item: inout TaskSuggestion, replaceTitle: Bool) -> Bool {
+    private static func apply(_ draft: TaskSuggestion.Draft, source: InboxSource, to item: inout TaskSuggestion, replaceTitle: Bool, keepDue: Bool = false) -> Bool {
         let before = item
         if replaceTitle, let title = try? TaskValidator.title(draft.title) { item.title = title }
-        if let due = draft.due { item.due = due }
+        // A merge by url keeps the due date the item has, since the url can match something that only looks the same.
+        if let due = draft.due, !keepDue { item.due = due }
         if !draft.notes.isEmpty, replaceTitle || item.notes.isEmpty { item.notes = draft.notes }
         // An update takes the new page. A merge keeps the page the item has, and the new one is listed as a source.
         if let url = draft.url, replaceTitle || item.url == nil { item.url = url }
@@ -520,20 +529,22 @@ package final class TaskStore {
         removeSuggestion(suggestionID)
     }
 
-    /// Takes an item off the list because its source settled it (the mail was answered, the event passed). The reason is kept in a
-    /// resolved record with the item's title, due date and sources, and the item's id stays ignored like a removed one.
+    /// Takes an item off the list because its source settled it (the mail was answered, the event passed). The reason and the resolver
+    /// `by` are kept in a resolved record with the item's title, due date and sources, and the item's id stays ignored like a removed one.
     @discardableResult
-    package func resolve(_ suggestionID: String, reason: String) throws -> ResolvedSuggestion {
+    package func resolve(_ suggestionID: String, reason: String, by: String) throws -> ResolvedSuggestion {
         guard let item = suggestions.first(where: { $0.id == suggestionID }) else { throw TaskError(message: "no inbox item \"\(suggestionID)\"") }
         let reason = try Self.validReason(reason)
+        let resolver = Self.resolverName(by)
         let record = ResolvedSuggestion(id: item.id, title: item.title, reason: reason, resolved: now(), created: item.created, due: item.due,
-                                        sources: item.sources)
+                                        sources: item.sources, resolvedBy: resolver)
         let sources = String(data: (try? JSONEncoder().encode(item.sources)) ?? Data("[]".utf8), encoding: .utf8) ?? "[]"
         try database.write { db in
             try db.execute("""
-                INSERT INTO task_suggestion_resolved(item, title, due, notes, created, resolved, reason, sources) VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO task_suggestion_resolved(item, title, due, notes, created, resolved, reason, sources, resolved_by)
+                VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """, [item.id, item.title, item.due, item.notes, item.created.timeIntervalSince1970, record.resolved.timeIntervalSince1970,
-                      reason, sources])
+                      reason, sources, resolver])
         }
         removeSuggestion(item.id)
         return record
@@ -542,15 +553,45 @@ package final class TaskStore {
     /// The reason on one line, up to 200 characters.
     package static func validReason(_ value: String) throws -> String {
         let reason = TaskSuggestion.Draft.clean(value, limit: 200, newlines: false)
-        guard !reason.isEmpty else { throw TaskError(message: "reason is required, for example \"answered\"") }
+        guard !reason.isEmpty else { throw TaskError(message: TaskValidator.reasonRequired) }
         return reason
+    }
+
+    /// The resolver's name on one line, up to 60 characters. A blank name is "Agent".
+    package static func resolverName(_ value: String) -> String {
+        let name = TaskSuggestion.Draft.clean(value, limit: 60, newlines: false)
+        return name.isEmpty ? "Agent" : name
+    }
+
+    /// Fills the fields an item lacks: its url, its due date and its notes. A field the item has stays as it is, so a scan that read a
+    /// later message cannot overwrite what the user or another source wrote. A url fills the item's first source too, so the page is
+    /// listed as a source. Returns the item, or nil when it is not in the inbox.
+    @discardableResult
+    package func fill(_ suggestionID: String, url: URL?, due: String?, notes: String?) -> TaskSuggestion? {
+        guard var item = suggestions.first(where: { $0.id == suggestionID }) else { return nil }
+        let before = item
+        if item.url == nil, let url { item.url = url }
+        if item.due == nil, let due { item.due = due }
+        if item.notes.isEmpty, let notes, !notes.isEmpty { item.notes = notes }
+        if let url = item.url, let index = item.sources.indices.first, item.sources[index].url == nil { item.sources[index].url = url }
+        guard item != before else { return item }
+        do {
+            try database.write { db in try Self.update(item, db) }
+        } catch {
+            NSLog("ironpet: could not update an inbox item: \(error.localizedDescription)")
+            return nil
+        }
+        reload()
+        didChange()
+        return item
     }
 
     /// Items that were resolved, newest first.
     package func resolved(limit: Int = 100) -> [ResolvedSuggestion] {
         let rows = (try? database.read { db in
             try db.rows("""
-                SELECT item, title, due, created, resolved, reason, sources FROM task_suggestion_resolved ORDER BY resolved DESC, id DESC LIMIT ?
+                SELECT item, title, due, created, resolved, reason, sources, resolved_by FROM task_suggestion_resolved
+                ORDER BY resolved DESC, id DESC LIMIT ?
                 """, [limit])
         }) ?? []
         return rows.compactMap { row in
@@ -558,7 +599,8 @@ package final class TaskStore {
                   let reason = row[5] as? String else { return nil }
             let sources = (row[6] as? String).flatMap { try? JSONDecoder().decode([InboxSource].self, from: Data($0.utf8)) } ?? []
             return ResolvedSuggestion(id: id, title: title, reason: reason, resolved: Date(timeIntervalSince1970: resolved),
-                                      created: Date(timeIntervalSince1970: created), due: row[2] as? String, sources: sources)
+                                      created: Date(timeIntervalSince1970: created), due: row[2] as? String, sources: sources,
+                                      resolvedBy: (row[7] as? String).flatMap { $0.isEmpty ? nil : $0 })
         }
     }
 

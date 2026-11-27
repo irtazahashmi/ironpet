@@ -58,7 +58,7 @@ final class MemoryPreambleTests: XCTestCase {
     }
 
     func testTheMeBlockStaysWithinItsBudget() throws {
-        for n in 0..<200 { _ = try store.remember("A fairly long note number \(n) about how the user works", scope: .me, source: "chat:a").get() }
+        for n in 0..<200 { _ = try store.remember("A fairly long note number \(n) with topic\(n)a, topic\(n)b, topic\(n)c, topic\(n)d and topic\(n)e", scope: .me, source: "chat:a").get() }
         let text = MemoryPreamble.build(store: store, workspace: workspace, firstMessage: "hi")
         let me = try XCTUnwrap(text.components(separatedBy: "<memory page=\"me\"").last?.components(separatedBy: "</memory>").first)
         XCTAssertLessThanOrEqual(me.utf8.count, MemoryPreamble.budget[.me]! + 200)

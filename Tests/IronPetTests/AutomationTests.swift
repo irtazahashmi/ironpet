@@ -1325,6 +1325,7 @@ final class AutomationScriptEngineTests: AutomationTestCase {
         await rig.engine.pollNow("ci")
         XCTAssertTrue(tasks.suggestions.isEmpty)
         XCTAssertEqual(tasks.resolved().map(\.reason), ["answered"])
+        XCTAssertEqual(tasks.resolved().map(\.resolvedBy), ["CI"], "S4: the record names the automation")
 
         // The watcher lists the same actions on every run. Neither one brings the item back or fails.
         actions = [suggest("2026-12-09"), ["type": "resolve_task", "id": "mail-1", "reason": "answered"]]

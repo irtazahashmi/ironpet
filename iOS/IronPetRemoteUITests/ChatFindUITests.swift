@@ -28,9 +28,9 @@ final class ChatFindUITests: XCTestCase {
         app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         let tab = app.tabBars.buttons["Chat"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        XCTAssertTrue(tab.appears(timeout: 20))
         tab.tap()
-        XCTAssertTrue(app.textViews["chat-input"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.textViews["chat-input"].appears(timeout: 20))
     }
 
     /// "refresh" appears in four messages and five places, with filler between them so the first and the last are not on one screen.
@@ -49,17 +49,17 @@ final class ChatFindUITests: XCTestCase {
     func testSearchingAWordInSeveralMessagesShowsTheCountAndStepsThroughThem() {
         fixture()
         openChat()
-        XCTAssertTrue(app.staticTexts["bubble-m-28"].waitForExistence(timeout: 20) || app.otherElements["bubble-m-28"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["bubble-m-28"].appears(timeout: 20) || app.otherElements["bubble-m-28"].appears(timeout: 5))
         attach("find-1-chat")
 
-        XCTAssertTrue(app.buttons["chat-more-button"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["chat-more-button"].appears(timeout: 20))
         app.buttons["chat-more-button"].coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.5)).tap()
         app.buttons["chat-find-button"].tap()
         let field = app.textFields["find-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        XCTAssertTrue(field.appears(timeout: 10))
         field.typeText("refresh")
         let label = app.staticTexts["find-label"]
-        XCTAssertTrue(label.waitForExistence(timeout: 10))
+        XCTAssertTrue(label.appears(timeout: 10))
         // Five matches, case ignored: m-1, m-2 twice (the bold word and the list item), m-15 and `refreshToken` in m-28.
         expectLabel(label, "1 of 5")
         attach("find-2-first-match")
@@ -75,7 +75,7 @@ final class ChatFindUITests: XCTestCase {
         // Stepping back past the first wraps to the last, which sits at the end of the chat.
         for _ in 0..<2 { app.buttons["find-previous"].tap() }
         expectLabel(label, "5 of 5")
-        XCTAssertTrue(app.otherElements["bubble-m-28"].waitForExistence(timeout: 5) || app.staticTexts["bubble-m-28"].exists, "the last match is on screen")
+        XCTAssertTrue(app.otherElements["bubble-m-28"].appears(timeout: 5) || app.staticTexts["bubble-m-28"].exists, "the last match is on screen")
         attach("find-4-wrapped-to-last")
 
         field.clearAndType("zzzz")

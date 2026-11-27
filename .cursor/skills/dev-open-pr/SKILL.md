@@ -64,7 +64,7 @@ The same checks CI runs, from the repo root:
    - Read every commit in `git log <base>..HEAD` and `git diff <base>...HEAD`.
    - Understand the full scope. This drives the title, body, and verification.
 
-5. **Check the docs moved with the code.** A new `config.json` key is in the README's Configuration section; a new file, network destination, credential or permission is in `SECURITY.md`; a design change is in `SPEC.md`. If one is missing, add it (or ask) before opening the PR.
+5. **Check the docs moved with the code.** A new `config.json` key is in `web/content/docs/configuration.md` and the feature on its docs page; a new file, network destination, credential or permission is in `SECURITY.md`; a design change is in `SPEC.md`. If one is missing, add it (or ask) before opening the PR.
 
 6. **Push the branch.** Never force-push unless the user explicitly asks:
    - `git push -u origin HEAD`
@@ -118,7 +118,7 @@ Examples:
 
 ## How
 - `<Folder/File.swift>`: <what changed and why it lives there>
-- <new setting `key` (default …), in Settings and the README>
+- <new setting `key` (default …), in Settings and the docs>
 - <test hook or e2e scenario added>
 
 ## Safety and privacy
@@ -199,7 +199,7 @@ When a watched agent session has been in "needs input" for 2 minutes, Ghost show
 ## How
 - `Sessions/SessionStore.swift`: records when a session entered `needsInput`; the reminder rule is a plain function so it can be tested.
 - `App/Announcer.swift`: the reminder bubble, one per session, replaced rather than stacked.
-- New setting `reminders.waitingAgentMinutes` (default 0 = off, clamped to 1–60 when set), in Settings and the README.
+- New setting `reminders.waitingAgentMinutes` (default 0 = off, clamped to 1–60 when set), in Settings and the docs.
 - `Tests/IronPetTests/SessionMappingTests.swift`: reminder after the interval, none after the user answers, none while the agents panel is open.
 - Nothing under `Hooks/` changed; it uses the events ironpet already receives.
 

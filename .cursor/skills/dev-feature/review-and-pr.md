@@ -45,7 +45,7 @@ Keep the last reviewer's summary block; the PR's Verification section reuses its
 
 ### P.1 Close out the plan
 
-- Make sure `SPEC.md` holds the decisions from the plan that still matter after merge, and that README and SECURITY match what was built.
+- Make sure `SPEC.md` holds the decisions from the plan that still matter after merge, and that the docs pages in `web/content/docs/` and SECURITY match what was built.
 - Commit.
 
 ### P.2 Open the PR

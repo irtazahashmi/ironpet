@@ -38,9 +38,9 @@ final class ChatTextSizeUITests: XCTestCase {
 
     private func openChat() {
         let tab = app.tabBars.buttons["Chat"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        XCTAssertTrue(tab.appears(timeout: 20))
         tab.tap()
-        XCTAssertTrue(input.waitForExistence(timeout: 20))
+        XCTAssertTrue(input.appears(timeout: 20))
     }
 
     private func attach(_ name: String) {
@@ -52,11 +52,11 @@ final class ChatTextSizeUITests: XCTestCase {
 
     private func messageWidth() -> CGFloat {
         let text = app.staticTexts["Sizing message"]
-        XCTAssertTrue(text.waitForExistence(timeout: 20))
-        // Wait until two reads half a second apart agree, so a row that is still resizing is not measured.
+        XCTAssertTrue(text.appears(timeout: 20))
+        // Wait until two reads a fifth of a second apart agree, so a row that is still resizing is not measured.
         var height = text.frame.width
-        for _ in 0..<6 {
-            Thread.sleep(forTimeInterval: 0.5)
+        for _ in 0..<15 {
+            Thread.sleep(forTimeInterval: 0.2)
             let next = text.frame.width
             if next == height { break }
             height = next
@@ -66,19 +66,19 @@ final class ChatTextSizeUITests: XCTestCase {
 
     private func chooseSize(_ label: String) {
         let more = app.tabBars.buttons["More"]
-        XCTAssertTrue(more.waitForExistence(timeout: 20))
+        XCTAssertTrue(more.appears(timeout: 20))
         more.tap()
         // The More tab keeps Settings open after the first visit.
         let settings = app.buttons["more-settings"]
-        if !app.buttons["chat-text-size"].waitForExistence(timeout: 3) {
-            XCTAssertTrue(settings.waitForExistence(timeout: 10))
+        if !app.buttons["chat-text-size"].appears(timeout: 3) {
+            XCTAssertTrue(settings.appears(timeout: 10))
             settings.tap()
         }
         let picker = app.buttons["chat-text-size"]
-        XCTAssertTrue(picker.waitForExistence(timeout: 20))
+        XCTAssertTrue(picker.appears(timeout: 20))
         picker.tap()
         app.buttons[label].firstMatch.tap()
-        XCTAssertTrue(app.buttons["chat-text-size"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["chat-text-size"].appears(timeout: 10))
         XCTAssertTrue(app.buttons["chat-text-size"].label.hasSuffix(label), "picked \(label), shows \(app.buttons["chat-text-size"].label)")
     }
 
@@ -138,12 +138,14 @@ final class ChatTextSizeUITests: XCTestCase {
         input.tap()
         input.press(forDuration: 1.2)
         let paste = app.menuItems["Paste"]
-        if paste.waitForExistence(timeout: 5) { paste.tap() }
-        XCTAssertTrue((input.value as? String ?? "").hasSuffix("final line"))
+        if paste.appears(timeout: 5) { paste.tap() }
+        let pasted = NSPredicate { _, _ in (self.input.value as? String ?? "").hasSuffix("final line") }
+        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: pasted, object: nil)], timeout: 10), .completed, "the pasted text is in the field")
         attach("pasted-end")
         XCUIDevice.shared.orientation = .landscapeLeft
-        sleep(3)
-        XCTAssertTrue(input.exists)
+        let rotated = NSPredicate { _, _ in self.app.windows.firstMatch.frame.width > self.app.windows.firstMatch.frame.height }
+        XCTAssertEqual(XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: rotated, object: nil)], timeout: 10), .completed, "the app rotated")
+        XCTAssertTrue(input.appears(timeout: 10))
         attach("pasted-end-landscape")
         input.swipeUp()
         XCTAssertTrue(input.isHittable)
@@ -174,7 +176,7 @@ final class ChatTextSizeUITests: XCTestCase {
         // Dragging a scrollable transcript down dismisses the keyboard interactively and keeps the draft.
         let from = app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3))
         from.press(forDuration: 0.1, thenDragTo: app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.95)))
-        XCTAssertTrue(app.keyboards.firstMatch.waitForNonExistence(timeout: 5), "the keyboard went down")
+        XCTAssertTrue(app.keyboards.firstMatch.vanishes(timeout: 5), "the keyboard went down")
         attach("five-lines-keyboard-down")
         XCTAssertEqual(input.frame.height, upHeight, accuracy: 1, "the field keeps its five-line height with the keyboard down")
         XCTAssertLessThanOrEqual(input.frame.maxX, send.frame.minX + 1)

@@ -495,7 +495,24 @@ enum PreviewRenderer {
     /// A dashboard open in the window and the approval sheet, from made-up data. ironpet ships no dashboards: these exist only here.
     private static func renderDashboards(to dir: URL, chat: ChatSession, sessions: SessionStore, signals: SignalStore, tasks: TasksAPI,
                                          meetings: MeetingsAPI, settings: SettingsModel, brief: BriefModel) {
-        let script = """
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-preview-dashboards-\(UUID().uuidString)")
+        let api = DashboardsAPI(store: DashboardStore(paths: DashboardPaths(root: folder), watch: false))
+        guard (try? api.create(CreateDashboardRequest(id: "work", title: "Work", icon: "briefcase", color: "teal", count: true, script: sampleDashboardScript))) != nil else { return }
+        _ = try? api.create(CreateDashboardRequest(id: "release", title: "Release", icon: "shippingbox", color: "orange", script: "export default { view() { return Column([]); } };"))
+        let work = sampleDashboardApproval
+        render(DashboardApprovalSheet(dashboard: work, decidedBefore: true, onApprove: {}, onDeny: {}).panel(), to: dir, "dashboard-approval")
+        for (suffix, scheme) in [("dark", ColorScheme.dark), ("light", .light)] {
+            let model = IronPetWindowModel(defaults: UserDefaults(suiteName: "ironpet-previews") ?? .standard)
+            model.todayShown = true
+            model.open(dashboard: "work")
+            let view = IronPetWindowView(model: model, agents: AgentsAPI(store: sessions), alerts: AlertsAPI(store: signals), tasks: tasks, dashboards: api, chat: Self.chatModel(chat),
+                                         meetings: meetings, settings: settings, brief: brief, actions: .none)
+            renderWindow(model: model, session: chat, content: view, to: dir, "dashboard-window-\(suffix)", scheme: scheme)
+        }
+    }
+
+    /// The Work dashboard: counts, the agents that need you, a chart and a button. ironpet ships no dashboards: it exists only here.
+    static let sampleDashboardScript = """
             export default {
               view() {
                 return Column([
@@ -518,25 +535,13 @@ enum PreviewRenderer {
               count() { return 2; },
             };
             """
-        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-preview-dashboards-\(UUID().uuidString)")
-        let api = DashboardsAPI(store: DashboardStore(paths: DashboardPaths(root: folder), watch: false))
-        guard (try? api.create(CreateDashboardRequest(id: "work", title: "Work", icon: "briefcase", color: "teal", count: true, script: script))) != nil else { return }
-        _ = try? api.create(CreateDashboardRequest(id: "release", title: "Release", icon: "shippingbox", color: "orange", script: "export default { view() { return Column([]); } };"))
-        let work = RemoteDashboard(id: "work", title: "Work", icon: "briefcase", color: "teal", showsCount: true, count: 2, approval: "pending", capabilities: [
+
+    /// What the approval sheet lists for the Work dashboard.
+    static let sampleDashboardApproval = RemoteDashboard(id: "work", title: "Work", icon: "briefcase", color: "teal", showsCount: true, count: 2, approval: "pending", capabilities: [
             RemoteDashboardCapability(kind: "read", title: "Read agents and the inbox", detail: "Sees the titles of your agent sessions and inbox items."),
             RemoteDashboardCapability(kind: "run", title: "Run gh pr list", detail: "Runs this command as you, without a shell.", isNew: true),
             RemoteDashboardCapability(kind: "prompt", title: "Send Ghost a message", detail: "A button can start a chat turn for you."),
         ])
-        render(DashboardApprovalSheet(dashboard: work, decidedBefore: true, onApprove: {}, onDeny: {}).panel(), to: dir, "dashboard-approval")
-        for (suffix, scheme) in [("dark", ColorScheme.dark), ("light", .light)] {
-            let model = IronPetWindowModel(defaults: UserDefaults(suiteName: "ironpet-previews") ?? .standard)
-            model.todayShown = true
-            model.open(dashboard: "work")
-            let view = IronPetWindowView(model: model, agents: AgentsAPI(store: sessions), alerts: AlertsAPI(store: signals), tasks: tasks, dashboards: api, chat: Self.chatModel(chat),
-                                         meetings: meetings, settings: settings, brief: brief, actions: .none)
-            renderWindow(model: model, session: chat, content: view, to: dir, "dashboard-window-\(suffix)", scheme: scheme)
-        }
-    }
 
     /// The Usage tab with a week of made-up events: cost mode, requests mode and the hourly Today range.
     /// Two agents on one Mac: their two pets side by side, the chat of the second with the agent switcher in its header, and Settings → Pets.
@@ -755,7 +760,7 @@ enum PreviewRenderer {
         print("wrote \(file.path)")
     }
 
-    private static func snapshot(_ view: some View, wait: TimeInterval = 0.5, scheme: ColorScheme = .dark) -> NSBitmapImageRep? {
+    static func snapshot(_ view: some View, wait: TimeInterval = 0.5, scheme: ColorScheme = .dark) -> NSBitmapImageRep? {
         let host = NSHostingView(rootView: view.environment(\.colorScheme, scheme))
         let window = NSWindow(contentRect: .zero, styleMask: [.borderless], backing: .buffered, defer: false)
         window.appearance = NSAppearance(named: scheme == .dark ? .darkAqua : .aqua)
@@ -794,7 +799,7 @@ enum PreviewRenderer {
         if CGImageDestinationFinalize(dest) { print("wrote \(file.path) (\(frames.count) frames)") }
     }
 
-    private static var sampleSessions: [AgentSession] {
+    static var sampleSessions: [AgentSession] {
         func session(_ id: String, _ source: AgentSource, _ status: AgentStatus, _ project: String, prompt: String,
                      detail: String? = nil, edited: [String] = [], reply: String? = nil, minutes: Double,
                      iTerm: Bool = false) -> AgentSession {
@@ -876,7 +881,7 @@ enum PreviewRenderer {
 
     /// An in-memory list with one task in each state, created at made-up times.
     /// Two made-up meetings in a temporary folder, for the Transcripts section.
-    private static func sampleMeetings() -> URL {
+    static func sampleMeetings() -> URL {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-preview-meetings")
         try? FileManager.default.removeItem(at: root)
         let meetings = [
@@ -899,7 +904,7 @@ enum PreviewRenderer {
         return root
     }
 
-    private static func sampleTasks() -> TasksAPI {
+    static func sampleTasks() -> TasksAPI {
         var clock = Date()
         let store = TaskStore(database: Database.open(path: nil, migrations: AppMigrations.all).database, now: { clock })
         clock = Date().addingTimeInterval(-900)
@@ -909,11 +914,27 @@ enum PreviewRenderer {
         store.suggest([TaskSuggestion.Draft(key: "msg-1", title: "Reply to Sam about the Q4 budget", due: nil,
                                             url: URL(string: "https://mail.google.com/mail/u/0/#inbox/1"))],
                       automation: "gmail-watch", name: "Gmail watcher")
+        // Items the inbox scan found in a chat and on the screen, one with a link, and one it resolved.
+        clock = Date().addingTimeInterval(-360)
+        let chatRef = TaskStore.refText(["ref": "chat:sample-thread", "reason": "Found by the inbox scan in a chat between the user and Ghost"]) ?? ""
+        store.file(TaskSuggestion.Draft(key: "scan:a", title: "Decide whether to install the new build"), agent: .chat, sourceRef: chatRef)
+        clock = Date().addingTimeInterval(-3600)
+        store.file(TaskSuggestion.Draft(key: "scan:b", title: "Test the V-Bucks flow, then say ship", notes: "Check the ledger tool returns real data.",
+                                        url: URL(string: "https://tickets.example.com/browse/SSP-11797")), agent: .chat, sourceRef: chatRef)
+        clock = Date().addingTimeInterval(-540)
+        store.file(TaskSuggestion.Draft(key: "scan:c", title: "Write the RFC for moving prompts out of Langfuse",
+                                        url: URL(string: "https://docs.example.com/rfc")), agent: .capture,
+                   sourceRef: TaskStore.refText(["ref": "capture:1", "reason": "Found by the inbox scan in the text on the user's screen"]) ?? "")
+        clock = Date().addingTimeInterval(-7200)
+        store.file(TaskSuggestion.Draft(key: "scan:d", title: "Answer the permission prompt blocking the agent"), agent: .chat, sourceRef: chatRef)
         clock = Date()
+        if let done = store.suggestions.first(where: { $0.title.hasPrefix("Answer the permission") }) {
+            _ = try? store.resolve(done.id, reason: "The agent got past the prompt: its fix PR merged and closed the issue (checked with gh)", by: InboxScanner.resolverName)
+        }
         return TasksAPI(store: store)
     }
 
-    private static var sampleSignals: [Signal] {
+    static var sampleSignals: [Signal] {
         let url = URL(string: "https://github.com/you/web-app/pull/42")!
         return [
             Signal(id: "1", title: "Make the settings page responsive", subtitle: "you/web-app #42 · build", url: url,
@@ -926,7 +947,7 @@ enum PreviewRenderer {
     }
 }
 
-private extension View {
+extension View {
     /// Rounded window look, since the real panels' blur and shadow don't render offscreen.
     func panel() -> some View {
         background { ChatBackdrop() }
@@ -937,7 +958,7 @@ private extension View {
 }
 
 /// The pet with its speech bubbles on a plain backdrop, laid out the way they sit on screen.
-private struct PetScene: View {
+struct PetScene: View {
     let atlas: Atlas?
     let row: AtlasRow
     let frame: Int
@@ -945,6 +966,7 @@ private struct PetScene: View {
     var canvas: CGSize?
     /// A flat backdrop; gradients band badly in a GIF's 256 colours.
     var solid = false
+    static let solidBackdrop = Color(red: 0.12, green: 0.14, blue: 0.21)
     private let store = BubbleStore()
 
     init(atlas: Atlas?, row: AtlasRow, frame: Int, bubbles: [BubbleDraft], canvas: CGSize? = nil, solid: Bool = false) {
@@ -976,7 +998,7 @@ private struct PetScene: View {
         .frame(width: canvas?.width, height: canvas?.height, alignment: .bottomTrailing)
         .background {
             if solid {
-                Color(red: 0.12, green: 0.14, blue: 0.21)
+                Self.solidBackdrop
             } else {
                 LinearGradient(colors: [Color(red: 0.16, green: 0.2, blue: 0.3), Color(red: 0.09, green: 0.1, blue: 0.16)],
                                startPoint: .topLeading, endPoint: .bottomTrailing)

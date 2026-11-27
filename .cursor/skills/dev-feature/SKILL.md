@@ -101,7 +101,7 @@ Load the 4s and 5s **before** reading feature code.
 
 Read, do not guess. At minimum:
 
-- `SPEC.md` for the area (how it works and why), `SECURITY.md` for what it may touch, the README section that describes it.
+- `SPEC.md` for the area (how it works and why), `SECURITY.md` for what it may touch, the `web/content/docs/` page that describes it.
 - The nearest existing feature with a similar shape, and copy its shape later. For example: a new integration → `Signals/GitHubWatcher.swift` and its `Config.integrations` key; a new opt-in capture feature → `Voice/` and `Meeting/`; a new agent → `HookInstaller`, `SessionStore` and `AgentCatalogData.swift`; a new bubble → `Announcer` and `Bubbles`.
 - Every file the feature would touch, plus its callers and tests in `Tests/IronPetTests/`.
 - Which `/test/*` endpoints in `App/TestControl.swift` and which `scripts/e2e.py` scenarios already cover the area (the table in `dev-code-review/app.md` › Gates).
@@ -172,7 +172,7 @@ Branch `feat/<slug>`. Status: awaiting approval.
 ## Work breakdown
 1. <owner>: <change> + <test file and the cases>
 2. ...
-N. Docs: README (feature, config keys, permissions), SPEC (how it works), SECURITY (what it touches)
+N. Docs: web/content/docs (feature, config keys, permissions), SPEC (how it works), SECURITY (what it touches)
 
 ## Verification
 - Unit tests: <files and cases>
@@ -231,7 +231,8 @@ Record what ran and what did not, for the PR's test plan.
 
 ### Phase 6 — Docs
 
-- `README.md`: the feature in **What it does** or its own section, every new `config.json` key in **Configuration**, new permissions in the permissions table, new shortcuts in **Using it**, new files in **Your data**.
+- `web/content/docs/` (the ironpet.ai docs): the feature on its page (or a new page), every new `config.json` key in `configuration.md`, new permissions in the table in `getting-started.md`, new shortcuts in `using-ironpet.md`, new files in `your-data.md`.
+- `README.md` is a short overview: touch it only for a new headline feature, with one line linking to its docs page.
 - `SPEC.md`: how it works and the decisions behind it, in the voice of the existing sections. New agent events go in the Event mapping table.
 - `SECURITY.md`: every new file read or written, network destination, credential, permission, or data sent to an agent or server; the integrations table when a new opt-in feature lands.
 - `CONTRIBUTING.md`: only when the dev workflow changed (a new gate, a new required tool).
@@ -253,6 +254,6 @@ Follow [review-and-pr.md → PR](review-and-pr.md#pr).
 - [ ] Every work-breakdown item landed in its owning folder, with tests
 - [ ] `swift build` and `swift test` pass; bundle and script checks pass when they apply
 - [ ] Previews reviewed for UI changes; installed-app and e2e checks run or listed as not run
-- [ ] README, SPEC and SECURITY updated for what changed
+- [ ] Docs pages (`web/content/docs/`), SPEC and SECURITY updated for what changed
 - [ ] Final fresh reviewer status is Approved or Approved with minor changes
 - [ ] PR opened with its screenshots on `pr-screenshots`; URL and checks not run reported to the user

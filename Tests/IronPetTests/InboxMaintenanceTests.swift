@@ -139,6 +139,40 @@ final class InboxMaintenanceTests: XCTestCase {
         XCTAssertTrue(store.resolved().isEmpty)
     }
 
+    /// S3: a resolve without evidence fails with an error that asks for it, and the item stays open.
+    func testResolveWithAnEmptyOrMissingReasonAsksForEvidenceAndLeavesTheItemOpen() throws {
+        add("mail-1", "Reply to Sam")
+        let id = try XCTUnwrap(store.suggestions.first?.id)
+        for args: [String: Any] in [["id": id, "reason": ""], ["id": id, "reason": " \n "], ["id": id]] {
+            guard case .failure(let error) = call("resolve", args) else { return XCTFail("\(args) resolved the item") }
+            XCTAssertTrue(error.message.contains("what you checked"), error.message)
+        }
+        XCTAssertEqual(store.suggestions.map(\.id), [id])
+        XCTAssertTrue(store.resolved().isEmpty)
+        XCTAssertThrowsError(try api.resolve(ResolveSuggestionRequest(id: id, reason: "")))
+        XCTAssertEqual(store.suggestions.count, 1)
+    }
+
+    /// S4: the record names who resolved the item and when. An agent names itself, and a call that does not is recorded by how it arrived.
+    func testResolveStoresWhoResolvedItAndWhen() throws {
+        add("mail-1", "Reply to Sam")
+        add("mail-2", "Send the deck")
+        add("mail-3", "Pay the invoice")
+        clock = clock.addingTimeInterval(120)
+        guard case .success = call("resolve", ["id": "mail-1", "reason": "answered", "resolved_by": "Mail check"]) else { return XCTFail() }
+        guard case .success = TaskJSON.call(api, "resolve", ["id": "mail-2", "reason": "sent"], by: "agent:mcp") else { return XCTFail() }
+        guard case .success = TaskJSON.call(api, "resolve", ["id": "mail-3", "reason": "paid"], by: "cli") else { return XCTFail() }
+        guard case .success(let after) = call("list", ["include_resolved": true]),
+              let records = (after as? [String: Any])?["resolved"] as? [[String: Any]] else { return XCTFail() }
+        let byTitle = Dictionary(uniqueKeysWithValues: records.map { ($0["title"] as? String ?? "", $0) })
+        XCTAssertEqual(byTitle["Reply to Sam"]?["resolved_by"] as? String, "Mail check")
+        XCTAssertEqual(byTitle["Reply to Sam"]?["reason"] as? String, "answered")
+        XCTAssertEqual(byTitle["Reply to Sam"]?["resolved"] as? String, ISO8601DateFormatter().string(from: clock))
+        XCTAssertEqual(byTitle["Send the deck"]?["resolved_by"] as? String, "Agent")
+        XCTAssertEqual(byTitle["Pay the invoice"]?["resolved_by"] as? String, "CLI")
+        XCTAssertEqual(store.resolved().first { $0.title == "Reply to Sam" }?.resolvedBy, "Mail check")
+    }
+
     func testAReasonIsCleanedAndCapped() throws {
         add("mail-1", "Reply to Sam")
         let id = try XCTUnwrap(store.suggestions.first?.id)
@@ -216,7 +250,7 @@ final class InboxMaintenanceTests: XCTestCase {
     func testAResolvedItemDoesNotComeBack() throws {
         add("mail-1", "Reply to Sam", extra: ["due": "2026-12-01"])
         let id = try XCTUnwrap(store.suggestions.first?.id)
-        try store.resolve(id, reason: "answered")
+        try store.resolve(id, reason: "answered", by: "Mail check")
         add("mail-1", "Reply to Sam", extra: ["due": "2026-12-08"])
         add("mail-1", "A new title", extra: ["same_as": id])
         XCTAssertTrue(store.suggestions.isEmpty)
@@ -237,8 +271,38 @@ final class InboxMaintenanceTests: XCTestCase {
 
     func testAMeetingItemDoneStaysDoneForTheTitleRule() throws {
         let item = try meetingItem()
-        try store.resolve(item.id, reason: "answered")
+        try store.resolve(item.id, reason: "answered", by: "Mail check")
         XCTAssertEqual(store.resolved().first?.sources.first?.kind, .meeting)
+    }
+
+    // MARK: Migration 594
+
+    /// S11: items resolved before the resolver was stored list with their reason and time, and the resolver reads as unknown.
+    func testMigration594KeepsOldResolvedRowsAndTheirResolverReadsAsUnknown() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-594-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let path = dir.appendingPathComponent("ironpet.db")
+        let before = AppMigrations.all.filter { $0.version <= 593 }
+        do {
+            let old = try Database(path: path, migrations: before)
+            try old.write { db in
+                try db.execute("""
+                    INSERT INTO task_suggestion_resolved(item, title, due, notes, created, resolved, reason, sources) VALUES(?, ?, ?, ?, ?, ?, ?, ?)
+                    """, ["old-1", "Reply to Sam", nil, "", 1_799_000_000.0, 1_799_000_600.0, "answered", "[]"])
+            }
+        }
+        let upgraded = try Database(path: path, migrations: AppMigrations.all)
+        let migrated = TaskStore(database: upgraded, now: { [unowned self] in clock })
+        let record = try XCTUnwrap(migrated.resolved().first)
+        XCTAssertEqual(record.title, "Reply to Sam")
+        XCTAssertEqual(record.reason, "answered")
+        XCTAssertEqual(record.resolved, Date(timeIntervalSince1970: 1_799_000_600))
+        XCTAssertNil(record.resolvedBy)
+        XCTAssertEqual(record.resolverLabel, "unknown")
+        XCTAssertEqual(record.statusLine(time: "16:31"), "Resolved by unknown at 16:31")
+        XCTAssertEqual(TaskJSON.json(record)["resolved_by"] as? String, "unknown")
+        XCTAssertEqual(migrated.resolved().count, 1)
     }
 
     // MARK: Migration 592
