@@ -28,11 +28,11 @@ final class ChatFormPagesUITests: XCTestCase {
          RemoteFormField(id: "question_\(n)_custom", title: "Other", type: "text")]
     }
 
-    private func openChat(questions: Int) {
+    private func openChat(questions: Int, extraArguments: [String] = []) {
         server.chat.items = [RemoteChatItem(id: "m-1", kind: "user", date: Date(), text: "plan the dinner")]
         server.chat.state = "running"
         server.chat.forms = [RemoteForm(id: "form-1", message: "A few dinner questions", fields: (0..<questions).flatMap { question($0) })]
-        app.launchArguments = ["--reset-credentials"]
+        app.launchArguments = ["--reset-credentials"] + extraArguments
         app.launch()
         app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
@@ -102,6 +102,30 @@ final class ChatFormPagesUITests: XCTestCase {
         XCTAssertTrue(app.staticTexts["page-form-1"].waitForExistence(timeout: 5))
         XCTAssertEqual(label.label, "2 of 3", "question 2 is the first one without an answer")
         XCTAssertTrue(app.buttons["option-question_1-penne"].exists)
+    }
+
+    /// On the last page the Submit button holds one line of text, so it is as tall as Back and the row does not grow.
+    func testSubmitOnTheLastPageIsOneLineAndAsTallAsBack() {
+        openChat(questions: 2)
+        XCTAssertTrue(next.waitForExistence(timeout: 10))
+        next.tap()
+        XCTAssertEqual(label.label, "2 of 2")
+        XCTAssertTrue(submit.waitForExistence(timeout: 5))
+        XCTAssertEqual(submit.frame.height, back.frame.height, accuracy: 6, "Submit is not taller than Back, so its label is on one line")
+        attach("submit-last-page")
+    }
+
+    /// At the largest accessibility text size the controls stack and Submit still holds a single line.
+    func testSubmitStaysOneLineAtTheLargestTextSize() {
+        openChat(questions: 2, extraArguments: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXXXL"])
+        XCTAssertTrue(next.waitForExistence(timeout: 10))
+        next.tap()
+        XCTAssertEqual(label.label, "2 of 2")
+        XCTAssertTrue(submit.waitForExistence(timeout: 5))
+        // Measured on iPhone 17: Back is 58 pt and a one-line Submit 77 pt, so a wrapped two-line label (about 125 pt) fails this.
+        XCTAssertLessThan(submit.frame.height, 1.5 * back.frame.height, "Submit is a single line")
+        XCTAssertGreaterThan(submit.frame.minY, back.frame.maxY - 1, "the controls stack, with Submit below Back")
+        attach("submit-largest-text")
     }
 
     func testChangingPageDoesNotMoveTheComposer() {
