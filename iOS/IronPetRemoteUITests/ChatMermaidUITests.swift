@@ -33,9 +33,9 @@ final class ChatMermaidUITests: XCTestCase {
         app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         let tab = app.tabBars.buttons["Chat"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        XCTAssertTrue(tab.appears(timeout: 20))
         tab.tap()
-        XCTAssertTrue(app.textViews["chat-input"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.textViews["chat-input"].appears(timeout: 20))
     }
 
     private func attach(_ name: String) {
@@ -55,7 +55,7 @@ final class ChatMermaidUITests: XCTestCase {
     private func validDiagram() {
         fixture([reply("m1", Self.valid)])
         openChat()
-        XCTAssertTrue(diagram.waitForExistence(timeout: 30), "the diagram shows")
+        XCTAssertTrue(diagram.appears(timeout: 30), "the diagram shows")
         XCTAssertFalse(codeBlock.exists, "the source is not drawn next to it")
         // It grows to the diagram's height: far taller than the 96 pt it starts with.
         let deadline = Date().addingTimeInterval(20)
@@ -69,7 +69,7 @@ final class ChatMermaidUITests: XCTestCase {
     func testAnInvalidDiagramShowsItsSourceAsCode() {
         fixture([reply("m1", Self.invalid)])
         openChat()
-        XCTAssertTrue(codeBlock.waitForExistence(timeout: 30), "the source shows as a code block")
+        XCTAssertTrue(codeBlock.appears(timeout: 30), "the source shows as a code block")
         XCTAssertFalse(diagram.exists)
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS 'could not render'")).firstMatch.exists, "no error text")
         attach("mermaid-invalid")
@@ -84,11 +84,11 @@ final class ChatMermaidUITests: XCTestCase {
         }
         fixture(items)
         openChat()
-        XCTAssertTrue(diagram.waitForExistence(timeout: 30))
+        XCTAssertTrue(diagram.appears(timeout: 30))
         let transcript = app.descendants(matching: .any)["transcript"].firstMatch
         for _ in 0..<4 { transcript.swipeDown(velocity: .fast) }
         for _ in 0..<4 { transcript.swipeUp(velocity: .fast) }
-        XCTAssertTrue(diagram.waitForExistence(timeout: 10), "a diagram is still there after scrolling to the top and back")
+        XCTAssertTrue(diagram.appears(timeout: 10), "a diagram is still there after scrolling to the top and back")
         attach("mermaid-scrolled")
     }
 }

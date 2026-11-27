@@ -2,8 +2,8 @@
 """UI test shards for the iOS CI jobs.
 
 Each shard lists the XCTestCase classes of IronPetRemoteUITests that one CI job runs.
-The weights are test method counts, a rough proxy for run time. To rebalance, move a class
-between SHARDS lists; `check` keeps every class in exactly one shard.
+The shards are balanced by per-class run time, taken from the CI run of the faster tests (PR #412). To rebalance, move a class between SHARDS lists; `check` keeps
+every class in exactly one shard.
 
   ios_ui_shards.py check            fail if a UI test class is in no shard, in two shards, or no longer exists
   ios_ui_shards.py args <shard>     print the -only-testing arguments for a shard (1-based)
@@ -15,17 +15,14 @@ import re
 import sys
 
 SHARDS = [
-    # Shard 1 (28 tests)
-    ["BackgroundUITests", "ChatTextSizeUITests", "ChatFileLinksUITests", "ChatSwipeReplyUITests", "ChatMenuKeyboardUITests",
-     "ChatSelectionUITests"],
-    # Shard 2 (27 tests)
-    ["PasteUITests", "PhaseThreeUITests", "ChatStreamingUITests", "ChatPagingUITests",
-     "ChatCacheUITests"],
-    # Shard 3 (24 tests)
-    ["IronPetRemoteUITests", "ChatParityUITests", "PhaseFourUITests", "PhaseFiveUITests",
-     "VoiceRecordingUITests", "AttachPhotoUITests", "ChatModeUITests", "ChatFindUITests", "ChatOutboxUITests"],
-    # Shard 4. Kept apart: shard 3 plus these ran past the 30 minute job limit.
-    ["NetworkStatesUITests", "MemoryUITests", "ChatMermaidUITests", "ChatFormPagesUITests", "ChatSendStatesUITests"],
+    # Shard 1 (about 12 minutes of test time on CI)
+    ["ChatFileLinksUITests", "ChatFindUITests", "ChatSendStatesUITests", "ChatStreamingUITests", "IronPetRemoteUITests", "PhaseFiveUITests"],
+    # Shard 2 (about 12 minutes of test time on CI)
+    ["BackgroundUITests", "ChatMenuKeyboardUITests", "PasteUITests", "PhaseThreeUITests", "VoiceRecordingUITests"],
+    # Shard 3 (about 12 minutes of test time on CI)
+    ["AttachPhotoUITests", "ChatCacheUITests", "ChatPagingUITests", "ChatParityUITests", "ChatSwipeReplyUITests", "NetworkStatesUITests", "PhaseFourUITests"],
+    # Shard 4 (about 12 minutes of test time on CI)
+    ["ChatFormPagesUITests", "ChatMermaidUITests", "ChatModeUITests", "ChatOutboxUITests", "ChatSelectionUITests", "ChatTextSizeUITests", "MemoryUITests"],
 ]
 
 TARGET = "IronPetRemoteUITests"

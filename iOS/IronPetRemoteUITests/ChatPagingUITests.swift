@@ -24,9 +24,9 @@ final class ChatPagingUITests: XCTestCase {
 
     private func openChat() {
         let tab = app.tabBars.buttons["Chat"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        XCTAssertTrue(tab.appears(timeout: 20))
         tab.tap()
-        XCTAssertTrue(app.textViews["chat-input"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.textViews["chat-input"].appears(timeout: 20))
     }
 
     private func any(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id] }
@@ -43,7 +43,7 @@ final class ChatPagingUITests: XCTestCase {
         server.chat.state = "done"
         pair()
         openChat()
-        XCTAssertTrue(any("bubble-p-300").waitForExistence(timeout: 20), "the newest message is on screen")
+        XCTAssertTrue(any("bubble-p-300").appears(timeout: 20), "the newest message is on screen")
         XCTAssertFalse(any("bubble-p-200").exists, "only the newest page is read at launch")
         XCTAssertTrue(server.requests.contains { $0.path == "/v1/chat/current" && $0.query.contains("limit=50") }, "the first read asks for the newest page")
         attach("paging-newest")
@@ -55,7 +55,7 @@ final class ChatPagingUITests: XCTestCase {
             app.descendants(matching: .any)["transcript"].firstMatch.swipeDown(velocity: .fast)
             swipes += 1
         }
-        XCTAssertTrue(older.waitForExistence(timeout: 10), "the page above the newest one loads when the top shows")
+        XCTAssertTrue(older.appears(timeout: 10), "the page above the newest one loads when the top shows")
         XCTAssertTrue(server.requests.contains { $0.query.contains("before=p-251") }, "the phone asked for the page before its oldest message")
         attach("paging-older-loaded")
     }

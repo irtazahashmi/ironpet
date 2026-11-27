@@ -9,6 +9,16 @@ protocol MicSource: AnyObject {
     /// Called once, from any thread, when capture dies on its own after `start()` (a route change, a phone call, a media services reset).
     /// The source has already torn itself down. The string says what happened and is shown to the user.
     var onFailure: (@Sendable (String) -> Void)? { get set }
+    /// Called once, from any thread, when a call, Siri or another app takes the microphone while recording. The source has torn itself
+    /// down and the audio it captured so far is intact, so the caller sends it. A source that never reports this uses `onFailure`.
+    var onInterrupted: (@Sendable (String) -> Void)? { get set }
+}
+
+extension MicSource {
+    var onInterrupted: (@Sendable (String) -> Void)? {
+        get { nil }
+        set {}
+    }
 }
 
 enum MicError: LocalizedError {
@@ -60,6 +70,7 @@ final class EngineMicSource: MicSource {
     private var running = false
     private var observers: [NSObjectProtocol] = []
     var onFailure: (@Sendable (String) -> Void)?
+    var onInterrupted: (@Sendable (String) -> Void)?
 
     func start() async throws -> AsyncStream<Data> {
         guard await AVAudioApplication.requestRecordPermission() else { throw MicError.denied }
@@ -102,7 +113,7 @@ final class EngineMicSource: MicSource {
             center.addObserver(forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { [weak self] note in
                 let raw = note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
                 guard raw.flatMap(AVAudioSession.InterruptionType.init(rawValue:)) == .began else { return }
-                self?.captureDied("Another app or a call took over the microphone.")
+                self?.captureInterrupted("Another app or a call took over the microphone.")
             },
             center.addObserver(forName: AVAudioSession.mediaServicesWereResetNotification, object: nil, queue: .main) { [weak self] _ in
                 self?.captureDied("The audio system restarted, so the microphone stopped.")
@@ -115,6 +126,14 @@ final class EngineMicSource: MicSource {
         finish()
         teardown()
         onFailure?(reason)
+    }
+
+    /// A call or Siri took the microphone. The stream ends with what was captured, and the model sends that.
+    private func captureInterrupted(_ reason: String) {
+        guard running else { return }
+        finish()
+        teardown()
+        (onInterrupted ?? onFailure)?(reason)
     }
 
     private var finish: () -> Void = {}

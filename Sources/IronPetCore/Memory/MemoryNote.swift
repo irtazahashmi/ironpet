@@ -96,6 +96,17 @@ package struct MemoryNote: Equatable, Hashable {
         return .success(text)
     }
 
+    /// Longest reason a change keeps.
+    package static let maxReason = 300
+
+    /// A change's reason as one line of at most `maxReason` characters. Nil when it is empty or holds a secret.
+    package static func cleanReason(_ raw: String?) -> String? {
+        guard let raw else { return nil }
+        let text = String(raw.split(whereSeparator: { $0.isWhitespace || $0.isNewline }).joined(separator: " ").prefix(maxReason))
+        guard !text.isEmpty, CaptureRedactor.redact(text).report.isEmpty else { return nil }
+        return text
+    }
+
     /// The form two notes are compared in, so "Prefers pnpm." and "prefers pnpm" are one note.
     package static func normalized(_ text: String) -> String {
         text.lowercased().trimmingCharacters(in: CharacterSet.whitespaces.union(.punctuationCharacters))

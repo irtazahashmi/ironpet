@@ -30,9 +30,9 @@ final class VoiceRecordingUITests: XCTestCase {
         app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         let tab = app.tabBars.buttons["Chat"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        XCTAssertTrue(tab.appears(timeout: 20))
         tab.tap()
-        XCTAssertTrue(app.textViews["chat-input"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.textViews["chat-input"].appears(timeout: 20))
     }
 
     func testRecordingShowsTheWaveformAndATimerInLightAndDark() {
@@ -40,12 +40,13 @@ final class VoiceRecordingUITests: XCTestCase {
             app.terminate()
             openChat(appearance: appearance)
             app.buttons["mic-button"].tap()
-            XCTAssertTrue(app.otherElements["voice-recording-bar"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.otherElements["voice-recording-bar"].appears(timeout: 10))
             let timer = app.staticTexts["Recording time"]
-            XCTAssertTrue(timer.waitForExistence(timeout: 5))
+            XCTAssertTrue(timer.appears(timeout: 5))
             XCTAssertNotNil(timer.value as? String)
-            sleep(2)
-            XCTAssertNotEqual(timer.value as? String, "0:00", "the timer counts up")
+            let counting = NSPredicate { _, _ in (timer.value as? String) != "0:00" }
+            let counted = XCTWaiter().wait(for: [XCTNSPredicateExpectation(predicate: counting, object: nil)], timeout: 5)
+            XCTAssertEqual(counted, .completed, "the timer counts up")
             attach("recording-\(appearance)")
             app.buttons["voice-cancel"].tap()
         }
@@ -54,17 +55,17 @@ final class VoiceRecordingUITests: XCTestCase {
     func testCancelReturnsToTheNormalComposerAndStopRecordsAsBefore() {
         openChat()
         app.buttons["mic-button"].tap()
-        XCTAssertTrue(app.buttons["voice-cancel"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["voice-cancel"].appears(timeout: 10))
         XCTAssertEqual(app.buttons["voice-cancel"].label, "Cancel recording")
         XCTAssertEqual(app.buttons["mic-button"].label, "Stop recording")
         app.buttons["voice-cancel"].tap()
-        XCTAssertTrue(app.textViews["chat-input"].waitForExistence(timeout: 5), "the composer is back")
+        XCTAssertTrue(app.textViews["chat-input"].appears(timeout: 5), "the composer is back")
         XCTAssertFalse(app.buttons["voice-cancel"].exists)
         XCTAssertEqual(app.buttons["mic-button"].label, "Dictate")
 
         app.buttons["mic-button"].tap()
-        XCTAssertTrue(app.buttons["voice-cancel"].waitForExistence(timeout: 10))
+        XCTAssertTrue(app.buttons["voice-cancel"].appears(timeout: 10))
         app.buttons["mic-button"].tap()
-        XCTAssertFalse(app.buttons["voice-cancel"].waitForExistence(timeout: 2), "Stop ends the recording and the bar goes")
+        XCTAssertFalse(app.buttons["voice-cancel"].appears(timeout: 1), "Stop ends the recording and the bar goes")
     }
 }

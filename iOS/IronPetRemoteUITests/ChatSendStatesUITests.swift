@@ -20,14 +20,14 @@ final class ChatSendStatesUITests: XCTestCase {
         app.launchArguments = ["--reset-credentials", "--auto-unlock", "--network-strip-delay", "3", "--network-retry-ms", "100"] + (dark ? ["--force-dark"] : [])
         app.launch()
         let field = app.textFields["pairing-link-field"]
-        XCTAssertTrue(field.waitForExistence(timeout: 10))
+        XCTAssertTrue(field.appears(timeout: 10))
         field.tap()
         field.typeText(server.pairingLink)
         app.buttons["pair-button"].tap()
         let tab = app.tabBars.buttons["Chat"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        XCTAssertTrue(tab.appears(timeout: 20))
         tab.tap()
-        XCTAssertTrue(app.textViews["chat-input"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.textViews["chat-input"].appears(timeout: 20))
     }
 
     private func any(_ id: String) -> XCUIElement { app.descendants(matching: .any).matching(identifier: id).firstMatch }
@@ -65,7 +65,7 @@ final class ChatSendStatesUITests: XCTestCase {
             server.sendDelay = 15
             send("sending state \(dark)")
             let sending = bubble("sending state \(dark)")
-            XCTAssertTrue(sending.waitForExistence(timeout: 10))
+            XCTAssertTrue(sending.appears(timeout: 10))
             XCTAssertEqual(sending.value as? String, "Sending", "VoiceOver reads the state")
             XCTAssertFalse(app.staticTexts["Sending…"].exists, "no text row")
             let before = sending.frame
@@ -87,7 +87,7 @@ final class ChatSendStatesUITests: XCTestCase {
             server.sendDelay = 0
             // The mock started a turn. End it, or the next message waits in the Mac's queue.
             server.finishTurn()
-            XCTAssertTrue(any("running-row").waitForNonExistence(timeout: 10))
+            XCTAssertTrue(any("running-row").vanishes(timeout: 10))
         }
     }
 
@@ -100,7 +100,7 @@ final class ChatSendStatesUITests: XCTestCase {
         server.brokenRoutes = ["/v1/chat/current/messages": 500]
         send("will fail")
         let retry = app.buttons["outgoing-retry"]
-        XCTAssertTrue(retry.waitForExistence(timeout: 20))
+        XCTAssertTrue(retry.appears(timeout: 20))
         XCTAssertEqual(retry.label, "Retry sending")
         XCTAssertGreaterThanOrEqual(retry.frame.width, 44)
         XCTAssertGreaterThanOrEqual(retry.frame.height, 44)
@@ -112,7 +112,7 @@ final class ChatSendStatesUITests: XCTestCase {
         let before = failed.frame
         server.brokenRoutes = [:]
         retry.tap()
-        XCTAssertTrue(any("outgoing-delivered").waitForExistence(timeout: 20))
+        XCTAssertTrue(any("outgoing-delivered").appears(timeout: 20))
         XCTAssertFalse(retry.exists)
         XCTAssertEqual(bubble("will fail").frame.height, before.height, accuracy: 0.5, "the bubble keeps its height when it recovers")
         XCTAssertFalse((bubble("will fail").value as? String ?? "").hasPrefix("Not sent"), "the failure is gone")
@@ -126,13 +126,13 @@ final class ChatSendStatesUITests: XCTestCase {
         // The last message is the reader's own, so no reply text is streaming and the working row shows.
         server.chat.items = (1...6).map { RemoteChatItem(id: "old-\($0)", kind: $0 % 2 == 0 ? "user" : "assistant", date: Date(), text: "Earlier message number \($0)") }
         launch(dark: dark)
-        XCTAssertTrue(bubble("Earlier message number 6").waitForExistence(timeout: 20))
+        XCTAssertTrue(bubble("Earlier message number 6").appears(timeout: 20))
         server.chat.running = true
         server.chat.state = "running"
         server.chat.runStarted = nil
         server.publish(RemoteEvent.chatState)
         let row = any("running-row")
-        XCTAssertTrue(row.waitForExistence(timeout: 10))
+        XCTAssertTrue(row.appears(timeout: 10))
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label MATCHES '[0-9]+s'")).firstMatch.exists, "the time is empty before the turn start arrives")
         let above = bubble("Earlier message number 6").frame
         let before = row.frame
@@ -140,7 +140,7 @@ final class ChatSendStatesUITests: XCTestCase {
         server.chat.runStarted = Date().addingTimeInterval(-5)
         server.publish(RemoteEvent.chatState)
         let counting = app.staticTexts.matching(NSPredicate(format: "label MATCHES '[0-9]+s'")).firstMatch
-        XCTAssertTrue(counting.waitForExistence(timeout: 10))
+        XCTAssertTrue(counting.appears(timeout: 10))
         assertSame(before, row.frame, "the working row keeps its place and height")
         XCTAssertEqual(above, bubble("Earlier message number 6").frame, "the rows above do not move")
         attach("working-counting", dark: dark)
@@ -155,13 +155,13 @@ final class ChatSendStatesUITests: XCTestCase {
             launch(dark: dark)
             for (id, name) in [("u-1", "preview-user"), ("a-1", "preview-reply")] {
                 let message = bubble(id == "u-1" ? "A question" : "An answer")
-                XCTAssertTrue(message.waitForExistence(timeout: 20))
+                XCTAssertTrue(message.appears(timeout: 20))
                 message.press(forDuration: 1.2)
-                XCTAssertTrue(app.buttons["Copy"].waitForExistence(timeout: 5), "the menu keeps its items")
+                XCTAssertTrue(app.buttons["Copy"].appears(timeout: 5), "the menu keeps its items")
                 if id == "a-1" { XCTAssertTrue(app.buttons["Select text"].exists, "Select text stays on a reply") }
                 attach(name, dark: dark)
                 app.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.1)).tap()
-                XCTAssertTrue(app.buttons["Copy"].waitForNonExistence(timeout: 5))
+                XCTAssertTrue(app.buttons["Copy"].vanishes(timeout: 5))
             }
         }
     }
@@ -174,15 +174,15 @@ final class ChatSendStatesUITests: XCTestCase {
         launch(dark: dark)
         server.stop()
         send("typed while away")
-        XCTAssertTrue(any("network-strip").waitForExistence(timeout: 20))
+        XCTAssertTrue(any("network-strip").appears(timeout: 20))
         XCTAssertEqual(app.descendants(matching: .any).matching(identifier: "network-strip").count, 1)
         XCTAssertFalse(any("chat-error").exists)
         XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH \"Can't reach your Mac\" AND label CONTAINS \"Retrying\"")).firstMatch.exists)
         attach("chat-one-strip", dark: dark)
         // The outbox survives a relaunch and the next test's server would receive this message and start a turn. Delete it.
         bubble("typed while away").press(forDuration: 1.2)
-        if app.buttons["outgoing-delete"].waitForExistence(timeout: 5) { app.buttons["outgoing-delete"].tap() }
-        XCTAssertTrue(bubble("typed while away").waitForNonExistence(timeout: 10), "the waiting message is deleted")
+        if app.buttons["outgoing-delete"].appears(timeout: 5) { app.buttons["outgoing-delete"].tap() }
+        XCTAssertTrue(bubble("typed while away").vanishes(timeout: 10), "the waiting message is deleted")
     }
 
     // S7
@@ -190,9 +190,9 @@ final class ChatSendStatesUITests: XCTestCase {
         launch()
         server.brokenRoutes = ["/v1/chat/current/messages": 500]
         send("preview of a failure")
-        XCTAssertTrue(app.buttons["outgoing-retry"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["outgoing-retry"].appears(timeout: 20))
         bubble("preview of a failure").press(forDuration: 1.2)
-        XCTAssertTrue(app.buttons["Retry"].waitForExistence(timeout: 5), "the menu offers Retry")
+        XCTAssertTrue(app.buttons["Retry"].appears(timeout: 5), "the menu offers Retry")
         attach("preview-failed", dark: false)
     }
 }

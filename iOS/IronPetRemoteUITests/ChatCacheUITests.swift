@@ -17,9 +17,9 @@ final class ChatCacheUITests: XCTestCase {
 
     private func openChat() {
         let tab = app.tabBars.buttons["Chat"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        XCTAssertTrue(tab.appears(timeout: 20))
         tab.tap()
-        XCTAssertTrue(app.textViews["chat-input"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.textViews["chat-input"].appears(timeout: 20))
     }
 
     private func any(_ id: String) -> XCUIElement { app.descendants(matching: .any)[id] }
@@ -33,7 +33,7 @@ final class ChatCacheUITests: XCTestCase {
         app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         openChat()
-        XCTAssertTrue(any("bubble-k-3").waitForExistence(timeout: 20), "the chat loads from the Mac once")
+        XCTAssertTrue(any("bubble-k-3").appears(timeout: 20), "the chat loads from the Mac once")
 
         // The phone is closed and the Mac goes away. The app opens on the chat it saved.
         app.terminate()
@@ -41,7 +41,7 @@ final class ChatCacheUITests: XCTestCase {
         app.launchArguments = []
         app.launch()
         openChat()
-        XCTAssertTrue(any("bubble-k-3").waitForExistence(timeout: 10), "the saved chat shows with the Mac offline")
+        XCTAssertTrue(any("bubble-k-3").appears(timeout: 10), "the saved chat shows with the Mac offline")
         XCTAssertTrue(app.staticTexts["Kept message 1"].exists)
     }
 }

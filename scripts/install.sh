@@ -88,12 +88,31 @@ fi
 ok "Built build/IronPet.app"
 
 bold "Installing"
-pkill -f "IronPet.app/Contents/MacOS/IronPet" || true
-sleep 1
+# Only the app itself: `IronPet mcp` servers started by agents run the same binary with arguments and are left alone.
+APP_PATTERN="IronPet\.app/Contents/MacOS/IronPet$"
+app_running() { pgrep -f "$APP_PATTERN" >/dev/null; }
+wait_for_quit() {
+  for _ in $(seq 1 "$1"); do app_running || return 0; sleep 0.5; done
+  ! app_running
+}
+if app_running; then
+  BUNDLE_ID=$(defaults read "$PWD/build/IronPet.app/Contents/Info" CFBundleIdentifier)
+  osascript -e "tell application id \"$BUNDLE_ID\" to quit" >/dev/null 2>&1 || true
+  if ! wait_for_quit 20; then
+    pkill -f "$APP_PATTERN" || true
+    wait_for_quit 10 || { pkill -9 -f "$APP_PATTERN" || true; wait_for_quit 6; } ||
+      fail "ironpet is still running and would not quit. Quit it (right-click the pet → Quit ironpet), then run this again."
+  fi
+fi
 rm -rf /Applications/IronPet.app
 cp -R build/IronPet.app /Applications/IronPet.app
 open /Applications/IronPet.app
-ok "Installed /Applications/IronPet.app and started it"
+for _ in $(seq 1 20); do app_running && break; sleep 0.5; done
+if app_running; then
+  ok "Installed /Applications/IronPet.app and started it"
+else
+  warn "Installed /Applications/IronPet.app, but it did not start. Open it from Applications."
+fi
 echo
 echo "On first launch a welcome window asks what the pet may do. Settings: ⌘, or right-click the pet."
 echo "To remove everything later: ./scripts/uninstall.sh"

@@ -42,6 +42,33 @@ enum AgentsSearch {
     }
 }
 
+/// The Agents list as one flat run of group titles and rows. A row keeps its id when its session moves to another
+/// group: a lazy stack with one `ForEach` per group keeps the moved row's old content.
+enum AgentsList {
+    enum Entry: Identifiable {
+        case group(String)
+        case session(AgentSession)
+
+        var id: String {
+            switch self {
+            case .group(let title): "group:\(title)"
+            case .session(let session): "session:\(session.id)"
+            }
+        }
+    }
+
+    static let finished = "Finished"
+
+    static func entries(_ sessions: [AgentSession]) -> [Entry] {
+        let groups: [(String, [AgentSession])] = [
+            ("Needs you", sessions.filter { $0.status == .needsInput }),
+            ("Working", sessions.filter { $0.status == .running }),
+            (finished, sessions.filter { $0.status == .done || $0.status == .failed }),
+        ]
+        return groups.filter { !$0.1.isEmpty }.flatMap { title, rows in [.group(title)] + rows.map(Entry.session) }
+    }
+}
+
 /// The Agents section: watched sessions, grouped by what they need. Clicking one shows it in full.
 struct AgentsSection: View {
     @ObservedObject var agents: AgentsAPI
@@ -65,30 +92,22 @@ struct AgentsSection: View {
         }
     }
 
-    private var sections: [(title: String, sessions: [AgentSession])] {
-        let all = AgentsSearch.filter(agents.sessions, query: search)
-        return [
-            ("Needs you", all.filter { $0.status == .needsInput }),
-            ("Working", all.filter { $0.status == .running }),
-            ("Finished", all.filter { $0.status == .done || $0.status == .failed }),
-        ].filter { !$0.sessions.isEmpty }
-    }
-
     @ViewBuilder private var list: some View {
+        let entries = AgentsList.entries(AgentsSearch.filter(agents.sessions, query: search))
         if agents.sessions.isEmpty {
             EmptyState(symbol: "moon.zzz", title: "No agents running",
                        detail: "Cursor and Claude Code sessions show up here.")
-        } else if sections.isEmpty {
+        } else if entries.isEmpty {
             NoMatches()
         } else {
             ListScroll {
-                ForEach(sections, id: \.title) { section in
-                    if section.title == "Finished" {
-                        SectionHeader(section.title, action: "Clear finished") { agents.acknowledgeAll() }
-                    } else {
-                        ListGroupTitle(section.title)
-                    }
-                    ForEach(section.sessions) { session in
+                ForEach(entries) { entry in
+                    switch entry {
+                    case .group(let title) where title == AgentsList.finished:
+                        SectionHeader(title, action: "Clear finished") { agents.acknowledgeAll() }
+                    case .group(let title):
+                        ListGroupTitle(title)
+                    case .session(let session):
                         SessionRow(session: session,
                                    onOpen: { nav.open(session.id) },
                                    onJump: { try? agents.focus(session.id) },

@@ -523,7 +523,7 @@ final class TestControl {
             },
             "changes": store.recentChanges(limit: 20).map { change in
                 ["id": change.id, "action": change.action.rawValue, "note": MemoryNote.parse(change.note)?.text ?? change.note,
-                 "file": change.file, "source": change.source, "undone": change.undone]
+                 "file": change.file, "source": change.source, "reason": change.reason ?? "", "undone": change.undone]
             },
         ])
     }
