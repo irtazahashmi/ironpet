@@ -1570,7 +1570,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// The first poll answers empty, so polling starts when spoken replies are turned on rather than when a reply ends.
     /// While the meeting call monitor runs, it answers instead and this watch stays off.
     private func syncSpeechQuiet() {
-        let speaks = config.config.speech.speakReplies != .never
+        // Automatic speaks only after a spoken message, which needs voice notes. Without them, polling would run for everyone by default.
+        let speaks = config.config.speech.speakReplies == .always || (config.config.speech.speakReplies == .automatic && config.config.voice.enabled)
         if speaks, callMonitor?.isRunning != true { _ = speechMic.calls() } else { speechMic.stop() }
     }
 
