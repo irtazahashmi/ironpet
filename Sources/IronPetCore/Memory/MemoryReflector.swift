@@ -242,6 +242,9 @@ package final class MemoryReflector {
         let text: String
         let kind: String
         let source: String
+        /// What the change history names as the source: the chat item or the capture the pass read last. The page and its claims keep
+        /// `source`, so a page counts a chat once however many passes read it.
+        var changeSource: String? = nil
         /// The agent that already had this text.
         let agent: String
         let project: ProjectKey?
@@ -257,7 +260,7 @@ package final class MemoryReflector {
             guard let thread = threads(id), !thread.isAutomationRun, thread.job == nil else { return nil }
             let messages = unread(in: thread)
             guard !messages.isEmpty, let last = thread.items.last else { return nil }
-            return Input(text: transcript(messages), kind: "a chat between the user and \(petName())", source: "chat:" + id.prefix(8) + "/" + last.id.uuidString,
+            return Input(text: transcript(messages), kind: "a chat between the user and \(petName())", source: "chat:" + id.prefix(8), changeSource: "chat:" + id.prefix(8) + "/" + last.id.uuidString,
                          agent: thread.agent, project: MemoryMCP.project(URL(fileURLWithPath: thread.workspace)), outside: false,
                          cursors: [(key: id, item: last.id.uuidString)])
         case .meeting(let folder, let agent):
@@ -278,7 +281,7 @@ package final class MemoryReflector {
             guard let newest = fresh.first else { return nil }
             // The newest captures that fit, oldest first. The cursor moves past all of them, so older ones are not read later.
             return Input(text: ReflectionReading.screenText(fresh, maxInput: Self.maxInput), kind: "the text on the user's screen, as captured while they worked",
-                         source: "screen:\(newest.id)", agent: agent, project: nil, outside: true, cursors: [(key: Self.screenKey, item: String(newest.id))])
+                         source: "screen", changeSource: "screen:\(newest.id)", agent: agent, project: nil, outside: true, cursors: [(key: Self.screenKey, item: String(newest.id))])
         case .merge, .resort:
             return nil
         }
@@ -357,7 +360,7 @@ package final class MemoryReflector {
                     continue
                 }
                 switch store.replace(proposal.replaces, with: proposal.text, scope: proposal.scope, person: proposal.person,
-                                     project: input.project, entity: proposal.entity, source: input.source, reason: proposal.reason) {
+                                     project: input.project, entity: proposal.entity, source: input.source, reason: proposal.reason, changeSource: input.changeSource) {
                 case .success(let note):
                     outcome.saved.append(note.text)
                 case .failure(let failure):

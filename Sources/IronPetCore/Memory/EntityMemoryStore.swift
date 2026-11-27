@@ -188,7 +188,7 @@ package final class EntityMemoryStore: MemoryStore {
     // MARK: Writing
 
     package func replace(_ replacing: [String], with raw: String, scope: MemoryScope, person: String? = nil, project: ProjectKey? = nil,
-                         entity: String? = nil, source: String, reason: String? = nil) -> Result<MemoryNote, MemoryError> {
+                         entity: String? = nil, source: String, reason: String? = nil, changeSource: String? = nil) -> Result<MemoryNote, MemoryError> {
         let text: String
         switch MemoryNote.clean(raw) {
         case .success(let cleaned): text = cleaned
@@ -262,13 +262,13 @@ package final class EntityMemoryStore: MemoryStore {
                 // The same fact again is not a change, but each older claim it removed is logged as a forget, so Undo can bring it back.
                 for stale in written.removed {
                     index.record(at: at, file: written.target.id, section: written.target.person, action: .forgot, note: stale.note.line,
-                                 previous: String(stale.id), source: source, claim: stale.id, reason: reason)
+                                 previous: String(stale.id), source: changeSource ?? source, claim: stale.id, reason: reason)
                     index.removeClaim(stale.id)
                 }
             } else {
                 let previous = written.removed.isEmpty ? nil : Self.joined(written.removed.map { String($0.id) })
                 index.record(at: at, file: written.target.id, section: written.target.person, action: written.removed.isEmpty ? .added : .replaced,
-                             note: written.note.line, previous: previous, source: source, claim: written.claim, reason: reason)
+                             note: written.note.line, previous: previous, source: changeSource ?? source, claim: written.claim, reason: reason)
                 index.indexClaim(written.claim, title: Self.title(written.target), text: written.note.text, at: at)
                 written.removed.forEach { index.removeClaim($0.id) }
             }

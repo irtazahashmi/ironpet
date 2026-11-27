@@ -31,9 +31,10 @@ package protocol MemoryStore: AnyObject {
     /// Saves a claim in place of older ones it makes wrong (`replacing` names them by text; none for a plain save). A claim that is
     /// already there comes back instead of being added twice. Refuses secrets, and replacing more than `MemoryNote.maxForget` claims.
     /// `entity` names the project, organization, topic or tool a note is about. A `project` note without it goes on the chat's `project`.
-    /// `replacing` also takes a claim's `claim_` ref. `reason` is kept with the change in the page's history.
+    /// `replacing` also takes a claim's `claim_` ref. `reason` is kept with the change in the page's history, with `changeSource` (default
+    /// `source`) as the change's source.
     func replace(_ replacing: [String], with text: String, scope: MemoryScope, person: String?, project: ProjectKey?, entity: String?,
-                 source: String, reason: String?) -> Result<MemoryNote, MemoryError>
+                 source: String, reason: String?, changeSource: String?) -> Result<MemoryNote, MemoryError>
     /// Removes the claims that contain every word of `query`. They stay in the page's history, so Undo brings them back. Refuses when
     /// nothing matches or more than `MemoryNote.maxForget` do.
     func forget(_ query: String, scope: MemoryScope?, person: String?, project: ProjectKey?, entity: String?, source: String) -> Result<[ForgottenNote], MemoryError>
@@ -54,7 +55,7 @@ package protocol MemoryStore: AnyObject {
 extension MemoryStore {
     package func replace(_ replacing: [String], with text: String, scope: MemoryScope, person: String?, project: ProjectKey?, entity: String?,
                          source: String) -> Result<MemoryNote, MemoryError> {
-        replace(replacing, with: text, scope: scope, person: person, project: project, entity: entity, source: source, reason: nil)
+        replace(replacing, with: text, scope: scope, person: person, project: project, entity: entity, source: source, reason: nil, changeSource: nil)
     }
 
     @discardableResult

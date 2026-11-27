@@ -83,7 +83,7 @@ final class MemoryReflectorTests: XCTestCase {
         XCTAssertTrue(prompts[0].contains("User: I always use pnpm, never npm"))
         XCTAssertTrue(prompts[0].contains("Ghost: Noted."))
         XCTAssertEqual(claims("me"), ["Prefers pnpm over npm."])
-        XCTAssertTrue(store.claims(of: "me").first?.sources.last?.hasPrefix("chat:t1/") == true, "the source names the last chat item read")
+        XCTAssertEqual(store.claims(of: "me").first?.sources.last, "chat:t1")
         XCTAssertEqual(reflector.lastOutcome?.saved, ["Prefers pnpm over npm."])
     }
 
