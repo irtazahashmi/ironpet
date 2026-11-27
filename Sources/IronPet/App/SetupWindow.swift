@@ -9,6 +9,8 @@ import SwiftUI
 final class SetupWindow: NSObject, NSWindowDelegate {
     struct Choices {
         var name: String
+        /// The device-level switch. Off ignores `agents`: no hooks, and no Agents section.
+        var trackAgents = true
         var agents: [HookInstaller.Agent]
         var launchAtLogin: Bool
         var reminders: Bool
@@ -69,6 +71,7 @@ private struct SetupView: View {
 
     @State private var name = SettingsAPI.live.config.pet.name
     @State private var agents: Set<HookInstaller.Agent>
+    @State private var trackAgents = true
     @State private var launchAtLogin = true
     @State private var reminders = true
     @State private var githubAlerts = false
@@ -103,6 +106,14 @@ private struct SetupView: View {
                     TextField("Name", text: $name)
                 }
                 Section {
+                    Toggle(isOn: $trackAgents) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Track coding agents")
+                            Text("Shows the Agents section and adds hooks to the agents below. Off leaves their config alone and hides the section.")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                    }
+                    .accessibilityIdentifier("setup.trackAgents")
                     ForEach(HookInstaller.Agent.allCases.filter { present.contains($0) }, id: \.self) { agent in
                         Toggle(isOn: binding(agent)) {
                             VStack(alignment: .leading, spacing: 2) {
@@ -112,6 +123,7 @@ private struct SetupView: View {
                                     .font(.caption).foregroundStyle(.secondary)
                             }
                         }
+                        .disabled(!trackAgents)
                     }
                 } header: {
                     Text("Watch my agents")
@@ -154,7 +166,7 @@ private struct SetupView: View {
                 Button("Not now") { finish(nil) }
                     .accessibilityIdentifier("setup.notNow")
                 Button("Start") {
-                    finish(.init(name: displayName, agents: HookInstaller.Agent.allCases.filter(agents.contains),
+                    finish(.init(name: displayName, trackAgents: trackAgents, agents: HookInstaller.Agent.allCases.filter(agents.contains),
                                  launchAtLogin: launchAtLogin, reminders: reminders, githubAlerts: githubAlerts))
                 }
                 .keyboardShortcut(.defaultAction)

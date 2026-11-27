@@ -323,6 +323,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // Refresh the chosen hooks so they match this version of the app.
             setHooks(installed: hookAgents(in: config.config), quietly: true)
         }
+        pet.setAgentsTracked(config.config.integrations.trackAgents)
 
         timers.append(Timer.scheduledTimer(withTimeInterval: 1.0 / 30, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
@@ -899,6 +900,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let (newAgents, oldAgents) = (hookAgents(in: new), hookAgents(in: old))
         setHooks(installed: newAgents.filter { !oldAgents.contains($0) })
         setHooks(removed: oldAgents.filter { !newAgents.contains($0) })
+        if old.integrations.trackAgents, !new.integrations.trackAgents {
+            // Tracking off leaves nothing of ironpet in any agent's config, including hooks an older version left behind.
+            setHooks(removed: HookInstaller.Agent.allCases.filter { installer.isInstalled($0) })
+        }
+        pet.setAgentsTracked(new.integrations.trackAgents)
         if new.hotkeys != old.hotkeys || new.voice.enabled != old.voice.enabled
             || new.meetings.enabled != old.meetings.enabled || new.voiceMode.enabled != old.voiceMode.enabled { registerHotKeys() }
         if !new.voiceMode.enabled { voiceMode.conversation.end() }
@@ -997,7 +1003,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func hookAgents(in config: Config) -> [HookInstaller.Agent] {
-        HookInstaller.Agent.allCases.filter { config.integrations.watches($0) }
+        config.integrations.activeAgents
     }
 
     private func setHooks(installed agents: [HookInstaller.Agent], quietly: Bool = false) {
@@ -1032,7 +1038,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         config.update {
             $0.pet.name = choices.name
-            for agent in HookInstaller.Agent.allCases { $0.integrations.setWatches(choices.agents.contains(agent), agent) }
+            $0.integrations.trackAgents = choices.trackAgents
+            for agent in HookInstaller.Agent.allCases { $0.integrations.setWatches(choices.trackAgents && choices.agents.contains(agent), agent) }
             $0.integrations.githubAlerts = choices.githubAlerts
         }
         // The welcome choices add the reminders and the GitHub watcher the user ticked. ironpet adds no automation on its own.
@@ -1054,7 +1061,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if !added.isEmpty { try? automations.store.replace(automations.store.automations + added) }
         if !FileManager.default.fileExists(atPath: Config.file.path) { try? config.config.save() }
         // Hooks left by an older version that the user unticked.
-        setHooks(removed: HookInstaller.Agent.allCases.filter { !choices.agents.contains($0) && installer.isInstalled($0) })
+        setHooks(removed: HookInstaller.Agent.allCases.filter { !(choices.trackAgents && choices.agents.contains($0)) && installer.isInstalled($0) })
         if choices.launchAtLogin != LoginItem.isEnabled { LoginItem.set(choices.launchAtLogin) }
         Task { await chat.refreshAgents() }
     }
@@ -1312,6 +1319,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handle(_ event: HookEvent) {
+        // With tracking off, a hook that is still installed (an agent started before the hooks were removed) is ignored.
+        guard config.config.integrations.trackAgents else { return }
         // Cursor replays its events through Claude Code hooks too; keep only the Cursor copy.
         if event.source == .claude, event.payload["cursor_version"] != nil { return }
         store.apply(event)

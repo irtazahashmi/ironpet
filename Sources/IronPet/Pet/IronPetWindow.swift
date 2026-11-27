@@ -48,12 +48,20 @@ enum IronPetSection: String, CaseIterable, Identifiable {
 
     /// The sections the sidebar lists, in order. Chat, Transcripts and Automations need their backing object. Today
     /// is listed only while a brief or recap automation is on, and comes last so the other rows keep their ⌘N.
+    /// Agents is listed only while the device tracks agents. This filters the available sections and leaves the user's own
+    /// hide choice in `SidebarLayout` alone, so turning tracking on again brings back what they had.
     static func shown(chat: Bool, transcripts: Bool, automations: Bool, today: Bool = false,
-                      notifications: Bool = true) -> [IronPetSection] {
+                      notifications: Bool = true, agents: Bool = true) -> [IronPetSection] {
         allCases.filter {
             $0 != .dashboard && ($0 != .chat || chat) && ($0 != .transcripts || transcripts) && ($0 != .automations || automations)
-                && ($0 != .today || today) && ($0 != .notifications || notifications)
+                && ($0 != .today || today) && ($0 != .notifications || notifications) && ($0 != .agents || agents)
         }
+    }
+
+    /// The section to open when `section` was asked for: Chat in place of Agents while tracking is off, so no link, bubble or
+    /// shortcut lands on an empty Agents page.
+    func opened(agentsTracked: Bool) -> IronPetSection {
+        self == .agents && !agentsTracked ? .chat : self
     }
 
     /// The section ⌘1 to ⌘9 select: the Nth row of `sections`. Nil for ⌘0, any other key, or a digit past the last row.
@@ -81,7 +89,11 @@ enum IronPetSection: String, CaseIterable, Identifiable {
 
     /// Agents that need the user win; otherwise alerts when there are some and no agent is working, then the Inbox when it
     /// has items.
-    @MainActor static func needingAttention(agents: AgentsAPI, alerts: AlertsAPI, tasks: TasksAPI) -> IronPetSection {
+    @MainActor static func needingAttention(agents: AgentsAPI, alerts: AlertsAPI, tasks: TasksAPI, agentsTracked: Bool = true) -> IronPetSection {
+        guard agentsTracked else {
+            if !alerts.alerts.isEmpty { return .alerts }
+            return tasks.suggestions.isEmpty ? .chat : .inbox
+        }
         if agents.sessions.contains(where: { $0.status == .needsInput || $0.status == .failed }) { return .agents }
         let idle = agents.sessions.allSatisfy { $0.status != .running }
         if !alerts.alerts.isEmpty, idle { return .alerts }
@@ -120,6 +132,10 @@ final class IronPetWindowModel: ObservableObject {
     /// Whether the Today row is listed: a brief or recap automation is on. Leaving it hidden moves off the page.
     @Published var todayShown = false {
         didSet { if !todayShown, section == .today { section = .chat } }
+    }
+    /// Whether this device tracks coding agents. Off hides the Agents row and leaves the page.
+    @Published var agentsTracked = true {
+        didSet { if !agentsTracked, section == .agents { section = .chat } }
     }
     /// The page Today shows: the morning brief or the recap.
     @Published var briefKind: Brief.Kind = .brief
@@ -357,9 +373,9 @@ struct IronPetWindowView: View {
         .animation(.easeOut(duration: 0.12), value: model.railTip)
         // The pages the user followed in Memory are forgotten when they leave the section.
         .onChange(of: model.section) { _, section in if section != .memory { memoryModel.showList() } }
-        // A dashboard deleted while it is open leaves the user on the Agents page, not on an empty one.
+        // A dashboard deleted while it is open leaves the user on the Chat page, not on an empty one.
         .onChange(of: dashboards.list().map(\.id)) { _, ids in
-            if model.section == .dashboard, let open = model.dashboardID, !ids.contains(open) { model.section = .agents }
+            if model.section == .dashboard, let open = model.dashboardID, !ids.contains(open) { model.section = .chat }
         }
     }
 
@@ -375,7 +391,8 @@ struct IronPetWindowView: View {
     /// The sections that can be listed, whether or not the user hid them.
     private var available: [IronPetSection] {
         IronPetSection.shown(chat: chat != nil, transcripts: meetings != nil, automations: settings != nil,
-                             today: model.todayShown, notifications: notifications !== NotificationsModel.empty)
+                             today: model.todayShown, notifications: notifications !== NotificationsModel.empty,
+                             agents: model.agentsTracked)
     }
 
     /// The rows drawn, in the user's order without the hidden sections.

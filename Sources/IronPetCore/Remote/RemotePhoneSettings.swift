@@ -40,7 +40,8 @@ package struct RemotePhoneSettings {
                              eyes: reminder(c.reminders.eyes), idleResetMinutes: c.reminders.idleResetMinutes, snoozeMinutes: c.reminders.snoozeMinutes),
             tasks: .init(meetingSuggestions: c.tasks.meetingSuggestions),
             welcomeBack: .init(enabled: c.welcomeBack.enabled), speech: .init(enabled: c.speech.enabled, voice: c.speech.voice),
-            chat: .init(background: c.chat.background), screenCapture: .init(enabled: c.screenCapture.enabled), meetings: .init(enabled: c.meetings.enabled)))
+            chat: .init(background: c.chat.background), screenCapture: .init(enabled: c.screenCapture.enabled), meetings: .init(enabled: c.meetings.enabled),
+            agents: .init(trackAgents: c.integrations.trackAgents)))
     }
 
     /// A merge patch. Every key it sets is checked first, so one key that is not allowed changes nothing.

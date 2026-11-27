@@ -323,15 +323,20 @@ private struct GeneralSettings: View {
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {
+                Toggle("Track coding agents", isOn: Binding(
+                    get: { store.config.integrations.trackAgents },
+                    set: { on in store.update { $0.integrations.setTracking(on, found: HookInstaller.Agent.allCases.filter(\.isPresent)) } }))
+                    .help("Off removes ironpet's hooks from every agent's config and hides the Agents section on the Mac and the iPhone.")
                 ForEach(watchableAgents, id: \.self) { agent in
                     Toggle("Watch \(agent.displayName)", isOn: Binding(get: { store.config.integrations.watches(agent) },
                                                                      set: { on in store.update { $0.integrations.setWatches(on, agent) } }))
+                        .disabled(!store.config.integrations.trackAgents)
                         .help(agent.watchNote ?? "Adds ironpet's hooks to \(agent.configFile.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))")
                 }
             } header: {
                 Text("Watch sessions")
             } footer: {
-                Text("Lists the harnesses found on this Mac. Watching adds ironpet's hooks to the harness's own config so \(store.config.pet.name) sees sessions you start yourself. Turning one off removes only ironpet's hooks; an existing file is backed up as *.ironpet-backup the first time. Codex asks you to trust new hooks in its /hooks screen.")
+                Text("Tracking off removes ironpet's hooks from every harness and hides the Agents section here and on the iPhone; your choices below return when you turn it on. Lists the harnesses found on this Mac. Watching adds ironpet's hooks to the harness's own config so \(store.config.pet.name) sees sessions you start yourself. Turning one off removes only ironpet's hooks; an existing file is backed up as *.ironpet-backup the first time. Codex asks you to trust new hooks in its /hooks screen.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             SkillsSettings()

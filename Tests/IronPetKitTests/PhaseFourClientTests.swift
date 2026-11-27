@@ -85,3 +85,19 @@ final class PhaseFourClientTests: XCTestCase {
         XCTAssertEqual(client().session.configuration.urlCache?.diskCapacity ?? 0, 0)
     }
 }
+
+/// The phone hides Agents when the Mac reports tracking off, and a Mac that predates the switch reads as on.
+final class RemoteConfigTrackingTests: XCTestCase {
+    func testAnOlderMacWithoutTheKeyReadsAsTrackingOn() throws {
+        let json = #"{"pet":{"name":"Ghost"},"reminders":{"paused":false,"water":{"enabled":true,"minutes":45},"stretch":{"enabled":true,"minutes":60},"eyes":{"enabled":true,"minutes":20},"idleResetMinutes":5,"snoozeMinutes":10},"tasks":{"meetingSuggestions":true},"welcomeBack":{"enabled":true},"speech":{"enabled":false,"voice":""},"chat":{"background":"default"},"screenCapture":{"enabled":false},"meetings":{"enabled":false}}"#
+        let config = try JSONDecoder().decode(RemoteConfig.self, from: Data(json.utf8))
+        XCTAssertTrue(config.agents.trackAgents)
+    }
+
+    func testTrackingOffRoundTrips() throws {
+        var config = RemoteConfig()
+        config.agents.trackAgents = false
+        let decoded = try JSONDecoder().decode(RemoteConfig.self, from: JSONEncoder().encode(config))
+        XCTAssertFalse(decoded.agents.trackAgents)
+    }
+}

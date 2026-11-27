@@ -58,6 +58,7 @@ On the iPhone, a tapped record id asks the paired Mac for that record over the s
 | `~/.gemini/settings.json` | Only if you choose to watch Gemini CLI | Watch Gemini CLI off. Backed up as `settings.json.ironpet-backup` |
 | `~/.copilot/hooks/ironpet.json` | Only if you choose to watch GitHub Copilot. A file ironpet owns | Watch GitHub Copilot off deletes it |
 | `~/.pi/agent/extensions/ironpet.ts` | Only if you choose to watch Pi. A small extension that runs the hook script. A file ironpet owns | Watch Pi off deletes it, but only if it carries ironpet's first-line marker |
+| All of the files above | Settings → General → **Track coding agents** (`integrations.trackAgents`, on for installs that predate it) | Turning it off removes ironpet's hooks from every agent, ignores hook events still arriving from running sessions, and hides the Agents section on the Mac and the iPhone. Your per-agent choices come back when you turn it on |
 | `~/.cursor/projects/*/mcp-auth.json` | Only with **Share MCP sign-ins** on (off by default) | Turn it off; copied entries stay until you sign out of that server |
 | Login item | Only if you leave Launch at login on in the welcome window | Settings → General, or right-click → Launch at login |
 | Keychain item `ironpet.sentry` | Only if you run `scripts/configure_sentry.sh` | `security delete-generic-password -s ironpet.sentry` |
