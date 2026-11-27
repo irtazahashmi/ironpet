@@ -35,23 +35,31 @@ How you remove ironpet depends on how you installed it. Each way removes only ir
 ./scripts/uninstall.sh --purge    # deletes everything without asking
 ```
 
-The script:
+`--yes` does the same as `--purge`. The script:
 
-- removes only ironpet's entries from the agents' configs, so your other hooks stay,
+- quits ironpet,
+- removes only ironpet's entries from the agents' configs (such as `~/.cursor/hooks.json`, `~/.claude/settings.json`, `~/.codex/hooks.json` and `~/.gemini/settings.json`), so your other hooks stay,
 - deletes the two files ironpet owns, Copilot's `ironpet.json` and Pi's `ironpet.ts`,
-- removes the login item, the app, its Keychain items (the Sentry token, the voice API key, the Telegram bot token and the voiceprint key, with the stored voiceprints) and the app's preferences.
+- removes the login item and the app,
+- deletes the Sentry token, the voice API key and the voiceprint key from the Keychain, with the stored voiceprints,
+- deletes the app's preferences and the hook bridge in `~/.ironpet` (`bin/` and `port`),
+- asks before deleting the rest of `~/.ironpet` (settings, saved chats, memory, screenshots) and the local `ironpet-dev` code signing identity.
 
-The `*.ironpet-backup` files are kept, since they're your configs from before ironpet.
+It keeps:
+
+- the `*.ironpet-backup` files, since they're your configs from before ironpet,
+- the Telegram bot token in the Keychain; remove it in Settings → Integrations before you uninstall, or [from the terminal](#removing-your-data-by-hand),
+- MCP sign-ins copied by **Share MCP sign-ins across folders**, which stay in `~/.cursor/projects/*/mcp-auth.json` until you sign out of those servers.
 
 ## With Homebrew
 
-If you installed with Homebrew:
+If you installed the notarized release with Homebrew (`brew install --cask irtazahashmi/ironpet/ironpet`, Apple Silicon only):
 
 ```bash
 brew uninstall --cask ironpet
 ```
 
-Add `--zap` to delete its preferences too.
+Add `--zap` to delete its preferences too. See the [tap](https://github.com/irtazahashmi/homebrew-ironpet) for details.
 
 ## Removing your data by hand
 

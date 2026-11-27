@@ -17,13 +17,15 @@ If an agent says you need to sign in, ironpet shows a button. For an agent that 
 
 The chat has an agent picker and a model picker. The models come from the agent. ironpet detects the project folder you're working in. When you open the chat from an app that isn't about code, such as a browser or Slack, Ghost asks which project the question is about, or you can pick **No project** for a general question. Work that isn't about code runs in `~/.ironpet/scratch`.
 
+With several pets on, each pet runs its own chat, and the chat header switches between them. See [Pets](/docs/pets/).
+
 ## Approvals
 
 File edits and shell commands wait for **Allow** or **Deny** whenever the agent asks for permission. The card appears in the chat, or right in Ghost's bubble when the chat is closed. <kbd>⌘↩</kbd> allows.
 
 ironpet adds no rules of its own. Whatever the agent asks about shows up as a card with the agent's own options, such as allow once, allow always or approve a plan. ironpet answers none of them itself.
 
-An agent that never asks runs its tools without a card, and ironpet can't change that. For example, `cursor-agent acp` runs commands on its own allow-list without asking, and asks for nothing at all when set to Run Everything. Check each agent's own permission settings before you rely on the cards. See [Privacy](/docs/privacy/).
+Each card is an ACP `session/request_permission` request that you answer. An agent that never sends one runs its tools without a card, and ironpet can't change that. For example, `cursor-agent acp` runs commands on its own allow-list without asking, and asks for nothing at all when set to Run Everything. Check each agent's own permission settings before you rely on the cards. See [Privacy](/docs/privacy/).
 
 ## Modes
 
@@ -31,16 +33,17 @@ The chat's **Mode** picker lists the permission modes the agent itself offers. F
 
 ## Steering and the queue
 
-While a turn is running, a message you type goes into that turn when the agent supports steering. Otherwise it waits in the queue until the turn ends. **Stop** cancels the turn.
+While a turn is running, a message you type goes into that turn when the agent supports steering. Otherwise it waits in the queue until the turn ends. **Stop** cancels the turn (ACP `session/cancel`).
 
 ## Saved chats
 
-Chats are saved in `~/.ironpet/threads` and can be reopened from **Previous chats**. The agent process stays alive between messages. The chat that was open when the app quit reopens at launch.
+Chats are saved in `~/.ironpet/threads` and can be reopened from **Previous chats**. Reopening one loads the agent's own session again (ACP `session/load`). The agent process stays alive between messages. The chat that was open when the app quit reopens at launch.
 
 ## Attachments and context
 
 - Opening chat with text selected in another app attaches that selection as a removable chip, when Accessibility is already allowed.
 - <kbd>⇧⌥⌘G</kbd> and <kbd>⌃⌥⌘G</kbd> open a chat with a screenshot attached. See [Screen help](/docs/screen/).
+- Hold <kbd>fn</kbd> with [Wispr Flow](https://wisprflow.ai) while the chat is open, and the dictation is sent automatically. With voice notes on, <kbd>⌃⇧V</kbd> sends what you say as a message in the same chat. See [Voice](/docs/voice/).
 - A paste over 4000 characters or 60 lines becomes a `pasted-text.txt` attachment instead of staying in the input. Both limits are in Settings → General.
 
 ## Long chats
@@ -51,9 +54,9 @@ Claude Code keeps every session in one file that only grows. When that file pass
 
 Ghost's chat can use the MCP servers you have in Cursor (`~/.cursor/mcp.json`). The Cursor CLI stores MCP sign-ins per folder, so normally you sign in with `cursor-agent mcp login <name>` in each project.
 
-Turn on right-click → Integrations → **Share MCP sign-ins across folders** to sign in once. Ghost then copies your sign-ins into whichever folder a chat runs in. It's off by default because it copies OAuth tokens.
+Turn on right-click → Integrations → **Share MCP sign-ins across folders** to sign in once. Ghost then copies your sign-ins into whichever folder a chat runs in. It's off by default because it copies OAuth tokens; see [SECURITY.md](https://github.com/irtazahashmi/ironpet/blob/main/SECURITY.md).
 
-Read-only MCP tools (`get…`, `list…`, `search…`, `find…`) run freely. Any other MCP tool waits for **Allow / Deny**.
+Read-only MCP tools (`get…`, `list…`, `search…`, `find…`) run freely. Any other MCP tool waits for **Allow / Deny**, and whatever the agent asks about shows a card.
 
 ## Using ironpet's tools from another agent
 

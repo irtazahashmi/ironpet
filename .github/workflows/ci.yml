@@ -51,9 +51,10 @@ jobs:
           scripts=false
           unknown=false
 
+          # web/ is the website; Netlify builds it, so it needs no job here.
           is_docs() {
             case "$1" in
-              *.md|LICENSE|docs|docs/*|.agents|.agents/*|.cursor|.cursor/*) return 0 ;;
+              *.md|LICENSE|docs|docs/*|.agents|.agents/*|.cursor|.cursor/*|web/*) return 0 ;;
               *) return 1 ;;
             esac
           }

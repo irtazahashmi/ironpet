@@ -74,7 +74,7 @@ const features: { title: string; body: string; clip: Clip; link: { href: string;
 ];
 
 const more = [
-  { title: "Listens", body: "Dictate, hear replies read aloud, or talk hands-free in voice mode.", href: "/docs/voice/" },
+  { title: "Listens", body: "Dictate, hear replies read aloud, or talk to the chat with one shortcut.", href: "/docs/voice/" },
   { title: "Sees your screen", body: "⇧⌥⌘G asks about the front window, ⌃⌥⌘G about a region you drag.", href: "/docs/screen/" },
   { title: "Runs automations", body: "Reminders, watchers and scheduled jobs that an agent can set up for you.", href: "/docs/automations/" },
   { title: "Takes meeting notes", body: "Records and transcribes meetings, then writes a summary with action items.", href: "/docs/meetings/" },
