@@ -58,6 +58,8 @@ package final class MemoryReflector {
     package static var maxNotes: Int { ConfigStore.shared.config.memory.reflectMaxNotes }
     package static var maxInput: Int { ConfigStore.shared.config.memory.reflectMaxInputChars }
     package static var timeout: TimeInterval { TimeInterval(ConfigStore.shared.config.memory.reflectTimeoutSeconds) }
+    /// Most entities one pass may record, so a long meeting cannot fill the memory with pages.
+    package static let maxEntities = 10
     /// Most merges one pass of the merge job may make.
     package static let maxMerges = 5
     /// Most of a page's oldest facts one merge pass shows the agent.
@@ -313,9 +315,16 @@ package final class MemoryReflector {
                 outcome.error = "the agent did not answer with the notes JSON"
                 return outcome
             }
+            // The entities first decide which page a name in a note means: a second name or an email address of a known page files the
+            // note there, and an alias the answer gives for a new name files it under the main name.
+            let seen = Array(Self.parseEntities(answer).prefix(Self.maxEntities))
             // Like forget, one pass may replace at most `maxForget` notes in all, so a misled pass cannot empty a page.
             var replaced = 0
-            for proposal in proposals.prefix(Self.maxNotes) {
+            for var proposal in proposals.prefix(Self.maxNotes) {
+                proposal.person = canonicalName(proposal.person, type: .person, seen: seen)
+                if let type = proposal.scope.namedType, proposal.scope != .project || proposal.entity != nil {
+                    proposal.entity = canonicalName(proposal.entity, type: type, seen: seen)
+                }
                 if let reason = Self.refusal(proposal, outside: input.outside, hasProject: input.project != nil) {
                     outcome.dropped.append("\(proposal.text) (\(reason))")
                     continue
@@ -338,7 +347,11 @@ package final class MemoryReflector {
                     outcome.dropped.append("\(proposal.text) (\(failure.message))")
                 }
             }
-            // After the notes, so a person the pass just named already has a page to link.
+            // After the notes, so a mention is not counted twice for a page that just got a note from this source.
+            for entity in seen {
+                store.noteMention(entity, source: input.source)
+            }
+            // After the notes and the entities, so a person or organization the pass just named already has a page to link.
             for link in Self.parseLinks(answer).prefix(Self.maxNotes) {
                 guard let from = resolve(link.from), let to = resolve(link.to), from != to else { continue }
                 store.link(from: from, to: to, type: link.type, source: input.source)
@@ -350,6 +363,20 @@ package final class MemoryReflector {
 
     private func moveCursors(_ cursors: [(key: String, item: String)]) {
         for cursor in cursors { index.setCursor(cursor.key, item: cursor.item, at: now()) }
+    }
+
+    /// The name a note should use: the main name of the entity in the answer that has this name or alias, then the name of the page that
+    /// entity's name or identifiers match. A name the answer does not list stays as it is.
+    private func canonicalName(_ name: String?, type: EntityType, seen: [EntityMemoryStore.SeenEntity]) -> String? {
+        guard let name, !name.isEmpty else { return name }
+        let wanted = EntityMatcher.normalize(name)
+        let listed = seen.first { $0.type == type && ([$0.name] + $0.aliases).contains { EntityMatcher.normalize($0) == wanted } }
+        let main = listed?.name ?? name
+        switch EntityMatcher.match(name: main, identifiers: (listed?.identifiers ?? []) + (name.contains("@") ? [name] : []), type: type,
+                                   in: store.entities().map(\.record)) {
+        case .found(let id): return store.entities().first { $0.id == id }?.name ?? main
+        case .none, .ambiguous: return main
+        }
     }
 
     /// The page a name in an answer names: the one match, or nil when none or more than one page has it.
@@ -515,7 +542,7 @@ package final class MemoryReflector {
         // The text is `prompts/memory-reflection.md`. The scope list, the rule for outside text and the notes are built here.
         return Prompts.render(id: "memory-reflection", [
             "pet": petName, "kind": kind, "scopes": scopes.joined(separator: "; "), "rule": rule, "notes": current, "input": input,
-            "maxLength": String(MemoryNote.maxLength), "maxNotes": String(maxNotes),
+            "maxLength": String(MemoryNote.maxLength), "maxNotes": String(maxNotes), "maxEntities": String(maxEntities),
         ])
     }
 
@@ -561,6 +588,21 @@ package final class MemoryReflector {
                   type.allSatisfy({ $0.isASCII && ($0.isLetter || $0 == "_") }),
                   !from.trimmingCharacters(in: .whitespaces).isEmpty, !to.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
             return (from, type, to)
+        }
+    }
+
+    /// The entities an answer lists, whether or not a note is filed on them. An entry without a name or with a type that is not a page
+    /// type is skipped, and so is the user's own page.
+    package static func parseEntities(_ answer: String) -> [EntityMemoryStore.SeenEntity] {
+        guard let entities = jsonObject(in: answer)?["entities"] as? [Any] else { return [] }
+        let synonyms = ["organization": EntityType.org, "organisation": .org, "company": .org]
+        return entities.compactMap { raw in
+            guard let entry = raw as? [String: Any], let name = entry["name"] as? String,
+                  let word = (entry["type"] as? String)?.lowercased(),
+                  let type = EntityType(rawValue: word) ?? synonyms[word], type != .me,
+                  !name.trimmingCharacters(in: .whitespaces).isEmpty else { return nil }
+            return EntityMemoryStore.SeenEntity(name: name, type: type, aliases: (entry["aliases"] as? [Any] ?? []).compactMap { $0 as? String },
+                                                identifiers: (entry["identifiers"] as? [Any] ?? []).compactMap { $0 as? String })
         }
     }
 
