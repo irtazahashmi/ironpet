@@ -12,7 +12,8 @@ package struct MemoryChange: Identifiable, Equatable, Codable {
         previous: String?,
         source: String,
         undone: Bool,
-        claim: Int64? = nil
+        claim: Int64? = nil,
+        reason: String? = nil
     ) {
         self.id = id
         self.at = at
@@ -24,6 +25,7 @@ package struct MemoryChange: Identifiable, Equatable, Codable {
         self.source = source
         self.undone = undone
         self.claim = claim
+        self.reason = reason
     }
 
     package enum Action: String, Codable {
@@ -55,6 +57,8 @@ package struct MemoryChange: Identifiable, Equatable, Codable {
     package var undone: Bool
     /// The claim this change added, or the one that replaced others. Nil for changes made before claims.
     package let claim: Int64?
+    /// Why the digest made this change, in the agent's words. Nil for a change without one, such as every change made before it was kept.
+    package let reason: String?
 }
 
 /// Search over what Ghost has seen and kept, in ironpet's shared database: chat messages, meeting summaries and transcripts, the
@@ -119,6 +123,10 @@ package final class MemoryIndex: @unchecked Sendable { // `database` serializes 
         .init(602, "memory: notes waiting for the cleanup to name their page", sql: """
             CREATE TABLE memory_unsorted(id INTEGER PRIMARY KEY AUTOINCREMENT, text TEXT NOT NULL, date TEXT NOT NULL DEFAULT '',
                                          source TEXT NOT NULL DEFAULT '', folder TEXT NOT NULL DEFAULT '');
+            """),
+        // The reason the digest gave for a change, next to its source. Old changes keep it empty.
+        .init(603, "memory: the reason of a change", sql: """
+            ALTER TABLE memory_changes ADD COLUMN reason TEXT;
             """),
     ]
 
@@ -364,10 +372,10 @@ package final class MemoryIndex: @unchecked Sendable { // `database` serializes 
     /// Logs one change to a page. `claim` is the claim it added, or the claims it removed (in `previous`, as ids), which is what Undo needs.
     @discardableResult
     package func record(at: Date, file: String, section: String?, action: MemoryChange.Action, note: String, previous: String?, source: String,
-                        claim: Int64? = nil) -> Int64? {
+                        claim: Int64? = nil, reason: String? = nil) -> Int64? {
         try? database.write { db in
-            try db.execute("INSERT INTO memory_changes(at, file, section, action, note, previous, source, claim, node_id, agent_id) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                           [at.timeIntervalSince1970, file, section, action.rawValue, note, previous, source, claim] + Provenance.current(db).columns)
+            try db.execute("INSERT INTO memory_changes(at, file, section, action, note, previous, source, claim, reason, node_id, agent_id) VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                           [at.timeIntervalSince1970, file, section, action.rawValue, note, previous, source, claim, reason] + Provenance.current(db).columns)
             return try db.rows("SELECT last_insert_rowid()").first?.first as? Int64
         }
     }
@@ -375,14 +383,14 @@ package final class MemoryIndex: @unchecked Sendable { // `database` serializes 
     /// The newest changes first.
     package func changes(limit: Int = 20) -> [MemoryChange] {
         let rows = (try? database.read {
-            try $0.rows("SELECT id, at, file, section, action, note, previous, source, undone, claim FROM memory_changes ORDER BY id DESC LIMIT ?", [limit])
+            try $0.rows("SELECT id, at, file, section, action, note, previous, source, undone, claim, reason FROM memory_changes ORDER BY id DESC LIMIT ?", [limit])
         }) ?? []
         return rows.compactMap(Self.change)
     }
 
     package func change(_ id: Int64) -> MemoryChange? {
         (try? database.read {
-            try $0.rows("SELECT id, at, file, section, action, note, previous, source, undone, claim FROM memory_changes WHERE id = ?", [id])
+            try $0.rows("SELECT id, at, file, section, action, note, previous, source, undone, claim, reason FROM memory_changes WHERE id = ?", [id])
         })?.first.flatMap(Self.change)
     }
 
@@ -394,6 +402,7 @@ package final class MemoryIndex: @unchecked Sendable { // `database` serializes 
         guard let id = row[0] as? Int64, let action = (row[4] as? String).flatMap(MemoryChange.Action.init(rawValue:)) else { return nil }
         return MemoryChange(id: id, at: Date(timeIntervalSince1970: row[1] as? Double ?? 0), file: row[2] as? String ?? "",
                             section: row[3] as? String, action: action, note: row[5] as? String ?? "", previous: row[6] as? String,
-                            source: row[7] as? String ?? "", undone: (row[8] as? Int64 ?? 0) != 0, claim: row[9] as? Int64)
+                            source: row[7] as? String ?? "", undone: (row[8] as? Int64 ?? 0) != 0, claim: row[9] as? Int64,
+                            reason: row[10] as? String)
     }
 }
