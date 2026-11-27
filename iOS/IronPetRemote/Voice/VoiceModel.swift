@@ -3,6 +3,35 @@ import IronPetKit
 import Observation
 import UIKit
 
+/// The part of `UIApplication` that keeps the screen on. A fake in tests.
+@MainActor
+protocol IdleTimerControl: AnyObject {
+    var isIdleTimerDisabled: Bool { get set }
+}
+
+extension UIApplication: IdleTimerControl {}
+
+/// Keeps the screen awake while a voice message is recorded or a reply is read aloud, and puts the idle timer back to the value it
+/// had before, not to false.
+@MainActor
+final class ScreenAwake {
+    private let app: any IdleTimerControl
+    private var previous: Bool?
+
+    init(app: any IdleTimerControl) { self.app = app }
+
+    func set(_ awake: Bool) {
+        if awake {
+            guard previous == nil else { return }
+            previous = app.isIdleTimerDisabled
+            app.isIdleTimerDisabled = true
+        } else if let value = previous {
+            previous = nil
+            app.isIdleTimerDisabled = value
+        }
+    }
+}
+
 /// The phone's side of the voice socket: the mic button, the transcript it gets back, and the spoken replies.
 ///
 /// A tap on the mic streams audio to the Mac. A second tap ends the stream, and the Mac answers with the text. With spoken replies on,
@@ -20,7 +49,7 @@ final class VoiceModel {
     static let spokenRepliesKey = "voice.spokenReplies"
     static let sendKey = "voice.sendAtOnce"
 
-    private(set) var state: State = .idle
+    private(set) var state: State = .idle { didSet { updateScreenAwake() } }
     var errorMessage: String?
     /// True when `errorMessage` is about microphone permission, so the view offers a way to the Settings app.
     var needsSettings: Bool { errorMessage == MicError.denied.errorDescription }
@@ -41,7 +70,7 @@ final class VoiceModel {
     /// Loudness of the running recording, drawn by the waveform. A reference type, so drawing never re-renders the chat.
     @ObservationIgnored let levels = LevelBuffer()
     /// True while a reply plays or arrives.
-    private(set) var speaking = false
+    private(set) var speaking = false { didSet { updateScreenAwake() } }
     /// The id of the chat message that plays or arrives, so its speaker button shows Stop.
     private(set) var readingItem: String?
 
@@ -80,6 +109,7 @@ final class VoiceModel {
     @ObservationIgnored private var savedWaiter: CheckedContinuation<SavedTranscript, Never>?
 
     @ObservationIgnored let player: ReplyPlayer
+    @ObservationIgnored private let screen: ScreenAwake
     @ObservationIgnored private let openChannel: () -> any VoiceChannel
     @ObservationIgnored private let makeMic: () -> any MicSource
     @ObservationIgnored private let defaults: UserDefaults
@@ -106,8 +136,9 @@ final class VoiceModel {
     /// How long the Mac has to answer a finished recording with its text before the phone gives up.
     static var transcribeTimeout: Duration = .seconds(30)
 
-    init(player: ReplyPlayer, defaults: UserDefaults = .standard, openChannel: @escaping () -> any VoiceChannel, makeMic: @escaping () -> any MicSource) {
+    init(player: ReplyPlayer, defaults: UserDefaults = .standard, openChannel: @escaping () -> any VoiceChannel, makeMic: @escaping () -> any MicSource, idleTimer: any IdleTimerControl = UIApplication.shared) {
         self.player = player
+        screen = ScreenAwake(app: idleTimer)
         self.defaults = defaults
         self.openChannel = openChannel
         self.makeMic = makeMic
@@ -123,6 +154,9 @@ final class VoiceModel {
             Task { await self?.send(.ttsStop) }
         }
     }
+
+    /// The screen stays on while the mic records and while a reply plays or arrives. Waiting for the text does not need it.
+    private func updateScreenAwake() { screen.set(state == .recording || speaking) }
 
     /// Connects when spoken replies are on, so the Mac knows to send them. Call when the tabs appear.
     func start() {
@@ -186,6 +220,12 @@ final class VoiceModel {
             Task { @MainActor in
                 guard let self, let source else { return }
                 await self.micDied(source, reason)
+            }
+        }
+        source.onInterrupted = { [weak self, weak source] reason in
+            Task { @MainActor in
+                guard let self, let source else { return }
+                await self.micInterrupted(source, reason)
             }
         }
         let id = UUID().uuidString.lowercased()
@@ -268,6 +308,15 @@ final class VoiceModel {
         let id = streamID
         fail(reason)
         if let id { await send(.cancel(id: id)) }
+    }
+
+    /// A call or Siri took the microphone while recording. What was recorded before it is sent as usual, and the user sees that the
+    /// message was cut short. With nothing recorded yet it is dropped like any other failure.
+    private func micInterrupted(_ source: any MicSource, _ reason: String) async {
+        guard mic === source, state == .recording else { return }
+        guard !recordedPCM.isEmpty else { return await micDied(source, reason) }
+        await endRecording()
+        if errorMessage == nil { errorMessage = "Cut short: \(reason) What you said before is sent." }
     }
 
     private func endRecording() async {

@@ -57,6 +57,8 @@ targets:
         NSRemindersFullAccessUsageDescription: The agent on this phone adds a reminder to the Reminders app when you ask for one.
         NSLocalNetworkUsageDescription: IronPet talks to the IronPet app on your Mac over your local network.
         NSSupportsLiveActivities: true
+        # Recording and a spoken reply continue when the phone locks or the user switches apps.
+        UIBackgroundModes: [audio]
         NSAppTransportSecurity:
           NSAllowsLocalNetworking: true
         # Only the system's TLS and SHA-256 hashes, which are exempt, so TestFlight doesn't ask about export compliance on every build.

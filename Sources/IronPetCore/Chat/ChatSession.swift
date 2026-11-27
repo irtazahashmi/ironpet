@@ -701,6 +701,20 @@ package final class ChatSession {
         }
     }
 
+    /// One moment of a sample conversation, for the `--render-videos` clips: running while `activity` or `approval` is set,
+    /// otherwise done, or idle with no items.
+    package func showPreview(_ items: [Item], activity: String? = nil, approval: (title: String, detail: String)? = nil, ranFor: TimeInterval? = nil) {
+        workspace = URL(fileURLWithPath: "/Users/you/code/demo-app")
+        needsWorkspace = false
+        self.items = items
+        let running = activity != nil || approval != nil
+        state = running ? .running : items.isEmpty ? .idle : .done
+        self.activity = approval == nil ? activity : "Waiting for you"
+        runStartedAt = running ? Date().addingTimeInterval(-(ranFor ?? 4)) : nil
+        lastRunDuration = running ? nil : ranFor
+        approvals = approval.map { [Approval(title: $0.title, detail: $0.detail, responders: [])] } ?? []
+    }
+
     /// A reply with every text block, for the markdown previews.
     package static let sampleMarkdown = """
     ## Plan
