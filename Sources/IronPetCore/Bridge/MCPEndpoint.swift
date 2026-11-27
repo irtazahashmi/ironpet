@@ -19,9 +19,7 @@ package enum MCPEndpoint {
 
     /// The endpoint a background job's session uses. It has every tool except those that start, steer or open jobs.
     package nonisolated static let jobPath = "/mcp/job"
-    /// The endpoint voice mode's session uses. It has every tool; jobs it starts are marked as started by voice.
-    package nonisolated static let voicePath = "/mcp/voice"
-    /// Set to `job` or `voice` in the stdio bridge's environment to use `jobPath` or `voicePath`.
+    /// Set to `job` in the stdio bridge's environment to use `jobPath`.
     package nonisolated static let scopeVariable = "IRONPET_MCP_SCOPE"
     package static let jobOnlyHidden: Set<String> = ["jobs_start", "jobs_followup", "jobs_stop", "jobs_open"]
 
@@ -29,16 +27,12 @@ package enum MCPEndpoint {
     package nonisolated static func path(forScope scope: String?) -> String {
         switch scope {
         case "job": return jobPath
-        case "voice": return voicePath
         default: return "/mcp"
         }
     }
 
     /// `servers` with ironpet's own entry switched to the job scope.
     package nonisolated static func jobScoped(_ servers: [JSON]) -> [JSON] { scoped(servers, "job") }
-
-    /// `servers` with ironpet's own entry switched to the voice scope.
-    package nonisolated static func voiceScoped(_ servers: [JSON]) -> [JSON] { scoped(servers, "voice") }
 
     private nonisolated static func scoped(_ servers: [JSON], _ scope: String) -> [JSON] {
         servers.map { server in
@@ -63,7 +57,7 @@ package enum MCPEndpoint {
     /// Handles one MCP JSON-RPC message. Returns the HTTP status line and body.
     package static func handle(_ body: Data, automations: AutomationsAPI?, tasks: TasksAPI?, screen: ScreenAPI? = nil,
                        desktop: DesktopAPI? = nil, memory: MemoryAPI? = nil, assistant: AssistantAPI? = nil,
-                       caller: String? = nil, jobScope: Bool = false, voiceScope: Bool = false,
+                       caller: String? = nil, jobScope: Bool = false,
                        notifications: NotificationsAPI? = nil, records: RecordResolver? = nil,
                        agentRecords: AgentRecordsAPI? = nil, agent: String? = nil, chat: ChatAPI? = nil,
                        dashboards: DashboardsAPI? = nil) async -> (status: String, body: Data) {
@@ -120,7 +114,7 @@ package enum MCPEndpoint {
             }
             if AssistantMCP.handles(name) {
                 guard let assistant else { return toolResult("ironpet's assistant tools are not available right now", isError: true) }
-                switch assistant.callTool(name, arguments, fromVoice: voiceScope, agent: callingAgent) {
+                switch assistant.callTool(name, arguments, agent: callingAgent) {
                 case .success(let value): return toolResult(text(value), isError: false)
                 case .failure(let error): return toolResult(error.message, isError: true)
                 }
@@ -211,10 +205,10 @@ package enum MCPEndpoint {
         Task { @MainActor in
             let result: (status: String, body: Data)
             switch path {
-            case "/mcp", jobPath, voicePath:
+            case "/mcp", jobPath:
                 result = await handle(body, automations: automations(), tasks: tasks(), screen: screen(), desktop: desktop(),
                                       memory: memory(), assistant: assistant(), caller: caller, jobScope: path == jobPath,
-                                      voiceScope: path == voicePath, notifications: notifications(), records: records(), agentRecords: agentRecords(),
+                                      notifications: notifications(), records: records(), agentRecords: agentRecords(),
                                       agent: agent, chat: chat(), dashboards: dashboards())
             case "/notifications":
                 guard let api = notifications() else { return respond("503 Service Unavailable", Data()) }

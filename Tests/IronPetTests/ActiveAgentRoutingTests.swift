@@ -28,6 +28,8 @@ final class ActiveAgentRoutingTests: XCTestCase {
         bunny = ChatHarness(session: ChatSession(restore: false, speech: speech, agentID: bunnyID))
         for (harness, id) in [(one!, AgentOwner.defaultID), (bunny!, bunnyID)] {
             harness.session.workspace = FileManager.default.temporaryDirectory
+            // Always, so the typed transcripts here are read; the routing is what these tests are about.
+            harness.session.speakRepliesSetting = { .always }
             harness.model.sendAfterDictation = true
             harness.session.turnRunner = { [unowned self] turn, onEvent in
                 turns[id, default: []].append(turn)

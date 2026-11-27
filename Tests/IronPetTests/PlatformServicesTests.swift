@@ -212,7 +212,7 @@ final class PlatformServicesFacadeTests: XCTestCase {
         let key = VoiceKey.unsupported
         api.voice.voiceKey = key
         XCTAssertTrue(api.settings.config.speech.canSpeak)
-        XCTAssertTrue(speech.isEnabled() == api.settings.config.speech.enabled, "the speaker follows the settings")
+        XCTAssertTrue(speech.isEnabled() == (api.settings.config.speech.speakReplies != .never), "the speaker follows the settings")
         XCTAssertThrowsError(try api.voice.speak(SpeakRequest(text: "```\ncode\n```"))) { XCTAssertEqual(($0 as? APIError)?.code, .invalid) }
         XCTAssertEqual(speech.spoken.count, 1, "text with nothing to read never reaches the speaker")
     }

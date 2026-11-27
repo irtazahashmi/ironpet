@@ -59,8 +59,9 @@ package struct ChatUpload: Codable, Equatable {
 /// A message for the open chat.
 package struct SendChatRequest: Codable, Equatable {
     package init(text: String, origin: ChatOrigin? = nil, files: [URL] = [], uploads: [ChatUpload] = [], reply: ChatReply? = nil,
-                 selection: FrontSelection? = nil, agentId: String? = nil) {
+                 selection: FrontSelection? = nil, agentId: String? = nil, spoken: Bool? = nil) {
         self.agentId = agentId
+        self.spoken = spoken
         self.text = text
         self.origin = origin
         self.files = files
@@ -82,6 +83,8 @@ package struct SendChatRequest: Codable, Equatable {
     package var selection: FrontSelection?
     /// The agent whose chat gets the message. Nil is agent 1.
     package var agentId: String?
+    /// The user said the message aloud (the voice shortcut). Its reply starts with a summary that is read aloud. Only the Mac's own input.
+    package var spoken: Bool?
 }
 
 package enum ChatSendOutcome: String, Codable {
@@ -653,7 +656,7 @@ package final class ChatAPI {
         }
         guard let origin = request.origin else {
             return ChatSendResult(outcome: Self.outcome(session.submitLocal(text, files: files, reply: request.reply,
-                                                                            selection: request.selection)))
+                                                                            selection: request.selection, spoken: request.spoken == true)))
         }
         let before = session.queue.count
         session.submit(text, from: origin, files: files, reply: request.reply)

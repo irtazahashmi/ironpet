@@ -70,17 +70,11 @@ package enum AssistantMCP {
     /// Tools that only read ironpet's own state or open a job's thread. They run without an approval, like the task tools.
     package nonisolated static let ownTools: Set<String> = ["jobs_list", "jobs_get", "jobs_open", "projects_resolve", "status_overview", "status_sessions",
                                         "status_alerts", "status_today", "status_meetings"]
-    /// Tools that start or steer a job. They ask in a chat without Auto; voice mode runs them, since that is how it hands work off.
-    package nonisolated static let jobControl: Set<String> = ["jobs_start", "jobs_followup", "jobs_stop"]
-    package static let voiceHoldNote = "It starts \(Int(JobService.voiceHold)) seconds after you have told the user, so they can still say \"cancel that\"."
-
-    /// `fromVoice`: the call came from voice mode's session, whose jobs wait until the pet has answered and
-    /// `JobService.voiceHold` more before they start.
     /// `agent` is the agent the call comes from: the sessions it sees, unless the arguments name another agent.
-    package static func call(_ name: String, _ args: [String: Any], context: AssistantContext, fromVoice: Bool = false,
+    package static func call(_ name: String, _ args: [String: Any], context: AssistantContext,
                              agent: String? = nil) -> Result<Any, JobError> {
         do {
-            return .success(try run(name, args, context, fromVoice: fromVoice, agent: agent))
+            return .success(try run(name, args, context, agent: agent))
         } catch let error as JobError {
             return .failure(error)
         } catch {
@@ -88,7 +82,7 @@ package enum AssistantMCP {
         }
     }
 
-    private static func run(_ name: String, _ args: [String: Any], _ context: AssistantContext, fromVoice: Bool, agent: String?) throws -> Any {
+    private static func run(_ name: String, _ args: [String: Any], _ context: AssistantContext, agent: String?) throws -> Any {
         /// The sessions the call may see: the agent it names, else the calling agent, else agent 1.
         func sessions() throws -> [AgentSession] {
             let owner = try context.resolveAgent(args["agentId"] as? String ?? agent)
@@ -115,12 +109,9 @@ package enum AssistantMCP {
                 try FileManager.default.createDirectory(at: candidate.url, withIntermediateDirectories: true)
             }
             let service = try jobs()
-            let job = try service.start(title: try required("title"), prompt: try required("prompt"), folder: candidate.url, fromVoice: fromVoice)
+            let job = try service.start(title: try required("title"), prompt: try required("prompt"), folder: candidate.url)
             var object = jobJSON(job, service)
             object["project"] = candidate.name
-            if fromVoice {
-                object["note"] = Self.voiceHoldNote
-            }
             return object
         case "jobs_list":
             let cutoff = context.now().addingTimeInterval(-86_400)
@@ -138,9 +129,8 @@ package enum AssistantMCP {
             return object
         case "jobs_followup":
             let service = try jobs()
-            let job = try service.followUp(try required("id"), message: try required("message"), fromVoice: fromVoice)
+            let job = try service.followUp(try required("id"), message: try required("message"))
             var object = jobJSON(job, service)
-            if fromVoice, service.isHeld(job.id) { object["note"] = Self.voiceHoldNote }
             return object
         case "jobs_stop":
             let service = try jobs()

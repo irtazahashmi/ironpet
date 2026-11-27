@@ -1193,7 +1193,7 @@ def scenario_speech():
                                  {"id": "00000000-0000-0000-0000-000000000002", "kind": {"assistant": {"_0": reply}}}]},
                       open(thread, "w"))
             config = read_config()
-            config["speech"] = {"enabled": False}
+            config["speech"] = {"speakReplies": "never"}
             json.dump(config, open(CONFIG, "w"), indent=2)
             time.sleep(2.6)
             call("POST", "/test/show-chat", {"newChat": True})
@@ -1203,7 +1203,7 @@ def scenario_speech():
             stub = StubSpeech()
             set_voice_config(baseUrl="http://127.0.0.1:8002/v1")
             config = read_config()
-            config["speech"] = {"enabled": True, "model": "stub/tts", "voice": "am_puck"}
+            config["speech"] = {"speakReplies": "automatic", "model": "stub/tts", "voice": "am_puck"}
             json.dump(config, open(CONFIG, "w"), indent=2)
             time.sleep(2.6)
             call("POST", "/test/speech/speak")
@@ -1229,74 +1229,48 @@ def voice_mode(path="state", body=None):
     return call("GET", "/test/voice-mode/state") if path == "state" else call("POST", f"/test/voice-mode/{path}", body or {})
 
 
-def voice_mode_listening(mode):
-    return wait_for(lambda: (lambda s: s if s["state"] == "listening" and s["pill"] and s["mode"] == mode else None)(voice_mode()), 5)
+def voice_mode_listening():
+    return wait_for(lambda: (lambda s: s if s["state"] == "listening" and s["pill"] else None)(voice_mode()), 5)
 
 
 def scenario_voice_mode():
-    """Voice mode with a silent microphone and voice: the conversation loop, goodbye, Wispr mode, and one real
-    front-desk turn that starts a voice job which "cancel that" stops inside its hold, so the job's agent never runs."""
-    threads = f"{ROOT}/threads"
+    """A spoken message with a silent microphone: the shortcut's path listens, the utterance lands in the primary chat as a
+    user message marked voice, and Esc's path discards one."""
     with PreservedUserState(), PreservedDatabase():
-        before = set(os.listdir(threads)) if os.path.isdir(threads) else set()
         try:
             voice_mode_checks()
         finally:
-            # The front desk may still be saving its thread; stop the app before deleting the threads.
             subprocess.run(["pkill", "-f", f"{APP}/Contents/MacOS/IronPet"])
             time.sleep(1.5)
-            for name in (set(os.listdir(threads)) if os.path.isdir(threads) else set()) - before:
-                os.remove(os.path.join(threads, name))
 
 
 def voice_mode_checks():
     relaunch(test_mode=True)
     config = read_config()
-    config["voiceMode"] = {"enabled": False}
+    config["voice"] = {**config.get("voice", {}), "enabled": False}
     json.dump(config, open(CONFIG, "w"), indent=2)
     time.sleep(2.6)
-    record("Voice mode: off, the test endpoint refuses to start", voice_mode("start").get("error") == "voice mode is off")
+    record("Spoken message: voice notes off, the test endpoint refuses to start", voice_mode("start").get("error") == "voice notes are off")
 
-    config["voiceMode"] = {"enabled": True}
+    config["voice"]["enabled"] = True
     json.dump(config, open(CONFIG, "w"), indent=2)
     time.sleep(2.6)
-    voice_mode("start", {"reply": "All quiet. Nothing needs you."})
-    s = voice_mode_listening("microphone")
-    record("Voice mode: the shortcut's path opens the pill and listens", bool(s), str(s or voice_mode()))
-    shot("voice-mode-listening")
-    voice_mode("utterance", {"text": "what's going on"})
-    back = wait_for(lambda: (lambda s: s if s["state"] == "listening" and s["reply"] else None)(voice_mode()), 10)
-    record("Voice mode: a question is answered and it listens again", bool(back) and back["heard"] == "what's going on"
-           and "All quiet" in back["reply"], str(back or voice_mode()))
-    voice_mode("utterance", {"text": "that's all"})
-    ended = wait_for(lambda: (lambda s: s if s["state"] == "idle" and not s["pill"] else None)(voice_mode()), 5)
-    record("Voice mode: goodbye ends it and hides the pill", bool(ended), str(ended or voice_mode()))
-
-    voice_mode("start", {"reply": "Sure.", "mode": "wispr"})
-    s = voice_mode_listening("wispr")
-    record("Voice mode: Wispr mode listens without the microphone", bool(s), str(s or voice_mode()))
-    shot("voice-mode-wispr")
-    voice_mode("utterance", {"text": "hello"})
-    back = wait_for(lambda: (lambda s: s if s["state"] == "listening" and s["reply"] == "Sure." else None)(voice_mode()), 10)
-    record("Voice mode: a dictation is answered in Wispr mode", bool(back), str(back or voice_mode()))
-    s = voice_mode("end")
-    record("Voice mode: Esc's path ends it", s.get("state") == "idle", str(s))
-
     fresh_workspace()
-    voice_mode("start", {"mode": "ironpet"})
-    voice_mode_listening("microphone")
-    voice_mode("utterance", {"text": f"Start a background job in {WS} that creates a file named voice.txt containing hi."})
-    job = wait_for(lambda: next((j for j in call("GET", "/test/jobs")["jobs"] if j["fromVoice"] and j["folder"].endswith(WS)), None), 120)
-    record("Voice mode: the front desk starts a job held as a voice job", bool(job) and job["state"] == "queued",
-           str(job) if job else f"no voice job; conversation={voice_mode()}")
-    if job:
-        voice_mode("utterance", {"text": "cancel that"})
-        stopped = wait_for(lambda: next((j for j in call("GET", "/test/jobs")["jobs"]
-                                         if j["id"] == job["id"] and j["state"] == "stopped"), None), 10)
-        time.sleep(6)
-        record("Voice mode: cancel that stops the held job before it runs", bool(stopped)
-               and not os.path.exists(os.path.join(WS, "voice.txt")), str(stopped))
-    voice_mode("end")
+    voice_mode("start")
+    s = voice_mode_listening()
+    record("Spoken message: the shortcut's path opens the pill and listens", bool(s), str(s or voice_mode()))
+    shot("voice-message-listening")
+    voice_mode("utterance", {"text": "what's going on"})
+    sent = wait_for(lambda: next((i for i in chat()["items"] if i.get("kind") == "user" and i.get("text") == "what's going on"), None), 10)
+    record("Spoken message: the utterance is a user message in the primary chat, marked voice",
+           bool(sent) and sent.get("origin") == "voice", str(sent or chat()["items"]))
+    back = wait_for(lambda: (lambda s: s if s["state"] == "idle" and not s["pill"] else None)(voice_mode()), 5)
+    record("Spoken message: one message per press, the pill hides", bool(back), str(back or voice_mode()))
+
+    voice_mode("start")
+    voice_mode_listening()
+    s = voice_mode("end")
+    record("Spoken message: Esc's path discards it", s.get("state") == "idle", str(s))
 
 
 def scenario_voice_key():
@@ -2050,8 +2024,8 @@ SCENARIOS = {"cursor": scenario_cursor, "cursor-session": scenario_cursor_sessio
 # config.json back afterwards.
 # "welcome-back" posts synthetic Claude hook events and a stand-in idle time, so it runs no agent; it puts config.json and ironpet.db back.
 # "brief" starts no agent; it puts ironpet.db and automations.json back afterwards.
-# "voice-mode" opens no microphone and plays no audio; it runs one front-desk turn on the chat's agent (its fastest model)
-# and stops the job that turn starts before the job's agent runs. It puts config.json and ironpet.db back and deletes
+# "voice-mode" opens no microphone and plays no audio; it sends one spoken message to the chat, which starts a turn on the
+# chat's agent. It puts config.json and ironpet.db back and deletes
 # the threads it saved; test mode runs no memory reflection.
 # "memory" runs four chat turns and one reflection pass on $IRONPET_E2E_AGENT (default claude, haiku for the pass), in a git repo and a
 # worktree of it under /tmp; it puts the memory folder, ironpet.db and config.json back afterwards.

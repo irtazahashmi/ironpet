@@ -75,7 +75,7 @@ final class TestControl {
     /// Presses a Today row, as a click would.
     var openBrief: ((Brief.Target) -> Void)?
     /// Voice mode, for `/test/voice-mode/*`. It runs on test doubles: no microphone, no speech server.
-    var voiceMode: VoiceModeController?
+    var spokenMessages: SpokenMessageController?
     var jobs: (() -> JobService?)?
     /// Ghost's memory: the reflection pass, and the Settings page whose Undo `/test/memory/undo` presses.
     var memory: MemoryReflector?
@@ -401,7 +401,7 @@ final class TestControl {
             return voiceModeEndpoint(request.path, body)
         case ("GET", "/test/jobs"):
             guard let service = jobs?() else { return Self.encode(["ok": false, "error": "jobs are not built"]) }
-            return Self.encode(["ok": true, "jobs": service.jobs.map { $0.json.merging(["fromVoice": service.isFromVoice($0.id)]) { a, _ in a } }])
+            return Self.encode(["ok": true, "jobs": service.jobs.map { $0.json }])
         case ("GET", "/test/memory"), ("POST", "/test/memory/reflect"), ("POST", "/test/memory/undo"), ("POST", "/test/memory/reset"):
             return memoryEndpoint(request.path, body)
         case ("POST", "/test/screen/ingest"), ("POST", "/test/screen/filter"), ("POST", "/test/screen/send"), ("POST", "/test/screen/propose"), ("POST", "/test/screen/inspector"), ("POST", "/test/screen/stub"), ("POST", "/test/screen/reset"):
@@ -446,29 +446,26 @@ final class TestControl {
         return screenSnapshot()
     }
 
-    /// `start` takes `reply` (what the front desk answers; without it the real agent runs) and `mode` (`ironpet` or
-    /// `wispr`). `utterance` takes `text`, said to the microphone or dictated through Wispr.
+    /// `start` opens a spoken message with a silent microphone. `utterance` takes `text`, as if it had been said and then
+    /// transcribed, and sends it to the chat. `end` discards the message.
     private func voiceModeEndpoint(_ path: String, _ body: [String: Any]) -> Data {
-        guard let voiceMode else { return Self.encode(["ok": false, "error": "voice mode is not built"]) }
-        let conversation = voiceMode.conversation
+        guard let spokenMessages else { return Self.encode(["ok": false, "error": "spoken messages are not built"]) }
+        let recorder = spokenMessages.recorder
         switch path {
         case "/test/voice-mode/start":
-            guard ConfigStore.shared.config.voiceMode.enabled else { return Self.encode(["ok": false, "error": "voice mode is off"]) }
-            voiceMode.useTestDoubles(reply: body["reply"] as? String)
-            if let mode = body["mode"] as? String {
-                conversation.listenMode = { mode == Config.VoiceMode.wispr ? .wispr : .microphone }
-            }
-            if !conversation.isActive { voiceMode.toggle() }
+            guard ConfigStore.shared.config.voice.enabled else { return Self.encode(["ok": false, "error": "voice notes are off"]) }
+            spokenMessages.useTestDoubles()
+            if !recorder.isActive { spokenMessages.press() }
         case "/test/voice-mode/utterance":
             let text = body["text"] as? String ?? ""
-            guard conversation.state != .idle, !text.isEmpty else { return Self.encode(["ok": false, "error": "no conversation, or no text"]) }
-            if conversation.mode == .wispr { conversation.receive(text) } else { conversation.hear(Data(text.utf8)) }
+            guard recorder.state == .listening, !text.isEmpty else { return Self.encode(["ok": false, "error": "not listening, or no text"]) }
+            recorder.hear(Data(text.utf8))
         case "/test/voice-mode/end":
-            conversation.end()
+            recorder.cancel()
         default:
             break
         }
-        return Self.encode(voiceMode.testSnapshot())
+        return Self.encode(spokenMessages.testSnapshot())
     }
 
     /// `GET /test/memory` is the pages, the recent changes and the last reflection. `reflect` runs the reflection pass now on the open

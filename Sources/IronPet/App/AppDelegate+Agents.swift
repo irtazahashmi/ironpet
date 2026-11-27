@@ -13,6 +13,7 @@ extension AppDelegate {
         let router = VoiceTranscriptRouter(activeAgent: { [weak self] in self?.api.chats.activeAgentID ?? AgentOwner.defaultID },
                                            model: { [weak self] id in id == AgentOwner.defaultID ? self?.chatModel : self?.agentPets?.pets[id]?.chat })
         chatModel.voice.onTranscript = { router.route($0) }
+        spokenMessages.send = { router.routeSpoken($0) }
         chat.speaksReplies = { [weak self] in self?.api.chats.speaksReplies(AgentOwner.defaultID) ?? true }
         pet.onSelected = { [weak self] in self?.selectAgent(AgentOwner.defaultID) }
         activeAgentToken = registry.activeChanges.observe { [weak self] in

@@ -39,7 +39,7 @@ package struct RemotePhoneSettings {
             reminders: .init(paused: c.reminders.paused, water: reminder(c.reminders.water), stretch: reminder(c.reminders.stretch),
                              eyes: reminder(c.reminders.eyes), idleResetMinutes: c.reminders.idleResetMinutes, snoozeMinutes: c.reminders.snoozeMinutes),
             tasks: .init(meetingSuggestions: c.tasks.meetingSuggestions),
-            welcomeBack: .init(enabled: c.welcomeBack.enabled), speech: .init(enabled: c.speech.enabled, voice: c.speech.voice),
+            welcomeBack: .init(enabled: c.welcomeBack.enabled), speech: .init(enabled: c.speech.speakReplies != .never, voice: c.speech.voice),
             chat: .init(background: c.chat.background), screenCapture: .init(enabled: c.screenCapture.enabled), meetings: .init(enabled: c.meetings.enabled),
             agents: .init(trackAgents: c.integrations.trackAgents)))
     }
@@ -61,9 +61,25 @@ package struct RemotePhoneSettings {
                 throw RemoteFailure.forbidden("\"\(path)\" cannot be changed from the phone")
             }
         }
-        let body = String(decoding: try JSONSerialization.data(withJSONObject: patch), as: UTF8.self)
+        let body = String(decoding: try JSONSerialization.data(withJSONObject: speakRepliesPatch(patch)), as: UTF8.self)
         _ = try api.settings.patch(PatchSettingsRequest(patch: body))
         return get()
+    }
+
+    /// The phone's `speech.enabled` switch is the Mac's Speak replies setting: off is Never, on is Automatic unless the
+    /// Mac already speaks more than that.
+    private func speakRepliesPatch(_ patch: [String: Any]) -> [String: Any] {
+        guard var speech = patch["speech"] as? [String: Any], let enabled = speech["enabled"] else { return patch }
+        speech["enabled"] = nil
+        let on = (enabled as? NSNumber)?.boolValue ?? false
+        if !on {
+            speech["speakReplies"] = Config.SpeakReplies.never.rawValue
+        } else if api.settings.config.speech.speakReplies == .never {
+            speech["speakReplies"] = Config.SpeakReplies.automatic.rawValue
+        }
+        var result = patch
+        result["speech"] = speech.isEmpty ? nil : speech
+        return result
     }
 
     /// Every value a patch sets, with its dotted path. An object is walked, anything else is a value, so `{"voice": 1}` is the path `voice`.

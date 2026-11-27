@@ -161,7 +161,7 @@ final class BoundaryTests: XCTestCase {
     static let coreFiles = [
         "Automations/AutomationEngine.swift", "Automations/AutomationService.swift", "Activity/WelcomeBack.swift", "Activity/Presence.swift",
         "Support/ListNavigation.swift", "Bridge/HTTPRequest.swift", "Telegram/TelegramMedia.swift", "Meeting/MeetingRegenerator.swift",
-        "Meeting/MeetingSummary.swift", "Meeting/SpeakerDiarizing.swift", "Voice/VoiceConversation.swift", "Voice/ConversationPorts.swift",
+        "Meeting/MeetingSummary.swift", "Meeting/SpeakerDiarizing.swift", "Voice/SpokenMessageRecorder.swift", "Voice/ConversationPorts.swift",
         "Platform/PresenceSource.swift", "Platform/URLOpener.swift", "Platform/AudioTranscoder.swift",
     ]
     static let macOnly = [
