@@ -188,7 +188,7 @@ package final class EntityMemoryStore: MemoryStore {
     // MARK: Writing
 
     package func replace(_ replacing: [String], with raw: String, scope: MemoryScope, person: String? = nil, project: ProjectKey? = nil,
-                         entity: String? = nil, source: String) -> Result<MemoryNote, MemoryError> {
+                         entity: String? = nil, source: String, reason: String? = nil, changeSource: String? = nil) -> Result<MemoryNote, MemoryError> {
         let text: String
         switch MemoryNote.clean(raw) {
         case .success(let cleaned): text = cleaned
@@ -203,11 +203,14 @@ package final class EntityMemoryStore: MemoryStore {
         let day = MemoryNote.day(at, calendar: calendar)
         let key = MemoryNote.normalized(text)
         let old = Set(replacing.map(MemoryNote.normalized).filter { !$0.isEmpty && $0 != key })
+        // A claim is named by its text or by its `claim_` ref, which the digest prompt lists.
+        let refs = Set(replacing.map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }.filter { $0.hasPrefix("claim_") })
+        let reason = MemoryNote.cleanReason(reason)
         let outcome: Result<Written, MemoryError>
         do {
             outcome = try database.write { db -> Result<Written, MemoryError> in
                 let valid = try Self.claims(db, where: "entity = ? AND invalid_at IS NULL", [target.id])
-                let removed = valid.filter { !$0.pinned && old.contains(MemoryNote.normalized($0.text)) }
+                let removed = valid.filter { !$0.pinned && (old.contains(MemoryNote.normalized($0.text)) || refs.contains($0.ref.lowercased())) }
                 // Refused before anything is written, so a refusal leaves no page, mention or claim behind.
                 guard removed.count <= MemoryNote.maxForget else {
                     return .failure(MemoryError(message: "a note may replace at most \(MemoryNote.maxForget) others; \(removed.count) match"))
@@ -259,13 +262,13 @@ package final class EntityMemoryStore: MemoryStore {
                 // The same fact again is not a change, but each older claim it removed is logged as a forget, so Undo can bring it back.
                 for stale in written.removed {
                     index.record(at: at, file: written.target.id, section: written.target.person, action: .forgot, note: stale.note.line,
-                                 previous: String(stale.id), source: source, claim: stale.id)
+                                 previous: String(stale.id), source: changeSource ?? source, claim: stale.id, reason: reason)
                     index.removeClaim(stale.id)
                 }
             } else {
                 let previous = written.removed.isEmpty ? nil : Self.joined(written.removed.map { String($0.id) })
                 index.record(at: at, file: written.target.id, section: written.target.person, action: written.removed.isEmpty ? .added : .replaced,
-                             note: written.note.line, previous: previous, source: source, claim: written.claim)
+                             note: written.note.line, previous: previous, source: changeSource ?? source, claim: written.claim, reason: reason)
                 index.indexClaim(written.claim, title: Self.title(written.target), text: written.note.text, at: at)
                 written.removed.forEach { index.removeClaim($0.id) }
             }
