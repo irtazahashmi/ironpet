@@ -153,6 +153,10 @@ The app is two SwiftPM targets. `IronPetCore` (`Sources/IronPetCore`) holds ever
 - **Imports.** `Tests/IronPetCoreTests/ImportAllowListTests.swift` fails, and names the file and line, when a core file imports a module outside its allow list (Foundation, Dispatch, IronPetKit, JMESPath, QuickJS, and Combine, CryptoKit, Crypto, SQLite3, CSQLite, Darwin, Glibc, FoundationNetworking or NaturalLanguage only inside the matching `#if canImport`).
 - **Tests.** A test that touches only core types lives in `Tests/IronPetCoreTests`. Fixtures read with `Bundle.module` live beside the test that reads them. `CISkip`, `TestMemory`, `CaptureTestSupport` and `StubProtocol` exist in both test targets, because a test target cannot see the other's files.
 
+## One app process
+
+The app window runs as one process per ironpet root. At launch `main.swift` takes an advisory `flock` on `instance.lock` in the root (`SingleInstance`). A second launch that finds the lock held activates the running app by the pid in the file and exits before it opens a window. The kernel drops the lock when the holder exits or dies, so an update that kills the app never leaves a stale lock. `LaunchArguments` also makes the binary exit with status 2 for a first argument that is not a known command or option, so an automation that runs a removed command (such as `tasks`) fails instead of opening another app window. `automations`, `notifications`, `inbox`, `memory`, `skills` and `mcp` run before either check and stay separate processes.
+
 ## Remote API
 
 Phases 1 to 4 of the iOS app, Mac side. A paired device reaches `IronPetAPI` over HTTP with its own token. The code is in `Sources/IronPetCore/Remote/` and, for the listener and TLS identity, `Sources/IronPet/Remote/`. It adds no scopes: a paired device can do what the Mac can for the routes below, and the routes grow with later phases.
