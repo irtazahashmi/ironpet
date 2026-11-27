@@ -455,6 +455,9 @@ package final class ChatSession {
     private var subagentCalls: [String: [(id: String, ok: Bool?)]] = [:]
     /// The reply item that late updates extend, so a later result starts its own item.
     private var backgroundReply: UUID?
+    /// The reply that was still streaming when a steered message landed below it. Further text of the same turn extends it, so the
+    /// reply stays in one bubble above that message. A tool step or a new turn clears it. It stays after the turn ends so the turn's answer can still be found, and text only joins it while a turn runs.
+    private var splitReply: UUID?
     /// Decisions made during the current run, so a repeated identical check isn't asked twice.
     /// Reads replies aloud. The Mac passes its speech player; without one nothing is spoken.
     package let speech: SpeechOutput
@@ -912,6 +915,7 @@ package final class ChatSession {
         if background, state == .done || state == .failed { state = .idle }
         if prompt.isEmpty, !silent { prompt = client == nil ? "Help me with what's on my screen." : "Help me with the attached file." }
         let origin = client?.client ?? (automation != nil ? Self.automationOrigin : nil)
+        splitReply = nil
         if !silent {
             items += shots.map { Item(kind: .screenshot($0.path), origin: origin) }
             items.append(Item(kind: .user(prompt), origin: origin, reply: reply, selection: selection))
@@ -1089,6 +1093,7 @@ package final class ChatSession {
         switch outcome {
         case .delivered:
             let origin = message.origin?.client
+            if isRunning, case .assistant = items.last?.kind { splitReply = items.last?.id }
             items += message.attachments.map { Item(kind: .screenshot($0.path), origin: origin) }
             let prompt = Self.displayText(message)
             items.append(Item(kind: .user(prompt), origin: origin, reply: message.reply, selection: message.selection))
@@ -1243,10 +1248,14 @@ package final class ChatSession {
 
     private func lastAnswerItem() -> Item? {
         guard let start = items.lastIndex(where: { if case .user = $0.kind { return true } else { return false } }) else { return nil }
-        return items[start...].last { item in
+        let answer = items[start...].last { item in
             if case .assistant(let text) = item.kind { return !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             return false
         }
+        // A reply that kept growing above a steered message is the answer when nothing came after that message.
+        if answer == nil, let id = splitReply, let item = items.first(where: { $0.id == id }),
+           case .assistant(let text) = item.kind, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return item }
+        return answer
     }
 
     private func makeBackend() -> ACPBackend {
@@ -1553,6 +1562,9 @@ package final class ChatSession {
             if isRunning { activity = "Writing" }
             if case .assistant(let previous) = items.last?.kind, isRunning || items.last?.id == backgroundReply {
                 items[items.count - 1].kind = .assistant(previous + text)
+            } else if isRunning, let id = splitReply, let index = items.firstIndex(where: { $0.id == id }),
+                      case .assistant(let previous) = items[index].kind {
+                items[index].kind = .assistant(previous + text)
             } else {
                 let item = Item(kind: .assistant(text))
                 backgroundReply = isRunning ? nil : item.id
@@ -1560,6 +1572,7 @@ package final class ChatSession {
             }
         case .toolStarted(let id, let summary):
             if isRunning { activity = Self.presentTense(summary) }
+            splitReply = nil
             let item = Item(kind: .tool(summary, ok: nil))
             toolBase[id] = summary
             toolItems[id] = item.id
