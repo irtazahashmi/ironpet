@@ -18,6 +18,8 @@ package enum APIEventKind: String, Codable, CaseIterable {
     case settingsChanged = "settings.changed"
     case petMood = "pet.mood"
     case assetsChanged = "assets.changed"
+    /// A dashboard was added, edited, approved, removed, or its saved data changed. The event carries the dashboard id.
+    case dashboardsChanged = "dashboards.changed"
 }
 
 package struct APIEvent: Codable, Equatable {

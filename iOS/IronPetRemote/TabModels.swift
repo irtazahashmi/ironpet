@@ -189,6 +189,8 @@ enum MoreDestination: Hashable {
     case alerts, automations, meetings, memory, screen, settings, phoneAgent
     /// A memory page, by its `page_` ref. A link inside a page pushes the next one.
     case memoryPage(String)
+    /// A user-defined dashboard, by its id.
+    case dashboard(String)
 
     static func destination(for target: TodayTarget) -> MoreDestination? {
         switch target.type {

@@ -153,7 +153,8 @@ final class ListScreenTests: XCTestCase {
     ]
 
     func testEveryListSectionIsBuiltWithTheSharedScreen() throws {
-        for section in IronPetSection.allCases where section != .chat {
+        // A dashboard page is the user's own view under a header with its menu, not a list.
+        for section in IronPetSection.allCases where section != .chat && section != .dashboard {
             let file = try XCTUnwrap(Self.sectionFiles[section], "\(section) has no entry; add the file that defines it")
             let text = try String(contentsOf: Self.sources.appendingPathComponent(file), encoding: .utf8)
             XCTAssertTrue(text.contains("ListScreen(title: IronPetSection.\(section.rawValue).title"), "\(file) does not build \(section) with ListScreen")

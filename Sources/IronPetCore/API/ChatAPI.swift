@@ -26,6 +26,8 @@ package struct ChatOrigin: Codable, Equatable, Hashable {
     package static let voiceClient = "voice"
     /// Something the user sent from the iPhone app.
     package static let iosClient = "ios"
+    /// A prompt a button on a dashboard sent. `ref` is the dashboard's id.
+    package static let dashboardClient = "dashboard"
 
     /// The badge under a message that came from the iPhone. Nil for any other client.
     package static func badge(for client: String?) -> (label: String, help: String)? {

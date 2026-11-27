@@ -58,6 +58,16 @@ final class IronPetWindowTests: XCTestCase {
         XCTAssertNil(IronPetSection.forShortcut(nil, in: all))
     }
 
+    func testDashboardsAreRowsAfterTheSectionsWithTheirOwnIconAndCount() {
+        let work = RemoteDashboard(id: "work", title: "Work", icon: "briefcase", color: "teal", showsCount: true, count: 3, approval: "approved", capabilities: [])
+        let rows = SidebarRow.rows(sections: [.chat, .agents], dashboards: [work], count: { $0 == .agents ? 2 : 0 })
+        XCTAssertEqual(rows.map(\.id), ["chat", "agents", "dashboard:work"])
+        XCTAssertEqual(rows.last?.symbol, "briefcase")
+        XCTAssertEqual(rows.last?.count, 3)
+        XCTAssertEqual(rows.last?.section, .dashboard)
+        XCTAssertFalse(IronPetSection.shown(chat: true, transcripts: true, automations: true).contains(.dashboard))
+    }
+
     func testNoVoiceRowInTheSidebar() {
         let all = IronPetSection.shown(chat: true, transcripts: true, automations: true)
         XCTAssertFalse(IronPetSection.allCases.map(\.rawValue).contains("voice"))

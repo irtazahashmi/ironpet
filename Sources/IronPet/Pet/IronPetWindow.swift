@@ -6,6 +6,9 @@ import SwiftUI
 /// A page of the ironpet window, in sidebar order.
 enum IronPetSection: String, CaseIterable, Identifiable {
     case chat, agents, alerts, notifications, inbox, transcripts, screen, actions, automations, memory, today
+    /// A user-defined dashboard. Never a row of its own: each dashboard is a `SidebarRow` with this section and its own id, and
+    /// `IronPetWindowModel.dashboardID` says which one is open.
+    case dashboard
 
     var id: String { rawValue }
 
@@ -22,6 +25,7 @@ enum IronPetSection: String, CaseIterable, Identifiable {
         case .automations: return "Automations"
         case .memory: return "Memory"
         case .today: return "Today"
+        case .dashboard: return "Dashboard"
         }
     }
 
@@ -38,6 +42,7 @@ enum IronPetSection: String, CaseIterable, Identifiable {
         case .automations: return SharedSymbols.automations
         case .memory: return SharedSymbols.memory
         case .today: return "sun.horizon"
+        case .dashboard: return "square.grid.2x2"
         }
     }
 
@@ -46,7 +51,7 @@ enum IronPetSection: String, CaseIterable, Identifiable {
     static func shown(chat: Bool, transcripts: Bool, automations: Bool, today: Bool = false,
                       notifications: Bool = true) -> [IronPetSection] {
         allCases.filter {
-            ($0 != .chat || chat) && ($0 != .transcripts || transcripts) && ($0 != .automations || automations)
+            $0 != .dashboard && ($0 != .chat || chat) && ($0 != .transcripts || transcripts) && ($0 != .automations || automations)
                 && ($0 != .today || today) && ($0 != .notifications || notifications)
         }
     }
@@ -108,6 +113,10 @@ final class IronPetWindowModel: ObservableObject {
     static func showsRail(atWidth width: CGFloat) -> Bool { width < snapWidth }
 
     @Published var section: IronPetSection = .chat
+    /// The dashboard shown while `section` is `.dashboard`.
+    @Published var dashboardID: String?
+    /// The dashboard whose icon picker is open, from the sidebar's context menu.
+    @Published var pickingIconFor: String?
     /// Whether the Today row is listed: a brief or recap automation is on. Leaving it hidden moves off the page.
     @Published var todayShown = false {
         didSet { if !todayShown, section == .today { section = .chat } }
@@ -158,6 +167,15 @@ final class IronPetWindowModel: ObservableObject {
     func moveRow(_ section: IronPetSection, before target: IronPetSection?, in available: [IronPetSection]) {
         layout.move(section, before: target, in: available)
     }
+
+    /// Shows a user-defined dashboard.
+    func open(dashboard id: String) {
+        dashboardID = id
+        section = .dashboard
+    }
+
+    /// The id of the sidebar row that is selected: a section's raw value, or `dashboard:<id>`.
+    var selectedRowID: String { section == .dashboard ? SidebarRow.dashboardRowID(dashboardID ?? "") : section.rawValue }
 
     /// A bubble was clicked: show the Notifications page with this entry open.
     func openNotification(_ id: String) {
@@ -231,6 +249,34 @@ private struct RailDrop: DropDelegate {
     }
 }
 
+/// One row of the sidebar or one icon of the rail. Built-in sections and user-defined dashboards share this list, each with a stable
+/// `id` (`inbox`, `dashboard:work`). The user's order and hiding apply to the built-in sections only. The dashboards follow them.
+struct SidebarRow: Identifiable, Equatable {
+    let id: String
+    let title: String
+    let symbol: String
+    let section: IronPetSection
+    var dashboardID: String?
+    /// The icon's colour. Nil draws it in the sidebar's own style.
+    var tint: String?
+    var count = 0
+
+    static func dashboardRowID(_ id: String) -> String { "dashboard:\(id)" }
+
+    static func section(_ section: IronPetSection, count: Int = 0) -> SidebarRow {
+        SidebarRow(id: section.rawValue, title: section.title, symbol: section.symbol, section: section, count: count)
+    }
+
+    static func dashboard(_ d: RemoteDashboard) -> SidebarRow {
+        SidebarRow(id: dashboardRowID(d.id), title: d.title, symbol: d.icon, section: .dashboard, dashboardID: d.id, tint: d.color, count: d.count ?? 0)
+    }
+
+    /// The rows to list: `sections` in their order, then the dashboards in theirs.
+    static func rows(sections: [IronPetSection], dashboards: [RemoteDashboard], count: (IronPetSection) -> Int) -> [SidebarRow] {
+        sections.map { .section($0, count: count($0)) } + dashboards.map(SidebarRow.dashboard)
+    }
+}
+
 /// The text of a rail label and where its icon is, in the window's coordinates.
 struct RailTip: Equatable {
     let name: String
@@ -243,6 +289,8 @@ struct IronPetWindowView: View {
     @ObservedObject var agents: AgentsAPI
     @ObservedObject var alerts: AlertsAPI
     @ObservedObject var tasks: TasksAPI
+    /// The user-defined dashboards. The placeholder in previews and tests that have none.
+    @ObservedObject var dashboards: DashboardsAPI = .unavailable
     /// The Notifications page. Left at `empty` in tests and previews that do not show it; its row is hidden then.
     @ObservedObject var notifications = NotificationsModel.empty
     /// Nil in previews and tests that do not show it; its row is hidden then.
@@ -309,6 +357,19 @@ struct IronPetWindowView: View {
         .animation(.easeOut(duration: 0.12), value: model.railTip)
         // The pages the user followed in Memory are forgotten when they leave the section.
         .onChange(of: model.section) { _, section in if section != .memory { memoryModel.showList() } }
+        // A dashboard deleted while it is open leaves the user on the Agents page, not on an empty one.
+        .onChange(of: dashboards.list().map(\.id)) { _, ids in
+            if model.section == .dashboard, let open = model.dashboardID, !ids.contains(open) { model.section = .agents }
+        }
+    }
+
+    /// Every sidebar row in order: the built-in sections, then the dashboards.
+    private var rows: [SidebarRow] {
+        SidebarRow.rows(sections: shown, dashboards: dashboards.list(), count: count)
+    }
+
+    private func select(_ row: SidebarRow) {
+        if let id = row.dashboardID { model.open(dashboard: id) } else { model.section = row.section }
     }
 
     /// The sections that can be listed, whether or not the user hid them.
@@ -357,9 +418,11 @@ struct IronPetWindowView: View {
     }
 
     private var sidebar: some View {
-        List(selection: Binding(get: { model.section }, set: { if let section = $0 { model.section = section } })) {
-            ForEach(shown) { row($0) }
+        List(selection: Binding(get: { model.selectedRowID }, set: { id in if let row = rows.first(where: { $0.id == id }) { select(row) } })) {
+            // Only the built-in rows move. The dashboards follow them in the order the store lists them.
+            ForEach(rows.filter { $0.dashboardID == nil }) { row($0) }
                 .onMove { model.moveRows(from: $0, to: $1, in: available) }
+            ForEach(rows.filter { $0.dashboardID != nil }) { row($0) }
         }
         .contextMenu { sectionMenu }
         .listStyle(.sidebar)
@@ -386,29 +449,31 @@ struct IronPetWindowView: View {
     /// Only the section icons, in the sidebar's order, under the traffic lights.
     private var rail: some View {
         VStack(spacing: 4) {
-            ForEach(shown) { section in
-                Button { model.clearRailTip(); model.section = section } label: {
-                    Image(systemName: section.symbol)
+            ForEach(rows) { row in
+                // A thin line sets the user's dashboards apart from the built-in sections.
+                if row.dashboardID != nil, rows.first(where: { $0.dashboardID != nil })?.id == row.id {
+                    Divider().frame(width: 28).padding(.vertical, 2)
+                }
+                let selected = model.selectedRowID == row.id
+                let tint = row.tint.map(DashboardColors.color)
+                Button { model.clearRailTip(); select(row) } label: {
+                    Image(systemName: row.symbol)
                         .font(.system(size: 21))
                         .frame(width: 40, height: 38)
                         .background {
-                            if model.section == section {
-                                RoundedRectangle(cornerRadius: 10).fill(Color.accentColor.opacity(0.28))
+                            if selected {
+                                RoundedRectangle(cornerRadius: 10).fill((tint ?? Color.accentColor).opacity(0.28))
                             }
                         }
-                        .overlay(alignment: .topTrailing) { railBadge(count(section)) }
+                        .overlay(alignment: .topTrailing) { railBadge(row.count) }
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .foregroundStyle(model.section == section ? Color.accentColor : Color.primary)
-                .railHover(model, name: section.title, shortcut: section.shortcutLabel(in: shown))
-                .accessibilityLabel(section.title)
-                .onDrag {
-                    draggedRail = section
-                    return NSItemProvider(object: section.rawValue as NSString)
-                }
-                .onDrop(of: [.text], delegate: RailDrop(target: section, model: model, available: available,
-                                                        dragged: $draggedRail))
+                .foregroundStyle(tint ?? (selected ? Color.accentColor : Color.primary))
+                .railHover(model, name: row.title, shortcut: row.section == .dashboard ? nil : row.section.shortcutLabel(in: shown))
+                .accessibilityLabel(row.title)
+                .contextMenu { dashboardMenu(row) }
+                .railReorder(row, model: model, available: available, dragged: $draggedRail)
             }
             Spacer(minLength: 0)
             Button(action: { model.clearRailTip(); actions.onSettings() }) {
@@ -440,12 +505,24 @@ struct IronPetWindowView: View {
         }
     }
 
-    private func row(_ section: IronPetSection) -> some View {
-        Label(section.title, systemImage: section.symbol)
-            .labelStyle(.ironPetSidebar)
-            .badge(count(section))
-            .tag(section)
-            .help(shortcutHint(section))
+    private func row(_ row: SidebarRow) -> some View {
+        Label {
+            Text(row.title)
+        } icon: {
+            Image(systemName: row.symbol).foregroundStyle(row.tint.map(DashboardColors.color) ?? Color.primary)
+        }
+        .labelStyle(.ironPetSidebar)
+        .badge(row.count)
+        .tag(row.id)
+        .help(row.section == .dashboard ? row.title : shortcutHint(row.section))
+        .contextMenu { dashboardMenu(row) }
+    }
+
+    /// A dashboard's row offers its icon picker, which opens on the dashboard's page.
+    @ViewBuilder private func dashboardMenu(_ row: SidebarRow) -> some View {
+        if let id = row.dashboardID {
+            Button("Change icon…") { model.clearRailTip(); model.open(dashboard: id); model.pickingIconFor = id }
+        }
     }
 
     private func shortcutHint(_ section: IronPetSection) -> String { section.hint(in: shown) }
@@ -498,6 +575,11 @@ struct IronPetWindowView: View {
                 case .today:
                     if let brief {
                         TodayView(model: brief, kind: $model.briefKind, onOpen: actions.onBriefOpen)
+                    }
+                case .dashboard:
+                    if let id = model.dashboardID {
+                        DashboardPage(id: id, dashboards: dashboards, onOpenChat: { model.section = .chat }, pickingIcon: $model.pickingIconFor)
+                            .id(id)
                     }
                 }
             }
@@ -708,5 +790,20 @@ struct SidebarResizeHandle: NSViewRepresentable {
 
         override func mouseDragged(with event: NSEvent) { onDrag(event.locationInWindow.x - startX) }
         override func mouseUp(with event: NSEvent) { onEnd() }
+    }
+}
+
+private extension View {
+    /// Dragging reorders the built-in rows. A dashboard's icon does not move.
+    @ViewBuilder func railReorder(_ row: SidebarRow, model: IronPetWindowModel, available: [IronPetSection], dragged: Binding<IronPetSection?>) -> some View {
+        if row.dashboardID == nil {
+            onDrag {
+                dragged.wrappedValue = row.section
+                return NSItemProvider(object: row.section.rawValue as NSString)
+            }
+            .onDrop(of: [.text], delegate: RailDrop(target: row.section, model: model, available: available, dragged: dragged))
+        } else {
+            self
+        }
     }
 }

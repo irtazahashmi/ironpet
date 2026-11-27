@@ -205,6 +205,7 @@ event for each id.
 | `notifications.changed` | The notification log changed. | `notifications.list` |
 | `automations.changed` | An automation was added, changed or removed. | `automations.list` |
 | `automation.needsApproval` | An automation waits for Approve. `id` is the automation. No buttons are sent. | `automations.get`, then `automations.approve` or `automations.reject` |
+| `dashboards.changed` | A dashboard was added, edited, approved, removed or fed new data. `id` is the dashboard. | `dashboards.list`, `dashboards.view` |
 | `meetings.changed` | A meeting was recorded, changed or deleted. | `meetings.list` |
 | `settings.changed` | `config.json` changed. | `settings.get` |
 | `pet.mood` | The pet's mood or badge changed. | `pet.state` (not yet on the wire, `GET /v1/pet`) |
@@ -261,6 +262,27 @@ Coding-agent sessions ironpet watches.
 
 `status` is the raw number of `AgentStatus` (0 idle, 1 running, 2 done, 3 failed, 4 needs input, as the Swift enum orders them). `agentId` is the id
 of the agent that launched the session. It is left out when no hook said, which is agent 1. See "Agent owners".
+
+### `dashboards`
+
+User-defined dashboards: small apps the pet writes at the user's request. A dashboard is a manifest (title, icon, colour, whether the sidebar icon shows a count, the capabilities it needs) and a script that builds its view from native components. Each has its own storage. The Mac runs every script. `dashboards.view` returns the finished view, a tree of `DashboardNode`, and a client reports a tap with `dashboards.click` and the handler id the node named. Capabilities (`run`, `network`, `read`, `write`, `prompt`) are approved on the Mac with `dashboards.approve`; the remote REST routes never approve.
+
+| Method | Params | Result | REST route |
+|---|---|---|---|
+| `dashboards.approve` | `ID` | `null` | none |
+| `dashboards.click` | `DashboardClickRequest` | `RemoteDashboardClick` | `POST /v1/dashboards/:id/click` |
+| `dashboards.create` | `CreateDashboardRequest` | `RemoteDashboard` | none |
+| `dashboards.data` | `ID` | `DashboardData` | none |
+| `dashboards.delete` | `ID` | `null` | none |
+| `dashboards.deny` | `ID` | `null` | none |
+| `dashboards.get` | `ID` | `DashboardDetail` | none |
+| `dashboards.list` | none | `[RemoteDashboard]` | `GET /v1/dashboards` |
+| `dashboards.post` | `DashboardPostRequest` | `DashboardData` | none |
+| `dashboards.setAppearance` | `DashboardAppearanceRequest` | `null` | `PATCH /v1/dashboards/:id` |
+| `dashboards.update` | `UpdateDashboardRequest` | `RemoteDashboard` | none |
+| `dashboards.view` | `ID` | `RemoteDashboardView` | `GET /v1/dashboards/:id/view` |
+
+`dashboards.post` merges an object into the dashboard's storage and answers `not_found` for a dashboard that was deleted, which is how a deleted dashboard's automations stop feeding it. `dashboards.update` and `dashboards.create` start with every capability they declare unapproved, and an edit that adds one leaves only the new one unapproved. A script call that needs an unapproved capability throws, and `dashboards.view` reports it in `error`.
 
 ### `automations`
 
@@ -566,6 +588,10 @@ audio, or an area that is not on the wire yet.
 | `GET /v1/screen/captures/:id` | none |
 | `GET /v1/screen/search` | none |
 | `POST /v1/screen/pause` | none |
+| `GET /v1/dashboards` | `dashboards.list` |
+| `GET /v1/dashboards/:id/view` | `dashboards.view` |
+| `POST /v1/dashboards/:id/click` | `dashboards.click` |
+| `PATCH /v1/dashboards/:id` | `dashboards.setAppearance` |
 | `GET /v1/automations` | `automations.list` |
 | `POST /v1/automations` | `automations.create` |
 | `POST /v1/automations/request` | none |

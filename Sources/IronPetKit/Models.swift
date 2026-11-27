@@ -118,6 +118,8 @@ public struct RemoteEvent: Codable, Equatable, Sendable {
     public static let agentsChanged = "agents.changed"
     public static let alertsChanged = "alerts.changed"
     public static let automationsChanged = "automations.changed"
+    /// A dashboard was added, edited, approved, removed or fed new data. `id` is the dashboard.
+    public static let dashboardsChanged = "dashboards.changed"
     public static let automationNeedsApproval = "automation.needsApproval"
     public static let meetingsChanged = "meetings.changed"
     public static let settingsChanged = "settings.changed"
