@@ -11,7 +11,7 @@ package enum LaunchArguments {
     }
 
     /// Options the GUI accepts. A single dash is a macOS defaults override (`-chatDraft ""`, `-psn_0_123`) and is always allowed.
-    package static let guiOptions: Set<String> = ["--test-mode", "--render-previews"]
+    package static let guiOptions: Set<String> = ["--test-mode", "--render-previews", "--render-videos"]
 
     /// `arguments` is `CommandLine.arguments`, so the first element is the program path. The subcommands that run before this
     /// check (`automations`, `inbox`, `mcp` and the others) never reach it.

@@ -20,6 +20,7 @@ A desktop pet for macOS that keeps an eye on your coding agents and does small t
 - **Inbox.** Action items from your meetings, and things your watcher automations or agents found (an email that needs a reply, an issue), wait in the Inbox until you mark them done or remove them. Ghost has no task list. See [Inbox](#inbox).
 - **Welcome back.** When you come back after being away (5 minutes by default, the same idle time as the break reminders, or after the Mac slept), Ghost sums up what happened meanwhile in one bubble instead of the ones you missed: "demo-app is waiting for you", "CI failed: irtaza/ironpet #84", "2 agents finished". Each line opens what it names. It is built from what ironpet already recorded on your Mac, so no agent runs and nothing is sent anywhere. A call (any app using the microphone, even with meeting transcripts off) or a meeting recording doesn't count as away. Turn it off in Settings → General (`welcomeBack.enabled`).
 - **Model and agent picker** (the models come from the agent), per-project folder detection, a resizable window that stays open on Chat when you switch apps, launch at login.
+- **Several pets.** Each pet is an agent of its own. **Add pet** in Settings → General → Pets, then pick its image, harness, model and instructions. Every pet that is on runs its own chat and stands on your screen, asks for approvals in its own bubble, and opens its chat when you click it; the chat header switches between them. Turning a pet off stops its chat and hides it, and its chats and automations stay. The first pet always stays.
 - **Dashboards.** Ask Ghost for a small app of your own ("a board of my agents grouped by state") and it appears as an icon in the sidebar, with its own saved data and buttons that act. See [Dashboards](#dashboards).
 - **One window.** A sidebar switches between Chat, Agents, Alerts, Notifications, Inbox, Transcripts (past meetings, with their summary and transcript, Ask Ghost, Regenerate and Move to Trash), Screen, Actions and Automations, plus Today while the morning brief or the recap is on, and one row for each of your dashboards. Settings opens its own window from the Settings row at the bottom.
 - **iPhone.** Pair a phone in Settings → Devices (opt-in remote API) to see Ghost, chat, the Inbox, agents, alerts, automations, dashboards, meetings and a scoped screen view away from the Mac, and to dictate or hear spoken replies when Mac voice notes are on. See [Devices (iPhone)](#devices-iphone).
@@ -30,6 +31,12 @@ A desktop pet for macOS that keeps an eye on your coding agents and does small t
 | **Agents:** every Cursor and Claude Code session, most urgent first | **Approvals:** edits and commands wait for you |
 | <img src="docs/screenshots/alerts.png" alt="The Alerts section with a failed CI run, a review request and an approval"> | <img src="docs/screenshots/reminder.png" alt="Ghost drinking water next to a break reminder"> |
 | **Alerts:** CI, reviews and Sentry, with Ask Ghost | **Breaks:** Ghost drinks along with you |
+| <img src="docs/screenshots/inbox.png" alt="The Inbox with two action items from a meeting and an email from the Gmail watcher"> | <img src="docs/screenshots/dashboard.png" alt="A Work dashboard in the sidebar with counts, the agents that need you and a chart"> |
+| **Inbox:** meeting action items and what watchers find | **Dashboards:** small apps Ghost builds for you |
+| <img src="docs/screenshots/memory.png" alt="Ghost's memory page about Maya Chen, with three facts, their sources and a link to her project"> | <img src="docs/screenshots/welcome-back.png" alt="Ghost waving with a welcome back bubble that lists what happened while you were away"> |
+| **Memory:** facts about you, your projects and people | **Welcome back:** what happened while you were away |
+| <img src="docs/screenshots/two-pets.png" alt="Ghost and Bunny, two pets for two agents, side by side"> | <img src="docs/screenshots/agent-switcher.png" alt="Bunny's chat, with the agent switcher in its header"> |
+| **Several pets:** one for each agent | **Their own chats:** switch between them in the header |
 
 ## Requirements
 
@@ -496,6 +503,7 @@ swift test                           # unit tests
 ./scripts/install.sh                 # release build, install, restart
 python3 scripts/e2e.py               # end-to-end tests against real agent runs
 ./scripts/screenshots.sh             # render the README screenshots from sample data
+./scripts/videos.sh                  # render the website's clips from sample data
 ```
 
 `scripts/e2e.py` relaunches the installed app with `--test-mode`, drives real Cursor, Claude Code, Codex, Gemini and OpenCode turns over ACP through test-only endpoints (Allow/Deny in chat and from notifications, folder picker, permission mode, iTerm jump, screen capture, agent summaries, GitHub alert rules), checks the results on disk and in iTerm, then relaunches the app normally. Run a subset with e.g. `python3 scripts/e2e.py cursor claude`.

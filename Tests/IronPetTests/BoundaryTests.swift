@@ -18,8 +18,8 @@ final class BoundaryTests: XCTestCase {
         "Notifications/NotificationMCP.swift", "Agents/AgentMCP.swift", "Remote/RemoteServer.swift", "Remote/RemoteTasks.swift",
     ]
 
-    /// Files that build every store from sample data to render screenshots. They are a test harness, not a client.
-    static let harnesses: Set<String> = ["App/PreviewRenderer.swift"]
+    /// Files that build every store from sample data to render screenshots and clips. They are a test harness, not a client.
+    static let harnesses: Set<String> = ["App/PreviewRenderer.swift", "App/PreviewVideos.swift"]
 
     /// The Mac target and the portable core. A path below is relative to whichever folder holds the file.
     private static var sourceRoots: [URL] {
