@@ -2,8 +2,9 @@
 """UI test shards for the iOS CI jobs.
 
 Each shard lists the XCTestCase classes of IronPetRemoteUITests that one CI job runs.
-The shards are balanced by per-class run time: CI durations from a green main run, scaled by what the local before and after runs measured. To rebalance, move a class
-between SHARDS lists; `check` keeps every class in exactly one shard.
+The shards are balanced by per-class run time: CI durations from a green main run, scaled by what the
+local before and after runs measured. To rebalance, move a class between SHARDS lists; `check` keeps
+every class in exactly one shard.
 
   ios_ui_shards.py check            fail if a UI test class is in no shard, in two shards, or no longer exists
   ios_ui_shards.py args <shard>     print the -only-testing arguments for a shard (1-based)
