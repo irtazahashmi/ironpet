@@ -47,10 +47,27 @@ if CommandLine.arguments.contains("--uninstall") {
     exit(0)
 }
 
+// Anything else that is not an option would start a second GUI, and an automation that runs the binary with a removed
+// subcommand would then start one per run. Fail instead.
+if case .reject(let message) = LaunchArguments.route(CommandLine.arguments) {
+    FileHandle.standardError.write(Data((message + "\n").utf8))
+    exit(2)
+}
+
 MainActor.assumeIsolated { PetAPI.live = .onThisMac() }
 
 if CommandLine.arguments.contains("--render-previews") {
     MainActor.assumeIsolated { PreviewRenderer.run(arguments: CommandLine.arguments) }
+    exit(0)
+}
+
+// One GUI process per ironpet root. A second one hands over to the first and exits before it opens a window.
+let instanceLock: SingleInstance
+switch SingleInstance.acquire(at: Paths.root.appendingPathComponent("instance.lock")) {
+case .acquired(let lock):
+    instanceLock = lock
+case .running(let pid):
+    if let pid, let running = NSRunningApplication(processIdentifier: pid) { running.activate() }
     exit(0)
 }
 
