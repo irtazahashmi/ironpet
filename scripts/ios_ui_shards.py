@@ -2,7 +2,7 @@
 """UI test shards for the iOS CI jobs.
 
 Each shard lists the XCTestCase classes of IronPetRemoteUITests that one CI job runs.
-The weights are test method counts, a rough proxy for run time. To rebalance, move a class
+The shards are balanced by measured per-class run time on the simulator (see the PR for the numbers). To rebalance, move a class
 between SHARDS lists; `check` keeps every class in exactly one shard.
 
   ios_ui_shards.py check            fail if a UI test class is in no shard, in two shards, or no longer exists
@@ -15,17 +15,14 @@ import re
 import sys
 
 SHARDS = [
-    # Shard 1 (28 tests)
-    ["BackgroundUITests", "ChatTextSizeUITests", "ChatFileLinksUITests", "ChatSwipeReplyUITests", "ChatMenuKeyboardUITests",
-     "ChatSelectionUITests"],
-    # Shard 2 (27 tests)
-    ["PasteUITests", "PhaseThreeUITests", "ChatStreamingUITests", "ChatPagingUITests",
-     "ChatCacheUITests"],
-    # Shard 3 (24 tests)
-    ["IronPetRemoteUITests", "ChatParityUITests", "PhaseFourUITests", "PhaseFiveUITests",
-     "VoiceRecordingUITests", "AttachPhotoUITests", "ChatModeUITests", "ChatFindUITests", "ChatOutboxUITests"],
-    # Shard 4. Kept apart: shard 3 plus these ran past the 30 minute job limit.
-    ["NetworkStatesUITests", "MemoryUITests", "ChatMermaidUITests", "ChatFormPagesUITests", "ChatSendStatesUITests"],
+    # Shard 1 (about 10 minutes of test time on CI)
+    ["BackgroundUITests", "AttachPhotoUITests", "ChatSelectionUITests", "IronPetRemoteUITests", "ChatStreamingUITests", "ChatFindUITests"],
+    # Shard 2 (about 10 minutes of test time on CI)
+    ["ChatSendStatesUITests", "ChatFormPagesUITests", "ChatSwipeReplyUITests", "ChatMenuKeyboardUITests", "VoiceRecordingUITests", "ChatModeUITests", "MemoryUITests"],
+    # Shard 3 (about 10 minutes of test time on CI)
+    ["ChatTextSizeUITests", "ChatParityUITests", "PhaseThreeUITests", "PhaseFourUITests", "ChatCacheUITests", "ChatOutboxUITests"],
+    # Shard 4 (about 10 minutes of test time on CI)
+    ["NetworkStatesUITests", "PasteUITests", "ChatMermaidUITests", "ChatFileLinksUITests", "PhaseFiveUITests", "ChatPagingUITests"],
 ]
 
 TARGET = "IronPetRemoteUITests"

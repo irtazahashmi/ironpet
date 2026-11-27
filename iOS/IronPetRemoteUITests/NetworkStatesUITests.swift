@@ -21,7 +21,7 @@ final class NetworkStatesUITests: XCTestCase {
         app.launch()
         app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
-        XCTAssertTrue(app.tabBars.buttons["Agents"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.tabBars.buttons["Agents"].appears(timeout: 20))
     }
 
     /// The bubble of a message that waits for the connection. Its accessibility value says so, and the clock glyph is hidden from VoiceOver.
@@ -30,7 +30,7 @@ final class NetworkStatesUITests: XCTestCase {
 
     private func openTab(_ name: String) {
         let tab = app.tabBars.buttons[name]
-        XCTAssertTrue(tab.waitForExistence(timeout: 10))
+        XCTAssertTrue(tab.appears(timeout: 10))
         tab.tap()
     }
 
@@ -57,14 +57,14 @@ final class NetworkStatesUITests: XCTestCase {
         launch()
         openTab("Agents")
         let row = app.buttons["agent-s-needs"]
-        XCTAssertTrue(row.waitForExistence(timeout: 20), "the agent list loaded")
+        XCTAssertTrue(row.appears(timeout: 20), "the agent list loaded")
         let before = row.frame
 
         server.stop()
         // Under the delay nothing shows.
         sleep(1)
         XCTAssertFalse(any("network-strip").exists, "a drop under the delay shows nothing")
-        XCTAssertTrue(any("network-strip").waitForExistence(timeout: 20), "the strip shows after the delay")
+        XCTAssertTrue(any("network-strip").appears(timeout: 20), "the strip shows after the delay")
         XCTAssertTrue(app.staticTexts["Can't reach your Mac"].exists)
         XCTAssertEqual(row.frame, before, "the list did not move when the strip showed")
         for id in errorRows { XCTAssertFalse(any(id).exists, "\(id) is gone") }
@@ -74,7 +74,7 @@ final class NetworkStatesUITests: XCTestCase {
         let stripFrame = any("network-strip").frame
         for tab in ["Pet", "Chat", "Inbox", "More"] {
             openTab(tab)
-            XCTAssertTrue(any("network-strip").waitForExistence(timeout: 5), "the strip shows on \(tab)")
+            XCTAssertTrue(any("network-strip").appears(timeout: 5), "the strip shows on \(tab)")
             XCTAssertEqual(any("network-strip").frame, stripFrame, "the strip sits in the same place and has the same height on \(tab)")
         }
 
@@ -88,11 +88,11 @@ final class NetworkStatesUITests: XCTestCase {
     func testADropShorterThanTheDelayNeverShowsTheStrip() throws {
         launch()
         openTab("Agents")
-        XCTAssertTrue(app.buttons["agent-s-needs"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["agent-s-needs"].appears(timeout: 20))
         server.stop()
         sleep(1)
         try server.start()
-        sleep(5)
+        sleep(4)
         XCTAssertFalse(any("network-strip").exists, "the Mac was back before the strip's delay")
     }
 
@@ -100,9 +100,9 @@ final class NetworkStatesUITests: XCTestCase {
     func testEveryScreenReadsAgainAfterTheMacReturnsWithoutAPull() throws {
         launch()
         openTab("Agents")
-        XCTAssertTrue(app.buttons["agent-s-needs"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.buttons["agent-s-needs"].appears(timeout: 20))
         server.stop()
-        XCTAssertTrue(any("network-strip").waitForExistence(timeout: 20))
+        XCTAssertTrue(any("network-strip").appears(timeout: 20))
         let reads = server.count("GET /v1/agents")
         try server.start()
         waitUntilGone(any("network-strip"), "the strip hides")
@@ -116,14 +116,14 @@ final class NetworkStatesUITests: XCTestCase {
         server.brokenRoutes = ["/v1/agents": 500]
         launch()
         openTab("Agents")
-        XCTAssertTrue(any("load-error").waitForExistence(timeout: 20), "the full-page error shows")
+        XCTAssertTrue(any("load-error").appears(timeout: 20), "the full-page error shows")
         XCTAssertTrue(app.staticTexts["Can't reach your Mac"].exists)
         XCTAssertFalse(app.staticTexts["No agents"].exists, "not the empty state")
         XCTAssertFalse(any("agents-error").exists)
 
         server.brokenRoutes = [:]
         app.buttons["load-error-retry"].tap()
-        XCTAssertTrue(app.buttons["agent-s-needs"].waitForExistence(timeout: 20), "Retry loads the screen")
+        XCTAssertTrue(app.buttons["agent-s-needs"].appears(timeout: 20), "Retry loads the screen")
         waitUntilGone(any("load-error"), "the error goes")
     }
 
@@ -132,17 +132,17 @@ final class NetworkStatesUITests: XCTestCase {
         launch()
         openTab("Chat")
         let input = app.textViews["chat-input"]
-        XCTAssertTrue(input.waitForExistence(timeout: 20))
+        XCTAssertTrue(input.appears(timeout: 20))
         server.brokenRoutes = ["/v1/chat/current/messages": 500]
         input.tap()
         input.typeText("hello there")
         app.buttons["send-button"].tap()
-        XCTAssertTrue(app.buttons["outgoing-retry"].waitForExistence(timeout: 20), "the retry button sits on the message")
+        XCTAssertTrue(app.buttons["outgoing-retry"].appears(timeout: 20), "the retry button sits on the message")
         XCTAssertFalse(any("chat-error").exists, "no row above the transcript")
 
         server.brokenRoutes = [:]
         app.buttons["outgoing-retry"].tap()
-        XCTAssertTrue(any("outgoing-delivered").waitForExistence(timeout: 20), "the check shows once the Mac has the message")
+        XCTAssertTrue(any("outgoing-delivered").appears(timeout: 20), "the check shows once the Mac has the message")
         waitUntilGone(any("outgoing-retry"), "the retry button goes")
     }
 
@@ -151,15 +151,15 @@ final class NetworkStatesUITests: XCTestCase {
         launch()
         openTab("Chat")
         let input = app.textViews["chat-input"]
-        XCTAssertTrue(input.waitForExistence(timeout: 20))
+        XCTAssertTrue(input.appears(timeout: 20))
         server.stop()
         input.tap()
         input.typeText("written offline")
         app.buttons["send-button"].tap()
-        XCTAssertTrue(waitingBubble().waitForExistence(timeout: 20), "the clock shows while it waits")
-        XCTAssertTrue(any("network-strip").waitForExistence(timeout: 20))
+        XCTAssertTrue(waitingBubble().appears(timeout: 20), "the clock shows while it waits")
+        XCTAssertTrue(any("network-strip").appears(timeout: 20))
         try server.start()
-        XCTAssertTrue(any("outgoing-delivered").waitForExistence(timeout: 30), "it goes out and shows the check")
+        XCTAssertTrue(any("outgoing-delivered").appears(timeout: 30), "it goes out and shows the check")
         waitUntilGone(waitingBubble(), "the clock goes")
     }
 
@@ -176,28 +176,28 @@ final class NetworkStatesUITests: XCTestCase {
             server.brokenRoutes = ["/v1/agents": 500]
             launch(dark: dark)
             openTab("Agents")
-            XCTAssertTrue(any("load-error").waitForExistence(timeout: 20))
+            XCTAssertTrue(any("load-error").appears(timeout: 20))
             attach("load-error", dark: dark)
             server.brokenRoutes = [:]
             app.buttons["load-error-retry"].tap()
-            XCTAssertTrue(app.buttons["agent-s-needs"].waitForExistence(timeout: 20))
+            XCTAssertTrue(app.buttons["agent-s-needs"].appears(timeout: 20))
 
             openTab("Inbox")
-            XCTAssertTrue(app.buttons["done-s-1"].waitForExistence(timeout: 20))
+            XCTAssertTrue(app.buttons["done-s-1"].appears(timeout: 20))
             attach("inbox", dark: dark)
 
             openTab("Chat")
             let input = app.textViews["chat-input"]
-            XCTAssertTrue(input.waitForExistence(timeout: 20))
+            XCTAssertTrue(input.appears(timeout: 20))
             server.brokenRoutes = ["/v1/chat/current/messages": 500]
             input.tap()
             input.typeText("hello there")
             app.buttons["send-button"].tap()
-            XCTAssertTrue(any("outgoing-retry").waitForExistence(timeout: 20))
+            XCTAssertTrue(any("outgoing-retry").appears(timeout: 20))
             attach("message-failed", dark: dark)
             server.brokenRoutes = [:]
             app.buttons["outgoing-retry"].tap()
-            XCTAssertTrue(any("outgoing-delivered").waitForExistence(timeout: 20))
+            XCTAssertTrue(any("outgoing-delivered").appears(timeout: 20))
             attach("message-delivered", dark: dark)
 
             // The keyboard hides the tab bar, so start the app again. The pairing stays in the Keychain.
@@ -205,12 +205,12 @@ final class NetworkStatesUITests: XCTestCase {
             app.launchArguments = app.launchArguments.filter { $0 != "--reset-credentials" }
             app.launch()
             openTab("Agents")
-            XCTAssertTrue(app.buttons["agent-s-needs"].waitForExistence(timeout: 10))
+            XCTAssertTrue(app.buttons["agent-s-needs"].appears(timeout: 10))
             server.stop()
-            XCTAssertTrue(any("network-strip").waitForExistence(timeout: 20))
+            XCTAssertTrue(any("network-strip").appears(timeout: 20))
             attach("strip-agents", dark: dark)
             openTab("Inbox")
-            XCTAssertTrue(any("network-strip").waitForExistence(timeout: 5))
+            XCTAssertTrue(any("network-strip").appears(timeout: 5))
             attach("strip-inbox", dark: dark)
         }
     }

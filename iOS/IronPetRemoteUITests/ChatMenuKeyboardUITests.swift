@@ -36,29 +36,29 @@ final class ChatMenuKeyboardUITests: XCTestCase {
         app.enterPairingLink(server.pairingLink)
         app.buttons["pair-button"].tap()
         let tab = app.tabBars.buttons["Chat"]
-        XCTAssertTrue(tab.waitForExistence(timeout: 20))
+        XCTAssertTrue(tab.appears(timeout: 20))
         tab.tap()
-        XCTAssertTrue(app.textViews["chat-input"].waitForExistence(timeout: 20))
+        XCTAssertTrue(app.textViews["chat-input"].appears(timeout: 20))
     }
 
     func testTheMenuWithTheKeyboardUpAndDown() {
         openChat()
         let bubble = app.staticTexts["bubble-a-6"]
-        XCTAssertTrue(bubble.waitForExistence(timeout: 20))
+        XCTAssertTrue(bubble.appears(timeout: 20))
         attach("menu-1-keyboard-down-before")
 
         bubble.press(forDuration: 1.2)
-        XCTAssertTrue(app.buttons["Reply"].waitForExistence(timeout: 5), "the menu opens with the keyboard down")
+        XCTAssertTrue(app.buttons["Reply"].appears(timeout: 5), "the menu opens with the keyboard down")
         attach("menu-2-keyboard-down-menu")
         app.windows.firstMatch.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.08)).tap()
 
         app.textViews["chat-input"].tap()
-        XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 10))
+        XCTAssertTrue(app.keyboards.firstMatch.appears(timeout: 10))
         let target = app.staticTexts["bubble-a-7"]
-        XCTAssertTrue(target.waitForExistence(timeout: 5))
+        XCTAssertTrue(target.appears(timeout: 5))
         attach("menu-3-keyboard-up-before")
         target.press(forDuration: 1.2)
-        XCTAssertTrue(app.buttons["Reply"].waitForExistence(timeout: 5), "the menu opens with the keyboard up")
+        XCTAssertTrue(app.buttons["Reply"].appears(timeout: 5), "the menu opens with the keyboard up")
         attach("menu-4-keyboard-up-menu")
     }
 }
