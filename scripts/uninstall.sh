@@ -52,6 +52,11 @@ if security find-generic-password -s ironpet.voice >/dev/null 2>&1; then
   ok "Deleted the voice transcription API key from the Keychain"
 fi
 
+if security find-generic-password -s ironpet.telegram >/dev/null 2>&1; then
+  while security delete-generic-password -s ironpet.telegram >/dev/null 2>&1; do :; done
+  ok "Deleted the Telegram bot token from the Keychain"
+fi
+
 if security find-generic-password -s ironpet.voiceprints >/dev/null 2>&1; then
   while security delete-generic-password -s ironpet.voiceprints >/dev/null 2>&1; do :; done
   rm -rf "$HOME/Library/Application Support/IronPet"

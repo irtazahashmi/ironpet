@@ -274,7 +274,7 @@ If you build ironpet from source, skills are folders `skills/<name>/SKILL.md` in
 
 ## From the terminal
 
-`IronPet` is the app's own executable, `/Applications/IronPet.app/Contents/MacOS/IronPet`. The app must be running.
+`IronPet` is the app's own executable, `/Applications/IronPet.app/Contents/MacOS/IronPet`. Nothing puts it on your PATH, so call it by that path or add `alias IronPet=/Applications/IronPet.app/Contents/MacOS/IronPet` to your shell profile. The app must be running.
 
 ```bash
 IronPet automations list

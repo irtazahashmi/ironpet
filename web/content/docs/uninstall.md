@@ -41,14 +41,13 @@ How you remove ironpet depends on how you installed it. Each way removes only ir
 - removes only ironpet's entries from the agents' configs (such as `~/.cursor/hooks.json`, `~/.claude/settings.json`, `~/.codex/hooks.json` and `~/.gemini/settings.json`), so your other hooks stay,
 - deletes the two files ironpet owns, Copilot's `ironpet.json` and Pi's `ironpet.ts`,
 - removes the login item and the app,
-- deletes the Sentry token, the voice API key and the voiceprint key from the Keychain, with the stored voiceprints,
+- deletes the Sentry token, the voice API key, the Telegram bot token and the voiceprint key from the Keychain, with the stored voiceprints,
 - deletes the app's preferences and the hook bridge in `~/.ironpet` (`bin/` and `port`),
 - asks before deleting the rest of `~/.ironpet` (settings, saved chats, memory, screenshots) and the local `ironpet-dev` code signing identity.
 
 It keeps:
 
 - the `*.ironpet-backup` files, since they're your configs from before ironpet,
-- the Telegram bot token in the Keychain; remove it in Settings → Integrations before you uninstall, or [from the terminal](#removing-your-data-by-hand),
 - MCP sign-ins copied by **Share MCP sign-ins across folders**, which stay in `~/.cursor/projects/*/mcp-auth.json` until you sign out of those servers.
 
 ## With Homebrew

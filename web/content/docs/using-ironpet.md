@@ -60,7 +60,7 @@ Drag an icon to move it. Right-click the sidebar for a list of every section wit
 
 ## Settings
 
-Settings opens in its own window with these pages in a sidebar: General, Memory, Integrations, Voice, Meetings, Usage, Screen and Devices. It reopens on the last page you used. Everything you set there is stored in `~/.ironpet/config.json`; see [Configuration](/docs/configuration/).
+Settings opens in its own window with these pages in a sidebar: General, Memory, Inbox, Prompts, Automations, Integrations, Voice, Meetings, Usage, Screen and Devices. It reopens on the last page you used. Everything you set there is stored in `~/.ironpet/config.json`; see [Configuration](/docs/configuration/).
 
 ## Dashboards
 
