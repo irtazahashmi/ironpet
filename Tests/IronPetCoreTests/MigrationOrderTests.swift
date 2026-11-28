@@ -7,12 +7,12 @@ import XCTest
 final class MigrationOrderTests: XCTestCase {
     private var dir: URL!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         dir = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-migration-order-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
     }
 
-    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: dir) }
+    override func tearDown() async throws { try? FileManager.default.removeItem(at: dir) }
 
     /// Every list that `AppMigrations.all` joins, by name. A new store's list goes here too.
     private var lists: [(name: String, migrations: [Database.Migration])] {
