@@ -26,7 +26,7 @@ final class MigrationOrderTests: XCTestCase {
         try database.read { try TaskStore.columns($0, "task_suggestion_resolved") }
     }
 
-    func testEveryListIsInIncreasingOrder() {
+    func testEveryListIsInIncreasingOrder() async {
         for list in lists {
             let versions = list.migrations.map(\.version)
             XCTAssertEqual(versions, versions.sorted(), "\(list.name) is not in increasing order")
@@ -34,7 +34,7 @@ final class MigrationOrderTests: XCTestCase {
         }
     }
 
-    func testNoVersionIsUsedByTwoStores() {
+    func testNoVersionIsUsedByTwoStores() async {
         var owner: [Int: String] = [:]
         for list in lists {
             for migration in list.migrations {
@@ -46,12 +46,12 @@ final class MigrationOrderTests: XCTestCase {
         }
     }
 
-    func testTheListsAreTheOnesAppMigrationsJoins() {
+    func testTheListsAreTheOnesAppMigrationsJoins() async {
         XCTAssertEqual(lists.flatMap(\.migrations).map(\.version).sorted(), AppMigrations.all.map(\.version).sorted(),
                        "a list is missing from this test or from AppMigrations.all")
     }
 
-    func testADatabaseAtVersion603GetsTheResolvedByColumnAndCanResolve() throws {
+    func testADatabaseAtVersion603GetsTheResolvedByColumnAndCanResolve() async throws {
         let file = dir.appendingPathComponent("ironpet.db")
         let before = try Database(path: file, migrations: AppMigrations.all.filter { $0.version <= 603 })
         XCTAssertEqual(before.schemaVersion, 603)
@@ -67,7 +67,7 @@ final class MigrationOrderTests: XCTestCase {
         XCTAssertEqual(store.resolved().first?.resolvedBy, "Mail check")
     }
 
-    func testAFreshDatabaseHasTheResolvedByColumn() throws {
+    func testAFreshDatabaseHasTheResolvedByColumn() async throws {
         let database = try Database(path: dir.appendingPathComponent("fresh.db"), migrations: AppMigrations.all)
         XCTAssertTrue(try columns(database).contains("resolved_by"))
     }
