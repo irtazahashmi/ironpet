@@ -90,7 +90,8 @@ package final class ChatSession {
             selection: FrontSelection? = nil,
             automation: String? = nil,
             notice: Bool = false,
-            spoken: Bool = false
+            spoken: Bool = false,
+            readAloudBySender: Bool = false
         ) {
             self.text = text
             self.attachments = attachments
@@ -100,6 +101,7 @@ package final class ChatSession {
             self.automation = automation
             self.notice = notice
             self.spoken = spoken
+            self.readAloudBySender = readAloudBySender
         }
 
         package let id = UUID()
@@ -114,10 +116,13 @@ package final class ChatSession {
         package var automation: String? = nil
         /// The user said it aloud, so its reply starts with a summary that is read aloud.
         package var spoken = false
+        /// The client that sent it reads the reply aloud, so the reply starts with a summary the client reads and the turn waits for
+        /// its turn instead of steering a running one. The Mac itself says nothing.
+        package var readAloudBySender = false
         /// A turn that only delivers pending system notices. It has no text and never reaches the draft.
         package var notice = false
         /// Whether a running turn can take it. Automations and notices wait for the turn to end.
-        package var steerable: Bool { automation == nil && !notice }
+        package var steerable: Bool { automation == nil && !notice && !readAloudBySender }
     }
 
     /// What happened to a turn that an automation started, for `onAutomation`.
@@ -487,6 +492,12 @@ package final class ChatSession {
     /// The running turn was sent from the chat, not by another client or an automation, and Speak replies says its reply is
     /// read aloud: the first line of the reply is its spoken summary.
     private var turnSpeaksSummary = false
+    /// The running turn was sent by a client that reads the reply aloud itself. Its prompt asks for the summary line, and the
+    /// client gets that line through `onSummaryTurn`.
+    private var turnReadAloudBySender = false
+    /// Tells a client that reads replies aloud how its turn ended: the summary line of the reply, or nil when the reply has none.
+    /// Called before `onTurn` reports the same turn as finished, and not for a failed turn.
+    package var onSummaryTurn: ((ChatOrigin, String?) -> Void)?
     /// The summary of the running turn has been read, or skipped because the speaker is off or the Mac is quiet.
     private var turnSummarySpoken = false
     /// The summary of the running turn was actually handed to the speaker, not skipped.
@@ -937,7 +948,8 @@ package final class ChatSession {
     /// Starts a turn. Returns false, without sending, when no folder is chosen or the hooks are missing.
     @discardableResult
     private func start(prompt: String, shots: [URL], from client: ChatOrigin? = nil, reply: Reply? = nil,
-                       selection: FrontSelection? = nil, automation: String? = nil, silent: Bool = false, spoken: Bool = false) -> Bool {
+                       selection: FrontSelection? = nil, automation: String? = nil, silent: Bool = false, spoken: Bool = false,
+                       readAloudBySender: Bool = false) -> Bool {
         var prompt = prompt
         let pendingMeta = items.flatMap { $0.meta != nil && $0.metaSent != true ? $0.meta! : [] }
         // A notice turn with nothing left to deliver (a message went first and took it) has nothing to do.
@@ -975,6 +987,7 @@ package final class ChatSession {
         if client == nil { preamble = buildPreamble?() }
         turnOrigin = client
         turnSpeaksSummary = client == nil && automation == nil && !silent && replySpoken(afterSpokenMessage: spoken)
+        turnReadAloudBySender = client != nil && readAloudBySender && automation == nil && !silent
         turnSummarySpoken = false
         turnSummaryRead = false
         turnAskedApproval = false
@@ -984,7 +997,7 @@ package final class ChatSession {
         // Pending notices go with this turn once. What the user, a client or a tool wrote cannot contain a genuine meta tag.
         for index in items.indices where items[index].meta != nil && items[index].metaSent != true { items[index].metaSent = true }
         let sent = MetaTag.escape(Self.outgoingPrompt(text: prompt, reply: reply, selection: selection))
-        var text = silent ? MetaTag.triggerLead : SpokenSummary.prompt(sent, on: turnSpeaksSummary)
+        var text = silent ? MetaTag.triggerLead : SpokenSummary.prompt(sent, on: turnSpeaksSummary || turnReadAloudBySender)
         if !pendingMeta.isEmpty { text += "\n\n" + MetaTag.block(pendingMeta) }
         run(ACPTurn(prompt: text, preamble: preamble, workspace: workspace, resume: agentSessionID, model: model,
                     images: shots.filter(FolderFileIntake.isImageFile), files: shots.filter { !FolderFileIntake.isImageFile($0) }),
@@ -1168,7 +1181,8 @@ package final class ChatSession {
     private func sendNextQueued() {
         guard let next = queue.first else { return }
         if start(prompt: next.text, shots: next.attachments, from: next.origin, reply: next.reply, selection: next.selection,
-                 automation: next.automation, silent: next.notice, spoken: next.spoken) {
+                 automation: next.automation, silent: next.notice, spoken: next.spoken,
+                 readAloudBySender: next.readAloudBySender) {
             queue.removeFirst()
         } else {
             restoreQueue()
@@ -1179,16 +1193,18 @@ package final class ChatSession {
     /// text does, and never changes the chat's thread or folder. A busy agent queues it with the Mac's own queue until the
     /// turn ends. `files` are shown and sent like Mac attachments, without touching the draft the user may be composing.
     /// `onTurn` tells the sender how the turn goes.
-    package func submit(_ text: String, from origin: ChatOrigin, files: [URL] = [], reply: Reply? = nil) {
+    /// With `readAloud`, the sender reads the reply aloud: the turn asks the agent for a summary line first and `onSummaryTurn` hands
+    /// that line to the sender.
+    package func submit(_ text: String, from origin: ChatOrigin, files: [URL] = [], reply: Reply? = nil, readAloud: Bool = false) {
         let prompt = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !prompt.isEmpty || !files.isEmpty else { return }
         guard !isRunning else {
-            queue.append(QueuedMessage(text: prompt, attachments: files, origin: origin, reply: reply))
+            queue.append(QueuedMessage(text: prompt, attachments: files, origin: origin, reply: reply, readAloudBySender: readAloud))
             onTurn?(origin, .queued)
             steerNext()
             return
         }
-        start(prompt: prompt, shots: files, from: origin, reply: reply)
+        start(prompt: prompt, shots: files, from: origin, reply: reply, readAloudBySender: readAloud)
     }
 
     /// A prompt from an automation. It goes into the chat that is open now, in the current thread and folder, and
@@ -1280,8 +1296,24 @@ package final class ChatSession {
         steeredOrigins = []
         steerFailed = false
         let answer = error == nil ? lastAnswer() : nil
+        if turnReadAloudBySender, error == nil, let origin = origins.first {
+            let reply = firstAnswerItem().flatMap { item -> String? in
+                if case .assistant(let text) = item.kind { return SpokenSummary.summary(in: text, final: true) } else { return nil }
+            }
+            onSummaryTurn?(origin, reply)
+        }
+        turnReadAloudBySender = false
         for origin in origins {
             if let error { onTurn?(origin, .failed(error)) } else { onTurn?(origin, .finished(answer)) }
+        }
+    }
+
+    /// The first assistant message with text after the newest user message. A reply that asked for a summary starts with it.
+    private func firstAnswerItem() -> Item? {
+        guard let start = items.lastIndex(where: { if case .user = $0.kind { return true } else { return false } }) else { return nil }
+        return items[(start + 1)...].first { item in
+            if case .assistant(let text) = item.kind { return !text.allSatisfy(\.isWhitespace) }
+            return false
         }
     }
 

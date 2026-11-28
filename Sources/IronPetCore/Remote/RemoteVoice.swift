@@ -83,6 +83,9 @@ package final class RemoteVoice {
     private var speech: Task<Void, Never>?
     private var spokenReplies = false
     private var unsubscribe: (() -> Void)?
+    private var unsubscribeSummary: (() -> Void)?
+    /// The summary of a spoken message's reply was just handled, so the same turn's `finished` event must not read the whole reply.
+    private var summaryHandled = false
 
     /// Where gaps and refused frames are noted. The default writes to the system log.
     package var log: (String) -> Void = { NSLog("ironpet: %@", $0) }
@@ -97,8 +100,18 @@ package final class RemoteVoice {
         self.send = send
         let origin = ChatOrigin.ios(device: device)
         unsubscribe = api.chat.onTurn { [weak self] sender, event in
-            guard sender == origin, case .finished(let answer) = event, let answer else { return }
-            self?.turnFinished(answer)
+            guard sender == origin else { return }
+            switch event {
+            case .finished(let answer):
+                self?.turnFinished(answer)
+            case .failed:
+                self?.turnFailed()
+            default: break
+            }
+        }
+        unsubscribeSummary = api.chat.onSummaryTurn { [weak self] sender, summary in
+            guard sender == origin else { return }
+            self?.summaryReady(summary)
         }
     }
 
@@ -106,6 +119,8 @@ package final class RemoteVoice {
     package func close() {
         unsubscribe?()
         unsubscribe = nil
+        unsubscribeSummary?()
+        unsubscribeSummary = nil
         stream = nil
         stopSpeech()
         for task in transcriptions.values { task.cancel() }
@@ -183,7 +198,8 @@ package final class RemoteVoice {
                 hop("mac.voice.transcript")
                 guard finished.mode == .send, !text.isEmpty else { return }
                 let origin = ChatOrigin.ios(device: device)
-                let outcome = try await api.chat.send(SendChatRequest(text: text, origin: origin)).outcome
+                // A spoken message asks for a reply that starts with a summary line, and only that line is read to the phone.
+                let outcome = try await api.chat.send(SendChatRequest(text: text, origin: origin, spoken: spokenReplies)).outcome
                 hop("mac.voice.item")
                 if outcome == .needsFolder {
                     fail(finished.id, "Choose a folder for this chat on the Mac.")
@@ -197,9 +213,30 @@ package final class RemoteVoice {
 
     // MARK: Text to speech
 
-    private func turnFinished(_ answer: String) {
-        guard spokenReplies else { return }
+    private func turnFinished(_ answer: String?) {
+        // A spoken message's reply was handled by `summaryReady`. The flag clears even when the turn has no answer.
+        if summaryHandled {
+            summaryHandled = false
+            return
+        }
+        guard spokenReplies, let answer else { return }
         speak(answer, reply: UUID().uuidString.lowercased())
+    }
+
+    /// The summary line of the reply to a spoken message. Only this line is read to the phone and the full reply stays in the chat.
+    /// A reply with no summary still ends the speech, so the phone knows nothing more comes and listens again.
+    private func summaryReady(_ summary: String?) {
+        summaryHandled = true
+        guard spokenReplies else { return }
+        guard let summary else { return send(.text(VoiceServerMessage.ttsEnd(reply: UUID().uuidString.lowercased()).json)) }
+        speak(summary, reply: UUID().uuidString.lowercased())
+    }
+
+    /// A turn failed or was stopped. Nothing is read, and the phone is told so it listens again.
+    private func turnFailed() {
+        summaryHandled = false
+        guard spokenReplies else { return }
+        send(.text(VoiceServerMessage.ttsEnd(reply: UUID().uuidString.lowercased()).json))
     }
 
     /// Reads one assistant message of the open chat. The phone names the message; the text is the chat's own.
