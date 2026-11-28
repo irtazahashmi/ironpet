@@ -276,6 +276,10 @@ package final class UsageStore: @unchecked Sendable {
 }
 
 /// Every feature's migrations, in the order the database applies them.
+///
+/// All stores share one database and one `user_version`, so a version number is global. A new migration takes the next number above
+/// the highest one in any list (`latestVersion`), never a free number in the middle: a database already at a higher version skips it.
+/// `MigrationOrderTests` fails on a duplicate or an out-of-order list.
 package enum AppMigrations {
     package static let all = AutomationState.migrations + UsageStore.migrations + TaskStore.migrations + CaptureStore.migrations + ActivityLog.migrations
         + JobService.migrations + MemoryIndex.migrations + NotificationStore.migrations + RemoteStore.migrations + RecordRefs.migrations + NodeIdentity.migrations + AgentRegistry.migrations
