@@ -371,6 +371,22 @@ final class DesktopKeysAndActionsTests: XCTestCase {
         XCTAssertEqual(records[0].name, "https://example.com/path?q=1")
     }
 
+    func testTabCurrentNavigatesTheFrontTabWithoutOpeningANewOne() async throws {
+        opener.front = "com.google.Chrome"
+        let out = try await value("desktop_open_url", ["url": "https://example.com/next", "tab": "current"])
+        XCTAssertTrue(opener.opened.isEmpty)
+        XCTAssertEqual(opener.navigated.count, 1)
+        XCTAssertEqual(opener.navigated[0].0.absoluteString, "https://example.com/next")
+        XCTAssertEqual(opener.navigated[0].1, "com.google.Chrome")
+        XCTAssertEqual(out["tab"] as? String, "current")
+        XCTAssertEqual(records.last?.note, "current tab")
+        opener.works = false
+        let message = await failure("desktop_open_url", ["url": "https://example.com/next", "tab": "current"])
+        XCTAssertTrue(message.contains("current tab"), message)
+        let bad = await failure("desktop_open_url", ["url": "https://example.com", "tab": "other"])
+        XCTAssertTrue(bad.contains("tab must be"), bad)
+    }
+
     func testWithoutABrowserTheFrontmostBrowserIsUsedThenTheDefault() async throws {
         opener.front = "com.apple.Safari"
         try await value("desktop_open_url", ["url": "http://example.com"])

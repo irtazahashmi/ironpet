@@ -101,7 +101,7 @@ package final class DesktopService: @unchecked Sendable {
         case "desktop_click", "desktop_scroll":
             return await mouseCall(name, args)
         case "desktop_open_url":
-            return await onQueue { self.openURL(text("url"), browser: text("browser")) }
+            return await onQueue { self.openURL(text("url"), browser: text("browser"), tab: text("tab")) }
         case "desktop_press", "desktop_focus", "desktop_set_value", "desktop_type", "desktop_select", "desktop_check", "desktop_expand":
             guard let ref = text("ref") else { return .failure(Failure(message: "ref is required. Take it from desktop_snapshot or desktop_find.")) }
             let action: Action
@@ -399,6 +399,8 @@ package final class DesktopService: @unchecked Sendable {
         }
         let ax = deps.ax
         var done: String
+        // Set when a write was read back: true when the element's value changed as asked.
+        var verified: Bool?
         switch action {
         case .press:
             let available = ax.actions(of: entry.element)
@@ -416,15 +418,43 @@ package final class DesktopService: @unchecked Sendable {
             }
             guard ax.set("AXValue", to: text, on: entry.element) else { return fail("the app refused the new value.") }
             done = "set AXValue"
+            // A page reverts the value a moment after the write, so the read waits briefly.
+            Thread.sleep(forTimeInterval: 0.05)
+            if let live = ax.attributes(of: entry.element)?.value, live != text {
+                // A web page that owns the value (a React controlled input) takes the write and puts the old value back.
+                _ = ax.focus(entry.element)
+                guard replaceByKeys(text, in: entry) else {
+                    return fail("the value was set but the page put back \"\(clip(live))\", and key events did not change it either. The text did not land.")
+                }
+                done = "select all and type key events"
+            }
+            verified = true
         case .type(let text):
             _ = ax.focus(entry.element)
+            let before = ax.attributes(of: entry.element)?.value
+            var method: String?
             if ax.isSettable("AXSelectedText", on: entry.element), ax.set("AXSelectedText", to: text, on: entry.element) {
-                done = "insert AXSelectedText"
-            } else if ax.isSettable("AXValue", on: entry.element), let live = ax.attributes(of: entry.element),
-                      ax.set("AXValue", to: (live.value ?? "") + text, on: entry.element) {
-                done = "append AXValue"
+                method = "insert AXSelectedText"
+            } else if ax.isSettable("AXValue", on: entry.element), ax.set("AXValue", to: (before ?? "") + text, on: entry.element) {
+                method = "append AXValue"
+            }
+            // Read back: a web page can accept an Accessibility write and ignore it.
+            if method != nil { Thread.sleep(forTimeInterval: 0.05) }
+            if let method, text.isEmpty || before == nil || ax.attributes(of: entry.element)?.value != before {
+                done = method
+                verified = before != nil
+            } else if ax.typeText(text, to: entry.app) {
+                Thread.sleep(forTimeInterval: 0.1)
+                let after = ax.attributes(of: entry.element)?.value
+                if before != nil, after == before, !text.isEmpty {
+                    return fail("the text did not land. \(method.map { "\($0) and key events were" } ?? "Key events were") sent and the element's value did not change.")
+                }
+                done = "type key events"
+                verified = before != nil
+            } else if method != nil {
+                return fail("the text did not land. The element's value did not change, and key events could not be posted.")
             } else {
-                return fail("this element does not take text through Accessibility.")
+                return fail("this element does not take text through Accessibility, and key events could not be posted.")
             }
         case .select(let wanted):
             switch select(entry, wanted: wanted, asked: asked) {
@@ -443,8 +473,21 @@ package final class DesktopService: @unchecked Sendable {
             }
         }
         log(entry, action, .done, note: done)
-        return .success(.value(["ok": true, "action": done, "element": "\(entry.role.lowercased())" + (entry.name.isEmpty ? "" : " \"\(clip(entry.name))\""),
-                                "app": entry.app.name]))
+        var out: [String: Any] = ["ok": true, "action": done, "element": "\(entry.role.lowercased())" + (entry.name.isEmpty ? "" : " \"\(clip(entry.name))\""),
+                                  "app": entry.app.name]
+        if let verified {
+            out["verified"] = verified
+            if !verified { out["note"] = "The element does not show its value, so ironpet could not check that the text landed. Take a new desktop_snapshot to see." }
+        }
+        return .success(.value(out))
+    }
+
+    /// Replaces the focused element's text by selecting all and typing key events. True when the value then reads as `text`.
+    private func replaceByKeys(_ text: String, in entry: Entry) -> Bool {
+        let ax = deps.ax
+        guard case .success(let selectAll) = DesktopKeys.parse("cmd+a"), ax.post(selectAll, to: entry.app), ax.typeText(text, to: entry.app) else { return false }
+        Thread.sleep(forTimeInterval: 0.1)
+        return ax.attributes(of: entry.element)?.value == text
     }
 
     private func log(_ entry: Entry, _ action: Action, _ outcome: DesktopActionRecord.Outcome, note: String) {
@@ -466,7 +509,7 @@ private struct Problem: Error {
 private extension DesktopService {
     static let popupRoles: Set<String> = ["PopUpButton", "MenuButton", "ComboBox", "MenuBarItem"]
     /// Roles whose own text, or the text under them, names an option.
-    static let optionRoles: Set<String> = ["MenuItem", "Row", "RadioButton", "Tab", "Cell", "MenuBarItem"]
+    static let optionRoles: Set<String> = ["MenuItem", "Row", "RadioButton", "Tab", "Cell", "MenuBarItem", "ListBoxOption", "MenuListOption"]
 
     /// "1", "true", "on" and the like. A mixed checkbox ("2") counts as not checked, because pressing it checks it.
     static func truth(_ text: String?) -> Bool? {
@@ -482,6 +525,14 @@ private extension DesktopService {
         var role: String
         /// Every text the option shows: its own title, and for a row the texts of its cells.
         var labels: [String]
+        /// The app, so an option with no press action can be clicked.
+        var app: CaptureApp?
+        init(element: DesktopElement, role: String, labels: [String], app: CaptureApp? = nil) {
+            self.element = element
+            self.role = role
+            self.labels = labels
+            self.app = app
+        }
     }
 
     /// The options under `root`, found live: menu items, rows, radio buttons and tabs, up to a depth and a count.
@@ -514,18 +565,20 @@ private extension DesktopService {
     }
 
     /// Opens a popup so its options exist. Returns whether it did.
-    func openPopup(_ element: DesktopElement) -> Bool {
+    func openPopup(_ element: DesktopElement, app: CaptureApp) -> Bool {
         let available = deps.ax.actions(of: element)
-        guard let name = ["AXPress", "AXShowMenu"].first(where: available.contains) else { return false }
-        return deps.ax.perform(name, on: element)
+        if let name = ["AXPress", "AXShowMenu"].first(where: available.contains), deps.ax.perform(name, on: element) { return true }
+        // A web combobox opens for a user with the focus and the down arrow.
+        guard deps.ax.focus(element), case .success(let down) = DesktopKeys.parse("down") else { return false }
+        return deps.ax.post(down, to: app)
     }
 
     private func select(_ entry: Entry, wanted: String?, asked: Bool) -> Result<String, Problem> {
         let ax = deps.ax
         guard let wanted else {
-            return choose(Option(element: entry.element, role: entry.role, labels: [entry.name].filter { !$0.isEmpty }))
+            return choose(Option(element: entry.element, role: entry.role, labels: [entry.name].filter { !$0.isEmpty }, app: entry.app))
         }
-        let opened = Self.popupRoles.contains(entry.role) && openPopup(entry.element)
+        let opened = Self.popupRoles.contains(entry.role) && openPopup(entry.element, app: entry.app)
         func close() { if opened, ax.actions(of: entry.element).contains("AXCancel") { _ = ax.perform("AXCancel", on: entry.element) } }
         // A menu appears a moment after the press.
         var all = options(under: entry.element)
@@ -549,7 +602,9 @@ private extension DesktopService {
             close()
             return .failure(Problem("the option \"\(hit.labels[0])\" says \"\(verb)\". Ask again with its full text so the user can approve it."))
         }
-        let result = choose(hit)
+        var chosen = hit
+        chosen.app = entry.app
+        let result = choose(chosen)
         if case .failure = result { close() }
         return result
     }
@@ -565,6 +620,11 @@ private extension DesktopService {
         }
         let available = ax.actions(of: option.element)
         if let name = ["AXPress", "AXPick", "AXOpen"].first(where: available.contains), ax.perform(name, on: option.element) { return .success("\(name) \"\(label)\"") }
+        // A web option often has no press action, and a click is what a user does.
+        if let app = option.app, let frame = ax.frame(of: option.element),
+           case .posted = ax.post(DesktopMouse.events(button: .left, count: 1, flags: [], at: frame.center), to: app) {
+            return .success("click \"\(label)\"")
+        }
         return .failure(Problem("\"\(label)\" cannot be selected through Accessibility."))
     }
 
@@ -1003,8 +1063,11 @@ private extension DesktopService {
         return .success(url)
     }
 
-    func openURL(_ raw: String?, browser query: String?) -> Result<DesktopOutput, Failure> {
+    func openURL(_ raw: String?, browser query: String?, tab: String?) -> Result<DesktopOutput, Failure> {
         guard let raw else { return .failure(Failure(message: "url is required")) }
+        guard tab == nil || tab == "new" || tab == "current" else {
+            return .failure(Failure(message: "tab must be \"new\" or \"current\"."))
+        }
         let url: URL
         switch Self.validate(raw) {
         case .failure(let failure): return .failure(failure)
@@ -1030,12 +1093,23 @@ private extension DesktopService {
             log(.refused, "\(skip)")
             return .failure(Failure(message: "ironpet does not open pages in \(name): \(skip)."))
         }
+        if tab == "current" {
+            guard let bundleId = target?.bundleId else {
+                return .failure(Failure(message: "tab \"current\" needs a browser. Name one with browser, or bring one to the front."))
+            }
+            guard deps.opener.navigate(url, inBrowser: bundleId) else {
+                log(.failed, "the browser did not navigate")
+                return .failure(Failure(message: "\(name) could not load the address in its current tab. It needs a window, and ironpet needs the user's permission to control it. Use tab \"new\" instead."))
+            }
+            log(.done, "current tab")
+            return .success(.value(["ok": true, "action": "open_url", "url": shownURL, "browser": name, "tab": "current"]))
+        }
         guard deps.opener.open(url, inBrowser: target?.bundleId) else {
             log(.failed, "the browser did not open it")
             return .failure(Failure(message: "\(name) did not open the address."))
         }
         log(.done, "new tab")
-        return .success(.value(["ok": true, "action": "open_url", "url": shownURL, "browser": name]))
+        return .success(.value(["ok": true, "action": "open_url", "url": shownURL, "browser": name, "tab": "new"]))
     }
 }
 

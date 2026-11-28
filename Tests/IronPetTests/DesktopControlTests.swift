@@ -85,7 +85,10 @@ final class FakeAX: DesktopAX {
     func set(_ attribute: String, to text: String, on element: DesktopElement) -> Bool {
         guard let e = el(element), e.settable.contains(attribute) else { return false }
         sets.append((attribute, text))
-        if attribute == "AXValue" { e.node.value = text }
+        if !ignoresSets {
+            if attribute == "AXValue" { e.node.value = text }
+            if attribute == "AXSelectedText" { e.node.value = (e.node.value ?? "") + text }
+        }
         return true
     }
 
@@ -124,6 +127,18 @@ final class FakeAX: DesktopAX {
         return true
     }
 
+    /// A page that accepts an Accessibility write and keeps its own value.
+    var ignoresSets = false
+    var typed: [String] = []
+    /// Where typed key events go: the focused element's value gets the text appended. Nil means the page ignores them.
+    var typeLands = true
+    func typeText(_ text: String, to app: CaptureApp) -> Bool {
+        guard postWorks else { return false }
+        typed.append(text)
+        if typeLands, let e = focusedEl { e.node.value = (e.node.value ?? "") + text }
+        return true
+    }
+
     /// What a hit test at a screen point finds. Nil means nothing is there.
     var hitTest: (DesktopPoint) -> FakeEl? = { _ in nil }
     var mouseEvents: [(DesktopMouseEvent, Int32)] = []
@@ -158,6 +173,13 @@ final class FakeOpener: DesktopOpener {
     func open(_ url: URL, inBrowser bundleId: String?) -> Bool {
         guard works else { return false }
         opened.append((url, bundleId))
+        return true
+    }
+
+    var navigated: [(URL, String)] = []
+    func navigate(_ url: URL, inBrowser bundleId: String) -> Bool {
+        guard works else { return false }
+        navigated.append((url, bundleId))
         return true
     }
 }
@@ -338,6 +360,41 @@ final class DesktopControlTests: XCTestCase {
         let done = try await value("desktop_type", ["ref": try refFor("textarea", in: body), "text": " more"])
         XCTAssertEqual(done["action"] as? String, "append AXValue")
         XCTAssertEqual(area.node.value, "line more")
+    }
+
+    func testTypeFallsBackToKeyEventsWhenThePageIgnoresTheWrite() async throws {
+        let subject = try await value("desktop_find", ["app": "Notes", "name": "Subject"])
+        let ref = try refFor("textfield", in: subject)
+        ax.ignoresSets = true
+        ax.focusedEl = field
+        let before = field.node.value ?? ""
+        let out = try await value("desktop_type", ["ref": ref, "text": "abc"])
+        XCTAssertEqual(out["action"] as? String, "type key events")
+        XCTAssertEqual(out["verified"] as? Bool, true)
+        XCTAssertEqual(ax.typed, ["abc"])
+        XCTAssertEqual(field.node.value, before + "abc")
+    }
+
+    func testTypeFailsWhenNeitherMethodChangesTheValue() async throws {
+        let subject = try await value("desktop_find", ["app": "Notes", "name": "Subject"])
+        let ref = try refFor("textfield", in: subject)
+        ax.ignoresSets = true
+        ax.typeLands = false
+        ax.focusedEl = field
+        let message = await failure("desktop_type", ["ref": ref, "text": "abc"])
+        XCTAssertTrue(message.contains("did not land"), message)
+        XCTAssertEqual(records.last?.outcome, .failed)
+    }
+
+    func testSetValueFallsBackToSelectAllAndKeyEvents() async throws {
+        let subject = try await value("desktop_find", ["app": "Notes", "name": "Subject"])
+        let ref = try refFor("textfield", in: subject)
+        ax.ignoresSets = true
+        ax.typeLands = false
+        ax.focusedEl = field
+        let message = await failure("desktop_set_value", ["ref": ref, "text": "Hello"])
+        XCTAssertTrue(message.contains("did not land"), message)
+        XCTAssertEqual(ax.posted.last?.0.label, "cmd+a")
     }
 
     func testFocusFocuses() async throws {

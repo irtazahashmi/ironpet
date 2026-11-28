@@ -241,7 +241,7 @@ Prefer a ref action over a key. Use `desktop_key` when the app offers no element
 - The key goes to the element that has the keyboard focus, so call `desktop_focus` first when it matters. The app is brought to the front if it is not. One call sends one key. For text use `desktop_type`.
 - Approval. `cmd+return`, `cmd+q` and `cmd+w` always wait for the user. `return` and any `cmd` combo also wait when the focused window title or focused element says send, pay, delete, submit or buy. Letters, `tab`, `escape` and the arrows never ask. If the user declines, do not look for another key to do the same thing.
 - A key is never sent while a password field has the focus.
-- `desktop_open_url` takes `url` and optionally `browser`. It opens the address in a new tab of that browser, else of the frontmost browser, else of the default browser. Only http and https work. Addresses with a user name or password, and hosts ironpet never reads, are refused.
+- `desktop_open_url` takes `url` and optionally `browser` and `tab` (`new` or `current`). It opens the address in a new tab of that browser, or with `tab: "current"` loads it in the front tab without opening one. `current` needs the user's Automation permission for the browser. Without `tab` it opens the address in a new tab of that browser, else of the frontmost browser, else of the default browser. Only http and https work. Addresses with a user name or password, and hosts ironpet never reads, are refused.
 
 ## Mouse
 
