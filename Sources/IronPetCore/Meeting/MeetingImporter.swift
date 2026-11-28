@@ -89,7 +89,7 @@ package final class MeetingImporter {
             throw fail((error as? MeetingImportError)?.message ?? "Could not read \(file.lastPathComponent): \(error.localizedDescription)")
         }
         library.reload()
-        guard let record = library.meetings.first(where: { $0.folder.standardizedFileURL == folder.standardizedFileURL }) else {
+        guard let record = library.meetings.first(where: { $0.id == folder.lastPathComponent }) else {
             throw fail("The meeting folder was written but is not in the list.")
         }
         stage = nil
