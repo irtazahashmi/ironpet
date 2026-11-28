@@ -118,18 +118,17 @@ The same server still transcribes voice notes and meetings. The first spoken rep
 
 Press <kbd>⌃⇧V</kbd> anywhere and talk. Your pet looks up, attentive, with a small pill by it that says **Listening…**. When you stop talking, or press the shortcut again, what you said is transcribed and sent to the chat as a message with a microphone badge. It lands in the same thread, history and agent session as the messages you type, so the agent sees the earlier turns as context. If **Speak replies** is Automatic or Always, the reply starts with a short summary that your pet reads aloud while the full answer is written in the chat.
 
-It records one message per press and doesn't keep listening afterwards. It needs voice notes on, because the same server transcribes it, and it goes to the chat of the active agent, as voice notes do.
+Voice mode is a conversation. After the reply is written, and read aloud if it is read, your pet listens again without a press, and keeps doing so until you press <kbd>Esc</kbd> or the pill's button. Silence never ends it: a long quiet only means nothing is sent. The microphone is closed while the reply is written and read, so your pet doesn't hear itself. A failed turn, a call or a meeting recording ends it. It needs voice notes on, because the same server transcribes it, and it goes to the chat of the active agent, as voice notes do.
 
 <kbd>⌃⇧V</kbd> is Paste and Match Style in many Mac apps, and ironpet's global shortcut takes it over everywhere while voice notes are on. If that gets in your way, change or clear **Spoken message shortcut** under **Settings → Voice → Talk to the chat**, or set `hotkeys.voiceMode` to another shortcut, or to an empty string to turn it off.
 
 | Setting | `config.json` key | Notes |
 | --- | --- | --- |
 | Spoken message shortcut | `hotkeys.voiceMode` | Default `ctrl+shift+v`, registered only while voice notes are on. Config files that still hold the old default `cmd+opt+ctrl+v` move to the new one |
-| Stop after silence | `voiceMode.silenceSeconds` | Default 20, 5 to 120. Listening stops if you say nothing for this long |
 | Send after a pause | `voiceMode.endPauseSeconds` | Default 2.5, 1 to 10. A spoken message is sent after this long without speech. Shorter pauses keep the message going, and a second press of the shortcut sends it at once |
 | Speak job updates | `voiceMode.speakJobUpdates` | Default on |
 
-- **The microphone** is open only while listening, with macOS voice processing on. <kbd>Esc</kbd> or the pill's button discards the message. Pressing the shortcut while your pet is speaking stops it and starts listening.
+- **The microphone** is open only while listening, with macOS voice processing on. <kbd>Esc</kbd> or the pill's button ends voice mode. Pressing the shortcut while your pet is speaking stops it and starts listening.
 - **Jobs.** When the chat starts a [background job](/docs/automations/#background-jobs) during a reply that is being read aloud, your pet says when it's done, fails or needs your OK, unless Speak replies is Never, or you're on a call, recording a meeting or away.
 - **What a spoken message can't do.** A spoken yes never approves anything: approvals stay buttons in an alert or a bubble. A spoken message gets the same permissions as a typed one.
 - **When it stays quiet.** The shortcut won't start during a call (another app holding the microphone) or a meeting recording, and stops if one starts.

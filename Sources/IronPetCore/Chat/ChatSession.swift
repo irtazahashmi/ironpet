@@ -419,6 +419,9 @@ package final class ChatSession {
     package var onAutomationAnswer: ((String, String) -> Void)?
     /// A turn ended in this thread, so its quiet time starts.
     package var onTurnEnded: ((String) -> Void)?
+    /// The chat has nothing running or queued any more, after the reply was read aloud if it is read. The flag is true when the turn
+    /// failed or was stopped. The Mac's spoken messages listen again on it.
+    package var onSpokenTurnEnded: ((_ failed: Bool) -> Void)?
     /// The user moved on from this thread: a new chat, or another thread opened.
     package var onThreadLeft: ((String) -> Void)?
     private var automationRun: String?
@@ -1343,6 +1346,7 @@ package final class ChatSession {
         speech.stop()
         turnSpeaksSummary = false
         turnID = nil
+        onSpokenTurnEnded?(true)
         acp?.cancel()
         for approval in approvals {
             approval.respond(.deny("Stopped in ironpet"))
@@ -1554,6 +1558,7 @@ package final class ChatSession {
             state = .failed
             finishTurn(error: "\(agent.name) needs you to sign in on the Mac.")
             restoreQueue(reason: "\(agent.name) needs you to sign in on the Mac.")
+            onSpokenTurnEnded?(true)
         case .needsRuntime:
             endTurn()
             // Not a failure: the chat waits for the user to allow the download.
@@ -1561,6 +1566,7 @@ package final class ChatSession {
             state = .idle
             finishTurn(error: "\(agent.name) needs a runtime download. Approve it on the Mac.")
             restoreQueue(reason: "\(agent.name) needs a runtime download. Approve it on the Mac.")
+            onSpokenTurnEnded?(true)
         case .assistant, .toolStarted, .toolFinished:
             applyTranscript(event)
             // The summary is read as soon as its line is complete, while the rest of the reply is still being written.
@@ -1582,6 +1588,7 @@ package final class ChatSession {
             }
             turnSpeaksSummary = false
             if error == nil { sendNextQueued() } else { restoreQueue(reason: "The turn before it failed, so this message did not run.") }
+            if error != nil || (!isRunning && queue.isEmpty) { onSpokenTurnEnded?(error != nil) }
             rolloverIfDue()
         }
     }

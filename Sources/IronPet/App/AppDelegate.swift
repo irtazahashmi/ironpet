@@ -61,6 +61,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     var agentSessionTokens: [String: ChangeToken] = [:]
     /// Follows the active agent, so the highlight moves when the user selects another pet.
     var activeAgentToken: ChangeToken?
+    var spokenSpeechToken: ChangeToken?
     private var capture: CaptureService?
     private var desktop: DesktopService?
     private var desktopApprovals: DesktopApprovals?
@@ -576,6 +577,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return true
         }
         controller.spokenTurnRunning = { [weak self] in self?.chat.readsReply ?? false }
+        // Listening resumes after the reply, once the pet has stopped reading it: its own voice must not reach the microphone.
+        controller.recorder.isSpeaking = { [weak self] in self?.chat.speech.isSpeaking ?? false }
+        chat.onSpokenTurnEnded = { [weak controller] failed in controller?.turnEnded(failed: failed) }
+        spokenSpeechToken = chat.speech.changes.observe { [weak controller] in
+            DispatchQueue.main.async { MainActor.assumeIsolated { controller?.speechChanged() } }
+        }
         controller.recorder.onFailure = { [weak self] message in
             self?.announcer.automation(AutomationNotice(id: "voice-message", symbol: "mic.slash.fill", tint: .warn, title: "Voice",
                                                         body: message, expires: 15))

@@ -41,6 +41,7 @@ extension AppDelegate {
         let session = ChatSession(restore: true, speech: chat.speech, agentID: id)
         session.speaksReplies = { [weak self] in self?.api.chats.speaksReplies(id) ?? true }
         session.spawner = platform.processes
+        session.onSpokenTurnEnded = { [weak self] failed in self?.spokenMessages.turnEnded(failed: failed) }
         session.onAttention = { [weak self, weak session] title in
             guard let session else { return }
             self?.announcer.chat("\(session.agentDisplayName): \(title)")
