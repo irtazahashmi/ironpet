@@ -65,12 +65,27 @@ final class VoiceModel {
     var sendAtOnce: Bool {
         didSet { defaults.set(sendAtOnce, forKey: Self.sendKey) }
     }
+    /// True from the voice mode tap until the user turns it off. The phone ends each message itself after a pause. Silence only ends
+    /// the turn: listening starts again. A message sent, or a reply that finishes, brings it back to listening.
+    private(set) var voiceModeOn = false
+    /// The pause after speech that ends a voice mode message. Seconds. Shared default with the Mac, `voiceMode.endPauseSeconds`.
+    @ObservationIgnored var endPause: TimeInterval = VoiceTurnDetector.defaultEndPause
+    /// Seconds with nothing said before voice mode ends. Shared default with the Mac, `voiceMode.silenceSeconds`.
+    @ObservationIgnored var silence: TimeInterval = VoiceTurnDetector.defaultSilence
+    /// Decides on device when a voice mode message is over. Nil outside voice mode.
+    @ObservationIgnored private var turn: VoiceTurnDetector?
     /// When the running recording began. The recording bar counts from it.
     private(set) var startedAt: Date?
     /// Loudness of the running recording, drawn by the waveform. A reference type, so drawing never re-renders the chat.
     @ObservationIgnored let levels = LevelBuffer()
     /// True while a reply plays or arrives.
-    private(set) var speaking = false { didSet { updateScreenAwake() } }
+    private(set) var speaking = false {
+        didSet {
+            updateScreenAwake()
+            // The reply is read out, so the next turn starts.
+            if oldValue, !speaking { resumeVoiceMode() }
+        }
+    }
     /// The id of the chat message that plays or arrives, so its speaker button shows Stop.
     private(set) var readingItem: String?
 
@@ -177,6 +192,7 @@ final class VoiceModel {
         listener = nil
         channel?.close()
         channel = nil
+        endVoiceMode()
         state = .idle
     }
 
@@ -191,9 +207,27 @@ final class VoiceModel {
         }
     }
 
+    /// Starts voice mode, or ends it without sending anything when it runs. The message is sent when the phone hears the pause.
+    func voiceModeTapped() async {
+        switch state {
+        case .idle: await beginRecording(voiceMode: true)
+        default:
+            guard voiceModeOn else { return }
+            // Turned off while listening, while the message uploads or while the reply plays: nothing partial is sent.
+            if state == .recording { await cancelRecording() } else { endVoiceMode() }
+        }
+    }
+
+    /// Listens again when voice mode is on and nothing else holds the mic.
+    private func resumeVoiceMode() {
+        guard voiceModeOn, state == .idle, !speaking else { return }
+        Task { await beginRecording(voiceMode: true) }
+    }
+
     /// Drops a recording without sending it.
-    func cancelRecording() async {
+    func cancelRecording(keepVoiceMode: Bool = false) async {
         guard state == .recording else { return }
+        if keepVoiceMode { turn = nil } else { endVoiceMode() }
         mic?.stop()
         mic = nil
         pump?.cancel()
@@ -205,7 +239,12 @@ final class VoiceModel {
         if let id { await send(.cancel(id: id)) }
     }
 
-    private func beginRecording() async {
+    private func endVoiceMode() {
+        voiceModeOn = false
+        turn = nil
+    }
+
+    private func beginRecording(voiceMode: Bool = false) async {
         errorMessage = nil
         // The reply stops here, on the phone, before the Mac hears about it.
         await stopSpeaking()
@@ -231,7 +270,9 @@ final class VoiceModel {
         let id = UUID().uuidString.lowercased()
         mic = source
         streamID = id
-        streamMode = sendAtOnce ? .send : .draft
+        streamMode = sendAtOnce || voiceMode ? .send : .draft
+        voiceModeOn = voiceMode
+        turn = voiceMode ? VoiceTurnDetector(endPause: endPause, silence: silence) : nil
         // With content in the composer the phone sends the message itself, so the Mac only turns the audio into text.
         carry = streamMode == .send && hasComposerContent()
         offline = false
@@ -253,7 +294,9 @@ final class VoiceModel {
         pump = Task { [weak self] in
             var framer = VoiceFramer()
             for await pcm in audio {
-                levels.record(Self.level(of: pcm))
+                let level = Self.level(of: pcm)
+                levels.record(level)
+                self?.listen(level: level, samples: pcm.count / MemoryLayout<Int16>.size)
                 self?.recordedPCM.append(pcm)
                 for frame in framer.append(pcm) {
                     self?.recorded.append(frame)
@@ -265,6 +308,23 @@ final class VoiceModel {
                 }
             }
             return framer
+        }
+    }
+
+    /// Feeds voice mode's detector. A pause after speech sends the message. Silence from the start ends voice mode and drops the stream.
+    private func listen(level: Float, samples: Int) {
+        guard voiceModeOn, state == .recording, var detector = turn else { return }
+        let action = detector.feed(level: level, duration: Double(samples) / Double(VoiceWire.sampleRate))
+        turn = detector
+        switch action {
+        case .endMessage: Task { await endRecording() }
+        case .giveUp:
+            // Silence ends the turn, not voice mode: the stream is dropped and a new one starts.
+            Task {
+                await cancelRecording(keepVoiceMode: true)
+                resumeVoiceMode()
+            }
+        case nil: break
         }
     }
 
@@ -322,6 +382,7 @@ final class VoiceModel {
     private func endRecording() async {
         guard let id = streamID, let channel else { return }
         PhoneHopLog.mark("phone.voice.stop")
+        turn = nil
         mic?.stop()
         mic = nil
         state = .transcribing
@@ -515,6 +576,7 @@ final class VoiceModel {
         for id in awaitingChat { onSend(.failed(id: id, reason: "The connection to the Mac closed.")) }
         awaitingChat = []
         if state != .idle {
+            endVoiceMode()
             mic?.stop()
             mic = nil
             pump?.cancel()
@@ -538,6 +600,7 @@ final class VoiceModel {
     }
 
     private func fail(_ message: String) {
+        endVoiceMode()
         if state == .transcribing, streamMode == .send, let id = streamID { onSend(.failed(id: id, reason: message)) }
         mic?.stop()
         mic = nil
@@ -578,6 +641,8 @@ final class VoiceModel {
                     }
                 }
                 if !text.isEmpty { onTranscript(text, streamMode) }
+                // An empty message, or replies that stay silent: nothing to wait for, so the next turn starts.
+                if text.isEmpty || !spokenReplies { resumeVoiceMode() }
             case .error(let id, let message):
                 if let waiter = savedWaiter, id == streamID {
                     savedWaiter = nil
@@ -588,6 +653,7 @@ final class VoiceModel {
                 if let id, id == streamID {
                     if state == .transcribing, streamMode == .send { onSend(.failed(id: id, reason: message)) }
                     // The Mac refused or ended the stream. A mic that still runs would keep sending frames nobody reads.
+                    endVoiceMode()
                     mic?.stop()
                     mic = nil
                     pump?.cancel()

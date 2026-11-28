@@ -26,6 +26,29 @@ struct MicButton: View {
     }
 }
 
+/// Starts voice mode: the phone listens, ends the message itself after a pause and sends it to the primary chat. While it listens
+/// the same button ends voice mode and sends nothing.
+struct VoiceModeButton: View {
+    let voice: VoiceModel
+
+    var body: some View {
+        Button { Task { await voice.voiceModeTapped() } } label: {
+            if voice.voiceModeOn {
+                Image(systemName: SharedSymbols.stop)
+                    .font(.system(size: 15, weight: .medium)).foregroundStyle(.white)
+                    .frame(width: GlassCircleButtonStyle.size, height: GlassCircleButtonStyle.size)
+                    .tintedCircle(.red)
+            } else {
+                Image(systemName: "waveform").glassCircle()
+            }
+        }
+        .buttonStyle(.plain)
+        .disabled(!voice.voiceModeOn && voice.state != .idle)
+        .accessibilityLabel(voice.voiceModeOn ? "End voice mode" : "Voice mode")
+        .accessibilityIdentifier("voice-mode-button")
+    }
+}
+
 /// Takes the place of the composer while a voice note records: cancel, a live waveform, the elapsed time and stop.
 struct VoiceRecordingBar: View {
     let voice: VoiceModel
@@ -40,13 +63,18 @@ struct VoiceRecordingBar: View {
             VoiceWaveform(levels: voice.levels)
                 .frame(height: 34).frame(maxWidth: .infinity)
                 .accessibilityIdentifier("voice-waveform")
-            TimelineView(.periodic(from: .now, by: 0.5)) { context in
-                let seconds = Int(max(0, context.date.timeIntervalSince(voice.startedAt ?? context.date)))
-                Text(VoiceClock.format(seconds)).font(.system(size: 15, design: .monospaced)).monospacedDigit()
-                    .accessibilityLabel("Recording time").accessibilityValue(VoiceClock.format(seconds))
+            if voice.voiceModeOn {
+                Text("Listening").font(.footnote).foregroundStyle(.secondary).accessibilityIdentifier("voice-listening")
+                VoiceModeButton(voice: voice)
+            } else {
+                TimelineView(.periodic(from: .now, by: 0.5)) { context in
+                    let seconds = Int(max(0, context.date.timeIntervalSince(voice.startedAt ?? context.date)))
+                    Text(VoiceClock.format(seconds)).font(.system(size: 15, design: .monospaced)).monospacedDigit()
+                        .accessibilityLabel("Recording time").accessibilityValue(VoiceClock.format(seconds))
+                }
+                .accessibilityIdentifier("voice-timer")
+                MicButton(voice: voice)
             }
-            .accessibilityIdentifier("voice-timer")
-            MicButton(voice: voice)
         }
         .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 8)
         .accessibilityElement(children: .contain)
