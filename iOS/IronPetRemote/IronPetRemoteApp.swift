@@ -63,6 +63,7 @@ struct MainTabs: View {
     @State private var automations: AutomationsModel
     @State private var meetings: MeetingsModel
     @State private var meetingUploads: MeetingUploadsModel
+    @State private var meetingRecorder: MeetingRecorder
     @State private var memory: MemoryModel
     @State private var screen: ScreenModel
     @State private var phoneSettings: PhoneSettingsModel
@@ -109,8 +110,13 @@ struct MainTabs: View {
         _alerts = State(initialValue: AlertsModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
         _automations = State(initialValue: AutomationsModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
         _meetings = State(initialValue: MeetingsModel(client: client, events: events, gate: TranscriptGate(authenticator: Self.authenticator), network: network, onUnauthorized: unauthorized))
-        let uploads = MeetingUploadsModel(queue: MeetingUploadsModel.defaultQueue(), transport: client)
+        let recordings = MeetingUploadsModel.defaultRecordings()
+        let recorder = MeetingRecorder(queue: recordings)
+        let uploads = MeetingUploadsModel(queue: MeetingUploadsModel.defaultQueue(), transport: client, recordings: recordings, recordingTransport: client)
+        // Each finished chunk goes to the Mac while the recording runs.
+        recorder.onChunk = { [weak uploads] in uploads?.kick() }
         _meetingUploads = State(initialValue: uploads)
+        _meetingRecorder = State(initialValue: recorder)
         _screen = State(initialValue: ScreenModel(client: client, events: events, gate: TranscriptGate(authenticator: Self.authenticator, reason: "Show screen text"),
                                                   network: network, onUnauthorized: unauthorized))
         _phoneSettings = State(initialValue: PhoneSettingsModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
@@ -192,7 +198,7 @@ struct MainTabs: View {
                 AgentsView(model: agents)
                     .tabItem { Label("Agents", systemImage: AppTab.agents.symbol) }.tag(AppTab.agents)
             }
-            MoreView(dashboards: dashboards, makeDashboard: makeDashboardModel, alerts: alerts, automations: automations, meetings: meetings, uploads: meetingUploads, memory: memory, screen: screen, settings: phoneSettings, phoneAgent: phoneAgent, path: $morePath)
+            MoreView(dashboards: dashboards, makeDashboard: makeDashboardModel, alerts: alerts, automations: automations, meetings: meetings, uploads: meetingUploads, recorder: meetingRecorder, memory: memory, screen: screen, settings: phoneSettings, phoneAgent: phoneAgent, path: $morePath)
                 .tabItem { Label("More", systemImage: AppTab.more.symbol) }.badge(alerts.alerts.count + automations.automations.filter(\.waitsForApproval).count + dashboards.badge)
                 .tag(AppTab.more)
         }

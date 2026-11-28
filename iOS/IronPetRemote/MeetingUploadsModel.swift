@@ -13,6 +13,9 @@ final class MeetingUploadsModel {
 
     @ObservationIgnored let queue: MeetingUploadQueue
     @ObservationIgnored private let transport: any MeetingUploadTransport
+    /// Recordings made on the phone. Their chunks go out while the recording runs and when the Mac comes back.
+    @ObservationIgnored let recordings: MeetingRecordingQueue?
+    @ObservationIgnored private let recordingTransport: (any MeetingRecordingTransport)?
     @ObservationIgnored private let retryDelay: Duration
     @ObservationIgnored private var task: Task<Void, Never>?
     /// Names the run that owns `task`, so a run that was cancelled and replaced does not clear its successor's state when it ends.
@@ -29,9 +32,19 @@ final class MeetingUploadsModel {
         return MeetingUploadQueue(folder: base.appendingPathComponent("MeetingUploads", isDirectory: true))
     }
 
-    init(queue: MeetingUploadQueue, transport: any MeetingUploadTransport, retryDelay: Duration = .seconds(30)) {
+    /// The folder of recordings, next to the uploads in the app group, so a recording is not lost when the app is killed.
+    static func defaultRecordings() -> MeetingRecordingQueue {
+        let base = FileManager.default.containerURL(forSecurityApplicationGroupIdentifier: appGroup)
+            ?? FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        return MeetingRecordingQueue(folder: base.appendingPathComponent("MeetingRecordings", isDirectory: true))
+    }
+
+    init(queue: MeetingUploadQueue, transport: any MeetingUploadTransport, recordings: MeetingRecordingQueue? = nil,
+         recordingTransport: (any MeetingRecordingTransport)? = nil, retryDelay: Duration = .seconds(30)) {
         self.queue = queue
         self.transport = transport
+        self.recordings = recordings
+        self.recordingTransport = recordingTransport
         self.retryDelay = retryDelay
         pending = queue.pending
     }
@@ -39,7 +52,22 @@ final class MeetingUploadsModel {
     var waiting: [PendingUpload] { pending.filter { $0.failure == nil } }
     var failed: [PendingUpload] { pending.filter { $0.failure != nil } }
 
-    func reload() { pending = queue.pending }
+    /// Recordings whose chunks or completion the Mac does not have yet, including the one that is running.
+    private(set) var recordingsWaiting: [PendingRecording] = []
+    /// Recordings the Mac refused, with its words.
+    var failedRecordings: [PendingRecording] { recordingsWaiting.filter { $0.failure != nil } }
+
+    func reload() {
+        pending = queue.pending
+        recordingsWaiting = recordings?.pending ?? []
+    }
+
+    func dismiss(_ recording: PendingRecording) {
+        recordings?.discard(recording.id)
+        reload()
+    }
+
+    private var hasWork: Bool { !waiting.isEmpty || recordingsWaiting.contains { $0.failure == nil } }
 
     /// Queues the files the picker returned and starts sending. A file that is not m4a, mp3 or wav, or is over 1 GB, is refused with the
     /// Mac's own words and queues nothing.
@@ -63,17 +91,23 @@ final class MeetingUploadsModel {
     /// Sends what waits. It tries again after a pause while the Mac cannot be reached, and stops when nothing waits.
     func kick() {
         reload()
-        guard task == nil, !waiting.isEmpty else { return }
+        guard task == nil, hasWork else { return }
         sending = true
         let mine = UUID()
         run = mine
         task = Task { [weak self] in
             while let self, !Task.isCancelled {
-                let confirmed = await self.queue.drain(using: self.transport)
+                var confirmed = await self.queue.drain(using: self.transport)
+                if let recordings = self.recordings, let transport = self.recordingTransport {
+                    confirmed += await recordings.drain(using: transport)
+                }
                 self.reload()
                 if confirmed > 0 { await self.onConfirmed() }
-                if self.waiting.isEmpty { break }
-                try? await Task.sleep(for: self.retryDelay)
+                // A recording that is still running always has more to send, so the loop keeps its pace until it ends.
+                if !self.hasWork { break }
+                // While a recording runs, a new chunk lands every 30 seconds, so look again sooner than for a Mac that is away.
+                let recording = self.recordingsWaiting.contains { !$0.stopped }
+                try? await Task.sleep(for: recording ? min(self.retryDelay, .seconds(5)) : self.retryDelay)
             }
             guard let self, self.run == mine else { return }
             self.sending = false

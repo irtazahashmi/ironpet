@@ -83,6 +83,8 @@ targets:
       - IronPetWidget
       # Same ActivityAttributes type the app uses to start Live Activities.
       - IronPetRemote/PetActivityAttributes.swift
+      # The recording Live Activity: its attributes and the Stop intent the button runs in the app.
+      - IronPetRemote/MeetingRecordingActivity.swift
     dependencies:
       - package: IronPetKit
         product: IronPetKit

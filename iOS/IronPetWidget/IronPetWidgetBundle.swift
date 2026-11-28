@@ -6,5 +6,6 @@ struct IronPetWidgetBundle: WidgetBundle {
     var body: some Widget {
         PetStatusWidget()
         PetLiveActivity()
+        MeetingRecordingLiveActivity()
     }
 }

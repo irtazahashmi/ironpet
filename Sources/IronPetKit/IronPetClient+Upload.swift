@@ -23,3 +23,17 @@ extension IronPetClient: MeetingUploadTransport {
         _ = try await perform(request("POST", APIPath.completeMeetingUpload(id), body: Data("{}".utf8)))
     }
 }
+
+/// The chunks of a room recording made on the phone.
+extension IronPetClient: MeetingRecordingTransport {
+    public func sendRecordingChunk(id: String, index: Int, data: Data) async throws {
+        var put = request("PUT", APIPath.meetingRecordingChunk(id, index: index), headers: ["Content-Type": "application/octet-stream"])
+        put.httpBody = data
+        _ = try await perform(put)
+    }
+
+    public func completeRecording(id: String, count: Int, startedAt: Date) async throws {
+        let body = try JSONSerialization.data(withJSONObject: ["count": count, "startedAt": startedAt.timeIntervalSince1970])
+        _ = try await perform(request("POST", APIPath.completeMeetingRecording(id), body: body))
+    }
+}

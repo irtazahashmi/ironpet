@@ -85,6 +85,10 @@ After the summary of a room recording or an imported file, the summary agent als
 - One import or regeneration runs at a time. Several dropped files are imported one after another.
 - From the iPhone, **Upload** in the Meetings screen or the share sheet sends a file to this Mac, which imports it the same way and refuses it with the same messages. See [the iPhone page](/docs/iphone/#what-the-phone-shows).
 
+### Record the room with the iPhone
+
+**Record** in the iPhone's Meetings screen records the room through the phone's microphone. Recording goes on with the screen locked or the app in the background, and a Live Activity shows a running timer and a **Stop** button. The phone writes the audio in 30 second chunks and sends each one to the Mac while you record. A chunk stays on the phone until the Mac confirms it, so a Mac that is asleep or off the network loses nothing: the phone keeps recording and sends everything once the Mac is back. After you stop, the Mac builds the meeting from the chunks with the same steps as an imported file, and keeps the audio in the meeting folder. The limit is 4 hours. The consent notice applies as for any room recording.
+
 ### Regenerate
 
 **Regenerate**, the circular arrow next to **Ask**, rebuilds a past meeting from its saved audio, for example after you named a voice or changed the transcription model. It has two choices:

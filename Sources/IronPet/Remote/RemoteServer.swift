@@ -105,7 +105,8 @@ final class RemoteServer {
     nonisolated static let backgroundRoute = "/v1/settings/background"
     /// The routes that take a body past 1 MiB.
     nonisolated static let meetingUploadRoute = "/v1/meeting-uploads/:id"
-    nonisolated static let largeBodyRoutes: Set<String> = [uploadRoute, backgroundRoute, meetingUploadRoute]
+    nonisolated static let meetingChunkRoute = "/v1/meeting-recordings/:id/chunks/:index"
+    nonisolated static let largeBodyRoutes: Set<String> = [uploadRoute, backgroundRoute, meetingUploadRoute, meetingChunkRoute]
     /// The longest message the event socket reads from a device.
     nonisolated static let maxSocketMessage = 16 << 10
 
@@ -524,6 +525,23 @@ final class RemoteServer {
         router.post("/v1/meeting-uploads/:id/complete") { [self] _, context in
             let id = Self.parameter(context, "id")
             return await self.phoneFour(context) { api, _ in try RemoteMeetings(api: api).completeUpload(id) }
+        }
+        // A recording made on the phone: 30 second WAV chunks, each sent with its index, then `complete` with the chunk count.
+        router.put("/v1/meeting-recordings/:id/chunks/:index") { [self] request, context in
+            guard context.device != nil else { return Self.error(401, "unauthorized", "unauthorized") }
+            let id = Self.parameter(context, "id")
+            guard let index = Int(Self.parameter(context, "index")), index >= 0 else { return Self.errorResponse(RemoteFailure.invalid("the chunk index is needed")) }
+            let buffer = try await request.body.collect(upTo: RemoteUploads.maxBytes)
+            let data = Data(buffer.readableBytesView)
+            return await self.phoneFour(context) { api, _ in try RemoteMeetings(api: api).storeChunk(id: id, index: index, data: data) }
+        }
+        router.post("/v1/meeting-recordings/:id/complete") { [self] request, context in
+            let id = Self.parameter(context, "id")
+            let body = try await Self.object(request, context)
+            guard let count = (body["count"] as? NSNumber)?.intValue, let started = (body["startedAt"] as? NSNumber)?.doubleValue else {
+                return Self.errorResponse(RemoteFailure.invalid("count and startedAt are needed"))
+            }
+            return await self.phoneFour(context) { api, _ in try RemoteMeetings(api: api).completeRecording(id: id, count: count, startedAt: Date(timeIntervalSince1970: started)) }
         }
         router.delete("/v1/meetings/:id") { [self] _, context in
             let id = Self.parameter(context, "id")

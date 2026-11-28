@@ -157,6 +157,7 @@ package final class MeetingsAPI {
         self.library = library
         // Parts of an upload that never finished are of no use after two days.
         uploads.removeStale(olderThan: 2 * 86400)
+        recordings.removeStale(olderThan: 2 * 86400)
         forwarding = [
             recorder.changes.observe { [weak self] in self?.changes.send() },
             library.changes.observe { [weak self] in self?.changes.send() },
@@ -358,6 +359,50 @@ package final class MeetingsAPI {
         importTask = task
         completedUploads[id.uppercased()] = (try uploadCall { try uploads.status(id: id).size }, task)
         return task
+    }
+
+    // MARK: Room recording from the phone
+
+    /// Where chunks of a recording from the phone wait until the recording is complete. The app owner points it at a folder of its own.
+    package var recordings = MeetingRecordingChunks(folder: FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-recordings"))
+
+    /// Recordings whose import started, so a phone that lost the answer to `complete` can ask again without a second meeting.
+    private var completedRecordings: [String: Task<Void, Never>] = [:]
+
+    /// Keeps one chunk. Returning means the Mac holds it, which is when the phone may delete its copy.
+    package func storeChunk(id: String, index: Int, data: Data) throws {
+        if completedRecordings[id.uppercased()] != nil { return }
+        try recordingCall { try recordings.store(id: id, index: index, wav: data) }
+    }
+
+    /// Checks that chunks `0..<count` are all here, then builds the meeting from them in the background, after any import that is
+    /// running. The chunks are deleted once the meeting folder holds the audio. Returns the task that ends when the import is done.
+    @discardableResult
+    package func completeRecording(id: String, count: Int, startedAt: Date) throws -> Task<Void, Never> {
+        if let done = completedRecordings[id.uppercased()] { return done }
+        let files = try recordingCall { try recordings.files(id: id, count: count) }
+        let previous = importTask
+        let task = Task { @MainActor [weak self] in
+            await previous?.value
+            guard let self else { return }
+            // The phone deleted its copy when it got the answer to `complete`, so the chunks stay here when the import fails. They are
+            // removed after 2 days like any recording that did not finish.
+            if (try? await self.library.importer.importRecording(chunks: files, date: startedAt)) != nil {
+                self.recordings.discard(id: id)
+            }
+        }
+        importTask = task
+        completedRecordings[id.uppercased()] = task
+        return task
+    }
+
+    private func recordingCall<T>(_ body: () throws -> T) throws -> T {
+        do { return try body() } catch let failure as MeetingRecordingChunks.Failure {
+            switch failure {
+            case .invalid(let message): throw APIError.invalid(message)
+            case .missing(let indexes): throw APIError.conflict("the Mac is missing chunks \(indexes.prefix(20).map(String.init).joined(separator: ", "))")
+            }
+        }
     }
 
     private func uploadCall<T>(_ body: () throws -> T) throws -> T {

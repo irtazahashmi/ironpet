@@ -96,6 +96,8 @@ public enum APIPath {
     public static let meetingUploads = "/v1/meeting-uploads"
     public static func meetingUpload(_ id: String) -> String { "/v1/meeting-uploads/\(id)" }
     public static func completeMeetingUpload(_ id: String) -> String { "/v1/meeting-uploads/\(id)/complete" }
+    public static func meetingRecordingChunk(_ id: String, index: Int) -> String { "/v1/meeting-recordings/\(id)/chunks/\(index)" }
+    public static func completeMeetingRecording(_ id: String) -> String { "/v1/meeting-recordings/\(id)/complete" }
 
     public static let screenStatus = "/v1/screen/status"
     public static let screenChanges = "/v1/screen/changes"
