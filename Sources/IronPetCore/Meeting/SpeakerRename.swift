@@ -46,17 +46,22 @@ package enum SpeakerRename {
             guard !skipped.contains(folder.standardizedFileURL.path),
                   let transcript = try? String(contentsOf: folder.appendingPathComponent("transcript.md"), encoding: .utf8),
                   hasSpeaker(old, in: transcript) else { continue }
-            var failed = false
-            for name in files {
-                let url = folder.appendingPathComponent(name)
-                guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
-                let rewritten = name.hasPrefix("transcript") ? renameLabels(in: text, from: old, to: new) : renameNames(in: text, from: old, to: new)
-                guard rewritten != text else { continue }
-                do { try rewritten.write(to: url, atomically: true, encoding: .utf8) } catch { failed = true }
-            }
-            if failed { outcome.failed += 1 } else { outcome.meetings += 1 }
+            if renameInFolder(folder, from: old, to: new) { outcome.meetings += 1 } else { outcome.failed += 1 }
         }
         return outcome
+    }
+
+    /// Rewrites the speaker's name in one meeting folder. False when a file could not be written.
+    package static func renameInFolder(_ folder: URL, from old: String, to new: String) -> Bool {
+        var failed = false
+        for name in files {
+            let url = folder.appendingPathComponent(name)
+            guard let text = try? String(contentsOf: url, encoding: .utf8) else { continue }
+            let rewritten = name.hasPrefix("transcript") ? renameLabels(in: text, from: old, to: new) : renameNames(in: text, from: old, to: new)
+            guard rewritten != text else { continue }
+            do { try rewritten.write(to: url, atomically: true, encoding: .utf8) } catch { failed = true }
+        }
+        return !failed
     }
 
     /// `Name` in `[14:02:10] Name: text`, or nil for a line that is not a spoken line.

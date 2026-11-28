@@ -41,9 +41,9 @@ package enum MeetingSummary {
     /// Every permission request from the summary agent is refused.
     package nonisolated static let decision = ApprovalDecision.deny("Meeting summaries are read-only")
 
-    /// The wording is `prompts/meeting-summary.md`. The three section headings and the action-item line format are parsed by
+    /// The wording is `prompts/meeting-summary.md`, plus `prompts/meeting-suggestions.md` when `suggest` is true. The three section headings and the action-item line format are parsed by
     /// `Tasks/ActionItems.swift`, so they are the contract for anyone who edits that file.
-    package static func prompt(transcript: String) -> String {
+    package static func prompt(transcript: String, suggest: Bool = false) -> String {
         let limit = ConfigStore.shared.config.meetings.transcriptCharacters
         var body = transcript
         var note = ""
@@ -51,6 +51,8 @@ package enum MeetingSummary {
             body = String(body.suffix(limit))
             note = "\n(The start of a very long transcript was cut here. The full text is in transcript.md.)\n"
         }
-        return Prompts.render(id: "meeting-summary", ["note": note, "transcript": body])
+        let base = Prompts.render(id: "meeting-summary", ["note": note, "transcript": body])
+        // Only room and imported meetings are asked for a title and speaker names. A call keeps its prompt as it was.
+        return suggest ? base + "\n\n" + Prompts.text("meeting-suggestions") : base
     }
 }

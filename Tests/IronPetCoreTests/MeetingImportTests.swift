@@ -68,7 +68,7 @@ final class MeetingImportTests: XCTestCase {
         regenerator.speakerModelsReady = { true }
         regenerator.diarizer = OneVoice()
         regenerator.meetingConfig = { Config.Meetings() }
-        regenerator.summarize = { [summary] _, _, _ in summary }
+        regenerator.summarize = { [summary] _, _, _, _ in summary }
         library.importer.transcoder = StubTranscoder()
         library.importer.fileSize = { _ in 1000 }
         library.importer.creationDate = { _ in nil }
@@ -104,7 +104,7 @@ final class MeetingImportTests: XCTestCase {
 
     // S1
     func testAFailedTranscriptionKeepsTheMeetingForRegenerate() async throws {
-        library.regenerator.summarize = { _, _, _ in throw RegenerationError(message: "The agent is not signed in.") }
+        library.regenerator.summarize = { _, _, _, _ in throw RegenerationError(message: "The agent is not signed in.") }
         do {
             _ = try await library.importer.importAudio(file: file("standup.wav"))
             XCTFail("expected an error")

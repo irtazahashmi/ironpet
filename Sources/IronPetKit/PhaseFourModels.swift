@@ -103,16 +103,19 @@ public struct RemoteMeeting: Codable, Equatable, Hashable, Identifiable, Sendabl
     public var active: Bool
     /// The public `meeting_<hex>` id. Nil from a Mac older than record ids.
     public var ref: String?
+    /// The title the user gave the meeting on the Mac. Nil when there is none or the Mac is older.
+    public var title: String?
 
     enum CodingKeys: String, CodingKey {
-        case id, date, preview, active, ref
+        case id, date, preview, active, ref, title
         case hasSummary = "has_summary"
         case hasTranscript = "has_transcript"
         case hasAudio = "has_audio"
     }
 
     public init(id: String, date: Date, preview: String = "", hasSummary: Bool = false, hasTranscript: Bool = false, hasAudio: Bool = false,
-                active: Bool = false, ref: String? = nil) {
+                active: Bool = false, ref: String? = nil, title: String? = nil) {
+        self.title = title
         self.id = id; self.date = date; self.preview = preview; self.hasSummary = hasSummary; self.hasTranscript = hasTranscript
         self.hasAudio = hasAudio; self.active = active; self.ref = ref
     }

@@ -5,7 +5,7 @@ import Combine
 
 /// A past (or running) meeting: one folder under `~/.ironpet/meetings`.
 package struct MeetingRecord: Identifiable, Equatable {
-    package init(folder: URL, date: Date, preview: String, hasSummary: Bool, hasTranscript: Bool, hasAudio: Bool = false, isRoom: Bool = false) {
+    package init(folder: URL, date: Date, preview: String, hasSummary: Bool, hasTranscript: Bool, hasAudio: Bool = false, isRoom: Bool = false, title: String? = nil) {
         self.folder = folder
         self.date = date
         self.preview = preview
@@ -13,6 +13,7 @@ package struct MeetingRecord: Identifiable, Equatable {
         self.hasTranscript = hasTranscript
         self.hasAudio = hasAudio
         self.isRoom = isRoom
+        self.title = title
     }
 
     package let folder: URL
@@ -25,6 +26,8 @@ package struct MeetingRecord: Identifiable, Equatable {
     package var hasAudio = false
     /// Recorded in a room: the microphone alone, with the voices told apart by speaker recognition.
     package var isRoom = false
+    /// The title the user accepted or typed, from `title.txt`. Nil until then.
+    package var title: String? = nil
 
     package var id: String { folder.lastPathComponent }
     package var transcriptURL: URL { folder.appendingPathComponent("transcript.md") }
@@ -91,6 +94,65 @@ package final class MeetingLibrary {
         return outcome
     }
 
+    // MARK: Suggestions
+
+    package enum SuggestionError: LocalizedError, Equatable {
+        case noMeeting, notSuggested, emptyName, failed
+        package var errorDescription: String? {
+            switch self {
+            case .noMeeting: return "No such meeting."
+            case .notSuggested: return "This meeting has no such speaker."
+            case .emptyName: return "Type a name."
+            case .failed: return "The files could not be updated."
+            }
+        }
+    }
+
+    /// The title and speaker names proposed for a meeting and not yet accepted.
+    package func suggestions(for id: String) -> MeetingSuggestions {
+        guard let meeting = meetings.first(where: { $0.id == id }) else { return MeetingSuggestions() }
+        return MeetingSuggestions.load(meeting.folder)
+    }
+
+    /// Stores the title the user accepted or edited. An empty title clears it. The suggested title is used up.
+    package func acceptTitle(_ id: String, title: String) throws {
+        guard let meeting = meetings.first(where: { $0.id == id }) else { throw SuggestionError.noMeeting }
+        do { try MeetingSuggestions.setTitle(title, in: meeting.folder) } catch { throw SuggestionError.failed }
+        var left = MeetingSuggestions.load(meeting.folder)
+        left.title = nil
+        left.save(to: meeting.folder)
+        reload()
+    }
+
+    /// Names a voice of a saved meeting the way naming it right after the meeting does: every line and the summary show
+    /// the name, and the voice goes into the voice store when it has enough speech and speaker recognition is on.
+    package func acceptSpeaker(_ id: String, label: String, name: String) throws {
+        guard let meeting = meetings.first(where: { $0.id == id }) else { throw SuggestionError.noMeeting }
+        let name = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw SuggestionError.emptyName }
+        let transcript = (try? String(contentsOf: meeting.transcriptURL, encoding: .utf8)) ?? ""
+        guard SpeakerRename.hasSpeaker(label, in: transcript) else { throw SuggestionError.notSuggested }
+        guard SpeakerRename.renameInFolder(meeting.folder, from: label, to: name) else { throw SuggestionError.failed }
+        if let voice = regenerator.speakerVoices[id]?[label] {
+            if regenerator.recogniseSpeakers(), !voice.mixed {
+                _ = regenerator.voiceStore.enroll(name: name, embedding: voice.centroid, seconds: voice.seconds, meetingConfirmed: true)
+            }
+            regenerator.speakerVoices[id]?[label] = nil
+        }
+        var left = MeetingSuggestions.load(meeting.folder)
+        left.speakers[label] = nil
+        left.save(to: meeting.folder)
+        reload()
+    }
+
+    /// Drops what was proposed for a meeting, for "No thanks".
+    package func dismissSuggestions(_ id: String) {
+        guard let meeting = meetings.first(where: { $0.id == id }) else { return }
+        MeetingSuggestions().save(to: meeting.folder)
+        regenerator.speakerVoices[id] = nil
+        reload()
+    }
+
     /// Moves the folder to the Trash rather than deleting it, so a wrong click can be undone in Finder.
     package func delete(_ id: String) throws {
         guard let meeting = meetings.first(where: { $0.id == id }) else { return }
@@ -115,7 +177,8 @@ package final class MeetingLibrary {
         let room = files.contains { MeetingFolderScan.chunkName($0)?.track == .room }
             || (hasTranscript && MeetingFolderScan.appName(fromTranscript: head(of: transcript)) == AudioApps.roomMeetingName)
         return MeetingRecord(folder: folder, date: date, preview: preview, hasSummary: hasSummary, hasTranscript: hasTranscript,
-                             hasAudio: files.contains { MeetingFolderScan.chunkName($0) != nil }, isRoom: room)
+                             hasAudio: files.contains { MeetingFolderScan.chunkName($0) != nil }, isRoom: room,
+                             title: MeetingSuggestions.title(in: folder))
     }
 
     /// `yyyy-MM-dd-HHmm`, with the `-2`, `-3` … suffix a second meeting in the same minute gets.

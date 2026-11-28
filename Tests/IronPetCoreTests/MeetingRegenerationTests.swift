@@ -81,7 +81,7 @@ final class MeetingRegenerationTests: XCTestCase {
         regenerator.recogniseSpeakers = { false }
         regenerator.speakerModelsReady = { true }
         regenerator.meetingConfig = { Config.Meetings() }
-        regenerator.summarize = { [unowned self] transcript, _, _ in
+        regenerator.summarize = { [unowned self] transcript, _, _, _ in
             summaryInputs.append(transcript)
             return newSummary
         }
@@ -134,7 +134,7 @@ final class MeetingRegenerationTests: XCTestCase {
 
     func testProgressNamesTheChunkAndThenTheSummary() async throws {
         var labels: [String] = []
-        regenerator.summarize = { [unowned self] _, _, _ in
+        regenerator.summarize = { [unowned self] _, _, _, _ in
             labels.append(regenerator.progress?.label ?? "")
             return newSummary
         }
@@ -178,7 +178,7 @@ final class MeetingRegenerationTests: XCTestCase {
     }
 
     func testAFailingSummaryLeavesTheTranscriptAsItWas() async throws {
-        regenerator.summarize = { _, _, _ in throw RegenerationError(message: "agent offline") }
+        regenerator.summarize = { _, _, _, _ in throw RegenerationError(message: "agent offline") }
         let ok = await regenerator.regenerate(try record(), mode: .full)
         XCTAssertFalse(ok)
         XCTAssertEqual(read("transcript.md"), oldTranscript)
@@ -187,7 +187,7 @@ final class MeetingRegenerationTests: XCTestCase {
     }
 
     func testAnEmptyAnswerReplacesNothing() async throws {
-        regenerator.summarize = { _, _, _ in "  \n" }
+        regenerator.summarize = { _, _, _, _ in "  \n" }
         let result1 = await regenerator.regenerate(try record(), mode: .full)
         XCTAssertFalse(result1)
         XCTAssertEqual(read("summary.md"), oldSummary)
@@ -296,7 +296,7 @@ final class MeetingRegenerationTests: XCTestCase {
 
         let started = expectation(description: "summary started")
         let release = AsyncGate()
-        regenerator.summarize = { [unowned self] _, _, _ in
+        regenerator.summarize = { [unowned self] _, _, _, _ in
             started.fulfill()
             await release.wait()
             return newSummary

@@ -680,7 +680,7 @@ final class MeetingController: ObservableObject {
         }
         let runner = Self.makeSummaryRunner(agent, spawner: spawner)
         summaryRunner = runner
-        let turn = ACPTurn(prompt: Self.summaryPrompt(transcript: text), preamble: nil, workspace: folder, resume: nil,
+        let turn = ACPTurn(prompt: Self.summaryPrompt(transcript: text, suggest: isRoom), preamble: nil, workspace: folder, resume: nil,
                            model: config.summaryModel, images: [], files: [])
         var answer = ""
         summaryTask = Task { [weak self] in
@@ -720,7 +720,14 @@ final class MeetingController: ObservableObject {
             summary = .failed("The agent returned no text.")
         } else {
             do {
-                try (text + "\n").write(to: url, atomically: true, encoding: .utf8)
+                // A room meeting's answer ends with a suggested title and speaker names, which go to suggestions.json.
+                let parsed = isRoom ? MeetingSuggestions.parse(text) : (summary: text, suggestions: MeetingSuggestions())
+                let body = parsed.summary.isEmpty ? text : parsed.summary
+                try (body + "\n").write(to: url, atomically: true, encoding: .utf8)
+                if isRoom, let folder {
+                    let transcript = (try? String(contentsOf: folder.appendingPathComponent("transcript.md"), encoding: .utf8)) ?? ""
+                    parsed.suggestions.limited(toTranscript: transcript).save(to: folder)
+                }
                 summary = .ready(url)
                 summaryNotified.append(url.path)
                 onSummaryReady?(url)
@@ -731,7 +738,7 @@ final class MeetingController: ObservableObject {
         setPhase(.done)
     }
 
-    static func summaryPrompt(transcript: String) -> String { MeetingSummary.prompt(transcript: transcript) }
+    static func summaryPrompt(transcript: String, suggest: Bool = false) -> String { MeetingSummary.prompt(transcript: transcript, suggest: suggest) }
 
     // MARK: After the meeting
 

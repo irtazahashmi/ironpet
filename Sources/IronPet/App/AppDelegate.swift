@@ -245,6 +245,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         announcer.bubbles.onDismissed = { [weak self] id in self?.meetingBubbleClosed(id) }
         pet.onRecordingClick = { [weak self] in self?.showMeetingBubble() }
         meeting.onSummaryReady = { [weak self] url in
+            if let self, self.meeting.isRoom { self.meetings.regenerator.rememberVoices(meetingID: url.deletingLastPathComponent().lastPathComponent, self.meeting.speakerTable.speakers) }
             self?.memorySawMeeting(url.deletingLastPathComponent(), agent: self?.meeting.lastSummaryRequest?.agent)
             self?.activity?.record(.meetingSummary(url))
             self?.announcer.meetingSummary(url)

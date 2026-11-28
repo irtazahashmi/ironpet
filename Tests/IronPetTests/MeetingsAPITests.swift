@@ -22,7 +22,7 @@ final class MeetingsAPITests: XCTestCase {
         try makeMeeting("2026-11-14-1400", summary: "## Summary\nPlanned the launch.\n", transcript: "# Meeting\n[14:00:00] Me: hello\n")
         try makeMeeting("2026-11-15-1000", summary: nil, transcript: "# Meeting\n[10:00:00] Me: second\n")
         library = MeetingLibrary(root: root)
-        library.regenerator.summarize = { _, _, _ in "## Summary\nRebuilt.\n" }
+        library.regenerator.summarize = { _, _, _, _ in "## Summary\nRebuilt.\n" }
         controller = MeetingController()
         api = APITestSupport.makeAPI(events: events, meeting: controller, meetingLibrary: library)
         api.meetings.reload()

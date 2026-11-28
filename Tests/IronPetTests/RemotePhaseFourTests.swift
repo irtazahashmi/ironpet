@@ -36,7 +36,7 @@ final class RemotePhaseFourTests: XCTestCase {
         try makeMeeting("2026-11-14-1400", summary: "## Summary\nPlanned the launch.\n", transcript: "# Meeting\n[14:00:00] Me: hello secret-word\n", audio: true)
         try makeMeeting("2026-11-15-1000", summary: nil, transcript: "# Meeting\n[10:00:00] Me: second\n", audio: false)
         library = MeetingLibrary(root: root)
-        library.regenerator.summarize = { _, _, _ in "## Summary\nRebuilt.\n" }
+        library.regenerator.summarize = { _, _, _, _ in "## Summary\nRebuilt.\n" }
         recorder = FakeMeetingRecorder()
         config = ConfigStore(memory: Config())
         chat = ChatSession(restore: false)

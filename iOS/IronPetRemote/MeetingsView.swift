@@ -64,7 +64,12 @@ struct MeetingsView: View {
                         MeetingDetailView(model: model, meeting: meeting)
                     } label: {
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(meeting.date.formatted(date: .abbreviated, time: .shortened)).font(.headline)
+                            if let title = meeting.title, !title.isEmpty {
+                                Text(title).font(.headline).accessibilityIdentifier("meeting-title-\(meeting.id)")
+                                Text(meeting.date.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                            } else {
+                                Text(meeting.date.formatted(date: .abbreviated, time: .shortened)).font(.headline)
+                            }
                             if !meeting.preview.isEmpty { Text(meeting.preview).font(.subheadline).foregroundStyle(.secondary).lineLimit(2) }
                             if meeting.active { Text("In progress").font(.caption).foregroundStyle(.orange) }
                         }

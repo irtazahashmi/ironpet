@@ -154,11 +154,19 @@ package final class MeetingRegenerator {
     package var speakerModelsReady: () -> Bool = { false }
     package var meetingConfig: () -> Config.Meetings = { ConfigStore.shared.config.meetings }
     /// Runs the summary agent on a transcript and returns its answer. Tests replace it.
-    package lazy var summarize: @MainActor (_ transcript: String, _ config: Config.Meetings, _ folder: URL) async throws -> String = { [weak self] transcript, config, folder in
-        try await MeetingSummaryRun.run(transcript: transcript, config: config, folder: folder, spawner: self?.spawner ?? UnsupportedProcessSpawner())
+    package lazy var summarize: @MainActor (_ transcript: String, _ config: Config.Meetings, _ folder: URL, _ suggest: Bool) async throws -> String = { [weak self] transcript, config, folder, suggest in
+        try await MeetingSummaryRun.run(transcript: transcript, config: config, folder: folder, spawner: self?.spawner ?? UnsupportedProcessSpawner(), suggest: suggest)
     }
     /// Called after the files were replaced.
     package var onReplaced: ((MeetingReplacement) -> Void)?
+    /// The voices of meetings rebuilt in this session, by meeting id and transcript label (`Speaker 2`). They stay in memory
+    /// only, so a suggested name can be stored as a voice. Nothing about a voice is written to the meeting folder.
+    package var speakerVoices: [String: [String: MeetingSpeaker]] = [:]
+
+    /// Remembers the voices of a meeting that was just recorded, keyed by the label its transcript shows.
+    package func rememberVoices(meetingID: String, _ speakers: [MeetingSpeaker]) {
+        speakerVoices[meetingID] = Dictionary(speakers.filter { $0.name == nil }.map { ($0.displayName, $0) }, uniquingKeysWith: { first, _ in first })
+    }
 
     /// Why the Regenerate button is disabled for this meeting, or nil when it can run. `activeFolder` is the meeting
     /// being recorded or summarised right now.
@@ -212,12 +220,14 @@ package final class MeetingRegenerator {
         let folder = meeting.folder
         let previous = try? String(contentsOf: folder.appendingPathComponent("summary.md"), encoding: .utf8)
         var transcript: String?
+        var voices: MeetingSpeakerTable?
         let text: String
         switch mode {
         case .full:
             keyCache.forget()
             let found = try await Self.scan(folder)
-            let lines = try await transcribe(found.chunks)
+            let (lines, table) = try await transcribe(found.chunks)
+            voices = table
             guard !lines.isEmpty else { throw RegenerationError(message: "The new transcript has no speech in it, so nothing was replaced.") }
             text = MeetingTranscript.render(startedAt: found.startedAt, appName: appName ?? found.appName, lines: lines)
             transcript = text
@@ -230,16 +240,23 @@ package final class MeetingRegenerator {
         }
         progress = RegenerationProgress(stage: .summarising)
         let config = meetingConfig()
-        let answer = try await summarize(text, config, folder).trimmingCharacters(in: .whitespacesAndNewlines)
+        // Room and imported meetings also get a suggested title and speaker names. A call meeting is asked for neither.
+        let suggest = meeting.isRoom
+        let answer = try await summarize(text, config, folder, suggest).trimmingCharacters(in: .whitespacesAndNewlines)
         guard !answer.isEmpty else { throw RegenerationError(message: "The agent returned no text, so nothing was replaced.") }
-        var summary = answer + "\n"
+        let parsed = suggest ? MeetingSuggestions.parse(answer) : (summary: answer, suggestions: MeetingSuggestions())
+        var summary = (parsed.summary.isEmpty ? answer : parsed.summary) + "\n"
         if let previous { summary = ActionItems.carryChecked(from: previous, into: summary) }
         try Self.replace(in: folder, transcript: transcript, summary: summary)
+        parsed.suggestions.limited(toTranscript: text).save(to: folder)
+        if let voices {
+            speakerVoices[meeting.id] = Dictionary(voices.speakers.filter { $0.name == nil }.map { ($0.displayName, $0) }, uniquingKeysWith: { first, _ in first })
+        }
         return MeetingReplacement(folder: folder, mode: mode, previousSummary: previous, summary: summary, agent: config.summaryAgent)
     }
 
     /// Transcribes the chunks in meeting order, and when speaker recognition is on, names the voices on the Them track.
-    private func transcribe(_ chunks: [ChunkInfo]) async throws -> [MeetingLine] {
+    private func transcribe(_ chunks: [ChunkInfo]) async throws -> ([MeetingLine], MeetingSpeakerTable) {
         let work = chunks.filter { !$0.silent }
         let diarize = recogniseSpeakers() && speakerModelsReady()
         var table = MeetingSpeakerTable()
@@ -273,7 +290,7 @@ package final class MeetingRegenerator {
                 if let id = lines[index].speakerId, let speaker = table.speaker(id) { lines[index].speaker = speaker.displayName }
             }
         }
-        return lines
+        return (lines, table)
     }
 
     private nonisolated static func scan(_ folder: URL) async throws -> MeetingFolderScan.Result {
@@ -327,12 +344,12 @@ package final class MeetingRegenerator {
 /// Runs the summary agent once, the way the live recorder does: read-only, every permission refused.
 @MainActor
 package enum MeetingSummaryRun {
-    package static func run(transcript: String, config: Config.Meetings, folder: URL, spawner: ProcessSpawner) async throws -> String {
+    package static func run(transcript: String, config: Config.Meetings, folder: URL, spawner: ProcessSpawner, suggest: Bool = false) async throws -> String {
         guard let agent = AgentCatalog.agent(id: config.summaryAgent) else {
             throw RegenerationError(message: "The summary agent \"\(config.summaryAgent)\" is not available. Pick another in Settings → Meetings.")
         }
         let runner = MeetingSummary.makeRunner(agent, spawner: spawner)
-        let turn = ACPTurn(prompt: MeetingSummary.prompt(transcript: transcript), preamble: nil, workspace: folder,
+        let turn = ACPTurn(prompt: MeetingSummary.prompt(transcript: transcript, suggest: suggest), preamble: nil, workspace: folder,
                            resume: nil, model: config.summaryModel, images: [], files: [])
         var tasks: [Task<Void, Never>] = []
         defer {
