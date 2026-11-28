@@ -62,6 +62,22 @@ package enum DesktopKeys {
         "letters, digits, punctuation, " + named.keys.filter { canonical[$0] == nil }.sorted().joined(separator: ", ")
     }
 
+    /// Modifier names such as ["cmd", "shift"] as flags, with the canonical names in label order. Used by the mouse tools.
+    package static func parseModifiers(_ names: [String]) -> Result<(flags: DesktopKeyFlags, names: [String]), KeyError> {
+        var flags: DesktopKeyFlags = []
+        var seen: [String] = []
+        for raw in names {
+            let part = raw.trimmingCharacters(in: .whitespaces).lowercased()
+            guard let modifier = modifiers.first(where: { $0.aliases.contains(part) }) else {
+                return .failure(KeyError("\"\(raw)\" is not a modifier. Use cmd, shift, opt or ctrl."))
+            }
+            if seen.contains(modifier.name) { return .failure(KeyError("\"\(modifier.name)\" appears twice.")) }
+            seen.append(modifier.name)
+            flags.insert(modifier.flag)
+        }
+        return .success((flags, modifiers.filter { seen.contains($0.name) }.map(\.name)))
+    }
+
     /// "return", "cmd+l", "shift+tab", "cmd+shift+t". Names are lowercase and joined by "+". Throws a message an agent can act on.
     package static func parse(_ raw: String) -> Result<DesktopKeyStroke, KeyError> {
         let text = raw.trimmingCharacters(in: .whitespaces).lowercased()

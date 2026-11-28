@@ -9,6 +9,8 @@ final class FakeEl {
     var actions: [String]
     var settable: Set<String>
     var gone = false
+    /// Where the element is on screen, in points.
+    var frame: DesktopRect?
     /// Boolean attributes such as AXSelected and AXDisclosing.
     var bools: [String: Bool] = [:]
     /// Runs when an action succeeds, so a checkbox can flip its value.
@@ -120,6 +122,25 @@ final class FakeAX: DesktopAX {
         guard postWorks else { return false }
         posted.append((stroke, app.pid))
         return true
+    }
+
+    /// What a hit test at a screen point finds. Nil means nothing is there.
+    var hitTest: (DesktopPoint) -> FakeEl? = { _ in nil }
+    var mouseEvents: [(DesktopMouseEvent, Int32)] = []
+    var scrolls: [(direction: DesktopScrollDirection, lines: Int, point: DesktopPoint, pid: Int32)] = []
+    var cursorMoves = false
+    func frame(of element: DesktopElement) -> DesktopRect? { el(element)?.frame }
+    func element(at point: DesktopPoint, in app: CaptureApp) -> DesktopElement? { hitTest(point) }
+    func post(_ events: [DesktopMouseEvent], to app: CaptureApp) -> DesktopMouseOutcome {
+        guard postWorks else { return .failed }
+        mouseEvents += events.map { ($0, app.pid) }
+        return .posted(cursorMoved: cursorMoves)
+    }
+
+    func scroll(_ direction: DesktopScrollDirection, lines: Int, at point: DesktopPoint, to app: CaptureApp) -> DesktopMouseOutcome {
+        guard postWorks else { return .failed }
+        scrolls.append((direction, lines, point, app.pid))
+        return .posted(cursorMoved: cursorMoves)
     }
 }
 
@@ -508,7 +529,7 @@ final class DesktopControlTests: XCTestCase {
 
     func testToolsAreListedAndDescribed() async throws {
         XCTAssertEqual(DesktopMCP.names, ["desktop_snapshot", "desktop_find", "desktop_press", "desktop_set_value", "desktop_type", "desktop_focus", "desktop_screenshot",
-                                          "desktop_key", "desktop_open_url", "desktop_select", "desktop_check", "desktop_expand"])
+                                          "desktop_key", "desktop_open_url", "desktop_select", "desktop_check", "desktop_expand", "desktop_click", "desktop_scroll"])
         for tool in DesktopMCP.tools {
             XCTAssertEqual((tool["inputSchema"] as? [String: Any])?["type"] as? String, "object")
             XCTAssertFalse((tool["description"] as? String ?? "").isEmpty)

@@ -5,9 +5,9 @@ description: Read and operate other Mac apps through ironpet's desktop_* tools, 
 
 # ironpet desktop control
 
-ironpet can read any app's window and press, type, focus, select, check, expand and send keys through Accessibility. Nothing is installed. The tools work only when the user has turned on Desktop control in ironpet Settings under Screen. If a tool says it is off, tell the user and stop.
+ironpet can read any app's window and press, type, focus, select, check, expand and send keys through Accessibility, and click and scroll with the mouse when an element ignores Accessibility. Nothing is installed. The tools work only when the user has turned on Desktop control in ironpet Settings under Screen. If a tool says it is off, tell the user and stop.
 
-Tools: `desktop_snapshot`, `desktop_find`, `desktop_press`, `desktop_set_value`, `desktop_type`, `desktop_focus`, `desktop_select`, `desktop_check`, `desktop_expand`, `desktop_key`, `desktop_open_url`, `desktop_screenshot`.
+Tools: `desktop_snapshot`, `desktop_find`, `desktop_press`, `desktop_set_value`, `desktop_type`, `desktop_focus`, `desktop_select`, `desktop_check`, `desktop_expand`, `desktop_key`, `desktop_click`, `desktop_scroll`, `desktop_open_url`, `desktop_screenshot`.
 
 ## When to use it
 
@@ -32,7 +32,7 @@ A ref belongs to the last read of its window and works only while its element is
 - Password fields, password managers, apps the user excluded from screen capture and private browser windows are never read or operated. A field you cannot read shows its role only.
 - Nothing works while screen capture is paused.
 - An action on an element or window that says send, pay, delete, submit or buy waits for the user to approve it in a bubble. If they decline, the tool fails. Do not retry another way. Tell the user what you wanted to do and why.
-- ironpet sends no mouse events and has no coordinate clicks. If the element offers no Accessibility action and no key does the job, you cannot operate it. Say so.
+- Mouse events go to the app's process, never to the whole system, and only inside the app's window. A point outside the window is refused. If no press, key or click does the job, say so.
 
 ## Keys and addresses
 
@@ -43,6 +43,15 @@ Prefer a ref action over a key. Use `desktop_key` when the app offers no element
 - Approval. `cmd+return`, `cmd+q` and `cmd+w` always wait for the user. `return` and any `cmd` combo also wait when the focused window title or focused element says send, pay, delete, submit or buy. Letters, `tab`, `escape` and the arrows never ask. If the user declines, do not look for another key to do the same thing.
 - A key is never sent while a password field has the focus.
 - `desktop_open_url` takes `url` and optionally `browser`. It opens the address in a new tab of that browser, else of the frontmost browser, else of the default browser. Only http and https work. Addresses with a user name or password, and hosts ironpet never reads, are refused.
+
+## Mouse
+
+Try `desktop_press` first. Some controls ignore it, such as the drop-downs and pickers of web pages. Then use `desktop_click`.
+
+- `desktop_click` with `ref` clicks the centre of that element. With `app`, optional `window`, `x` and `y` it clicks a point, in points from the window's top-left corner. Take the point from a screenshot of the window, scaled back to the window's size in points. `button` is `left` (default) or `right`. `count` 2 is a double click. `modifiers` is a list of `cmd`, `shift`, `opt`, `ctrl`.
+- `desktop_scroll` with `ref` scrolls over that element, or with `app` over the window's centre or at `x`, `y`. `direction` is `up`, `down`, `left` or `right`. `amount` is in lines, 3 by default, 20 at most. Use it for lists that draw their items only when they come into view. Take a new snapshot afterwards, because refs can be stale.
+- The result gives the screen point and `cursor_moved`. It says "none found under the point" when no element is there, so check with a snapshot or screenshot that the click did what you wanted.
+- Approval. A click on an element, point or window that says send, pay, delete, submit or buy waits for the user. A scroll never asks. Password fields are refused either way. If the user declines, do not click somewhere else to get the same result.
 
 ## Pictures
 

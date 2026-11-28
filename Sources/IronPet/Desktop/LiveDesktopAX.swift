@@ -163,6 +163,67 @@ final class LiveDesktopAX: DesktopAX {
         return true
     }
 
+    func frame(of element: DesktopElement) -> DesktopRect? {
+        guard let el = ax(element) else { return nil }
+        var position: CFTypeRef?, size: CFTypeRef?
+        guard AXUIElementCopyAttributeValue(el, "AXPosition" as CFString, &position) == .success, let position,
+              AXUIElementCopyAttributeValue(el, "AXSize" as CFString, &size) == .success, let size,
+              CFGetTypeID(position) == AXValueGetTypeID(), CFGetTypeID(size) == AXValueGetTypeID() else { return nil }
+        var origin = CGPoint.zero, extent = CGSize.zero
+        guard AXValueGetValue(position as! AXValue, .cgPoint, &origin), AXValueGetValue(size as! AXValue, .cgSize, &extent) else { return nil }
+        return DesktopRect(x: origin.x, y: origin.y, width: extent.width, height: extent.height)
+    }
+
+    func element(at point: DesktopPoint, in app: CaptureApp) -> DesktopElement? {
+        var hit: AXUIElement?
+        guard AXUIElementCopyElementAtPosition(source.appElement(for: app), Float(point.x), Float(point.y), &hit) == .success, let hit else { return nil }
+        return Box(hit)
+    }
+
+    func post(_ events: [DesktopMouseEvent], to app: CaptureApp) -> DesktopMouseOutcome {
+        // A private source keeps the state of the real mouse out of the events. postToPid sends to this process only, so the pointer stays.
+        let source = CGEventSource(stateID: .privateState)
+        var built: [CGEvent] = []
+        for event in events {
+            let type: CGEventType
+            switch (event.phase, event.button) {
+            case (.move, _): type = .mouseMoved
+            case (.down, .left): type = .leftMouseDown
+            case (.up, .left): type = .leftMouseUp
+            case (.down, .right): type = .rightMouseDown
+            case (.up, .right): type = .rightMouseUp
+            }
+            let button: CGMouseButton = event.button == .right ? .right : .left
+            guard let cg = CGEvent(mouseEventSource: source, mouseType: type, mouseCursorPosition: CGPoint(x: event.point.x, y: event.point.y), mouseButton: button) else {
+                return .failed
+            }
+            cg.flags = CGEventFlags(rawValue: event.flags.rawValue)
+            if event.phase != .move { cg.setIntegerValueField(.mouseEventClickState, value: Int64(event.clickState)) }
+            built.append(cg)
+        }
+        for cg in built {
+            cg.postToPid(app.pid)
+            Thread.sleep(forTimeInterval: 0.02)
+        }
+        return .posted(cursorMoved: false)
+    }
+
+    func scroll(_ direction: DesktopScrollDirection, lines: Int, at point: DesktopPoint, to app: CaptureApp) -> DesktopMouseOutcome {
+        let source = CGEventSource(stateID: .privateState)
+        // Wheel 1 is vertical and positive scrolls up. Wheel 2 is horizontal and positive scrolls left.
+        let vertical: Int32, horizontal: Int32
+        switch direction {
+        case .up: (vertical, horizontal) = (Int32(lines), 0)
+        case .down: (vertical, horizontal) = (-Int32(lines), 0)
+        case .left: (vertical, horizontal) = (0, Int32(lines))
+        case .right: (vertical, horizontal) = (0, -Int32(lines))
+        }
+        guard let cg = CGEvent(scrollWheelEvent2Source: source, units: .line, wheelCount: 2, wheel1: vertical, wheel2: horizontal, wheel3: 0) else { return .failed }
+        cg.location = CGPoint(x: point.x, y: point.y)
+        cg.postToPid(app.pid)
+        return .posted(cursorMoved: false)
+    }
+
     private func ax(_ element: DesktopElement) -> AXUIElement? { (element as? Box)?.element }
 }
 

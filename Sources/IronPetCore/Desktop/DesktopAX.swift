@@ -63,6 +63,14 @@ package protocol DesktopAX: AnyObject {
     func focusedElement(of app: CaptureApp) -> DesktopElement?
     /// Posts the key down and key up to the app's process only, never to the system-wide event stream. False when it could not post.
     func post(_ stroke: DesktopKeyStroke, to app: CaptureApp) -> Bool
+    /// The element's frame in screen points, or a window's. Nil when it has no position or is gone.
+    func frame(of element: DesktopElement) -> DesktopRect?
+    /// The element of the app under a screen point (an accessibility hit test). Nil when there is none.
+    func element(at point: DesktopPoint, in app: CaptureApp) -> DesktopElement?
+    /// Posts the mouse events to the app's process. `failed` when they could not be posted.
+    func post(_ events: [DesktopMouseEvent], to app: CaptureApp) -> DesktopMouseOutcome
+    /// Posts scroll wheel events over a screen point to the app's process.
+    func scroll(_ direction: DesktopScrollDirection, lines: Int, at point: DesktopPoint, to app: CaptureApp) -> DesktopMouseOutcome
 }
 
 /// Nothing is reachable. Test mode uses it, so an automated run never touches the real screen.
@@ -88,6 +96,10 @@ package final class IdleDesktopAX: DesktopAX {
     package func activate(_ app: CaptureApp) {}
     package func focusedElement(of app: CaptureApp) -> DesktopElement? { nil }
     package func post(_ stroke: DesktopKeyStroke, to app: CaptureApp) -> Bool { false }
+    package func frame(of element: DesktopElement) -> DesktopRect? { nil }
+    package func element(at point: DesktopPoint, in app: CaptureApp) -> DesktopElement? { nil }
+    package func post(_ events: [DesktopMouseEvent], to app: CaptureApp) -> DesktopMouseOutcome { .failed }
+    package func scroll(_ direction: DesktopScrollDirection, lines: Int, at point: DesktopPoint, to app: CaptureApp) -> DesktopMouseOutcome { .failed }
 }
 
 /// What opening an address needs from the system, behind a protocol so tests can drive the service without a browser.

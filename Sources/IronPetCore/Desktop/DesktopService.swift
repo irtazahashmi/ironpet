@@ -9,7 +9,8 @@ package enum DesktopOutput {
 /// The desktop tools: read any Mac app through Accessibility and operate it with AX actions. Reads use the capture code's live tree
 /// reader, so they share its node and time budgets and its rule that a secure field is read for its role only. Actions go through
 /// the same privacy checks as capture and through the approval gate in `DesktopSafety`. The only synthetic input is `desktop_key`,
-/// which posts key events to one app's process and never to the system-wide stream. No mouse events are sent.
+/// `desktop_click` and `desktop_scroll`, which post key, mouse and scroll events to one app's process. Mouse events go through the
+/// same checks and approval as an AX action, and the result says whether the real pointer moved.
 package final class DesktopService: @unchecked Sendable {
     package typealias Failure = ScreenMCP.Failure
 
@@ -97,6 +98,8 @@ package final class DesktopService: @unchecked Sendable {
             guard let app = text("app") else { return .failure(Failure(message: "app is required")) }
             guard let key = text("key") else { return .failure(Failure(message: "key is required, such as \"return\" or \"cmd+l\".")) }
             return await pressKey(app: app, window: text("window"), key: key)
+        case "desktop_click", "desktop_scroll":
+            return await mouseCall(name, args)
         case "desktop_open_url":
             return await onQueue { self.openURL(text("url"), browser: text("browser")) }
         case "desktop_press", "desktop_focus", "desktop_set_value", "desktop_type", "desktop_select", "desktop_check", "desktop_expand":
@@ -645,8 +648,11 @@ private extension DesktopService {
         var secure = false
     }
 
-    func focus(of app: CaptureApp) -> Focus {
-        guard let element = deps.ax.focusedElement(of: app), let live = deps.ax.attributes(of: element) else { return Focus() }
+    func focus(of app: CaptureApp) -> Focus { describe(deps.ax.focusedElement(of: app)) }
+
+    /// What approval and the log need to know about an element: its role, name and shown text, or only that it is secure.
+    func describe(_ element: DesktopElement?) -> Focus {
+        guard let element, let live = deps.ax.attributes(of: element) else { return Focus() }
         if live.isSecure { return Focus(role: live.role, secure: true) }
         let node = CaptureTree.prepare(live, clean: deps.clean).tree
         var shown = [node.title, node.description].compactMap { $0 }
@@ -734,6 +740,244 @@ private extension DesktopService {
         }
         keyLog(plan.app, plan.windowTitle, plan.stroke, plan.focus, .done, note: "posted to \(plan.app.name)")
         return .success(.value(["ok": true, "action": "key \(plan.stroke.label)", "app": plan.app.name]))
+    }
+}
+
+// MARK: Mouse
+
+private extension DesktopService {
+    enum MouseKind {
+        case click(button: DesktopMouseButton, count: Int, flags: DesktopKeyFlags, modifiers: [String])
+        case scroll(DesktopScrollDirection, lines: Int)
+
+        var label: String {
+            switch self {
+            case .click(let button, let count, _, let modifiers): return DesktopMouse.label(button: button, count: count, modifiers: modifiers)
+            case .scroll(let direction, let lines): return "scroll \(direction.rawValue) \(lines)"
+            }
+        }
+
+        var isClick: Bool { if case .click = self { return true } else { return false } }
+    }
+
+    enum MouseTarget {
+        case ref(String)
+        /// A point relative to the window's top-left corner. Nil x and y mean the window's centre, which only a scroll may omit.
+        case point(app: String, window: String?, x: Double?, y: Double?)
+    }
+
+    /// Where a mouse action would land, and what is there.
+    struct MouseAim {
+        var app: CaptureApp
+        var window: DesktopWindowInfo
+        var windowTitle: String
+        var point: DesktopPoint
+        /// The element the action is aimed at: the ref's element, or what is under the point. Empty when nothing is.
+        var role: String
+        var name: String
+        var found: Bool
+        var reason: String?
+
+        /// Two aims with the same signature touch the same thing in the same place.
+        var signature: String { "\(app.pid)|\(windowTitle)|\(role)|\(name)|\(point.x),\(point.y)" }
+    }
+
+    func number(_ value: Any?) -> Double? {
+        if let number = value as? Double { return number }
+        if let number = value as? Int { return Double(number) }
+        return (value as? NSNumber)?.doubleValue
+    }
+
+    func mouseCall(_ name: String, _ args: [String: Any]) async -> Result<DesktopOutput, Failure> {
+        func text(_ key: String) -> String? { (args[key] as? String).flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 } }
+        func bad(_ message: String) -> Result<DesktopOutput, Failure> { .failure(Failure(message: message)) }
+        let isClick = name == "desktop_click"
+        let target: MouseTarget
+        let x = number(args["x"]), y = number(args["y"])
+        if let ref = text("ref") {
+            guard text("app") == nil, x == nil, y == nil else { return bad("give a ref, or app with x and y, not both.") }
+            target = .ref(ref)
+        } else if let app = text("app") {
+            if isClick, x == nil || y == nil { return bad("x and y are required with app, in points from the window's top-left corner.") }
+            if (x == nil) != (y == nil) { return bad("give both x and y, or neither.") }
+            guard (x ?? 0).isFinite, (y ?? 0).isFinite else { return bad("x and y must be numbers.") }
+            target = .point(app: app, window: text("window"), x: x, y: y)
+        } else {
+            return bad("give ref (from desktop_snapshot or desktop_find), or app with x and y.")
+        }
+        let kind: MouseKind
+        if isClick {
+            let button: DesktopMouseButton, count: Int, mods: (flags: DesktopKeyFlags, names: [String])
+            switch DesktopMouse.parseButton(text("button")) {
+            case .failure(let error): return bad(error.message)
+            case .success(let value): button = value
+            }
+            let rawCount = args["count"]
+            if rawCount != nil, number(rawCount).map({ $0 != $0.rounded() }) ?? true { return bad("count must be 1 or 2.") }
+            switch DesktopMouse.parseCount(number(rawCount).map { Int(max(-1, min($0, 1_000))) }) {
+            case .failure(let error): return bad(error.message)
+            case .success(let value): count = value
+            }
+            switch DesktopMouse.parseModifiers(args["modifiers"]) {
+            case .failure(let error): return bad(error.message)
+            case .success(let value): mods = value
+            }
+            kind = .click(button: button, count: count, flags: mods.flags, modifiers: mods.names)
+        } else {
+            let direction: DesktopScrollDirection
+            switch DesktopMouse.parseDirection(text("direction")) {
+            case .failure(let error): return bad(error.message)
+            case .success(let value): direction = value
+            }
+            kind = .scroll(direction, lines: DesktopMouse.scrollLines(number(args["amount"]).flatMap { $0.isFinite ? $0 : nil }.map { Int(max(-1, min($0.rounded(), 1_000))) }))
+        }
+        return await mouse(target, kind)
+    }
+
+    func mouse(_ target: MouseTarget, _ kind: MouseKind) async -> Result<DesktopOutput, Failure> {
+        let first = await onQueue { self.aim(target, kind) }
+        let planned: MouseAim
+        switch first {
+        case .failure(let failure): return .failure(failure)
+        case .success(let value): planned = value
+        }
+        var asked = false
+        if let reason = planned.reason {
+            asked = true
+            let what = planned.found ? " \(planned.role.lowercased()) \"\(clip(planned.name))\"" : " at a point"
+            let approval = DesktopApproval(title: "\(kind.label)\(what) in \(planned.app.name)",
+                                           detail: "\(planned.windowTitle.isEmpty ? "" : "Window: \(clip(planned.windowTitle)). ")Approval needed because \(reason).")
+            guard await deps.approve(approval) else {
+                mouseLog(planned, kind, .declined, note: reason)
+                return .failure(Failure(message: "the user declined this action."))
+            }
+        }
+        return await onQueue { [asked] in self.sendMouse(target, kind, expected: planned, asked: asked) }
+    }
+
+    func mouseLog(_ aim: MouseAim, _ kind: MouseKind, _ outcome: DesktopActionRecord.Outcome, note: String) {
+        deps.record(DesktopActionRecord(at: deps.now(), app: aim.app.name, window: aim.windowTitle, role: aim.role, name: aim.name,
+                                        action: kind.label, outcome: outcome, note: note))
+    }
+
+    /// Everything that must hold before a mouse event is posted: the same app, window, address and password rules as every other tool,
+    /// the element is unchanged and its position is inside the window, and what is under the point is not a password field.
+    /// A refusal is logged, as for a press.
+    func aim(_ target: MouseTarget, _ kind: MouseKind) -> Result<MouseAim, Failure> {
+        let ax = deps.ax
+        func refuse(_ failure: Failure, app: CaptureApp, window: String, role: String = "", name: String = "") -> Result<MouseAim, Failure> {
+            deps.record(DesktopActionRecord(at: deps.now(), app: app.name, window: window, role: role, name: name, action: kind.label,
+                                            outcome: .refused, note: failure.message))
+            return .failure(failure)
+        }
+        let app: CaptureApp, window: DesktopWindowInfo, title: String
+        var role = "", name = "", reason: String?
+        let point: DesktopPoint
+        switch target {
+        case .ref(let ref):
+            switch check(ref) {
+            case .stop(let failure):
+                if let known = lookup(ref) { return refuse(failure, app: known.app, window: known.windowTitle, role: known.role, name: known.name) }
+                return .failure(failure)
+            case .go(let entry, let elementReason):
+                app = entry.app; window = entry.window; title = entry.windowTitle
+                role = entry.role; name = entry.name; reason = elementReason
+                guard let frame = ax.frame(of: entry.element), frame.width > 0, frame.height > 0 else {
+                    return refuse(Failure(message: "this element has no position on screen. Use app with x and y instead."), app: app, window: title, role: role, name: name)
+                }
+                point = frame.center
+            }
+        case .point(let query, let wanted, let x, let y):
+            if let failure = ready() { return .failure(failure) }
+            guard let found = ax.runningApp(matching: query) else {
+                return .failure(Failure(message: "no running app matches \(query). Use its name or bundle id."))
+            }
+            switch capture(app: query, window: wanted) {
+            case .failure(let failure): return refuse(failure, app: found, window: "")
+            case .success(let shot):
+                app = shot.app; window = shot.window; title = deps.clean(shot.window.title ?? "")
+            }
+            guard let frame = ax.frame(of: window.element), frame.width > 0, frame.height > 0 else {
+                return refuse(Failure(message: "could not read the window's position."), app: app, window: title)
+            }
+            let relativeX = x ?? frame.width / 2, relativeY = y ?? frame.height / 2
+            guard relativeX >= 0, relativeY >= 0, relativeX < frame.width, relativeY < frame.height else {
+                return refuse(Failure(message: "the point (\(Self.shown(relativeX)), \(Self.shown(relativeY))) is outside the window, which is \(Self.shown(frame.width)) by "
+                    + "\(Self.shown(frame.height)) points. x and y count from the window's top-left corner."), app: app, window: title)
+            }
+            point = frame.screenPoint(x: relativeX, y: relativeY)
+            reason = DesktopSafety.approvalReason(element: [], window: title)
+        }
+        // A ref's element can sit outside the visible window, for example in a page scrolled past it. The click would hit what is there.
+        if case .ref = target {
+            guard let frame = ax.frame(of: window.element), frame.contains(point) else {
+                return refuse(Failure(message: "the element is outside the window's visible area. Scroll it into view with desktop_scroll, then take a new desktop_snapshot."),
+                              app: app, window: title, role: role, name: name)
+            }
+        }
+        // What is under the point decides too: a password field refuses, and a button that says send, pay or delete asks.
+        let under = describe(ax.element(at: point, in: app))
+        if under.secure { return refuse(Failure(message: "ironpet never acts on a password field."), app: app, window: title, role: role, name: name) }
+        var found = !under.role.isEmpty
+        if case .point = target {
+            role = under.role
+            name = under.name
+        } else {
+            found = true
+        }
+        if reason == nil { reason = DesktopSafety.approvalReason(element: under.shown, window: nil) }
+        // Scrolling presses nothing, so it never asks. The checks above still apply.
+        if !kind.isClick { reason = nil }
+        return .success(MouseAim(app: app, window: window, windowTitle: title, point: point, role: role, name: name, found: found, reason: reason))
+    }
+
+    func sendMouse(_ target: MouseTarget, _ kind: MouseKind, expected: MouseAim, asked: Bool) -> Result<DesktopOutput, Failure> {
+        let ax = deps.ax
+        let app = expected.app
+        // Time passed while the user decided. The click lands in the window that was checked, so it is raised first, as for a key.
+        if kind.isClick, !ax.isFrontmost(app) || !expected.window.focused {
+            ax.activate(app)
+            _ = ax.focus(expected.window.element)
+        }
+        let now: MouseAim
+        switch aim(target, kind) {
+        case .failure(let failure): return .failure(failure)
+        case .success(let value): now = value
+        }
+        guard now.signature == expected.signature else {
+            mouseLog(expected, kind, .refused, note: "the target changed")
+            return .failure(Failure(message: "what is at that place changed while the action was prepared. Take a new desktop_snapshot and try again."))
+        }
+        if now.reason != nil, !asked {
+            mouseLog(expected, kind, .refused, note: "the target changed")
+            return .failure(Failure(message: "what is at that place changed while the action was prepared. Take a new desktop_snapshot and try again."))
+        }
+        let outcome: DesktopMouseOutcome
+        switch kind {
+        case .click(let button, let count, let flags, _):
+            outcome = ax.post(DesktopMouse.events(button: button, count: count, flags: flags, at: now.point), to: app)
+        case .scroll(let direction, let lines):
+            outcome = ax.scroll(direction, lines: lines, at: now.point, to: app)
+        }
+        guard case .posted(let moved) = outcome else {
+            mouseLog(now, kind, .failed, note: "the events could not be posted")
+            return .failure(Failure(message: "the mouse events could not be posted to \(app.name)."))
+        }
+        let spot = "(\(Self.shown(now.point.x)), \(Self.shown(now.point.y)))"
+        mouseLog(now, kind, .done, note: "at \(spot)" + (moved ? ", the pointer moved" : ""))
+        var out: [String: Any] = ["ok": true, "action": kind.label, "app": app.name,
+                                  "screen_point": ["x": now.point.x, "y": now.point.y], "cursor_moved": moved]
+        out["element"] = now.found ? "\(now.role.lowercased())" + (now.name.isEmpty ? "" : " \"\(clip(now.name))\"") : "none found under the point"
+        var notes: [String] = []
+        if case .point = target, !now.found { notes.append("No element was found under the point, so ironpet could not check what it is.") }
+        notes.append(moved ? "The real pointer moved to the point." : "The real pointer did not move.")
+        if !kind.isClick { notes.append("Refs from before may be stale. Take a new desktop_snapshot before using one.") }
+        out["note"] = notes.joined(separator: " ")
+        return .success(.value(out))
+    }
+
+    static func shown(_ value: Double) -> String {
+        value == value.rounded() ? String(Int(value)) : String(format: "%.1f", value)
     }
 }
 
