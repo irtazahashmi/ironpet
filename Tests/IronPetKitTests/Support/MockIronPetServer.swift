@@ -45,6 +45,7 @@ final class MockIronPetServer: @unchecked Sendable {
     private var _bubbles: [RemoteBubble] = MockIronPetServer.sampleBubbles
     private var _agents: [RemoteAgent] = MockIronPetServer.sampleAgents
     private var _alerts: [RemoteAlert] = MockIronPetServer.sampleAlerts
+    private var _dashboardViews: [String: RemoteDashboardView] = [:]
     private var _today: [String: RemoteToday] = ["brief": MockIronPetServer.sampleBrief, "recap": MockIronPetServer.sampleRecap]
     private var _assetData: [String: Data] = [:]
     private var _assets: [RemoteAsset] = []
@@ -158,6 +159,8 @@ final class MockIronPetServer: @unchecked Sendable {
     var pet: RemotePet { get { lock.lock(); defer { lock.unlock() }; return _pet } set { lock.lock(); _pet = newValue; lock.unlock() } }
     var bubbles: [RemoteBubble] { get { lock.lock(); defer { lock.unlock() }; return _bubbles } set { lock.lock(); _bubbles = newValue; lock.unlock() } }
     var agents: [RemoteAgent] { get { lock.lock(); defer { lock.unlock() }; return _agents } set { lock.lock(); _agents = newValue; lock.unlock() } }
+    /// What `GET /v1/dashboards/:id/view` answers, by dashboard id. An id with no entry gets 404. Change it, then `publish` `dashboards.changed`.
+    var dashboardViews: [String: RemoteDashboardView] { get { lock.lock(); defer { lock.unlock() }; return _dashboardViews } set { lock.lock(); _dashboardViews = newValue; lock.unlock() } }
     var alerts: [RemoteAlert] { get { lock.lock(); defer { lock.unlock() }; return _alerts } set { lock.lock(); _alerts = newValue; lock.unlock() } }
     /// The sheet the Mac serves as `pet.sprite`. Setting a new one changes the manifest, like picking another pet on the Mac.
     func setSprite(_ data: Data) {
@@ -448,6 +451,9 @@ final class MockIronPetServer: @unchecked Sendable {
             respond(connection, 200, Data("{}".utf8))
             publish(RemoteEvent.agentsChanged)
         case ("agents", 4) where post && parts[3] == "ask": respond(connection, 200, Data(#"{"outcome":"sent"}"#.utf8))
+        case ("dashboards", 4) where get && parts[3] == "view":
+            guard let view = dashboardViews[parts[2]] else { fail(connection, 404, "not_found", "no dashboard"); return true }
+            respond(connection, 200, view)
         case ("alerts", 2) where get: respond(connection, 200, AlertListResponse(alerts: alerts))
         case ("alerts", 3) where post && parts[2] == "dismiss-all":
             lock.lock(); _alerts = []; lock.unlock()

@@ -27,9 +27,15 @@ struct DashboardsSection: View {
 /// One dashboard, drawn from the tree the Mac built. "…" holds Change icon and Capabilities.
 struct DashboardDetailView: View {
     let list: DashboardsModel
-    let model: DashboardViewModel
+    /// The view owns its model. The parent builds this view again on every change elsewhere in the app, and a model passed in would be a new, unloaded one each time.
+    @State private var model: DashboardViewModel
     @State private var pickingIcon = false
     @State private var showingCapabilities = false
+
+    init(list: DashboardsModel, id: String, makeModel: (String) -> DashboardViewModel) {
+        self.list = list
+        _model = State(initialValue: makeModel(id))
+    }
 
     private var dashboard: RemoteDashboard? { list.dashboards.first { $0.id == model.id } ?? model.view?.dashboard }
 

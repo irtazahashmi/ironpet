@@ -69,7 +69,7 @@ struct MoreView: View {
                 case .screen: ScreenView(model: screen)
                 case .settings: PhoneSettingsView(model: settings)
                 case .phoneAgent: PhoneAgentView(model: phoneAgent)
-                case .dashboard(let id): DashboardDetailView(list: dashboards, model: makeDashboard(id))
+                case .dashboard(let id): DashboardDetailView(list: dashboards, id: id, makeModel: makeDashboard)
                 }
             }
         }
