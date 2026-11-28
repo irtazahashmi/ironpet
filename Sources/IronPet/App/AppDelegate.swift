@@ -100,6 +100,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         isEnabled: { ConfigStore.shared.config.meetings.enabled && ConfigStore.shared.config.meetings.offerToRecordCalls },
         isBusy: { [weak self] in self?.meeting.isBusy ?? true })
     private var callMonitor: CallMonitor?
+    /// Suggests recording a room meeting shortly before a calendar event with a location and no call link.
+    private lazy var roomSuggester: RoomSuggester = {
+        let suggester = RoomSuggester(
+            source: EventKitCalendar(),
+            isEnabled: { ConfigStore.shared.config.meetings.enabled && ConfigStore.shared.config.meetings.suggestRoomRecordings },
+            isBusy: { [weak self] in self?.meeting.isBusy ?? true })
+        suggester.show = { [weak self] event in self?.showRoomBubble(event) }
+        suggester.withdraw = { [weak self] in self?.announcer.bubbles.dismiss(Self.roomBubbleID) }
+        return suggester
+    }()
+    private var roomTimer: Timer?
     /// Watches for calls while spoken replies are on, so a reply is not read aloud over one.
     private lazy var micIgnore = MicIgnoreModel(
         entries: { ConfigStore.shared.config.meetings.ignoredMicApps },
@@ -272,6 +283,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             meeting.confirmConsent = { true }
         }
         startCallMonitor()
+        syncRoomSuggestions()
         let quiet = Presence(
             meetingActive: { [weak self] in self?.meeting.isRecording ?? false },
             detectedCalls: { [weak self] in self?.callMonitor.flatMap { $0.isRunning ? $0.detector.activeApps : nil } },
@@ -919,6 +931,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if old.speech.speakReplies != .never, new.speech.speakReplies == .never { chat.speech.stop() }
         if !new.meetings.enabled { meeting.dismiss() }
         startCallMonitor()
+        syncRoomSuggestions()
         syncSpeechQuiet()
         if new.pet.sprite != old.pet.sprite {
             pet.reloadAtlas()
@@ -1579,6 +1592,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     static let meetingBubbleID = "meeting"
     static let callBubbleID = "meeting-call"
+    static let roomBubbleID = "meeting-room"
 
     // MARK: Call detection
 
@@ -1647,6 +1661,53 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         guard meeting.phase == .choosing else { return }
         callPrompt.accepted(bundleID)
         meeting.choice = .app(AudioApp(bundleID: bundleID, name: name))
+        meeting.start()
+    }
+
+    // MARK: Room suggestions
+
+    /// Looks at the calendar every 30 seconds while the setting is on. Calendar access is asked for when the user turns
+    /// the setting on, never here, so without it the reader answers empty.
+    private func syncRoomSuggestions() {
+        let meetings = config.config.meetings
+        if meetings.enabled && meetings.suggestRoomRecordings {
+            guard roomTimer == nil else { return }
+            roomTimer = Timer.scheduledTimer(withTimeInterval: 30, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.roomSuggester.poll() }
+            }
+            roomSuggester.poll()
+        } else {
+            roomTimer?.invalidate()
+            roomTimer = nil
+            announcer.bubbles.dismiss(Self.roomBubbleID)
+        }
+    }
+
+    private func showRoomBubble(_ event: CalendarEvent) {
+        let close: () -> Void = { [weak self] in self?.announcer.bubbles.dismiss(Self.roomBubbleID) }
+        announcer.bubbles.show(BubbleDraft(
+            id: Self.roomBubbleID, symbol: "person.2.fill", tint: .red,
+            title: "\(event.title) is starting in a room. Record it?",
+            actions: [
+                .init("record", "Record in the room", style: .primary) { [weak self] in
+                    close()
+                    self?.recordRoom(event)
+                },
+                .init("not-now", "Not now") { [weak self] in
+                    self?.roomSuggester.dismissed(event)
+                    close()
+                },
+            ]))
+    }
+
+    /// Opens the picker with Room chosen and starts, like the user pressing Start there, named after the event.
+    private func recordRoom(_ event: CalendarEvent) {
+        guard meeting.phase == .idle || meeting.phase == .done else { return }
+        meeting.showPicker()
+        guard meeting.phase == .choosing else { return }
+        roomSuggester.accepted(event)
+        meeting.choice = .room
+        meeting.pendingTitle = event.title
         meeting.start()
     }
 

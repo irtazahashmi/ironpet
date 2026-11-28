@@ -707,6 +707,7 @@ private struct MeetingSettings: View {
     @ObservedObject private var store = SettingsAPI.live
     @State private var testing = false
     @State private var enableError: String?
+    @State private var roomError: String?
     @State private var installedAgents: [ACPAgent] = []
 
     private var meetings: Config.Meetings { store.config.meetings }
@@ -745,6 +746,16 @@ private struct MeetingSettings: View {
                     .disabled(!meetings.enabled)
             } footer: {
                 Text("When another app, such as WhatsApp, Zoom or a browser, uses your microphone for about 10 seconds, Ghost asks whether to record the call. Nothing is recorded until you click Record.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+            Section {
+                Toggle("Suggest recording room meetings", isOn: Binding(get: { meetings.suggestRoomRecordings }, set: setRoomSuggestions))
+                    .disabled(!meetings.enabled)
+                if let roomError {
+                    Text(roomError).font(.caption).foregroundStyle(.red).textSelection(.enabled)
+                }
+            } footer: {
+                Text("Off by default. Turning it on asks macOS for access to your calendar. About 5 minutes before an event that has a location and no Zoom, Teams, Meet or other call link, Ghost asks whether to record it in the room, and names the meeting after the event. IronPet reads event titles, locations, links and notes on this Mac only, and changes nothing in your calendar. Nothing is recorded until you click Record in the room.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             MicIgnoreSection()
@@ -805,6 +816,22 @@ private struct MeetingSettings: View {
         store.update {
             if $0.meetings.summaryAgent != agent { $0.meetings.summaryModel = nil }
             $0.meetings.summaryAgent = agent
+        }
+    }
+
+    /// Turning room suggestions on asks for calendar access, and stays off when the user refuses.
+    private func setRoomSuggestions(_ on: Bool) {
+        roomError = nil
+        guard on else {
+            store.update { $0.meetings.suggestRoomRecordings = false }
+            return
+        }
+        Task {
+            if await EventKitCalendar.requestAccess() {
+                store.update { $0.meetings.suggestRoomRecordings = true }
+            } else {
+                roomError = "Not turned on. Allow ironpet under System Settings → Privacy & Security → Calendars, then try again."
+            }
         }
     }
 

@@ -102,6 +102,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSAppleEventsUsageDescription</key><string>ironpet switches to the iTerm tab where an agent is waiting, and loads an address in the front tab of your browser when an agent asks it to with desktop control on.</string>
+  <key>NSCalendarsFullAccessUsageDescription</key><string>ironpet reads the times, titles and locations of your events, only when you turn on Suggest recording room meetings, to offer a room recording shortly before one starts.</string>
   <key>NSMicrophoneUsageDescription</key><string>ironpet records your voice when you start a voice note, and sends it to the transcription server you set in Settings.</string>
   <key>NSScreenCaptureUsageDescription</key><string>ironpet captures a window or region when you ask it for help with your screen, the audio of the app you pick when you start a meeting transcript, and, only with Screen capture on, small header strips of an app such as Viber, read as text on this Mac.</string>
 </dict>

@@ -227,6 +227,7 @@ package struct Config: Codable, Equatable {
             summaryModel: String? = nil,
             autoSummary: Bool = true,
             offerToRecordCalls: Bool = true,
+            suggestRoomRecordings: Bool = false,
             ignoredMicApps: [String] = [],
             recogniseSpeakers: Bool = false,
             transcriptCharacters: Int = Meetings.defaultTranscriptCharacters
@@ -237,6 +238,7 @@ package struct Config: Codable, Equatable {
             self.summaryModel = summaryModel
             self.autoSummary = autoSummary
             self.offerToRecordCalls = offerToRecordCalls
+            self.suggestRoomRecordings = suggestRoomRecordings
             self.ignoredMicApps = ignoredMicApps
             self.recogniseSpeakers = recogniseSpeakers
             self.transcriptCharacters = transcriptCharacters
@@ -254,6 +256,9 @@ package struct Config: Codable, Equatable {
         package var autoSummary = true
         /// Ghost offers to record when another app holds the microphone for a call. Only applies with `enabled` on.
         package var offerToRecordCalls = true
+        /// Ghost reads your calendar and, shortly before an event that has a location and no call link, offers to record it
+        /// in the room. Off by default, and turning it on is what asks macOS for calendar access. Only applies with `enabled` on.
+        package var suggestRoomRecordings = false
         /// Bundle id prefixes of apps that never count as a call, on top of the built-in list in `CallApps`. Dictation
         /// and voice assistants go here. Applies to call offers and to holding back spoken replies.
         package var ignoredMicApps: [String] = []
