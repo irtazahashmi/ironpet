@@ -108,6 +108,24 @@ final class RemoteVoiceTests: XCTestCase {
         XCTAssertTrue(session.items.contains { $0.origin == ChatOrigin.iosClient })
     }
 
+    /// Voice mode sends one `voice.start` and `voice.end` per message. Each lands in the one chat the Mac has, the primary chat: the
+    /// first starts a turn, the second waits in that chat's queue behind it.
+    func testEachVoiceModeMessageLandsInThePrimaryChatFromThisDevice() async throws {
+        var prompts: [String] = []
+        session.turnRunner = { turn, _ in prompts.append(turn.prompt) }
+        var words = ["first message", "second message"]
+        api.voice.transcribeAudio = { _, _, _ in words.removeFirst() }
+        for id in ["m1", "m2"] {
+            start(id, mode: .send)
+            voice.receive(binary: VoiceWire.audioFrame(seq: 0, pcm: Data(count: VoiceWire.frameBytes)))
+            end(id)
+            if id == "m1" { await wait("the first turn") { prompts.count == 1 } } else { await wait("the second message") { self.session.queue.count == 1 } }
+        }
+        XCTAssertTrue(prompts[0].contains("first message"))
+        XCTAssertEqual(session.queue.count, 1)
+        XCTAssertEqual(messages.compactMap { if case .transcript(_, let text) = $0 { text } else { nil } }, ["first message", "second message"])
+    }
+
     func testASentVoiceMessageMarksEachHopOnTheMacInOrderWithoutContent() async throws {
         var hops: [String] = []
         voice.hop = { hops.append($0) }

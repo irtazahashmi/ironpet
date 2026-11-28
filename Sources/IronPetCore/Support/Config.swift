@@ -199,21 +199,21 @@ package struct Config: Codable, Equatable {
     /// Spoken messages: a shortcut records one utterance through ironpet's microphone and sends it to the primary chat.
     /// The key keeps its old name, `voiceMode`, so existing config files still load.
     package struct VoiceMode: Codable, Equatable {
-        package init(silenceSeconds: Int = 20, endPauseSeconds: Double = VoiceMode.defaultEndPauseSeconds, speakJobUpdates: Bool = true) {
+        package init(silenceSeconds: Int = Int(VoiceTurnDetector.defaultSilence), endPauseSeconds: Double = VoiceMode.defaultEndPauseSeconds, speakJobUpdates: Bool = true) {
             self.silenceSeconds = silenceSeconds
             self.endPauseSeconds = endPauseSeconds
             self.speakJobUpdates = speakJobUpdates
         }
 
         /// Listening stops after this long with nothing said.
-        package var silenceSeconds = 20
+        package var silenceSeconds = Int(VoiceTurnDetector.defaultSilence)
         /// A spoken message is sent after this long without speech, once something was said.
         package var endPauseSeconds = VoiceMode.defaultEndPauseSeconds
         /// Speak up when a job started during a spoken turn finishes, fails or needs an OK.
         package var speakJobUpdates = true
 
         package static let silenceRange = 5...120
-        package static let defaultEndPauseSeconds = 2.5
+        package static let defaultEndPauseSeconds = VoiceTurnDetector.defaultEndPause
         package static let endPauseRange = 1.0...10.0
     }
 

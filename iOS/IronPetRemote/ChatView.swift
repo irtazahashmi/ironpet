@@ -849,7 +849,10 @@ private struct Composer: View {
                 } label: { Image(systemName: SharedSymbols.attach).glassCircle() }
                     .accessibilityLabel("Attach").accessibilityIdentifier("attach-button")
                 field
-                if let voice { MicButton(voice: voice) }
+                if let voice {
+                    VoiceModeButton(voice: voice)
+                    MicButton(voice: voice)
+                }
             }
         }
         .animation(.easeOut(duration: 0.12), value: model.running)
