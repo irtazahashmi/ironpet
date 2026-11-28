@@ -56,7 +56,7 @@ final class MeetingRecordingChunksTests: XCTestCase {
     override func tearDown() async throws { try? FileManager.default.removeItem(at: dir) }
 
     // S3
-    func testAChunkSentTwiceIsKeptOnceAndTheRecordingNeedsEveryIndex() throws {
+    func testAChunkSentTwiceIsKeptOnceAndTheRecordingNeedsEveryIndex() async throws {
         let store = api.recordings
         XCTAssertTrue(try store.store(id: id, index: 0, wav: chunk(8000)))
         XCTAssertFalse(try store.store(id: id, index: 0, wav: chunk(1000)), "a retry changes nothing")
@@ -67,7 +67,7 @@ final class MeetingRecordingChunksTests: XCTestCase {
         XCTAssertEqual(try store.files(id: id, count: 3).map(\.lastPathComponent), ["000000.wav", "000001.wav", "000002.wav"], "in index order")
     }
 
-    func testAChunkThatIsNotOurWAVIsRefused() {
+    func testAChunkThatIsNotOurWAVIsRefused() async {
         XCTAssertThrowsError(try api.recordings.store(id: id, index: 0, wav: Data(repeating: 1, count: 100)))
         XCTAssertThrowsError(try api.recordings.store(id: "../x", index: 0, wav: chunk()))
         XCTAssertThrowsError(try api.recordings.store(id: id, index: MeetingRecordingChunks.maxChunks, wav: chunk()))
