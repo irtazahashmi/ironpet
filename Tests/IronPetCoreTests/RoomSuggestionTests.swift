@@ -32,14 +32,14 @@ final class RoomSuggestionTests: XCTestCase {
     }
 
     // S1
-    func testRoomEventInsideWindowIsSuggestedOnce() {
+    func testRoomEventInsideWindowIsSuggestedOnce() async {
         let (suggester, box) = make([event()])
         suggester.poll()
         suggester.poll()
         XCTAssertEqual(box.events.map(\.title), ["Planning"])
     }
 
-    func testWindowBounds() {
+    func testWindowBounds() async {
         XCTAssertFalse(RoomEvents.inWindow(event(in: 301), now: t0))
         XCTAssertTrue(RoomEvents.inWindow(event(in: 300), now: t0))
         XCTAssertTrue(RoomEvents.inWindow(event(in: -300), now: t0))
@@ -48,13 +48,13 @@ final class RoomSuggestionTests: XCTestCase {
         XCTAssertEqual(RoomEvents.windowAfter, 300)
     }
 
-    func testEventOutsideWindowIsNotSuggested() {
+    func testEventOutsideWindowIsNotSuggested() async {
         let (suggester, box) = make([event(in: 3600), event("old", in: -3600)])
         suggester.poll()
         XCTAssertTrue(box.events.isEmpty)
     }
 
-    func testOnlyOneSuggestionAtATime() {
+    func testOnlyOneSuggestionAtATime() async {
         let (suggester, box) = make([event("a", title: "A", in: 200), event("b", title: "B", in: 100)])
         suggester.poll()
         suggester.poll()
@@ -62,7 +62,7 @@ final class RoomSuggestionTests: XCTestCase {
     }
 
     // S3
-    func testCallLinksInLocationUrlOrNotesMeanNoSuggestion() {
+    func testCallLinksInLocationUrlOrNotesMeanNoSuggestion() async {
         let links = [
             "https://us02web.zoom.us/j/123456", "https://teams.microsoft.com/l/meetup-join/abc", "https://meet.google.com/abc-defg-hij",
             "https://acme.webex.com/meet/jo", "https://whereby.com/acme", "https://MEET.JIT.SI/Standup", "https://chime.aws/123",
@@ -77,7 +77,7 @@ final class RoomSuggestionTests: XCTestCase {
     }
 
     // S4
-    func testNoLocationMeansNoSuggestion() {
+    func testNoLocationMeansNoSuggestion() async {
         XCTAssertFalse(RoomEvents.isRoomEvent(event(location: nil)))
         XCTAssertFalse(RoomEvents.isRoomEvent(event(location: "   ")))
         XCTAssertFalse(RoomEvents.isRoomEvent(event(allDay: true)))
@@ -87,7 +87,7 @@ final class RoomSuggestionTests: XCTestCase {
     }
 
     // S5
-    func testDismissedOrIgnoredEventIsNotSuggestedAgain() {
+    func testDismissedOrIgnoredEventIsNotSuggestedAgain() async {
         let (suggester, box) = make([event()])
         suggester.poll()
         suggester.dismissed(box.events[0])
@@ -105,7 +105,7 @@ final class RoomSuggestionTests: XCTestCase {
         XCTAssertEqual(otherBox.withdrawn, 1, "the bubble is taken down when the window closes")
     }
 
-    func testNextOccurrenceOfARecurringEventIsSuggestedAgain() {
+    func testNextOccurrenceOfARecurringEventIsSuggestedAgain() async {
         let first = event("r", in: 100)
         var second = first
         second.start = first.start.addingTimeInterval(7 * 86_400)
@@ -121,7 +121,7 @@ final class RoomSuggestionTests: XCTestCase {
     }
 
     // S6
-    func testBusyMeansNoSuggestionAndWithdrawsOneShown() {
+    func testBusyMeansNoSuggestionAndWithdrawsOneShown() async {
         let (suggester, box) = make([event()])
         box.busy = true
         suggester.poll()
@@ -134,7 +134,7 @@ final class RoomSuggestionTests: XCTestCase {
         XCTAssertEqual(box.withdrawn, 1)
     }
 
-    func testDisabledMeansNoSuggestion() {
+    func testDisabledMeansNoSuggestion() async {
         let (suggester, box) = make([event()])
         box.enabled = false
         suggester.poll()
