@@ -67,6 +67,7 @@
             ],
             "lastApp" : "",
             "offerToRecordCalls" : true,
+            "suggestRoomRecordings" : false,
             "recogniseSpeakers" : false,
             "summaryAgent" : "claude",
             "transcriptCharacters" : 300000
@@ -238,6 +239,7 @@
             ],
             "lastApp" : "",
             "offerToRecordCalls" : true,
+            "suggestRoomRecordings" : false,
             "recogniseSpeakers" : false,
             "summaryAgent" : "claude",
             "transcriptCharacters" : 300000
@@ -406,6 +408,7 @@
             ],
             "lastApp" : "",
             "offerToRecordCalls" : true,
+            "suggestRoomRecordings" : false,
             "recogniseSpeakers" : false,
             "summaryAgent" : "claude",
             "transcriptCharacters" : 300000

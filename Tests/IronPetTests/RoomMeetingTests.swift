@@ -54,7 +54,7 @@ final class RoomMeetingTests: XCTestCase {
         return url
     }
 
-    private func roomMeeting(recognise: Bool, ready: Bool, diarizer: TwoVoices) async throws -> MeetingController {
+    private func roomMeeting(recognise: Bool, ready: Bool, diarizer: TwoVoices, title: String? = nil) async throws -> MeetingController {
         let controller = MeetingController()
         controller.isEnabled = { true }
         controller.meetingConfig = { var m = Config.Meetings(); m.autoSummary = false; return m }
@@ -67,7 +67,7 @@ final class RoomMeetingTests: XCTestCase {
             configuration.protocolClasses = [RoomStub.self]
             return Transcriber(baseURL: "http://stub.test/v1", model: "m", apiKey: nil, session: URLSession(configuration: configuration))
         }
-        try controller.startTest(mic: try tone(), them: nil, room: true, appName: "ignored", lengths: .test(2))
+        try controller.startTest(mic: try tone(), them: nil, room: true, appName: "ignored", lengths: .test(2), title: title)
         try await waitFor { controller.phase == .recording }
         try await Task.sleep(for: .seconds(4.5))
         controller.stop()
@@ -81,6 +81,40 @@ final class RoomMeetingTests: XCTestCase {
             if Date() > end { return XCTFail("timed out") }
             try await Task.sleep(for: .milliseconds(50))
         }
+    }
+
+    /// A meeting started from a room suggestion carries the event's title from the first second.
+    func testARoomMeetingStartedWithATitleIsNamedAfterIt() async throws {
+        let controller = try await roomMeeting(recognise: false, ready: false, diarizer: TwoVoices(), title: "Design review")
+        XCTAssertTrue(controller.isRoom)
+        XCTAssertEqual(MeetingSuggestions.title(in: controller.folder!), "Design review")
+    }
+
+    func testARoomMeetingWithoutATitleHasNone() async throws {
+        let controller = try await roomMeeting(recognise: false, ready: false, diarizer: TwoVoices())
+        XCTAssertNil(MeetingSuggestions.title(in: controller.folder!))
+    }
+
+    /// A suggestion is only a bubble: polling the calendar leaves the recorder idle until the user presses the action.
+    func testASuggestionDoesNotStartARecording() {
+        let controller = MeetingController()
+        controller.isEnabled = { true }
+        let now = Date()
+        struct One: CalendarEventSource {
+            var event: CalendarEvent
+            func events(from: Date, to: Date) -> [CalendarEvent] { [event] }
+        }
+        let suggester = RoomSuggester(
+            source: One(event: CalendarEvent(id: "e", title: "Sync", location: "Room 2", start: now.addingTimeInterval(60))),
+            isEnabled: { true }, isBusy: { controller.isBusy }, now: { now })
+        var shown: [String] = []
+        suggester.show = { shown.append($0.title) }
+        suggester.poll()
+        suggester.poll()
+        XCTAssertEqual(shown, ["Sync"])
+        XCTAssertEqual(controller.phase, .idle)
+        XCTAssertFalse(controller.isRecording)
+        XCTAssertNil(controller.folder)
     }
 
     // S3

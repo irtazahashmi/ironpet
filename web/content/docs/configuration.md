@@ -35,7 +35,7 @@ List only the keys you want to change. Anything missing uses the default.
   "voice": { "enabled": false, "baseUrl": "http://localhost:8000/v1", "model": "mlx-community/parakeet-tdt-0.6b-v3", "holdToTalk": true },
   "speech": { "speakReplies": "automatic", "model": "mlx-community/Kokoro-82M-bf16", "voice": "am_puck", "speed": 1.0 },
   "voiceMode": { "silenceSeconds": 20, "endPauseSeconds": 2.5, "speakJobUpdates": true },
-  "meetings": { "enabled": false, "lastApp": "", "summaryAgent": "claude", "summaryModel": null, "autoSummary": true, "offerToRecordCalls": true, "ignoredMicApps": [], "recogniseSpeakers": false, "transcriptCharacters": 300000 },
+  "meetings": { "enabled": false, "lastApp": "", "summaryAgent": "claude", "summaryModel": null, "autoSummary": true, "offerToRecordCalls": true, "suggestRoomRecordings": false, "ignoredMicApps": [], "recogniseSpeakers": false, "transcriptCharacters": 300000 },
   "telegram": { "enabled": false, "allowedUsers": [] },
   "screenCapture": { "enabled": false, "ocr": false, "retentionDays": 30, "excludedApps": [] },
   "desktopControl": { "enabled": false },

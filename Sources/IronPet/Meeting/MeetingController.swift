@@ -183,8 +183,13 @@ final class MeetingController: ObservableObject {
         setPhase(.idle)
     }
 
+    /// The name the next `start()` gives the meeting. Cleared when that start reads it.
+    var pendingTitle: String?
+
     /// Starts recording from the picker: the microphone as Me and `choice` as Them, or with Room the microphone alone.
     func start() {
+        let title = pendingTitle
+        pendingTitle = nil
         guard phase == .choosing, !starting else { return }
         if !UserDefaults.standard.bool(forKey: Self.consentKey) {
             guard confirmConsent() else { return }
@@ -221,7 +226,7 @@ final class MeetingController: ObservableObject {
                 Task { @MainActor in self?.micFailed(message) }
             }
             await begin(mic: mic, them: system, room: room, appName: room ? AudioApps.roomMeetingName : picked.name,
-                        lengths: ChunkLengths(), expected: expected)
+                        lengths: ChunkLengths(), expected: expected, title: title)
             if phase == .recording { rememberChoice(picked.key) }
         }
     }
@@ -229,7 +234,7 @@ final class MeetingController: ObservableObject {
     /// `--test-mode`: records from WAV files instead of live sources, through the same pipeline. With `them` nil,
     /// the Them track is real: all system audio through ScreenCaptureKit. With `room`, the one file is the room
     /// microphone and there is no Them track.
-    func startTest(mic: URL, them: URL?, room: Bool = false, appName: String, lengths: ChunkLengths) throws {
+    func startTest(mic: URL, them: URL?, room: Bool = false, appName: String, lengths: ChunkLengths, title: String? = nil) throws {
         guard isEnabled(), phase == .idle || phase == .done || phase == .choosing else { return }
         reset()
         let micSource = try FileSource(url: mic)
@@ -248,12 +253,12 @@ final class MeetingController: ObservableObject {
         Task {
             defer { starting = false }
             await begin(mic: LocalTrack(micSource), them: themTrack, room: room,
-                        appName: room ? AudioApps.roomMeetingName : appName, lengths: lengths, expected: expected)
+                        appName: room ? AudioApps.roomMeetingName : appName, lengths: lengths, expected: expected, title: title)
         }
     }
 
     private func begin(mic: TrackSource, them: TrackSource?, room: Bool, appName: String, lengths: ChunkLengths,
-                       expected: Int) async {
+                       expected: Int, title: String? = nil) async {
         // Cancelled while permissions were being checked.
         guard expected == generation else { return }
         let start = Date()
@@ -265,6 +270,8 @@ final class MeetingController: ObservableObject {
         }
         reset()
         let started = generation
+        // A title given at the start, such as a calendar event's, is the accepted title from the first second.
+        if let title { try? MeetingSuggestions.setTitle(title, in: folder) }
         self.folder = folder
         self.startedAt = start
         self.appName = appName

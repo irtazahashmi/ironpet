@@ -99,6 +99,15 @@ While it runs, the row and the page header show "Transcribing chunk 2 of 5", the
 - Inbox items are only added for action items the old summary didn't have.
 - A name you typed for a voice that isn't in the voice store isn't kept, because the new transcript is built from the voice store and the audio.
 
+## Room meetings from your calendar
+
+With Suggest recording room meetings on (Settings → Meetings), Ghost reads your calendar on this Mac every 30 seconds. From 5 minutes before an event starts until 5 minutes after, an event that has a location and no call link gets one bubble: "Record in the room" or "Not now". "Record in the room" starts a room meeting named after the event, the same as choosing Room in the picker and pressing Start. Nothing starts without that press.
+
+- A Zoom, Teams, Google Meet, Webex, Whereby, GoTo, BlueJeans, Chime, Jitsi, FaceTime, Skype or similar link in the location, the URL or the notes means the event is a call, so there is no room suggestion. The call offer for the microphone is unchanged.
+- An event with no location, and an all-day event, gets no suggestion.
+- Each event is suggested once. Dismissing or ignoring the bubble does not bring it back. No suggestion appears while a meeting is being set up, recorded or wrapped up.
+- macOS asks for calendar access when you turn the setting on, and the setting stays off if you refuse. ironpet reads titles, times, locations, URLs and notes, changes nothing in your calendar, and keeps none of it.
+
 ## Settings
 
 | Setting | `config.json` key | Notes |
@@ -108,6 +117,7 @@ While it runs, the row and the page header show "Transcribing chunk 2 of 5", the
 | Summary model | `meetings.summaryModel` | A model id the agent reported in the chat. Unset uses the agent's default. Settings offers the models the agent listed the last time it ran in the chat |
 | Summarize automatically | `meetings.autoSummary` | Default on. Off means no agent runs |
 | Offer to record calls | `meetings.offerToRecordCalls` | Default on, and applies only with meetings on |
+| Suggest recording room meetings | `meetings.suggestRoomRecordings` | Default off, and applies only with meetings on. Turning it on asks macOS for calendar access. See [Room meetings from your calendar](#room-meetings-from-your-calendar) |
 | Never treat as a call | `meetings.ignoredMicApps` | Default empty. Bundle id prefixes, with at least two dot-separated parts such as `com.example.dictate`, of apps whose microphone use isn't a call, for example dictation apps. They get no call offer and don't hold back spoken replies. Siri, Apple dictation and Wispr Flow are always ignored. Works with meetings off |
 | Recognise speakers in meetings | `meetings.recogniseSpeakers` | Default off. See [Recognising speakers](#recognising-speakers) |
 | Transcript length | `meetings.transcriptCharacters` | Default 300,000, from 20,000 to 2,000,000. The summary reads the last this many characters. A longer transcript is cut at the start, and the summary says so |
