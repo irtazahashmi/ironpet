@@ -205,4 +205,59 @@ final class VoiceModeTests: XCTestCase {
         await voice.micTapped()
         XCTAssertEqual(channel.ends, 1)
     }
+
+    // Replies on: the phone waits for the reply, and a reply with no audio ends the wait so it listens again.
+    func testAfterAMessageWithRepliesOnThePhoneWaitsAndThenListensWhenTheReplyEndsWithoutAudio() async throws {
+        let (voice, mic, channel, _) = rig()
+        voice.spokenReplies = true
+        await voice.voiceModeTapped()
+        mic.feed(loud: true, seconds: 1)
+        mic.feed(loud: false, seconds: 3)
+        await poll { channel.ends == 1 }
+        let id = try XCTUnwrap(streamID(channel))
+        voice.handle(.text(VoiceServerMessage.transcript(id: id, text: "hello").json))
+        try? await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(voice.state, .idle, "the reply has not come yet, so the mic stays closed")
+        XCTAssertTrue(voice.voiceModeOn)
+        voice.handle(.text(VoiceServerMessage.ttsEnd(reply: "r1").json))
+        await poll { voice.state == .recording }
+        XCTAssertEqual(voice.state, .recording)
+    }
+
+    func testAReplyThatPlaysResumesListeningOnlyWhenItsAudioHasEnded() async throws {
+        let (voice, mic, channel, _) = rig()
+        voice.spokenReplies = true
+        await voice.voiceModeTapped()
+        mic.feed(loud: true, seconds: 1)
+        mic.feed(loud: false, seconds: 3)
+        await poll { channel.ends == 1 }
+        let id = try XCTUnwrap(streamID(channel))
+        voice.handle(.text(VoiceServerMessage.transcript(id: id, text: "hello").json))
+        voice.handle(.text(VoiceServerMessage.ttsChunk(reply: "r1", index: 0, last: true).json))
+        voice.handle(.binary(VoiceWire.ttsFrame(index: 0, wav: Data([1, 2, 3]))))
+        voice.handle(.text(VoiceServerMessage.ttsEnd(reply: "r1").json))
+        try? await Task.sleep(for: .milliseconds(100))
+        XCTAssertTrue(voice.speaking)
+        XCTAssertEqual(voice.state, .idle, "the summary is still playing")
+        voice.player.stop()
+        await poll { voice.state == .recording }
+        XCTAssertEqual(voice.state, .recording)
+    }
+
+    // S3
+    func testVoiceModeKeepsListeningThroughRepeatedSilenceAndTurningItOffClosesTheMic() async throws {
+        let (voice, mic, channel, _) = rig()
+        voice.silence = 5
+        await voice.voiceModeTapped()
+        for round in 1...3 {
+            mic.feed(loud: false, seconds: 5.5)
+            await poll { channel.cancels == round }
+        }
+        await poll { voice.state == .recording }
+        XCTAssertTrue(voice.voiceModeOn)
+        XCTAssertEqual(voice.state, .recording)
+        await voice.voiceModeTapped()
+        XCTAssertFalse(voice.voiceModeOn)
+        XCTAssertEqual(voice.state, .idle)
+    }
 }

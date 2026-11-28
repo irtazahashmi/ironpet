@@ -369,6 +369,80 @@ final class RemoteVoiceTests: XCTestCase {
         XCTAssertFalse(messages.contains { if case .ttsEnd = $0 { return true } else { return false } })
     }
 
+    // MARK: Spoken summary
+
+    private func sayMessage(_ text: String, id: String = "v1") async {
+        api.voice.transcribeAudio = { _, _, _ in text }
+        start(id, mode: .send)
+        voice.receive(binary: VoiceWire.audioFrame(seq: 0, pcm: Data(count: VoiceWire.frameBytes)))
+        end(id)
+        await wait("the transcript") { transcript() != nil }
+    }
+
+    private func ended() -> Bool { messages.contains { if case .ttsEnd = $0 { return true } else { return false } } }
+
+    func testASpokenMessageAsksForASummaryAndOnlyTheSummaryIsReadToThePhone() async throws {
+        var prompts: [String] = []
+        var deliver: ((AgentEvent) -> Void)?
+        session.turnRunner = { turn, onEvent in prompts.append(turn.prompt); deliver = onEvent }
+        var synthesized: [String] = []
+        api.voice.synthesize = { text in synthesized.append(text); return Data([1]) }
+        voice.receive(text: VoiceClientMessage.ttsEnable(true).json)
+        await sayMessage("fix the build")
+        await wait("the turn") { deliver != nil }
+        XCTAssertTrue(prompts[0].contains(SpokenSummary.note))
+        deliver?(.assistant("The build is fixed.\n\nI changed the lockfile and reran every test, and they all pass now."))
+        deliver?(.finished(error: nil))
+        await wait("tts.end") { ended() }
+        XCTAssertEqual(synthesized, ["The build is fixed."])
+        XCTAssertTrue(session.items.contains { if case .assistant(let text) = $0.kind { return text.contains("reran every test") } else { return false } },
+                      "the full reply stays in the chat")
+        XCTAssertEqual(messages.filter { if case .ttsEnd = $0 { return true } else { return false } }.count, 1)
+    }
+
+    func testATypedMessageFromThePhoneStillHasTheWholeReplyReadAndNoSummaryPrompt() async throws {
+        var prompts: [String] = []
+        session.turnRunner = { turn, _ in prompts.append(turn.prompt) }
+        _ = try await api.chat.send(SendChatRequest(text: "typed message", origin: ChatOrigin.ios(device: device)))
+        await wait("the turn") { !prompts.isEmpty }
+        XCTAssertFalse(prompts[0].contains(SpokenSummary.note))
+        var synthesized: [String] = []
+        api.voice.synthesize = { text in synthesized.append(text); return Data([1]) }
+        voice.receive(text: VoiceClientMessage.ttsEnable(true).json)
+        try finishTurn(reply)
+        await wait("tts.end") { ended() }
+        XCTAssertEqual(synthesized.joined(separator: " "), SpeechText.chunks(of: reply).joined(separator: " "))
+    }
+
+    func testASpokenMessageWithRepliesOffAddsNoSummaryPrompt() async throws {
+        var prompts: [String] = []
+        session.turnRunner = { turn, _ in prompts.append(turn.prompt) }
+        await sayMessage("hello")
+        await wait("the turn") { !prompts.isEmpty }
+        XCTAssertFalse(prompts[0].contains(SpokenSummary.note))
+    }
+
+    func testAFailedSpokenTurnEndsTheSpeechSoThePhoneListensAgain() async throws {
+        var deliver: ((AgentEvent) -> Void)?
+        session.turnRunner = { _, onEvent in deliver = onEvent }
+        voice.receive(text: VoiceClientMessage.ttsEnable(true).json)
+        await sayMessage("do it")
+        await wait("the turn") { deliver != nil }
+        deliver?(.finished(error: "the agent crashed"))
+        await wait("tts.end") { ended() }
+        XCTAssertFalse(messages.contains { if case .ttsChunk = $0 { return true } else { return false } })
+    }
+
+    func testAReplyWithNoTextEndsTheSpeechToo() async throws {
+        var deliver: ((AgentEvent) -> Void)?
+        session.turnRunner = { _, onEvent in deliver = onEvent }
+        voice.receive(text: VoiceClientMessage.ttsEnable(true).json)
+        await sayMessage("do it")
+        await wait("the turn") { deliver != nil }
+        deliver?(.finished(error: nil))
+        await wait("tts.end") { ended() }
+    }
+
     /// Ends a turn the way the chat does, through the listeners `ChatAPI` keeps.
     private func finishTurn(_ answer: String, from origin: ChatOrigin? = nil) throws {
         let sender = origin ?? ChatOrigin.ios(device: device)

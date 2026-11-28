@@ -668,6 +668,8 @@ final class VoiceModel {
             case .ttsEnd(let reply):
                 if pendingRead == reply { pendingRead = nil }
                 player.finish(reply: reply)
+                // A reply with no audio, such as a failed turn, leaves nothing to wait for. A reply that plays resumes when it ends.
+                resumeVoiceMode()
             }
         case .binary(let data):
             guard let clip = VoiceWire.parseTTSFrame(data), let reply = announcedReply else { return }

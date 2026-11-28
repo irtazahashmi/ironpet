@@ -83,7 +83,8 @@ package struct SendChatRequest: Codable, Equatable {
     package var selection: FrontSelection?
     /// The agent whose chat gets the message. Nil is agent 1.
     package var agentId: String?
-    /// The user said the message aloud (the voice shortcut). Its reply starts with a summary that is read aloud. Only the Mac's own input.
+    /// The user said the message aloud. Its reply starts with a summary that is read aloud: on the Mac for the voice shortcut, and for
+    /// a remote origin by the sender, which hears the line through `ChatAPI.onSummaryTurn`.
     package var spoken: Bool?
 }
 
@@ -509,6 +510,7 @@ package final class ChatAPI {
     /// The agent whose chat this is. Agent 1 unless `AgentChats` made the API for another agent.
     package var agentID: String { session.ownerAgentID }
     private var listeners: [UUID: (ChatOrigin, ChatTurnEvent) -> Void] = [:]
+    private var summaryListeners: [UUID: (ChatOrigin, String?) -> Void] = [:]
     private var formListeners: [UUID: () -> Void] = [:]
     private var backgroundListeners: [UUID: (BackgroundPermissions.Request?, UUID?, BackgroundPermissions.Outcome?) -> Void] = [:]
     private var stopBackground: (() -> Void)?
@@ -546,6 +548,10 @@ package final class ChatAPI {
             guard let self else { return }
             for listener in Array(listeners.values) { listener(origin, event) }
         }
+        session.onSummaryTurn = { [weak self] origin, summary in
+            guard let self else { return }
+            for listener in Array(summaryListeners.values) { listener(origin, summary) }
+        }
         session.onFormsChanged = { [weak self] in
             guard let self else { return }
             for listener in Array(formListeners.values) { listener() }
@@ -566,6 +572,15 @@ package final class ChatAPI {
         let id = UUID()
         listeners[id] = listener
         return { [weak self] in self?.listeners[id] = nil }
+    }
+
+    /// Hears the summary line of a reply to a message sent with `spoken`, the line its sender reads aloud. Nil when the reply has no
+    /// text. It comes just before `onTurn` reports that turn as finished, and never for a failed turn.
+    @discardableResult
+    package func onSummaryTurn(_ listener: @escaping (ChatOrigin, String?) -> Void) -> () -> Void {
+        let id = UUID()
+        summaryListeners[id] = listener
+        return { [weak self] in self?.summaryListeners[id] = nil }
     }
 
     /// Hears that a form opened, closed or got an answer, whoever started the turn. Read `forms()` for what is open now.
@@ -714,7 +729,7 @@ package final class ChatAPI {
                                                                             selection: request.selection, spoken: request.spoken == true)))
         }
         let before = session.queue.count
-        session.submit(text, from: origin, files: files, reply: request.reply)
+        session.submit(text, from: origin, files: files, reply: request.reply, readAloud: request.spoken == true)
         return ChatSendResult(outcome: session.queue.count > before ? .queued : .sent)
     }
 
