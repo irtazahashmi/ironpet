@@ -61,6 +61,18 @@ final class StartVoiceModeIntentTests: XCTestCase {
         }
     }
 
+    /// App Store Connect rejects an upload whose intent titles, descriptions or phrases name an Apple product (ITMS-90626).
+    /// This reads the metadata Xcode extracts into the app, which is what App Store Connect checks.
+    func testTheIntentMetadataNamesNoAppleProduct() throws {
+        let url = try XCTUnwrap(Bundle.main.url(forResource: "extract", withExtension: "actionsdata", subdirectory: "Metadata.appintents"))
+        let metadata = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(metadata.contains("Starts listening"), "the metadata should hold the voice mode intent")
+        for name in ["Mac", "iPhone", "iPad", "Siri", "Apple Watch"] {
+            XCTAssertNil(metadata.range(of: "\\b\(name)\\b", options: [.regularExpression, .caseInsensitive]),
+                         "the intent metadata names \(name), which App Store Connect rejects")
+        }
+    }
+
     // S3
     func testTheAppKeepsRecordingAndPlayingWithTheScreenLocked() {
         let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String]
