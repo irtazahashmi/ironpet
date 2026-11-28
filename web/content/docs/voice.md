@@ -69,6 +69,18 @@ The text goes in through Accessibility. If the app ignores that, ironpet pastes 
 
 Dictation uses the same transcription server as voice notes and needs Microphone and Accessibility access. It doesn't touch the chat's own voice note.
 
+## Word list
+
+Voice input spells your own names and terms correctly. Open Settings, Voice, Word list, and add a term such as a product, a tool or a teammate. Next to it you can add how the recording usually gets it wrong, for example "length fuse" for Langfuse. Separate several forms with commas.
+
+People, projects, organizations and tools that ironpet already remembers count as known terms without being added. Terms shorter than three letters from memory are skipped.
+
+Every voice path uses the list: voice notes, dictation, spoken messages and voice from the iPhone app. The terms go to the transcription server as its `prompt` field, up to 200 terms or 800 characters, and servers that ignore the field are fine. After transcription, ironpet fixes a run of up to four words in two cases. The run matches a form you listed, or it is one edit away from a known term of six letters or more (two edits for ten letters or more), or differs only in spacing and case, like "iron pet" for IronPet. It leaves a run alone when two terms match it equally well. Ordinary words are not touched, and a plain name such as "Will" is not forced onto the word "will".
+
+The correction runs on your Mac and takes at most 150 ms. If it fails or runs longer, the transcript arrives as the server wrote it. The list is stored in `~/.ironpet/word-list.json` and is never synced to a server.
+
+To fix a word once, right-click one of your messages in the chat, choose Correct a word, type what the recording heard and the right spelling, and keep Add to word list on. The word is also fixed in the chat box when the draft still has it. Meeting transcription does not use the word list.
+
 ## Spoken replies
 
 Your pet can answer out loud. A reply that is read aloud starts with a one or two sentence summary on its own first line. Your pet reads that line, and the full answer stays in the chat, links, lists and paths included. The agent writes the summary as part of the reply, so speech starts without a second model call, as soon as the first line is complete.

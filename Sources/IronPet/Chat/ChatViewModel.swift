@@ -328,6 +328,12 @@ final class ChatViewModel: ObservableObject {
         if sendAfterDictation { send() }
     }
 
+    /// Fixes one misheard word in the draft, when the draft has it, and optionally teaches the word list the right spelling.
+    func correctWord(heard: String, spelled: String, addToWordList: Bool) {
+        if let range = input.range(of: heard, options: [.caseInsensitive]) { input.replaceSubrange(range, with: spelled) }
+        if addToWordList { VoiceVocabulary.shared.learn(heard: heard, spelled: spelled) }
+    }
+
     /// A message the user said aloud with the voice shortcut: sent as its own message, so the draft stays as it was, and marked
     /// as spoken so the reply starts with a summary that is read aloud. With no folder chosen the text goes into the draft instead.
     func sendSpoken(_ text: String) { read { await $0.sendSpokenNow(text) } }

@@ -477,6 +477,7 @@ struct VoiceSettings: View {
             }
             SpokenReplySettings(voiceAPI: model.voice)
             SpokenMessageSettings(model: model)
+            WordListSection()
             Section {
                 TextField("Base URL", text: $baseUrl)
                     .onSubmit(saveServer)

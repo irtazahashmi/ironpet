@@ -24,6 +24,7 @@ struct ChatView: View {
     @ObservedObject private var config = SettingsAPI.live
     @FocusState private var inputFocused: Bool
     @State private var showSettings = false
+    @State private var correction: WordCorrection?
     @State private var follow = TranscriptFollowState()
     @State private var topRowID: UUID?
     @State private var scrollActivity = ScrollActivity()
@@ -110,6 +111,9 @@ struct ChatView: View {
         // The window has a hidden, transparent title bar; without this its 28pt safe area sits empty above the header.
         .ignoresSafeArea(.container, edges: .top)
         .onAppear { inputFocused = true }
+        .sheet(item: $correction) { item in
+            WordCorrectionSheet(correction: item) { heard, spelled, add in session.correctWord(heard: heard, spelled: spelled, addToWordList: add) }
+        }
         .onChange(of: findQuery) { scheduleFind() }
         .onChange(of: session.findOpen) { if !session.findOpen { resetFind() } }
         .onChange(of: scrollKey) { if session.findOpen { scheduleStreamRecompute() } }
@@ -883,7 +887,9 @@ struct ChatView: View {
             case .user(let text):
                 UserBubble(text: text, date: item.date, reply: item.reply, selection: item.selection, highlighted: highlightedID == item.id,
                            onReply: { session.reply(to: item) }, onQuoteTap: { if let reply = item.reply { jumpTick = JumpRequest(target: reply.itemID) } },
-                           onAsk: { askAbout(item) }, onCopy: { copyText(item, text) }, onHoverChange: { hoverChanged(item.id, $0) },
+                           onAsk: { askAbout(item) }, onCopy: { copyText(item, text) },
+                           onCorrect: { correction = WordCorrection(heard: SelectionProbe.selectedText() ?? "") },
+                           onHoverChange: { hoverChanged(item.id, $0) },
                            source: item.origin, find: highlights[item.id],
                            expanded: expandedMessages.contains(item.id),
                            onToggleExpand: { if !expandedMessages.insert(item.id).inserted { expandedMessages.remove(item.id) } })
@@ -1477,6 +1483,7 @@ private struct UserBubble: View {
     var onQuoteTap: () -> Void = {}
     var onAsk: () -> Void = {}
     var onCopy: () -> Void = {}
+    var onCorrect: () -> Void = {}
     var onHoverChange: (Bool) -> Void = { _ in }
     /// Hover is per row, so moving the pointer re-renders this bubble and not the whole transcript.
     @State private var hovering = false
@@ -1559,7 +1566,7 @@ private struct UserBubble: View {
         .background { if highlighted { RoundedRectangle(cornerRadius: 10).fill(Color.accentColor.opacity(0.18)) } }
         .contentShape(Rectangle())
         .onHover { hovering = $0; onHoverChange($0) }
-        .contextMenu { RowMenu(onReply: onReply, onAsk: onAsk, onCopy: onCopy) }
+        .contextMenu { RowMenu(onReply: onReply, onAsk: onAsk, onCopy: onCopy, onCorrect: onCorrect) }
     }
 }
 
@@ -1568,12 +1575,14 @@ private struct RowMenu: View {
     let onReply: () -> Void
     let onAsk: () -> Void
     let onCopy: () -> Void
+    var onCorrect: (() -> Void)?
     var speech: SpeakButton.State?
 
     var body: some View {
         Button("Reply", action: onReply)
         Button("Ask about selection", action: onAsk)
         Button("Copy", action: onCopy)
+        if let onCorrect { Button("Correct a word...", action: onCorrect) }
         if let speech { Button(speech.speaking ? "Stop Reading" : "Read Aloud", action: speech.toggle) }
     }
 }

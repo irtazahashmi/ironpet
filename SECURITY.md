@@ -86,6 +86,7 @@ On the iPhone, a tapped record id asks the paired Mac for that record over the s
 | --- | --- |
 | `config.json` | Your settings |
 | `threads/` | Saved chats (agent, ACP session id, folder and the visible transcript, plus the system notices an automation posted, with the text the agent read) |
+| `word-list.json` | Your voice word list (Settings → Voice → Word list): the terms and the misheard forms you typed. It stays on this Mac and is never sent to the hub |
 | `runtime/` | Bun, only if you allowed the download |
 | `prompts/` | The text of the prompts Ghost sends to agents on its own, copied from the defaults shipped with the app the first time and edited in Settings → Prompts. `.defaults/` records the default each file was made from. Contains no personal data unless you write some into a prompt |
 | `ironpet.db` | Ghost's memory: pages for you, people and projects, their dated claims, links and the search index. Settings → Memory → Forget Everything deletes the claims |
@@ -140,6 +141,8 @@ Desktop control is off by default (`desktopControl.enabled`, Settings → Screen
 ## Voice notes send audio to a server you choose
 
 With voice notes on (Settings → Voice, off by default), each recording is uploaded as a WAV file to the base URL you set, along with the model name and, if you saved one, an `Authorization: Bearer` header carrying your API key. That may be a service such as OpenAI or Groq, or a server on your own Mac. ironpet does not choose the server or fall back to another. While the feature is off, the microphone is never opened and nothing is sent, apart from the one-second test tone that the Test connection button uploads when you press it. The key lives in the Keychain item `ironpet.voice` and is never written to `~/.ironpet`. Recordings are held in memory only: the last one is kept until its transcription succeeds, so Retry can send it again, and none is written to disk. A plain `http://` base URL sends audio and the key unencrypted, so use it only for `localhost`.
+
+The word list adds one thing to each upload: a `prompt` field with up to 200 terms or 800 characters, made of your word list terms (not the misheard forms) and the names of people, projects, organizations and tools in Ghost's memory. It goes to the same server as the audio and nowhere else, and only while voice notes are on. The correction that follows runs on the Mac with no network call and no model.
 
 Dictation into other apps (`hotkeys.dictation`, default Control-Option-Space, active only with voice notes on) uses the same server and the same in-memory handling. When the recording starts, ironpet reads the focused field's frame through Accessibility to place the recording bar, and when the recording ends it reads the focused element again to decide where the text goes. Both reads happen only if Accessibility is already trusted, and ironpet never prompts for it. A secure text field gets no text: the transcript goes to the clipboard instead. Otherwise the text is set as the selected text of the field. If the app ignores that, ironpet puts the text on the clipboard, sends Cmd-V, and restores the earlier clipboard contents unless something else wrote to the clipboard meanwhile. The field's content is read only to check that the insertion changed it, and is not stored or sent.
 
