@@ -435,13 +435,17 @@ package struct ChatSnapshot: Codable, Equatable {
         forms: [ChatFormInfo],
         queue: [ChatQueuedInfo],
         threads: [ChatThreadInfo],
-        options: ChatOptions
+        options: ChatOptions,
+        background: [BackgroundItem] = [],
+        backgroundIndicator: BackgroundIndicator = .idle
     ) {
         self.status = status
         self.messages = messages
         self.approvals = approvals
         self.forms = forms
         self.queue = queue
+        self.background = background
+        self.backgroundIndicator = backgroundIndicator
         self.threads = threads
         self.options = options
     }
@@ -453,6 +457,41 @@ package struct ChatSnapshot: Codable, Equatable {
     package var queue: [ChatQueuedInfo]
     package var threads: [ChatThreadInfo]
     package var options: ChatOptions
+    /// The background work list in display order, and what the capsule above the input shows for it.
+    package var background: [BackgroundItem]
+    package var backgroundIndicator: BackgroundIndicator
+
+    private enum CodingKeys: String, CodingKey { case status, messages, approvals, forms, queue, threads, options, background }
+
+    package init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        status = try c.decode(ChatStatus.self, forKey: .status)
+        messages = try c.decode([ChatItem].self, forKey: .messages)
+        approvals = try c.decode([ChatApprovalInfo].self, forKey: .approvals)
+        forms = try c.decode([ChatFormInfo].self, forKey: .forms)
+        queue = try c.decode([ChatQueuedInfo].self, forKey: .queue)
+        threads = try c.decode([ChatThreadInfo].self, forKey: .threads)
+        options = try c.decode(ChatOptions.self, forKey: .options)
+        background = try c.decodeIfPresent([BackgroundItem].self, forKey: .background) ?? []
+        backgroundIndicator = .idle
+    }
+
+    package func encode(to encoder: Encoder) throws {
+        var c = encoder.container(keyedBy: CodingKeys.self)
+        try c.encode(status, forKey: .status)
+        try c.encode(messages, forKey: .messages)
+        try c.encode(approvals, forKey: .approvals)
+        try c.encode(forms, forKey: .forms)
+        try c.encode(queue, forKey: .queue)
+        try c.encode(threads, forKey: .threads)
+        try c.encode(options, forKey: .options)
+        try c.encode(background, forKey: .background)
+    }
+
+    package static func == (lhs: ChatSnapshot, rhs: ChatSnapshot) -> Bool {
+        lhs.status == rhs.status && lhs.messages == rhs.messages && lhs.approvals == rhs.approvals && lhs.forms == rhs.forms && lhs.queue == rhs.queue
+            && lhs.threads == rhs.threads && lhs.options == rhs.options && lhs.background == rhs.background
+    }
 }
 
 /// The one shared chat. The Mac's chat view model and the Telegram bridge are two clients of it, and the iOS app will be a third:
@@ -545,8 +584,24 @@ package final class ChatAPI {
     /// All the reads at once. It does not wait for anything, so a window can draw its first frame, or a test can check the chat, at once.
     package func snapshot() -> ChatSnapshot {
         ChatSnapshot(status: currentStatus, messages: session.items, approvals: currentApprovals, forms: currentForms, queue: currentQueue,
-                     threads: currentThreads, options: currentOptions)
+                     threads: currentThreads, options: currentOptions,
+                     background: session.background.ordered, backgroundIndicator: session.background.indicator)
     }
+
+    // MARK: Background work
+
+    /// The rows of the background work list, running ones first, and what the capsule shows.
+    package func backgroundWork() async -> (items: [BackgroundItem], indicator: BackgroundIndicator) {
+        (session.background.ordered, session.background.indicator)
+    }
+
+    /// The user opened the list, so failures that waited for them count as seen.
+    package func openBackground() async { session.openBackground() }
+    package func clearFinishedBackground() async { session.clearFinishedBackground() }
+    /// Stops one row, if it can be stopped. The row changes when the agent or the job store reports it.
+    package func stopBackground(_ id: String) async { session.stopBackground(id) }
+    /// The text of the idle list.
+    package func backgroundIdleSummary(now: Date = Date()) -> String { session.background.idleSummary(now: now) }
 
     package func status() async -> ChatStatus { currentStatus }
 

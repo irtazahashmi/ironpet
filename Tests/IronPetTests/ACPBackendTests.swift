@@ -284,7 +284,7 @@ final class ACPBackendTests: XCTestCase {
     func testClaudeDeclaresThatSubagentTrafficMayFollowThePromptResponse() {
         let claude = ACPAgent(id: "claude", name: "Claude Code", command: "claude", args: [], helper: nil)
         let air = (ACPBackend.clientCapabilities(for: claude)["_meta"] as? JSON)?["jetbrains"] as? JSON
-        XCTAssertEqual(((air?["air"] as? JSON)?["capabilities"]) as? [String], ["backgroundSubagents"])
+        XCTAssertEqual(((air?["air"] as? JSON)?["capabilities"]) as? [String], ["backgroundSubagents", "asyncTasks"])
         XCTAssertTrue(ACPBackend.clientCapabilities(for: agent).isEmpty, "other agents get no extension")
     }
 

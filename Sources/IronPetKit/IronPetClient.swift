@@ -293,6 +293,11 @@ public final class IronPetClient: @unchecked Sendable {
 
     public func stopChat(agentId: String? = nil) async throws { try await post(APIPath.chatStop, query: Self.agentQuery(agentId)) }
 
+    /// Stops one background row. The Mac changes the row when the agent or the job store reports it.
+    public func stopBackground(id: String, agentId: String? = nil) async throws { try await post(APIPath.chatBackgroundStop(id), query: Self.agentQuery(agentId)) }
+
+    public func clearFinishedBackground(agentId: String? = nil) async throws { try await post(APIPath.chatBackgroundClear, query: Self.agentQuery(agentId)) }
+
     /// Makes a saved thread the Mac's open chat. The Mac answers 409 while a turn runs or a question waits.
     public func openThread(id: String, agentId: String? = nil) async throws { try await post(APIPath.chatOpen(id), query: Self.agentQuery(agentId)) }
 

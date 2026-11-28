@@ -58,6 +58,8 @@ package enum AgentEvent {
     /// A tool call made by a subagent. It belongs under the subagent's own tool row (`parent`), not in the reply.
     /// `ok` is nil while the call runs.
     case subagentTool(parent: String, id: String, summary: String, ok: Bool?)
+    /// A background shell, monitor or workflow the agent reported (`async_task_*`).
+    case asyncTask(AsyncTaskUpdate)
     /// The agent needs a sign-in before it can run.
     case needsSignIn([AuthMethod])
     /// The adapter has no JS runtime to run on until the user allows the Bun download.
@@ -460,11 +462,13 @@ package final class ACPBackend {
     }
 
     /// What ironpet tells the agent it supports. Claude Code's adapter holds `session/prompt` open while a background
-    /// subagent runs, unless the client says it takes subagent traffic after the response.
+    /// subagent runs, unless the client says it takes subagent traffic after the response. `asyncTasks` makes it report
+    /// background shells, monitors and workflows. `nativeSubagentSessions` is not declared: it moves subagent traffic to
+    /// child sessions, which the chat does not read.
     package nonisolated static func clientCapabilities(for agent: ACPAgent) -> JSON {
         guard agent.id == "claude" else { return JSON() }
         // Form elicitation turns on the adapter's AskUserQuestion tool. URL elicitation stays off.
-        return ["_meta": ["jetbrains": ["air": ["version": 1, "capabilities": ["backgroundSubagents"]]]],
+        return ["_meta": ["jetbrains": ["air": ["version": 1, "capabilities": ["backgroundSubagents", "asyncTasks"]]]],
                 "elicitation": ["form": JSON()]]
     }
 
@@ -828,9 +832,17 @@ package final class ACPBackend {
             tools[id] = call
             if call.summary != before, !finishedTools.contains(id) { emitTool(call, .toolUpdated(id: id, summary: call.summary)) }
             finishIfDone(update, call)
+        case "async_task_spawned", "async_task_progress", "async_task_state_update":
+            if let task = AsyncTaskUpdate(update: update) { emitTranscript(.asyncTask(task)) }
         default:
             break
         }
+    }
+
+    /// Asks the agent to stop one background task. The agent answers with an `async_task_state_update` of `stopped`.
+    package func stopAsyncTask(_ id: String) {
+        guard let client, !client.isClosed, let sessionID else { return }
+        Task { _ = try? await client.request("_session/async_task/stop", ["sessionId": sessionID, "asyncTaskId": id]) }
     }
 
     private func finishIfDone(_ update: JSON, _ call: ACPToolCall) {

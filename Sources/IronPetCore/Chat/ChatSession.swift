@@ -294,6 +294,21 @@ package final class ChatSession {
         willSet { changes.send() }
         didSet { publish(.chatState, id: "queue") }
     }
+    /// Everything still going on in the background, and what finished: subagents, shells, monitors, workflows and IronPet jobs.
+    package private(set) var background = BackgroundWorkList() {
+        willSet { changes.send() }
+        didSet { publish(.chatState, id: "background") }
+    }
+    /// The clock for background rows. Tests set it.
+    package var backgroundClock: () -> Date = Date.init
+    /// Reads the last lines of a shell's or monitor's output file off the main actor.
+    package var outputTail: (String) async -> [String]? = { path in await Task.detached { OutputTail.lines(at: path) }.value }
+    /// Stops an IronPet job by its id. The Mac sets it to the job service's stop.
+    package var jobStopper: ((String) -> Void)?
+    /// Replaces `ACPBackend.stopAsyncTask` in tests.
+    package var asyncTaskStopper: ((String) -> Void)?
+    /// When each tool call started, for the elapsed time of the one that turns out to be a subagent.
+    private var toolStarts: [String: Date] = [:]
     /// What the agent is doing right now, e.g. "Running `npm test`".
     package private(set) var activity: String? {
         willSet { changes.send() }
@@ -795,6 +810,9 @@ package final class ChatSession {
         previousSessions = []
         pendingHandoff = nil
         jobMessages = []
+        background.dropChatWork()
+        toolStarts = [:]
+        subagentCalls = [:]
         state = .idle
         lastRunDuration = nil
     }
@@ -1527,7 +1545,7 @@ package final class ChatSession {
             if let model, !list.isEmpty, !list.contains(where: { $0.id == model }) { self.model = nil }
         case .commands(let list):
             receiveCommands(list)
-        case .toolUpdated, .subagentTool:
+        case .toolUpdated, .subagentTool, .asyncTask:
             applyTranscript(event)
         case .needsSignIn(let methods):
             endTurn()
@@ -1586,7 +1604,7 @@ package final class ChatSession {
     /// turn is still connecting joins that turn's reply instead of being lost.
     package func handleBackground(_ event: AgentEvent) {
         switch event {
-        case .assistant, .toolStarted, .toolUpdated, .toolFinished, .subagentTool: applyTranscript(event)
+        case .assistant, .toolStarted, .toolUpdated, .toolFinished, .subagentTool, .asyncTask: applyTranscript(event)
         default: break
         }
     }
@@ -1612,6 +1630,7 @@ package final class ChatSession {
             let item = Item(kind: .tool(summary, ok: nil))
             toolBase[id] = summary
             toolItems[id] = item.id
+            toolStarts[id] = backgroundClock()
             items.append(item)
         case .toolUpdated(let id, let summary):
             if let itemID = toolItems[id], let index = items.firstIndex(where: { $0.id == itemID }),
@@ -1625,12 +1644,18 @@ package final class ChatSession {
             var calls = subagentCalls[parent] ?? []
             if let index = calls.firstIndex(where: { $0.id == id }) { calls[index].ok = ok } else { calls.append((id, ok)) }
             subagentCalls[parent] = calls
+            let now = backgroundClock()
+            background.apply(subagentCall: id, parent: parent, summary: summary, ok: ok, title: toolBase[parent] ?? "Agent",
+                             startedAt: toolStarts[parent] ?? now, steps: calls.count, now: now)
             if let itemID = toolItems[parent], let index = items.firstIndex(where: { $0.id == itemID }),
                case .tool(_, let parentOK) = items[index].kind {
                 items[index].kind = .tool(composedSummary(parent), ok: parentOK)
             }
             if !isRunning { saveThread() }
+        case .asyncTask(let update):
+            applyAsyncTask(update)
         case .toolFinished(let id, let ok):
+            background.finishAgent(id, ok: ok, result: nil, now: backgroundClock())
             if isRunning { activity = "Thinking" }
             if let itemID = toolItems[id], let index = items.firstIndex(where: { $0.id == itemID }),
                case .tool(let summary, _) = items[index].kind {
@@ -1641,6 +1666,38 @@ package final class ChatSession {
             break
         }
     }
+
+    private func applyAsyncTask(_ update: AsyncTaskUpdate) {
+        background.apply(update, now: backgroundClock())
+        guard let item = background.item(update.id), item.kind != .workflow, let path = item.outputFile else { return }
+        let id = update.id
+        Task { [weak self] in
+            guard let lines = await self?.outputTail(path) else { return }
+            self?.background.setOutput(id, lines: lines)
+        }
+    }
+
+    // MARK: Background work list
+
+    /// The user opened the list. Failures that were waiting for them count as seen.
+    package func openBackground() { background.markSeen() }
+
+    /// Removes finished rows. Running and waiting ones stay.
+    package func clearFinishedBackground() { background.clearFinished() }
+
+    /// Stops one row. A shell or workflow gets the agent's stop call and its row changes when the agent reports `stopped`. A job
+    /// goes through the job service. An agent or a monitor cannot be stopped.
+    package func stopBackground(_ id: String) {
+        guard let item = background.item(id), item.stoppable else { return }
+        switch item.kind {
+        case .job: jobStopper?(String(id.dropFirst("job:".count)))
+        case .shell, .workflow: if let asyncTaskStopper { asyncTaskStopper(id) } else { acp?.stopAsyncTask(id) }
+        case .agent, .monitor: break
+        }
+    }
+
+    /// Mirrors the Mac's job store into the list.
+    package func syncJobs(_ jobs: [Job]) { background.sync(jobs: jobs, now: backgroundClock()) }
 
     /// A tool row's summary with its subagent's tool-call count, e.g. "Run research · 3 tool calls".
     private func composedSummary(_ id: String) -> String {

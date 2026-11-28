@@ -581,6 +581,11 @@ final class RemoteServer {
             return response
         }
         router.post("/v1/chat/current/stop") { [self] request, context in await self.chat(context, request) { await $0.stop() } }
+        router.post("/v1/chat/background/clear") { [self] request, context in await self.chat(context, request) { await $0.clearFinishedBackground() } }
+        router.post("/v1/chat/background/:id/stop") { [self] request, context in
+            let id = Self.parameter(context, "id")
+            return await self.chat(context, request) { await $0.stopBackground(id) }
+        }
         router.post("/v1/chat/open/:id") { [self] request, context in
             let id = Self.parameter(context, "id")
             return await self.chat(context, request) { try await $0.open(id) }

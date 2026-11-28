@@ -48,6 +48,15 @@ public enum APIPath {
     public static func chatThread(_ id: String) -> String { "/v1/chat/threads/\(id)" }
     public static let chatSend = "/v1/chat/current/messages"
     public static let chatStop = "/v1/chat/current/stop"
+    /// Stops one row of the background work list. A background id can hold `:`, so the client escapes it.
+    public static func chatBackgroundStop(_ id: String) -> String {
+        let id = escapedSegment(id)
+        return "/v1/chat/background/\(id)/stop"
+    }
+    private static func escapedSegment(_ text: String) -> String {
+        text.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/:"))) ?? text
+    }
+    public static let chatBackgroundClear = "/v1/chat/background/clear"
     public static func chatOpen(_ id: String) -> String { "/v1/chat/open/\(id)" }
     public static let chatNew = "/v1/chat/new"
     public static let chatOptions = "/v1/chat/options"

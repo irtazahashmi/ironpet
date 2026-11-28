@@ -18,7 +18,7 @@ SHARDS = [
     # Shard 1 (about 12 minutes of test time on CI)
     ["ChatFileLinksUITests", "ChatFindUITests", "ChatSendStatesUITests", "ChatStreamingUITests", "IronPetRemoteUITests", "PhaseFiveUITests"],
     # Shard 2 (about 12 minutes of test time on CI)
-    ["BackgroundUITests", "ChatMenuKeyboardUITests", "PasteUITests", "PhaseThreeUITests", "VoiceRecordingUITests"],
+    ["BackgroundUITests", "BackgroundWorkUITests", "ChatMenuKeyboardUITests", "PasteUITests", "PhaseThreeUITests", "VoiceRecordingUITests"],
     # Shard 3 (about 12 minutes of test time on CI)
     ["AttachPhotoUITests", "ChatCacheUITests", "ChatPagingUITests", "ChatParityUITests", "ChatSwipeReplyUITests", "NetworkStatesUITests", "PhaseFourUITests"],
     # Shard 4 (about 12 minutes of test time on CI)

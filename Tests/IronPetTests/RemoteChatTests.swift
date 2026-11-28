@@ -1,5 +1,6 @@
 import CoreGraphics
 import ImageIO
+import IronPetKit
 import XCTest
 @testable import IronPet
 @testable import IronPetCore
@@ -321,6 +322,27 @@ final class RemoteChatTests: XCTestCase {
         let queue = try XCTUnwrap(current.json["queue"] as? [[String: Any]])
         XCTAssertEqual(queue.map { $0["text"] as? String }, ["second"])
         XCTAssertEqual(queue.first?["from_mac"] as? Bool, false)
+    }
+
+    // S11
+    func testThePhoneReadsTheBackgroundListAndStopsAndClearsRows() async throws {
+        var stopped: [String] = []
+        chat.asyncTaskStopper = { stopped.append($0) }
+        chat.handleBackground(.asyncTask(AsyncTaskUpdate(phase: .spawned, id: "sh-1", taskType: "shell", description: "npm run dev", canStop: true)))
+        chat.handleBackground(.asyncTask(AsyncTaskUpdate(phase: .spawned, id: "sh-2", taskType: "shell", description: "Build", canStop: true)))
+        chat.handleBackground(.asyncTask(AsyncTaskUpdate(phase: .state, id: "sh-2", summary: "ok", state: "completed")))
+        let current = try await get("/v1/chat/current")
+        let rows = try XCTUnwrap(current.json["background"] as? [[String: Any]])
+        XCTAssertEqual(rows.map { $0["id"] as? String }, ["sh-1", "sh-2"])
+        XCTAssertEqual(rows.first?["can_stop"] as? Bool, true)
+        XCTAssertEqual(rows.last?["state"] as? String, "done")
+        let snapshot = try WireJSON.makeDecoder().decode(RemoteChatSnapshot.self, from: current.data)
+        XCTAssertEqual(snapshot.background.map(\.kind), ["shell", "shell"])
+        XCTAssertEqual(snapshot.background.first?.title, "npm run dev")
+        _ = try await post("/v1/chat/background/sh-1/stop")
+        XCTAssertEqual(stopped, ["sh-1"])
+        _ = try await post("/v1/chat/background/clear")
+        XCTAssertEqual(chat.background.items.map(\.id), ["sh-1"])
     }
 
     // S4

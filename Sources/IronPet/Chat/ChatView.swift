@@ -1029,7 +1029,11 @@ struct ChatView: View {
             if !matches.isEmpty {
                 SlashPopup(commands: matches, selection: min(session.slash.selection, matches.count - 1), pick: session.completeSlash)
             }
-            queueRows
+            HStack(alignment: .bottom, spacing: 8) {
+                queueRows
+                Spacer(minLength: 0)
+                BackgroundCapsuleButton(session: session)
+            }
             composerBar
         }
         .chatColumn(maxWidth: Self.composerWidth, padding: 12, includesPadding: true)

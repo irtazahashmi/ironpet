@@ -397,10 +397,12 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
     public var approvals: [RemoteApproval]
     public var forms: [RemoteForm]
     public var queue: [RemoteQueued]
+    /// The Mac's background work list. Empty from a Mac that does not send it.
+    public var background: [RemoteBackgroundItem]
     public var options: RemoteChatOptions
 
     enum CodingKeys: String, CodingKey {
-        case title, state, running, activity, agent, model, notice, items, approvals, forms, queue, options, epoch, seq, delta, reset
+        case title, state, running, activity, agent, model, notice, items, approvals, forms, queue, background, options, epoch, seq, delta, reset
         case runStarted = "run_started"
         case threadID = "thread_id"
         case folderLabel = "folder_label"
@@ -409,13 +411,13 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
 
     public init(threadID: String? = nil, title: String = "New chat", state: String = "idle", running: Bool = false, activity: String? = nil,
                 folderLabel: String = "demo-app", agent: RemoteChatAgent = RemoteChatAgent(id: "claude", name: "Claude Code"), model: String? = nil,
-                runStarted: Date? = nil, notice: String? = nil, items: [RemoteChatItem] = [], approvals: [RemoteApproval] = [], forms: [RemoteForm] = [], queue: [RemoteQueued] = [],
+                runStarted: Date? = nil, notice: String? = nil, items: [RemoteChatItem] = [], approvals: [RemoteApproval] = [], forms: [RemoteForm] = [], queue: [RemoteQueued] = [], background: [RemoteBackgroundItem] = [],
                 options: RemoteChatOptions = RemoteChatOptions()) {
         self.options = options
         self.threadID = threadID; self.title = title; self.state = state; self.running = running; self.activity = activity
         self.runStarted = runStarted
         self.folderLabel = folderLabel; self.agent = agent; self.model = model; self.notice = notice; self.items = items
-        self.approvals = approvals; self.forms = forms; self.queue = queue
+        self.approvals = approvals; self.forms = forms; self.queue = queue; self.background = background
     }
 
     public init(from decoder: Decoder) throws {
@@ -439,6 +441,7 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
         approvals = try c.decodeIfPresent(Lossy<RemoteApproval>.self, forKey: .approvals)?.elements ?? []
         forms = try c.decodeIfPresent(Lossy<RemoteForm>.self, forKey: .forms)?.elements ?? []
         queue = try c.decodeIfPresent(Lossy<RemoteQueued>.self, forKey: .queue)?.elements ?? []
+        background = try c.decodeIfPresent(Lossy<RemoteBackgroundItem>.self, forKey: .background)?.elements ?? []
         options = (try? c.decodeIfPresent(RemoteChatOptions.self, forKey: .options)) ?? RemoteChatOptions()
     }
 
@@ -463,6 +466,7 @@ public struct RemoteChatSnapshot: Codable, Equatable, Sendable {
         try c.encode(approvals, forKey: .approvals)
         try c.encode(forms, forKey: .forms)
         try c.encode(queue, forKey: .queue)
+        if !background.isEmpty { try c.encode(background, forKey: .background) }
         try c.encode(options, forKey: .options)
     }
 }
