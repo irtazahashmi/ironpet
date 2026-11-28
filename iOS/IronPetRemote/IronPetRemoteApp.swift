@@ -193,7 +193,7 @@ struct MainTabs: View {
         .tint(pet.accent)
         .environment(\.macAccent, pet.accent ?? .accentColor)
         // The alert count and the waiting approvals are on their tabs before the user opens it.
-        .task { network.startPathMonitor(); phoneSettings.start(); alerts.start(); dashboards.start(); chat.start(); chats.start(); pet.start(); automations.start(); phoneAgent.start(); voice.onTranscript = { [chat] text, mode in if mode == .draft { chat.insertDictation(text) } }; voice.onSend = { [chat] in chat.voiceEvent($0) }; chat.resendVoice = { [voice] in await voice.resend($0) }; chat.transcribeSaved = { [voice] in await voice.transcribeSaved($0, $1) }; voice.hasComposerContent = { [chat] in chat.hasComposerContent }; voice.hasEarlierMessages = { [chat] in chat.hasEarlierMessages }; voice.start() }
+        .task { network.startPathMonitor(); phoneSettings.start(); alerts.start(); dashboards.start(); chat.start(); chats.start(); pet.start(); automations.start(); phoneAgent.start(); voice.onTranscript = { [chat] text, mode in if mode == .draft { chat.insertDictation(text) } }; voice.onSend = { [chat] in chat.voiceEvent($0) }; chat.resendVoice = { [voice] in await voice.resend($0) }; chat.transcribeSaved = { [voice] in await voice.transcribeSaved($0, $1) }; voice.hasComposerContent = { [chat] in chat.hasComposerContent }; voice.hasEarlierMessages = { [chat] in chat.hasEarlierMessages }; voice.start(); VoiceLaunch.shared.handler = { [voice] in await voice.startVoiceMode() } }
         // The five minutes count from the app going to the background, whichever screen is open. Watching only inside the Meetings
         // screen would leave the text unlocked after the person left it and then left the app.
         .onChange(of: scenePhase) { _, phase in
@@ -209,6 +209,7 @@ struct MainTabs: View {
         // Leaving the tabs (unpair or a 401) must close the socket, which otherwise keeps reconnecting with the old token.
         .onDisappear { [network, inbox, pet, chat, chats, today, agents, alerts, automations, meetings, memory, screen, phoneSettings, phoneAgent, dashboards, voice] in
             voice.stop()
+            VoiceLaunch.shared.handler = nil
             network.stopPathMonitor()
             inbox.stop(); pet.stop(); chat.stop(); chats.stop(); today.stop(); agents.stop(); alerts.stop(); automations.stop(); meetings.stop(); memory.stop(); screen.stop(); phoneSettings.stop(); phoneAgent.stop(); dashboards.stop()
             meetings.gate.lock()

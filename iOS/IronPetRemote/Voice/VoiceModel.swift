@@ -218,6 +218,12 @@ final class VoiceModel {
         }
     }
 
+    /// Starts voice mode for the Action button and Shortcuts. Does nothing when it already runs. True when the phone listens.
+    func startVoiceMode() async -> Bool {
+        if state == .idle { await beginRecording(voiceMode: true) }
+        return voiceModeOn
+    }
+
     /// Listens again when voice mode is on and nothing else holds the mic.
     private func resumeVoiceMode() {
         guard voiceModeOn, state == .idle, !speaking else { return }
