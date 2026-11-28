@@ -82,6 +82,18 @@ final class VoiceModeTests: XCTestCase {
     }
 
     // S1
+    func testStartVoiceModeForTheActionButtonListensAndIgnoresASecondPress() async {
+        let (voice, _, channel, _) = rig()
+        let first = await voice.startVoiceMode()
+        XCTAssertTrue(first)
+        XCTAssertEqual(voice.state, .recording)
+        let second = await voice.startVoiceMode()
+        XCTAssertTrue(second)
+        XCTAssertEqual(channel.cancels, 0)
+        XCTAssertEqual(channel.messages.filter { if case .start = $0 { true } else { false } }.count, 1)
+    }
+
+    // S1
     func testThePhoneEndsTheStreamAfterThePauseAndSendsTheTranscript() async throws {
         let (voice, mic, channel, events) = rig()
         await voice.voiceModeTapped()

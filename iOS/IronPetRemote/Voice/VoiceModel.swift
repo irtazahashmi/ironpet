@@ -220,6 +220,8 @@ final class VoiceModel {
 
     /// Starts voice mode for the Action button and Shortcuts. Does nothing when it already runs. True when the phone listens.
     func startVoiceMode() async -> Bool {
+        // Already on: a press must not cut the reply that plays or restart a message that uploads.
+        if voiceModeOn { return true }
         if state == .idle { await beginRecording(voiceMode: true) }
         return voiceModeOn
     }
