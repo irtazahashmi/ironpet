@@ -66,6 +66,20 @@ package struct RegenerateMeetingRequest: Codable, Equatable {
     package var mode: MeetingRegeneration = .full
 }
 
+/// An audio file to import as a meeting: a path on this Mac, or the file's bytes with its name. Exactly one of the two.
+package struct ImportMeetingRequest: Codable, Equatable {
+    package init(path: String? = nil, body: Data? = nil, fileName: String? = nil) {
+        self.path = path
+        self.body = body
+        self.fileName = fileName
+    }
+
+    package var path: String?
+    package var body: Data?
+    /// The name the bytes had, which gives the format (`standup.m4a`). Needed with `body`.
+    package var fileName: String?
+}
+
 package struct NameSpeakerRequest: Codable, Equatable {
     package init(speaker: Int, name: String) {
         self.speaker = speaker
@@ -142,6 +156,7 @@ package final class MeetingsAPI {
             recorder.changes.observe { [weak self] in self?.changes.send() },
             library.changes.observe { [weak self] in self?.changes.send() },
             library.regenerator.changes.observe { [weak self] in self?.changes.send() },
+            library.importer.changes.observe { [weak self] in self?.changes.send() },
         ]
     }
 
@@ -215,6 +230,64 @@ package final class MeetingsAPI {
         let record = try record(request.id)
         let ok = await library.regenerator.regenerate(record, mode: request.mode == .full ? .full : .summaryOnly, activeFolder: activeFolder)
         if !ok { throw APIError.failed(library.regenerator.errors[record.id] ?? "The meeting could not be rebuilt.") }
+    }
+
+    // MARK: Import
+
+    /// The file extensions an import accepts.
+    package var importExtensions: [String] { MeetingImporter.extensions }
+    package var isImporting: Bool { library.importer.isImporting }
+    /// What the import is doing before the transcript starts, such as "Reading audio".
+    package var importStage: String? { library.importer.stage }
+    /// Why the last import failed, until the next one starts.
+    package var importError: String? { library.importer.lastError }
+    private var importTask: Task<Void, Never>?
+
+    /// Imports an audio file as a meeting, the same import the Import button runs. Returns when the transcript and
+    /// summary are written. An unsupported or too large file throws `invalid` and creates no meeting.
+    @discardableResult
+    package func importAudio(_ request: ImportMeetingRequest) async throws -> MeetingInfo {
+        let record: MeetingRecord
+        do {
+            switch (request.path, request.body) {
+            case (let path?, nil):
+                let file = URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+                record = try await library.importer.importAudio(file: file)
+            case (nil, let body?):
+                let name = (request.fileName ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !name.isEmpty else { throw APIError.invalid("fileName is needed with body, for example \"standup.m4a\"") }
+                // The bytes have no creation date of their own, so the meeting is dated when they arrive.
+                let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-import-\(UUID().uuidString)")
+                try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+                defer { try? FileManager.default.removeItem(at: folder) }
+                let file = folder.appendingPathComponent((name as NSString).lastPathComponent)
+                try body.write(to: file)
+                record = try await library.importer.importAudio(file: file, date: library.importer.now())
+            default:
+                throw APIError.invalid("give either path or body, not both and not neither")
+            }
+        } catch let error as MeetingImportError {
+            throw APIError.invalid(error.message)
+        }
+        return try get(record.id)
+    }
+
+    /// Starts importing each file one after the other, for a drop on the list and for Open With. Returns the task, which
+    /// ends when the last one is done, or nil when there is nothing to import. A file that is refused sets `importError`.
+    @discardableResult
+    package func startImport(of urls: [URL]) -> Task<Void, Never>? {
+        let files = urls.filter(\.isFileURL)
+        guard !files.isEmpty else { return nil }
+        let previous = importTask
+        let task = Task { @MainActor [weak self] in
+            await previous?.value
+            for file in files {
+                guard let self else { return }
+                _ = try? await self.library.importer.importAudio(file: file)
+            }
+        }
+        importTask = task
+        return task
     }
 
     // MARK: Recording

@@ -50,9 +50,23 @@ package final class MeetingLibrary {
     /// Called with the folder after a meeting went to the Trash, so its text leaves the memory index.
     package var onDeleted: ((URL) -> Void)?
     private let root: URL
+    /// Turns an audio file into a meeting in this library.
+    package lazy var importer = MeetingImporter(library: self, root: root)
 
     package init(root: URL = Paths.meetings) {
         self.root = root
+    }
+
+    /// The folder for a meeting that began at `date`: `yyyy-MM-dd-HHmm`, with `-2`, `-3` … when that minute is taken.
+    package nonisolated static func newFolder(for date: Date, in root: URL) -> URL {
+        let base = MeetingTranscript.folderName(date)
+        var url = root.appendingPathComponent(base)
+        var suffix = 2
+        while FileManager.default.fileExists(atPath: url.path) {
+            url = root.appendingPathComponent("\(base)-\(suffix)")
+            suffix += 1
+        }
+        return url
     }
 
     /// True once `reload()` has read the folder. Until then `meetings` is empty because nobody asked, not because there are none.

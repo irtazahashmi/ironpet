@@ -2,6 +2,7 @@ import AppKit
 import enum IronPetKit.SharedSymbols
 import IronPetCore
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// The Transcripts section: past meetings newest first, and the summary or transcript of the one selected.
 struct TranscriptsView: View {
@@ -26,23 +27,39 @@ struct TranscriptsView: View {
 
     var body: some View {
         ListScreen(title: IronPetSection.transcripts.title, search: $search, detailOpen: selection != nil, trailing: {
-            if let progress = meetings.regenerationProgress {
-                HStack(spacing: 6) {
+            HStack(spacing: 8) {
+                if let label = meetings.regenerationProgress?.label ?? meetings.importStage {
                     ProgressView().controlSize(.small)
-                    Text(progress.label).font(.caption).foregroundStyle(.secondary)
+                    Text(label).font(.caption).foregroundStyle(.secondary)
                 }
+                Button { chooseAudio() } label: { Label("Import", systemImage: "square.and.arrow.down") }
+                    .controlSize(.small)
+                    .disabled(meetings.isImporting || meetings.regenerationID != nil)
+                    .help("Turn an m4a, mp3 or wav file into a meeting with a transcript, speakers and summary. You can also drop the file on this list.")
             }
         }) {
             VStack(spacing: 0) {
+                if let message = meetings.importError {
+                    Text(message).font(.caption).foregroundStyle(.red).frame(maxWidth: .infinity, alignment: .leading).padding(8)
+                }
                 if meetings.meetings.isEmpty {
                     EmptyState(symbol: SharedSymbols.meetings, title: "No meetings yet",
-                               detail: "Start one from \(SettingsAPI.live.config.pet.name)'s right-click menu; its transcript and summary show up here.")
+                               detail: "Start one from \(SettingsAPI.live.config.pet.name)'s right-click menu, or press Import or drop an m4a, mp3 or wav file here. Its transcript and summary show up here.")
                 } else if selected != nil {
                     detail
                 } else {
                     list
                 }
             }
+        }
+        .onDrop(of: [.fileURL], isTargeted: nil) { providers in
+            for provider in providers {
+                _ = provider.loadObject(ofClass: URL.self) { url, _ in
+                    guard let url else { return }
+                    DispatchQueue.main.async { _ = meetings.startImport(of: [url]) }
+                }
+            }
+            return !providers.isEmpty
         }
         .onAppear {
             meetings.reload()
@@ -57,6 +74,18 @@ struct TranscriptsView: View {
             meetings.reload()
             load()
         }
+    }
+
+    private func chooseAudio() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        panel.allowedContentTypes = meetings.importExtensions.compactMap { UTType(filenameExtension: $0) }
+        panel.message = "Pick an audio recording to import as a meeting"
+        NSApp.activate()
+        guard panel.runModal() == .OK else { return }
+        _ = meetings.startImport(of: panel.urls)
     }
 
     private func selectFocus() {

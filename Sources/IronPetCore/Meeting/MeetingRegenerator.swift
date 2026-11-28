@@ -172,8 +172,9 @@ package final class MeetingRegenerator {
     }
 
     /// Rebuilds the meeting. Returns false, with the reason in `errors`, when it could not start or failed.
+    /// `appName` replaces the one in the old transcript header, for a meeting that has no transcript yet.
     @discardableResult
-    package func regenerate(_ meeting: MeetingRecord, mode: RegenerationMode, activeFolder: URL? = nil) async -> Bool {
+    package func regenerate(_ meeting: MeetingRecord, mode: RegenerationMode, activeFolder: URL? = nil, appName: String? = nil) async -> Bool {
         if let reason = unavailableReason(for: meeting, activeFolder: activeFolder, requiresAudio: mode == .full) {
             errors[meeting.id] = reason
             return false
@@ -187,7 +188,7 @@ package final class MeetingRegenerator {
             completed += 1
         }
         do {
-            let replacement = try await rebuild(meeting, mode: mode)
+            let replacement = try await rebuild(meeting, mode: mode, appName: appName)
             onReplaced?(replacement)
             return true
         } catch {
@@ -207,7 +208,7 @@ package final class MeetingRegenerator {
         progress = nil
     }
 
-    private func rebuild(_ meeting: MeetingRecord, mode: RegenerationMode) async throws -> MeetingReplacement {
+    private func rebuild(_ meeting: MeetingRecord, mode: RegenerationMode, appName: String?) async throws -> MeetingReplacement {
         let folder = meeting.folder
         let previous = try? String(contentsOf: folder.appendingPathComponent("summary.md"), encoding: .utf8)
         var transcript: String?
@@ -218,7 +219,7 @@ package final class MeetingRegenerator {
             let found = try await Self.scan(folder)
             let lines = try await transcribe(found.chunks)
             guard !lines.isEmpty else { throw RegenerationError(message: "The new transcript has no speech in it, so nothing was replaced.") }
-            text = MeetingTranscript.render(startedAt: found.startedAt, appName: found.appName, lines: lines)
+            text = MeetingTranscript.render(startedAt: found.startedAt, appName: appName ?? found.appName, lines: lines)
             transcript = text
         case .summaryOnly:
             guard let existing = try? String(contentsOf: folder.appendingPathComponent("transcript.md"), encoding: .utf8),
