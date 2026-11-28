@@ -193,9 +193,16 @@ package final class ChatSession {
         package let respond: (ElicitationReply) -> Void
     }
 
+    /// Set just before an edit to the last item alone. That edit skips the copy of the old array, which would cost a pass over the
+    /// whole transcript on every chunk, and `publishItemChanges` names the last item without comparing the rest.
+    private var onlyLastItemEdited = false
+    private var itemsBefore: [Item] = []
     package var items: [Item] = [] {
-        willSet { changes.send() }
-        didSet { publishItemChanges(from: oldValue) }
+        willSet {
+            changes.send()
+            if !onlyLastItemEdited { itemsBefore = items }
+        }
+        didSet { publishItemChanges() }
     }
     /// Where `chat.item` and `chat.state` are published for API clients.
     package weak var events: APIEventBus?
@@ -208,8 +215,13 @@ package final class ChatSession {
 
     /// Publishes `chat.item` with the id of each item that was added or changed. A removal, a reset or a change to many items at once
     /// publishes it without an id, which tells a client to read the transcript again.
-    private func publishItemChanges(from old: [Item]) {
-        guard let events else { return }
+    private func publishItemChanges() {
+        let lastOnly = onlyLastItemEdited
+        onlyLastItemEdited = false
+        let old = itemsBefore
+        itemsBefore = []
+        guard events != nil else { return }
+        if lastOnly, let last = items.last { return publish(.chatItem, id: last.id.uuidString) }
         guard let changed = Self.changedItems(old: old, new: items) else { return publish(.chatItem) }
         for id in changed { publish(.chatItem, id: id.uuidString) }
     }
@@ -317,7 +329,7 @@ package final class ChatSession {
     /// What the agent is doing right now, e.g. "Running `npm test`".
     package private(set) var activity: String? {
         willSet { changes.send() }
-        didSet { publish(.chatState, id: "status") }
+        didSet { if activity != oldValue { publish(.chatState, id: "status") } }
     }
     package private(set) var runStartedAt: Date? {
         willSet { changes.send() }
@@ -1652,8 +1664,9 @@ package final class ChatSession {
     private func applyTranscript(_ event: AgentEvent) {
         switch event {
         case .assistant(let text):
-            if isRunning { activity = "Writing" }
+            if isRunning, activity != "Writing" { activity = "Writing" }
             if case .assistant(let previous) = items.last?.kind, isRunning || items.last?.id == backgroundReply {
+                onlyLastItemEdited = true
                 items[items.count - 1].kind = .assistant(previous + text)
             } else if isRunning, let id = splitReply, let index = items.firstIndex(where: { $0.id == id }),
                       case .assistant(let previous) = items[index].kind {

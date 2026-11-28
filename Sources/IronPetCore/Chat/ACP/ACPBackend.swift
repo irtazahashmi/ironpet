@@ -377,6 +377,7 @@ package final class ACPBackend {
 
     /// Stop: tells the agent to end the turn and keeps its process for the next message.
     package func cancel() {
+        flushText()
         onEvent = nil
         cancelledThrough = turnCount
         guard let client, !client.isClosed else { return }
@@ -406,6 +407,7 @@ package final class ACPBackend {
     }
 
     package func shutdown() {
+        flushText()
         cancelElicitations()
         client?.close()
         client = nil
@@ -437,7 +439,39 @@ package final class ACPBackend {
     // MARK: Connection
 
     private func emit(_ event: AgentEvent) {
+        flushText()
         onEvent?(event)
+    }
+
+    /// How long reply text waits before it reaches the chat. A chunk arrives about every 20 ms, and each one used to rewrite the
+    /// transcript on the main thread, which fell behind in a long thread.
+    package static let textCoalesceInterval: Duration = .milliseconds(50)
+    private var pendingText = ""
+    private var pendingTextIsBackground = false
+    private var textFlush: Task<Void, Never>?
+
+    /// Holds reply text until the next flush, which joins all chunks that arrived meanwhile into one event.
+    private func bufferText(_ text: String) {
+        let background = !promptInFlight
+        if background != pendingTextIsBackground { flushText() }
+        pendingTextIsBackground = background
+        pendingText += text
+        guard textFlush == nil else { return }
+        textFlush = Task { [weak self] in
+            try? await Task.sleep(for: Self.textCoalesceInterval)
+            guard !Task.isCancelled else { return }
+            self?.flushText()
+        }
+    }
+
+    /// Sends the held reply text. Runs before every other event, so text never lands after a tool call or the end of the turn.
+    private func flushText() {
+        textFlush?.cancel()
+        textFlush = nil
+        guard !pendingText.isEmpty else { return }
+        let text = pendingText
+        pendingText = ""
+        if pendingTextIsBackground { onBackground?(.assistant(text)) } else { onEvent?(.assistant(text)) }
     }
 
     /// A subagent's tool call becomes a `subagentTool` event under its parent's row. The main agent's calls pass through.
@@ -458,6 +492,8 @@ package final class ACPBackend {
     /// Text and tool updates belong to the running turn. With no prompt in flight, they come from work the agent
     /// started earlier, and the chat shows them without a turn.
     private func emitTranscript(_ event: AgentEvent) {
+        if case .assistant(let text) = event { return bufferText(text) }
+        flushText()
         if promptInFlight { onEvent?(event) } else { onBackground?(event) }
     }
 
