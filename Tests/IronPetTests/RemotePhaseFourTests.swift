@@ -296,6 +296,36 @@ final class RemotePhaseFourTests: XCTestCase {
         XCTAssertEqual(library.meetings.count, before + 1, "the upload became a meeting")
     }
 
+    // S1, S3, S5
+    func testARecordingSentAsChunksOverTheRoutesBecomesAMeeting() async throws {
+        library.importer.transcoder = FixedLengthTranscoder()
+        let before = library.meetings.count
+        h.api.meetings.recordings = MeetingRecordingChunks(folder: root.appendingPathComponent("recordings"))
+        let id = UUID().uuidString
+        let wav = WAV.encode((0..<WAV.sampleRate).map { Int16($0 / 20 % 2 == 0 ? 8000 : -8000) })
+
+        let noToken = try await put("/v1/meeting-recordings/\(id)/chunks/0", wav, token: nil)
+        XCTAssertEqual(noToken.status, 401)
+        let junk = try await put("/v1/meeting-recordings/\(id)/chunks/0", Data(repeating: 1, count: 80), token: token)
+        XCTAssertEqual(junk.status, 400, "a chunk must be a WAV")
+        let first = try await put("/v1/meeting-recordings/\(id)/chunks/0", wav, token: token)
+        XCTAssertEqual(first.status, 200, String(decoding: first.data, as: UTF8.self))
+        let again = try await put("/v1/meeting-recordings/\(id)/chunks/0", wav, token: token)
+        XCTAssertEqual(again.status, 200, "a chunk sent again after a lost answer is confirmed again")
+        let early = try await post("/v1/meeting-recordings/\(id)/complete", ["count": 2, "startedAt": 1_795_000_000])
+        XCTAssertEqual(early.status, 409, "a recording with a missing chunk is not imported")
+        let second = try await put("/v1/meeting-recordings/\(id)/chunks/1", wav, token: token)
+        XCTAssertEqual(second.status, 200)
+        let done = try await post("/v1/meeting-recordings/\(id)/complete", ["count": 2, "startedAt": 1_795_000_000])
+        XCTAssertEqual(done.status, 200, String(decoding: done.data, as: UTF8.self))
+        XCTAssertEqual(done.json["accepted"] as? String, id)
+        for _ in 0..<100 where library.meetings.count == before {
+            try await Task.sleep(nanoseconds: 50_000_000)
+            library.reload()
+        }
+        XCTAssertEqual(library.meetings.count, before + 1, "the recording became a meeting")
+    }
+
     // S4
     func testTheUploadRoutesRefuseTheWrongKindAndSizeWithTheMacsMessages() async throws {
         let wrongKind = try await post("/v1/meeting-uploads", ["id": UUID().uuidString, "fileName": "talk.ogg", "size": 20])

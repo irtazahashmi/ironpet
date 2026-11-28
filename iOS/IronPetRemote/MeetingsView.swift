@@ -6,6 +6,7 @@ import UniformTypeIdentifiers
 struct MeetingsView: View {
     let model: MeetingsModel
     let uploads: MeetingUploadsModel
+    let recorder: MeetingRecorder
     @State private var picking = false
     @Environment(\.scenePhase) private var scenePhase
     @State private var deleting: RemoteMeeting?
@@ -60,11 +61,12 @@ struct MeetingsView: View {
                             .accessibilityIdentifier("recording-state")
                         Button("Stop recording", role: .destructive) { Task { await model.stopRecording() } }.accessibilityIdentifier("stop-recording")
                     } footer: {
-                        Text("Recording can only be started on the Mac.")
+                        Text("This is a recording on the Mac. Stopping it here ends it there.")
                     }
                 } else if model.state.phase == "summarizing" || model.state.phase == "finishing" {
                     Label("Summarizing…", systemImage: "hourglass").accessibilityIdentifier("summarizing-state")
                 }
+                RecorderSection(recorder: recorder, uploads: uploads)
                 UploadsSection(uploads: uploads)
                 ForEach(model.meetings) { meeting in
                     NavigationLink {
@@ -94,6 +96,11 @@ struct MeetingsView: View {
         .toolbar {
             ToolbarItem(placement: .primaryAction) { Button("Lock") { model.gate.lock() }.accessibilityIdentifier("lock-meetings") }
             ToolbarItem(placement: .topBarLeading) { Button("Upload", systemImage: "square.and.arrow.up") { picking = true }.accessibilityIdentifier("upload-meeting") }
+            ToolbarItem(placement: .topBarLeading) {
+                Button("Record", systemImage: "record.circle") { recorder.start() }
+                    .disabled(recorder.isRecording)
+                    .accessibilityIdentifier("record-meeting")
+            }
         }
         .fileImporter(isPresented: $picking, allowedContentTypes: Self.audioTypes, allowsMultipleSelection: true) { result in
             if case .success(let urls) = result { uploads.add(urls) }
@@ -166,6 +173,53 @@ struct MeetingDetailView: View {
         loading = true
         text = await model.text(meeting.id, kind)
         loading = false
+    }
+}
+
+/// The recording the phone makes of the room: a running timer and Stop while it runs, then the recordings that wait for the Mac.
+private struct RecorderSection: View {
+    let recorder: MeetingRecorder
+    let uploads: MeetingUploadsModel
+
+    var body: some View {
+        if let message = recorder.message {
+            Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).accessibilityIdentifier("recorder-message")
+        }
+        if recorder.isRecording {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Label("Recording the room", systemImage: "record.circle").foregroundStyle(.red).accessibilityIdentifier("room-recording-state")
+                    Spacer()
+                    if let started = recorder.startedAt {
+                        Text(timerInterval: started...Date.distantFuture, countsDown: false).monospacedDigit().accessibilityIdentifier("room-recording-timer")
+                    }
+                }
+                Button("Stop recording", role: .destructive) { recorder.stop() }.accessibilityIdentifier("stop-room-recording")
+                Text("Recording goes on with the screen locked. The audio is sent to your Mac while you record, and when your Mac is not reachable it waits here.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }
+        }
+        ForEach(uploads.recordingsWaiting.filter { $0.failure == nil && !($0.id == recorder.currentID) }) { recording in
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Recording from \(recording.startedAt.formatted(date: .abbreviated, time: .shortened))").font(.headline)
+                    Text(uploads.sending ? "Sending to your Mac. The audio stays here until the Mac has it." : "Waiting for your Mac.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                ProgressView()
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("recording-\(recording.id)")
+        }
+        ForEach(uploads.failedRecordings) { recording in
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Recording from \(recording.startedAt.formatted(date: .abbreviated, time: .shortened))").font(.headline)
+                Text(recording.failure ?? "").font(.caption).foregroundStyle(.red)
+                Button("Dismiss") { uploads.dismiss(recording) }.font(.caption)
+            }
+            .accessibilityIdentifier("recording-failed-\(recording.id)")
+        }
     }
 }
 

@@ -60,6 +60,25 @@ package final class MeetingImporter {
     /// `date` is the meeting's date; without it the file's creation date, and without that the time of the import.
     @discardableResult
     package func importAudio(file: URL, date: Date? = nil) async throws -> MeetingRecord {
+        try await build(label: file.lastPathComponent, date: { date ?? self.creationDate(file) ?? self.now() }, check: { try self.validate(file) }) { folder in
+            try await Self.split(file, into: folder, with: self.transcoder, chunker: self.makeChunker())
+        }
+    }
+
+    /// Turns the chunks of a room recording made on the phone into a meeting. `chunks` are WAV files in the order they were recorded,
+    /// and `date` is when the recording started. They go through the same chunker and regenerator as an imported file.
+    @discardableResult
+    package func importRecording(chunks: [URL], date: Date) async throws -> MeetingRecord {
+        let seconds = chunks.reduce(0.0) { $0 + (((try? Data(contentsOf: $1)).flatMap { WAV.duration(of: $0) }) ?? 0) }
+        return try await build(label: "The recording", date: { date }, check: {
+            guard seconds <= Self.maxSeconds else { throw self.fail(MeetingUploadLimits.tooLong("The recording")) }
+        }) { folder in
+            try await Self.split(chunks: chunks, into: folder, chunker: self.makeChunker())
+        }
+    }
+
+    /// The steps both imports share: check, create the folder, write `room-NNN.wav` through `write`, then rebuild.
+    private func build(label: String, date: () -> Date, check: () throws -> Void, write: (URL) async throws -> Int) async throws -> MeetingRecord {
         guard !isImporting else { throw fail("Another import is running. Try again when it is done.") }
         if let activeID = library.regenerator.activeID, !activeID.isEmpty {
             throw fail("Another meeting is being rebuilt. Try again when it is done.")
@@ -71,8 +90,8 @@ package final class MeetingImporter {
             stage = nil
         }
         stage = "Checking the file"
-        try validate(file)
-        let started = date ?? creationDate(file) ?? now()
+        try check()
+        let started = date()
         let folder = MeetingLibrary.newFolder(for: started, in: root)
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -81,13 +100,13 @@ package final class MeetingImporter {
         }
         stage = "Reading audio"
         do {
-            let written = try await Self.split(file, into: folder, with: transcoder, chunker: makeChunker())
+            let written = try await write(folder)
             guard written > 0 else {
-                throw MeetingImportError(message: "\(file.lastPathComponent) could not be decoded as audio, so no meeting was created.")
+                throw MeetingImportError(message: "\(label) could not be decoded as audio, so no meeting was created.")
             }
         } catch {
             try? FileManager.default.removeItem(at: folder)
-            throw fail((error as? MeetingImportError)?.message ?? "Could not read \(file.lastPathComponent): \(error.localizedDescription)")
+            throw fail((error as? MeetingImportError)?.message ?? "Could not read \(label): \(error.localizedDescription)")
         }
         library.reload()
         guard let record = library.meetings.first(where: { $0.id == folder.lastPathComponent }) else {
@@ -115,6 +134,26 @@ package final class MeetingImporter {
     private func fail(_ message: String) -> MeetingImportError {
         lastError = message
         return MeetingImportError(message: message)
+    }
+
+    /// Reads the phone's WAV chunks off the main thread and cuts them into `room-NNN.wav`. Returns how many it wrote.
+    private nonisolated static func split(chunks: [URL], into folder: URL, chunker start: Chunker) async throws -> Int {
+        try await Task.detached {
+            var chunker = start
+            var index = 0
+            func write(_ samples: [Int16]) throws {
+                index += 1
+                let url = folder.appendingPathComponent(String(format: "%@-%03d.wav", MeetingTrack.room.filePrefix, index))
+                try WAV.encode(samples).write(to: url, options: .atomic)
+            }
+            for url in chunks {
+                let samples = WAV.samples(of: try Data(contentsOf: url))
+                guard !samples.isEmpty else { return 0 }
+                for closed in chunker.push(samples) { try write(closed) }
+            }
+            if let rest = chunker.flush() { try write(rest) }
+            return index
+        }.value
     }
 
     /// Decodes off the main thread and writes the chunks. Returns how many chunks it wrote.

@@ -79,6 +79,16 @@ package struct RemoteMeetings {
         return ["accepted": id]
     }
 
+    package func storeChunk(id: String, index: Int, data: Data) throws -> [String: Any] {
+        try meetings.storeChunk(id: id, index: index, data: data)
+        return ["id": id, "index": index]
+    }
+
+    package func completeRecording(id: String, count: Int, startedAt: Date) throws -> [String: Any] {
+        try meetings.completeRecording(id: id, count: count, startedAt: startedAt)
+        return ["accepted": id]
+    }
+
     /// Ends the recording that is running. With none running it is a 409.
     package func stop() throws -> [String: Any] {
         try meetings.stopRecording()
