@@ -7,8 +7,9 @@ import Combine
 /// A meeting as a client that cannot read the Mac's folders sees it.
 package struct MeetingInfo: Codable, Equatable, Identifiable {
     package init(id: String, date: Date, preview: String, hasSummary: Bool, hasTranscript: Bool, hasAudio: Bool, active: Bool, ref: String? = nil,
-                         room: Bool? = nil) {
+                         room: Bool? = nil, title: String? = nil) {
         self.id = id
+        self.title = title
         self.ref = ref
         self.date = date
         self.preview = preview
@@ -33,6 +34,8 @@ package struct MeetingInfo: Codable, Equatable, Identifiable {
     package var ref: String?
     /// True for a meeting recorded in a room. Absent from a Mac that does not know about rooms.
     package var room: Bool?
+    /// The title the user accepted or typed. Absent until then, and the list shows the date.
+    package var title: String?
 }
 
 package enum MeetingText: String, Codable {
@@ -174,7 +177,7 @@ package final class MeetingsAPI {
             MeetingInfo(id: meeting.id, date: meeting.date, preview: meeting.preview, hasSummary: meeting.hasSummary,
                         hasTranscript: meeting.hasTranscript, hasAudio: meeting.hasAudio, active: meeting.folder == active,
                         ref: records.flatMap { MeetingIdentity.ref(folder: meeting.folder, records: $0) },
-                        room: meeting.isRoom ? true : nil)
+                        room: meeting.isRoom ? true : nil, title: meeting.title)
         }
     }
 
@@ -209,6 +212,44 @@ package final class MeetingsAPI {
         guard !files.isEmpty else { throw APIError.invalid("this meeting has no transcript or summary yet") }
         guard let askHandler else { throw APIError.unavailable("the chat is not available") }
         askHandler(files)
+    }
+
+    // MARK: Suggested title and speaker names
+
+    /// What the summary agent proposed for a room or imported meeting and the user has not accepted yet.
+    package func suggestions(_ id: String) throws -> MeetingSuggestions {
+        _ = try record(id)
+        return library.suggestions(for: id)
+    }
+
+    /// Stores the title. An empty title clears it. The meeting being recorded or rebuilt is left alone.
+    package func acceptTitle(_ id: String, title: String) throws {
+        try checkEditable(id)
+        do { try library.acceptTitle(id, title: title) } catch { throw Self.apiError(error) }
+    }
+
+    /// Names a voice in a saved meeting, and stores the voice the way naming a speaker after the meeting does.
+    package func acceptSpeakerSuggestion(_ id: String, label: String, name: String) throws {
+        try checkEditable(id)
+        do { try library.acceptSpeaker(id, label: label, name: name) } catch { throw Self.apiError(error) }
+    }
+
+    package func dismissSuggestions(_ id: String) throws {
+        try checkEditable(id)
+        library.dismissSuggestions(id)
+    }
+
+    private func checkEditable(_ id: String) throws {
+        let record = try record(id)
+        guard record.folder != activeFolder, regenerationID != id else { throw APIError.conflict("this meeting is still being recorded or rebuilt") }
+    }
+
+    private static func apiError(_ error: Error) -> APIError {
+        switch error as? MeetingLibrary.SuggestionError {
+        case .noMeeting?: return .notFound("no such meeting")
+        case .notSuggested?, .emptyName?: return .invalid((error as? LocalizedError)?.errorDescription ?? "invalid")
+        default: return .failed("The files could not be updated.")
+        }
     }
 
     // MARK: Regeneration

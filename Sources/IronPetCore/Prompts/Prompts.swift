@@ -18,6 +18,7 @@ package enum Prompts {
         PromptInfo(id: "memory-instructions", title: "Chat: memory rules", placeholders: [], required: []),
         PromptInfo(id: "automation-prompt", title: "Automations: run wrapper", placeholders: ["name", "prompt"], required: ["prompt"]),
         PromptInfo(id: "meeting-summary", title: "Meetings: summary", placeholders: ["note", "transcript"], required: ["transcript"]),
+        PromptInfo(id: "meeting-suggestions", title: "Meetings: title and speaker names for room and imported meetings", placeholders: [], required: []),
         PromptInfo(id: "mail-calendar", title: "Mail and calendar checks", placeholders: [], required: []),
         PromptInfo(id: "job-instructions", title: "Jobs: what the background agent is told", placeholders: ["id", "title", "folder"], required: []),
         PromptInfo(id: "memory-reflection", title: "Memory: learning from a chat",

@@ -65,6 +65,15 @@ Action items marked `owner: Me` go to the [Inbox](/docs/inbox/#meetings), and on
 
 The Transcripts section of the ironpet window lists past meetings with their summary and transcript, **Ask** (with your pet's name), **Regenerate** and **Move to Trash**.
 
+### Suggested title and speaker names
+
+After the summary of a room recording or an imported file, the summary agent also proposes a title and a name for each voice that someone addresses or introduces by name in the transcript. A voice nobody names gets no suggestion, and a call meeting is not asked for either. Open the meeting in the Transcripts section. A **Suggestions** card shows the title and each name in a text field. Change the text if the agent got it wrong, then press **Use**. **Dismiss** drops them all.
+
+- An accepted title is saved as `title.txt` in the meeting folder and replaces the date as the row heading on the Mac. The date moves to a line under it. The iPhone Meetings list shows the title too, with the date underneath.
+- An accepted name replaces `Speaker 2` in every line of `transcript.md` and in `summary.md`, and stores the voice in the voice store when **Recognise speakers in meetings** is on and the voice has enough speech. This is the same step as naming a speaker right after a meeting. The voice data stays in memory, so after you quit ironpet the lines are still renamed but the voice is not stored.
+- Suggestions wait in `suggestions.json` in the meeting folder until you accept or dismiss them. **Regenerate** replaces them and keeps a title you accepted.
+- The instruction that asks for them is the prompt `meeting-suggestions` in Settings → Prompts.
+
 ### Import an audio file
 
 **Import**, at the top of the Transcripts section, turns an m4a, mp3 or wav file into a meeting, for example a recording from your phone or a voice recorder. Pick the file in the dialog, drop it on the list, or open it with ironpet from Finder (**Open With**). The meeting gets a transcript, speakers and a summary from the same steps as a room recording: ironpet cuts the audio into `room-NNN.wav` chunks in the meeting folder, transcribes them with the server and model from Settings → Voice, names the voices when **Recognise speakers in meetings** is on and the models are downloaded, and runs the summary agent. The transcript header names the app `Imported audio`.

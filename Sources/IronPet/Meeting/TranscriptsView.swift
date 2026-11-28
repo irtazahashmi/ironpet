@@ -22,6 +22,9 @@ struct TranscriptsView: View {
     @State private var text: String?
     @State private var confirmDelete = false
     @State private var error: String?
+    @State private var suggestions = MeetingSuggestions()
+    @State private var titleDraft = ""
+    @State private var speakerDrafts: [String: String] = [:]
 
     enum Page: String, CaseIterable { case summary = "Summary", transcript = "Transcript" }
 
@@ -65,14 +68,16 @@ struct TranscriptsView: View {
             meetings.reload()
             selectFocus()
             load()
+            loadSuggestions()
         }
         .onChange(of: focus.wrappedValue) { selectFocus() }
-        .onChange(of: selection) { load() }
+        .onChange(of: selection) { load(); loadSuggestions() }
         .onChange(of: page) { load() }
         // A run changed files on disk: the list previews and the open text may be new.
         .onChange(of: meetings.regenerationsCompleted) {
             meetings.reload()
             load()
+            loadSuggestions()
         }
     }
 
@@ -99,7 +104,15 @@ struct TranscriptsView: View {
     private var selected: MeetingRecord? { meetings.meetings.first { $0.id == selection } }
 
     /// What the Transcripts search looks at: the date as the row shows it, and the preview.
-    static func title(_ meeting: MeetingRecord) -> String { meeting.date.formatted(date: .abbreviated, time: .shortened) }
+    static func title(_ meeting: MeetingRecord) -> String {
+        let date = meeting.date.formatted(date: .abbreviated, time: .shortened)
+        return meeting.title.map { "\($0), \(date)" } ?? date
+    }
+
+    /// The row's heading: the title when there is one, otherwise the date.
+    static func heading(_ meeting: MeetingRecord) -> String {
+        meeting.title ?? meeting.date.formatted(date: .abbreviated, time: .shortened)
+    }
 
     static func filter(_ meetings: [MeetingRecord], query: String) -> [MeetingRecord] {
         ListSearch.filter(meetings, query: query, title: title, description: \.preview)
@@ -113,7 +126,7 @@ struct TranscriptsView: View {
             ListScroll {
                 ForEach(shown) { meeting in
                     let recording = meeting.folder == meetings.activeFolder
-                    ListRow(title: Self.title(meeting),
+                    ListRow(title: Self.heading(meeting),
                             description: meeting.preview.isEmpty ? (recording ? "Recording…" : "No transcript") : meeting.preview,
                             emphasized: true, onOpen: { page = .summary; selection = meeting.id },
                             leading: { ListRowIcon(symbol: recording ? "record.circle" : SharedSymbols.meetings, color: recording ? .red : .secondary) },
@@ -138,7 +151,10 @@ struct TranscriptsView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         VStack(alignment: .leading, spacing: 10) {
-                            Text(Self.title(meeting)).font(.system(size: 20, weight: .bold)).textSelection(.enabled)
+                            Text(Self.heading(meeting)).font(.system(size: 20, weight: .bold)).textSelection(.enabled)
+                            if meeting.title != nil {
+                                Text(meeting.date.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
+                            }
                             if let ref = meetings.ref(meeting) { RecordIDLine(ref: ref) }
                             // At the narrowest window the Ask label would be cut, so it falls back to its icon.
                             ViewThatFits(in: .horizontal) {
@@ -150,6 +166,7 @@ struct TranscriptsView: View {
                         .padding(14)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .cardMaterial()
+                        if meeting.isRoom, !suggestions.isEmpty || meeting.title != nil { suggestionsCard(meeting) }
                         TranscriptTextCard(title: page.rawValue, text: text)
                     }
                     .padding(.horizontal, ListScreenMetrics.gutter + 4)
@@ -167,6 +184,67 @@ struct TranscriptsView: View {
                 Text("Its audio chunks, transcript and summary go to the Trash.")
             }
         }
+    }
+
+    /// The title and speaker names the summary agent proposed. Each is a text field the user can correct, and Use stores it.
+    private func suggestionsCard(_ meeting: MeetingRecord) -> some View {
+        CardSection(title: "Suggestions") {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack {
+                    TextField("Title", text: $titleDraft).textFieldStyle(.roundedBorder)
+                        .accessibilityLabel("Meeting title")
+                    Button(meeting.title == nil ? "Use" : "Save") { acceptTitle(meeting) }
+                        .disabled(titleDraft.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+                ForEach(suggestions.speakers.keys.sorted(), id: \.self) { label in
+                    HStack {
+                        Text(label).font(.callout).foregroundStyle(.secondary).frame(width: 80, alignment: .leading)
+                        TextField("Name", text: Binding(get: { speakerDrafts[label] ?? suggestions.speakers[label] ?? "" },
+                                                        set: { speakerDrafts[label] = $0 }))
+                            .textFieldStyle(.roundedBorder)
+                            .accessibilityLabel("Name for \(label)")
+                        Button("Use") { acceptSpeaker(meeting, label) }
+                            .disabled((speakerDrafts[label] ?? suggestions.speakers[label] ?? "").trimmingCharacters(in: .whitespaces).isEmpty)
+                    }
+                }
+                HStack {
+                    Spacer()
+                    Button("Dismiss") { dismissSuggestions(meeting) }.controlSize(.small)
+                }
+            }
+            .padding(14)
+        }
+    }
+
+    private func loadSuggestions() {
+        guard let meeting = selected else { suggestions = MeetingSuggestions(); titleDraft = ""; speakerDrafts = [:]; return }
+        suggestions = (try? meetings.suggestions(meeting.id)) ?? MeetingSuggestions()
+        titleDraft = meeting.title ?? suggestions.title ?? ""
+        speakerDrafts = [:]
+    }
+
+    private func acceptTitle(_ meeting: MeetingRecord) {
+        run { try meetings.acceptTitle(meeting.id, title: titleDraft) }
+    }
+
+    private func acceptSpeaker(_ meeting: MeetingRecord, _ label: String) {
+        run { try meetings.acceptSpeakerSuggestion(meeting.id, label: label, name: speakerDrafts[label] ?? suggestions.speakers[label] ?? "") }
+    }
+
+    private func dismissSuggestions(_ meeting: MeetingRecord) {
+        run { try meetings.dismissSuggestions(meeting.id) }
+    }
+
+    private func run(_ action: () throws -> Void) {
+        do {
+            try action()
+            error = nil
+        } catch {
+            self.error = (error as? APIError)?.message ?? error.localizedDescription
+        }
+        meetings.reload()
+        loadSuggestions()
+        load()
     }
 
     private func toolbar(_ meeting: MeetingRecord, askLabel: Bool) -> some View {

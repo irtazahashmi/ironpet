@@ -18,4 +18,10 @@ final class RemoteRefTests: XCTestCase {
         XCTAssertNil(try roundTrip(RemoteMeeting(id: "standup", date: Date(timeIntervalSince1970: 0))).ref)
         XCTAssertNil(try roundTrip(RemoteAutomation(id: "a1", name: "Digest")).ref)
     }
+
+    func testAMeetingCarriesItsTitleAndAnOlderMacHasNone() throws {
+        XCTAssertEqual(try roundTrip(RemoteMeeting(id: "standup", date: Date(timeIntervalSince1970: 0), title: "Launch planning")).title, "Launch planning")
+        let old = #"{"id":"standup","date":0,"preview":"","has_summary":false,"has_transcript":false,"has_audio":false,"active":false}"#
+        XCTAssertNil(try JSONDecoder().decode(RemoteMeeting.self, from: Data(old.utf8)).title)
+    }
 }
