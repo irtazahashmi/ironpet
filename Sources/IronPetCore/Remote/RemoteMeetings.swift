@@ -3,7 +3,7 @@ import IronPetKit
 
 /// The meeting routes, as calls on `IronPetAPI.meetings`. Summary and transcript text leaves the Mac here (SECURITY.md, "Meeting
 /// transcripts record other people"). There is no route that serves an audio chunk and none that starts a recording: the phone can
-/// read, ask about, rebuild and delete a meeting, and stop the recording that is running.
+/// read, ask about, rebuild and delete a meeting, stop the recording that is running, and upload an audio file to import.
 @MainActor
 package struct RemoteMeetings {
     package init(api: IronPetAPI) {
@@ -62,6 +62,21 @@ package struct RemoteMeetings {
     package func delete(_ id: String) throws -> [String: Any] {
         try meetings.delete(id)
         return ["deleted": id]
+    }
+
+    package func beginUpload(id: String, fileName: String, size: Int64) throws -> [String: Any] {
+        RemoteWire.object(try meetings.beginUpload(id: id, fileName: fileName, size: size))
+    }
+
+    package func uploadStatus(_ id: String) throws -> [String: Any] { RemoteWire.object(try meetings.uploadStatus(id: id)) }
+
+    package func uploadPart(_ id: String, offset: Int64, data: Data) throws -> [String: Any] {
+        RemoteWire.object(try meetings.appendUpload(id: id, offset: offset, data: data))
+    }
+
+    package func completeUpload(_ id: String) throws -> [String: Any] {
+        try meetings.completeUpload(id: id)
+        return ["accepted": id]
     }
 
     /// Ends the recording that is running. With none running it is a 409.

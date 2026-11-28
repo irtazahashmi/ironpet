@@ -62,6 +62,7 @@ struct MainTabs: View {
     @State private var alerts: AlertsModel
     @State private var automations: AutomationsModel
     @State private var meetings: MeetingsModel
+    @State private var meetingUploads: MeetingUploadsModel
     @State private var memory: MemoryModel
     @State private var screen: ScreenModel
     @State private var phoneSettings: PhoneSettingsModel
@@ -108,12 +109,25 @@ struct MainTabs: View {
         _alerts = State(initialValue: AlertsModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
         _automations = State(initialValue: AutomationsModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
         _meetings = State(initialValue: MeetingsModel(client: client, events: events, gate: TranscriptGate(authenticator: Self.authenticator), network: network, onUnauthorized: unauthorized))
+        let uploads = MeetingUploadsModel(queue: MeetingUploadsModel.defaultQueue(), transport: client)
+        _meetingUploads = State(initialValue: uploads)
         _screen = State(initialValue: ScreenModel(client: client, events: events, gate: TranscriptGate(authenticator: Self.authenticator, reason: "Show screen text"),
                                                   network: network, onUnauthorized: unauthorized))
         _phoneSettings = State(initialValue: PhoneSettingsModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
         _phoneAgent = State(initialValue: PhoneAgentModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
         _dashboards = State(initialValue: DashboardsModel(client: client, events: events, network: network, onUnauthorized: unauthorized))
         _voice = State(initialValue: Self.makeVoice(client: client))
+    }
+
+    /// Files that wait for the Mac (shared from another app while this one was closed) go out as soon as the tabs show, and again
+    /// whenever the connection comes back.
+    private func startMeetingUploads() {
+        meetingUploads.onConfirmed = { [meetings] in await meetings.refresh() }
+        meetingUploads.kick()
+        let reconnects = network.reconnects()
+        Task { [meetingUploads] in
+            for await _ in reconnects { meetingUploads.retryNow() }
+        }
     }
 
     /// The model of one dashboard that is opened. A tap that sent the pet a prompt switches to the Chat tab.
@@ -178,7 +192,7 @@ struct MainTabs: View {
                 AgentsView(model: agents)
                     .tabItem { Label("Agents", systemImage: AppTab.agents.symbol) }.tag(AppTab.agents)
             }
-            MoreView(dashboards: dashboards, makeDashboard: makeDashboardModel, alerts: alerts, automations: automations, meetings: meetings, memory: memory, screen: screen, settings: phoneSettings, phoneAgent: phoneAgent, path: $morePath)
+            MoreView(dashboards: dashboards, makeDashboard: makeDashboardModel, alerts: alerts, automations: automations, meetings: meetings, uploads: meetingUploads, memory: memory, screen: screen, settings: phoneSettings, phoneAgent: phoneAgent, path: $morePath)
                 .tabItem { Label("More", systemImage: AppTab.more.symbol) }.badge(alerts.alerts.count + automations.automations.filter(\.waitsForApproval).count + dashboards.badge)
                 .tag(AppTab.more)
         }
@@ -193,12 +207,12 @@ struct MainTabs: View {
         .tint(pet.accent)
         .environment(\.macAccent, pet.accent ?? .accentColor)
         // The alert count and the waiting approvals are on their tabs before the user opens it.
-        .task { network.startPathMonitor(); phoneSettings.start(); alerts.start(); dashboards.start(); chat.start(); chats.start(); pet.start(); automations.start(); phoneAgent.start(); voice.onTranscript = { [chat] text, mode in if mode == .draft { chat.insertDictation(text) } }; voice.onSend = { [chat] in chat.voiceEvent($0) }; chat.resendVoice = { [voice] in await voice.resend($0) }; chat.transcribeSaved = { [voice] in await voice.transcribeSaved($0, $1) }; voice.hasComposerContent = { [chat] in chat.hasComposerContent }; voice.hasEarlierMessages = { [chat] in chat.hasEarlierMessages }; voice.start(); VoiceLaunch.shared.handler = { [voice] in await voice.startVoiceMode() } }
+        .task { network.startPathMonitor(); phoneSettings.start(); alerts.start(); dashboards.start(); chat.start(); chats.start(); pet.start(); automations.start(); phoneAgent.start(); startMeetingUploads(); voice.onTranscript = { [chat] text, mode in if mode == .draft { chat.insertDictation(text) } }; voice.onSend = { [chat] in chat.voiceEvent($0) }; chat.resendVoice = { [voice] in await voice.resend($0) }; chat.transcribeSaved = { [voice] in await voice.transcribeSaved($0, $1) }; voice.hasComposerContent = { [chat] in chat.hasComposerContent }; voice.hasEarlierMessages = { [chat] in chat.hasEarlierMessages }; voice.start(); VoiceLaunch.shared.handler = { [voice] in await voice.startVoiceMode() } }
         // The five minutes count from the app going to the background, whichever screen is open. Watching only inside the Meetings
         // screen would leave the text unlocked after the person left it and then left the app.
         .onChange(of: scenePhase) { _, phase in
             // The socket was dropped in the background. Reconnect now instead of after the back-off.
-            if phase == .active { events.reconnectNow() }
+            if phase == .active { events.reconnectNow(); meetingUploads.retryNow() }
             meetings.gate.scenePhaseChanged(phase)
             screen.gate.scenePhaseChanged(phase)
         }
@@ -207,7 +221,8 @@ struct MainTabs: View {
         // A background changed on the Mac shows when the Chat tab opens.
         .onChange(of: tab) { _, next in if next == .chat { Task { await pet.reloadPet(applyMood: false); await chats.refresh() } } }
         // Leaving the tabs (unpair or a 401) must close the socket, which otherwise keeps reconnecting with the old token.
-        .onDisappear { [network, inbox, pet, chat, chats, today, agents, alerts, automations, meetings, memory, screen, phoneSettings, phoneAgent, dashboards, voice] in
+        .onDisappear { [network, inbox, pet, chat, chats, today, agents, alerts, automations, meetings, meetingUploads, memory, screen, phoneSettings, phoneAgent, dashboards, voice] in
+            meetingUploads.stop()
             voice.stop()
             VoiceLaunch.shared.handler = nil
             network.stopPathMonitor()

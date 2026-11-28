@@ -1,9 +1,12 @@
 import IronPetKit
 import SwiftUI
+import UniformTypeIdentifiers
 
 /// Meetings: locked until Face ID or the passcode says yes. The views are `privacySensitive`, so the app switcher shows them blurred.
 struct MeetingsView: View {
     let model: MeetingsModel
+    let uploads: MeetingUploadsModel
+    @State private var picking = false
     @Environment(\.scenePhase) private var scenePhase
     @State private var deleting: RemoteMeeting?
     /// The system prompt opens with the screen once. After Lock, or a refusal, the person taps Unlock.
@@ -26,6 +29,9 @@ struct MeetingsView: View {
         // Leaving the screen does not lock it: the five minutes in the background do. Opening it asks first.
         .task { model.start() }
     }
+
+    /// What the picker offers. The Mac refuses anything that is not m4a, mp3 or wav in the same words, so a file picked by another route (all files) is still checked.
+    private static let audioTypes: [UTType] = [.mpeg4Audio, .mp3, .wav, .audio]
 
     private var locked: some View {
         ContentUnavailableView {
@@ -59,6 +65,7 @@ struct MeetingsView: View {
                 } else if model.state.phase == "summarizing" || model.state.phase == "finishing" {
                     Label("Summarizing…", systemImage: "hourglass").accessibilityIdentifier("summarizing-state")
                 }
+                UploadsSection(uploads: uploads)
                 ForEach(model.meetings) { meeting in
                     NavigationLink {
                         MeetingDetailView(model: model, meeting: meeting)
@@ -84,7 +91,13 @@ struct MeetingsView: View {
             }.listRowBackground(SharedTheme.card)
         }
         .refreshable { await model.refresh() }
-        .toolbar { ToolbarItem(placement: .primaryAction) { Button("Lock") { model.gate.lock() }.accessibilityIdentifier("lock-meetings") } }
+        .toolbar {
+            ToolbarItem(placement: .primaryAction) { Button("Lock") { model.gate.lock() }.accessibilityIdentifier("lock-meetings") }
+            ToolbarItem(placement: .topBarLeading) { Button("Upload", systemImage: "square.and.arrow.up") { picking = true }.accessibilityIdentifier("upload-meeting") }
+        }
+        .fileImporter(isPresented: $picking, allowedContentTypes: Self.audioTypes, allowsMultipleSelection: true) { result in
+            if case .success(let urls) = result { uploads.add(urls) }
+        }
         .confirmationDialog("Move this meeting to the Trash on the Mac?", isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
                             titleVisibility: .visible) {
             Button("Move to Trash", role: .destructive) {
@@ -153,5 +166,37 @@ struct MeetingDetailView: View {
         loading = true
         text = await model.text(meeting.id, kind)
         loading = false
+    }
+}
+
+/// The files that wait on the phone for the Mac, with the Mac's refusal for a file it would not take.
+private struct UploadsSection: View {
+    let uploads: MeetingUploadsModel
+
+    var body: some View {
+        if let message = uploads.message {
+            Label(message, systemImage: "exclamationmark.triangle").foregroundStyle(.orange).accessibilityIdentifier("upload-message")
+        }
+        ForEach(uploads.waiting) { upload in
+            HStack {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(upload.fileName).font(.headline).lineLimit(1)
+                    Text(uploads.sending ? "Sending to your Mac. The file stays here until the Mac has all of it." : "Waiting for your Mac.")
+                        .font(.caption).foregroundStyle(.secondary)
+                }
+                Spacer()
+                ProgressView()
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("upload-\(upload.id)")
+        }
+        ForEach(uploads.failed) { upload in
+            VStack(alignment: .leading, spacing: 4) {
+                Text(upload.fileName).font(.headline).lineLimit(1)
+                Text(upload.failure ?? "").font(.caption).foregroundStyle(.red)
+                Button("Dismiss") { uploads.dismiss(upload) }.font(.caption)
+            }
+            .accessibilityIdentifier("upload-failed-\(upload.id)")
+        }
     }
 }

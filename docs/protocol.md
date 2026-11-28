@@ -507,6 +507,8 @@ The other `MeetingsAPI` methods are not on the wire yet (see below).
 
 `meetings.stop` fails with `conflict` when no meeting is being recorded.
 
+The phone uploads an audio file over REST only, in parts that resume. `POST /v1/meeting-uploads` takes `{id, fileName, size}`, where `id` is a UUID the phone picks, and answers `{id, size, received}`; asking again with the same id returns the same upload. `PUT /v1/meeting-uploads/:id?offset=N` takes up to 4 MiB of raw bytes and answers the same object, or 409 when `N` is not `received`. `GET /v1/meeting-uploads/:id` answers where to continue. `POST /v1/meeting-uploads/:id/complete` answers 409 while bytes are missing and 400 with the Mac's own message for a file it refuses (type, 1 GB, 4 hours). Otherwise it answers `{accepted: id}`, which means the Mac holds every byte and the phone may delete its copy. The import runs after the answer.
+
 ### `assistant`
 
 `AssistantAPI.callTool(_:_:fromVoice:)` runs the assistant's tools. Its arguments and result are `[String: Any]` and `Result<Any, JobError>`, and the tools are the MCP tools of the Mac app.
@@ -615,6 +617,10 @@ audio, or an area that is not on the wire yet.
 | `GET /v1/meetings/:id/transcript` | none |
 | `POST /v1/meetings/:id/regenerate` | none |
 | `POST /v1/meetings/:id/ask` | none |
+| `POST /v1/meeting-uploads` | none |
+| `GET /v1/meeting-uploads/:id` | none |
+| `PUT /v1/meeting-uploads/:id` | none |
+| `POST /v1/meeting-uploads/:id/complete` | none |
 | `DELETE /v1/meetings/:id` | `meetings.delete` |
 | `GET /v1/settings` | `settings.get` |
 | `PATCH /v1/settings` | `settings.patch` |

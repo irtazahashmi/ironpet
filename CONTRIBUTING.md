@@ -45,7 +45,7 @@ The homepage clips in `web/public/videos/` (an MP4 and a JPEG poster each) are c
 
 ### iOS app
 
-`iOS/project.yml` describes the Xcode project (app plus the `IronPetWidget` extension). `xcodegen generate` in `iOS/` writes it, and `xcodebuild test -project iOS/IronPetRemote.xcodeproj -scheme IronPetRemote -destination 'platform=iOS Simulator,name=iPhone 17'` runs the tests. The Mac side is tested by `swift test`, which also runs the IronPetKit tests.
+`iOS/project.yml` describes the Xcode project (app plus the `IronPetWidget` and `IronPetShare` extensions). `xcodegen generate` in `iOS/` writes it, and `xcodebuild test -project iOS/IronPetRemote.xcodeproj -scheme IronPetRemote -destination 'platform=iOS Simulator,name=iPhone 17'` runs the tests. The Mac side is tested by `swift test`, which also runs the IronPetKit tests.
 
 `./scripts/ios_testflight.sh` archives the app and uploads it to TestFlight. On your Mac it signs with the Apple account signed in to Xcode, which must be on the team in `project.yml`; with `ASC_KEY_FILE`, `ASC_KEY_ID` and `ASC_ISSUER_ID` all set it signs with that App Store Connect API key instead, through Apple's cloud-managed signing, which is what the workflow below does. Either way it needs the `dev.ironpet.app` app to exist in App Store Connect. The App Group `group.dev.ironpet.app` must be enabled for the app and the widget extension on that team so the Home Screen widget can read the pet snapshot. Each upload needs a higher build number; the script uses the UTC time unless you pass one. The app icon comes from `swift tools/make_icon.swift <pet.png> iOS/IronPetRemote/Assets.xcassets/AppIcon.appiconset/icon-1024.png --ios`.
 

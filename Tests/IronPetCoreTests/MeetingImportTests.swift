@@ -245,4 +245,77 @@ final class MeetingImportTests: XCTestCase {
         for ext in ["m4a", "mp3", "wav"] { XCTAssertTrue(declaration.contains("<string>\(ext)</string>"), ext) }
         XCTAssertEqual(MeetingImporter.extensions, ["m4a", "mp3", "wav"])
     }
+
+    // MARK: Upload from the phone
+
+    private func uploadFolder() -> URL { dir.appendingPathComponent("uploads") }
+
+    private func uploadAPI() -> MeetingsAPI {
+        let api = MeetingsAPI(recorder: UnsupportedMeetingRecorder(), library: library)
+        api.uploads = MeetingUploads(folder: uploadFolder())
+        return api
+    }
+
+    // S1
+    func testAnUploadInPartsBecomesAMeetingAndItsPartsAreDeleted() async throws {
+        let api = uploadAPI()
+        let id = UUID().uuidString
+        let bytes = Data((0..<10).map { UInt8($0) })
+        XCTAssertEqual(try api.beginUpload(id: id, fileName: "standup.m4a", size: 10).received, 0)
+        XCTAssertEqual(try api.appendUpload(id: id, offset: 0, data: bytes.prefix(6)).received, 6)
+        XCTAssertEqual(try api.appendUpload(id: id, offset: 6, data: bytes.suffix(4)).received, 10)
+        let task = try api.completeUpload(id: id)
+        await task.value
+        XCTAssertEqual(folders(), ["2026-11-28-0930"])
+        XCTAssertTrue(api.meetings.first?.hasSummary == true)
+        XCTAssertEqual(try FileManager.default.contentsOfDirectory(atPath: uploadFolder().path), [], "nothing of the upload is left")
+    }
+
+    // S3
+    func testAPartThatIsSentAgainOrOutOfOrderIsRefusedWithTheAmountHeld() throws {
+        let uploads = MeetingUploads(folder: uploadFolder())
+        let id = UUID().uuidString
+        _ = try uploads.begin(id: id, fileName: "a.wav", size: 8)
+        _ = try uploads.append(id: id, offset: 0, data: Data([1, 2, 3, 4]))
+        XCTAssertThrowsError(try uploads.append(id: id, offset: 0, data: Data([1, 2, 3, 4]))) { XCTAssertEqual($0 as? MeetingUploads.Failure, .offset(held: 4)) }
+        XCTAssertThrowsError(try uploads.append(id: id, offset: 6, data: Data([5, 6]))) { XCTAssertEqual($0 as? MeetingUploads.Failure, .offset(held: 4)) }
+        XCTAssertThrowsError(try uploads.completed(id: id)) { XCTAssertEqual($0 as? MeetingUploads.Failure, .offset(held: 4)) }
+        XCTAssertThrowsError(try uploads.append(id: id, offset: 4, data: Data(count: 5))) { XCTAssertEqual($0 as? MeetingUploads.Failure, .invalid("the part goes past the end of the file")) }
+        // A new store on the same folder, as after a restart of the app, continues where the file ends.
+        let again = MeetingUploads(folder: uploadFolder())
+        XCTAssertEqual(try again.begin(id: id, fileName: "a.wav", size: 8).received, 4)
+        XCTAssertEqual(try again.append(id: id, offset: 4, data: Data([5, 6, 7, 8])).received, 8)
+        XCTAssertEqual(try Data(contentsOf: again.completed(id: id)), Data([1, 2, 3, 4, 5, 6, 7, 8]))
+    }
+
+    // S4
+    func testAnUploadOfTheWrongKindOrSizeIsRefusedWithTheMacsMessages() async throws {
+        let api = uploadAPI()
+        for (name, size, text) in [("talk.ogg", Int64(10), "m4a, mp3 and wav"), ("big.wav", MeetingImporter.maxBytes + 1, "1 GB")] {
+            XCTAssertThrowsError(try api.beginUpload(id: UUID().uuidString, fileName: name, size: size)) {
+                let error = try? XCTUnwrap($0 as? APIError)
+                XCTAssertEqual(error?.code, .invalid)
+                XCTAssertTrue(error?.message.contains(text) == true, "\(error?.message ?? "")")
+            }
+        }
+        XCTAssertThrowsError(try api.beginUpload(id: "../x", fileName: "a.wav", size: 5), "the id names a folder")
+        // The length is known only once the file is whole, and the answer is the one the Mac's import gives.
+        library.importer.transcoder = StubTranscoder(reportedSeconds: MeetingImporter.maxSeconds + 1)
+        let id = UUID().uuidString
+        _ = try api.beginUpload(id: id, fileName: "long.m4a", size: 3)
+        _ = try api.appendUpload(id: id, offset: 0, data: Data([1, 2, 3]))
+        XCTAssertThrowsError(try api.completeUpload(id: id)) { XCTAssertTrue(($0 as? APIError)?.message.contains("4 hour") == true) }
+        XCTAssertEqual(folders(), [])
+        XCTAssertThrowsError(try api.uploadStatus(id: id), "a refused file is deleted")
+    }
+
+    // S3
+    func testAnIncompleteUploadCannotBeCompleted() throws {
+        let api = uploadAPI()
+        let id = UUID().uuidString
+        _ = try api.beginUpload(id: id, fileName: "a.wav", size: 8)
+        _ = try api.appendUpload(id: id, offset: 0, data: Data([1, 2, 3]))
+        XCTAssertThrowsError(try api.completeUpload(id: id)) { XCTAssertEqual(($0 as? APIError)?.code, .conflict) }
+        XCTAssertEqual(try api.uploadStatus(id: id).received, 3)
+    }
 }
