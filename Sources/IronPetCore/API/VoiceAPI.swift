@@ -75,10 +75,12 @@ package final class VoiceAPI {
     package lazy var transcribeAudio: @Sendable (Data, String, String) async throws -> String = { [weak self] audio, name, mime in
         let voice = await MainActor.run { SettingsAPI.live.config.voice }
         let key = await MainActor.run { [weak self] in self?.voiceKey ?? .unsupported }
-        let transcriber = Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: key.load(), usageFeature: .voiceTranscription)
+        let prompt = await MainActor.run { VoiceVocabulary.shared.prompt() }
+        let transcriber = Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: key.load(), usageFeature: .voiceTranscription, prompt: prompt)
         // Decodes formats the server may not read (Telegram's Opus voice notes) when macOS can, and sends the rest as they are.
         let transcoder = await MainActor.run { [weak self] in self?.transcoder ?? UnsupportedAudioTranscoder() }
-        return try await TelegramVoice.transcribe(audio, name: name, with: transcriber, transcoder: transcoder)
+        let text = try await TelegramVoice.transcribe(audio, name: name, with: transcriber, transcoder: transcoder)
+        return text.isEmpty ? text : await VoiceVocabulary.shared.correct(text)
     }
 
     /// Decodes audio before it is sent. `AppDelegate` sets the Mac one.

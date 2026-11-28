@@ -41,8 +41,11 @@ final class VoiceController: ObservableObject {
     var voiceKey = VoiceKey.unsupported
     lazy var makeTranscriber: () -> Transcriber = { [weak self] in
         let voice = ConfigStore.shared.config.voice
-        return Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: self?.voiceKey.load(), usageFeature: .voiceTranscription)
+        return Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: self?.voiceKey.load(), usageFeature: .voiceTranscription,
+                           prompt: VoiceVocabulary.shared.prompt())
     }
+    /// Spells known terms correctly in a transcript. Tests replace it.
+    var correct: (String) async -> String = { await VoiceVocabulary.shared.correct($0) }
     var isEnabled: () -> Bool = { ConfigStore.shared.config.voice.enabled }
 
     private var source: AudioSource?
@@ -190,7 +193,8 @@ final class VoiceController: ObservableObject {
         let transcriber = makeTranscriber()
         transcription = Task { [weak self] in
             do {
-                let text = try await transcriber.transcribe(wav: wav)
+                let raw = try await transcriber.transcribe(wav: wav)
+                let text = raw.isEmpty ? raw : await self?.correct(raw) ?? raw
                 self?.finished(text)
             } catch is CancellationError {
                 // cancel() already reset the state.

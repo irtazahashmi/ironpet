@@ -58,7 +58,8 @@ package struct Transcriber {
         session: URLSession = .shared,
         timeout: TimeInterval = 120,
         usageFeature: UsageFeature? = nil,
-        usageStore: UsageStore? = nil
+        usageStore: UsageStore? = nil,
+        prompt: String? = nil
     ) {
         self.baseURL = baseURL
         self.model = model
@@ -67,6 +68,7 @@ package struct Transcriber {
         self.timeout = timeout
         self.usageFeature = usageFeature
         self.usageStore = usageStore
+        self.prompt = prompt
     }
 
     package var baseURL: String
@@ -79,6 +81,9 @@ package struct Transcriber {
     package var usageFeature: UsageFeature?
     /// Where usage goes. Nil uses the app's `UsageStore.shared`.
     package var usageStore: UsageStore?
+    /// Sent as the `prompt` field when non-empty, so Whisper-style servers lean toward these spellings. Servers that do not
+    /// know the field ignore it. Nil sends nothing, as before.
+    package var prompt: String?
 
     /// A voice note. Asks for timed segments and drops the ones the audio does not support (see `SegmentFilter`), so
     /// silence does not come back as "Thank you.". Falls back to plain `json` the same way `transcribeSegments` does.
@@ -172,7 +177,7 @@ package struct Transcriber {
         var request = try makeRequest()
         let boundary = "ironpet-" + UUID().uuidString
         request.setValue("multipart/form-data; boundary=\(boundary)", forHTTPHeaderField: "Content-Type")
-        let body = Self.multipartBody(boundary: boundary, wav: wav, model: model, format: format, filename: filename, mime: mime)
+        let body = Self.multipartBody(boundary: boundary, wav: wav, model: model, format: format, filename: filename, mime: mime, prompt: prompt)
 
         let data: Data
         let response: URLResponse
@@ -215,13 +220,14 @@ package struct Transcriber {
     }
 
     package static func multipartBody(boundary: String, wav: Data, model: String, format: String = "json",
-                              filename: String = "voice-note.wav", mime: String = "audio/wav") -> Data {
+                              filename: String = "voice-note.wav", mime: String = "audio/wav", prompt: String? = nil) -> Data {
         var body = Data()
         func field(_ name: String, _ value: String) {
             body.append(Data("--\(boundary)\r\nContent-Disposition: form-data; name=\"\(name)\"\r\n\r\n\(value)\r\n".utf8))
         }
         field("model", model)
         field("response_format", format)
+        if let prompt, !prompt.isEmpty { field("prompt", prompt) }
         body.append(Data(("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"\(filename)\"\r\n"
             + "Content-Type: \(mime)\r\n\r\n").utf8))
         body.append(wav)

@@ -28,8 +28,10 @@ package final class SpokenMessageRecorder: ObservableObject {
     package var voiceKey = VoiceKey.unsupported
     package lazy var transcribe: (Data) async throws -> String = { [weak self] wav in
         let voice = ConfigStore.shared.config.voice
-        return try await Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: self?.voiceKey.load(), timeout: 30,
-                                     usageFeature: .voiceTranscription).transcribe(wav: wav)
+        let prompt = await MainActor.run { VoiceVocabulary.shared.prompt() }
+        let text = try await Transcriber(baseURL: voice.baseUrl, model: voice.model, apiKey: self?.voiceKey.load(), timeout: 30,
+                                         usageFeature: .voiceTranscription, prompt: prompt).transcribe(wav: wav)
+        return text.isEmpty ? text : await VoiceVocabulary.shared.correct(text)
     }
     /// The transcribed message, to send to the chat.
     package var onMessage: (String) -> Void = { _ in }
