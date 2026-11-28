@@ -275,11 +275,11 @@ final class InboxMaintenanceTests: XCTestCase {
         XCTAssertEqual(store.resolved().first?.sources.first?.kind, .meeting)
     }
 
-    // MARK: Migration 594
+    // MARK: Migration 604
 
     /// S11: items resolved before the resolver was stored list with their reason and time, and the resolver reads as unknown.
-    func testMigration594KeepsOldResolvedRowsAndTheirResolverReadsAsUnknown() throws {
-        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-594-\(UUID().uuidString)")
+    func testMigration604KeepsOldResolvedRowsAndTheirResolverReadsAsUnknown() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-604-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let path = dir.appendingPathComponent("ironpet.db")

@@ -207,7 +207,9 @@ package final class TaskStore {
             CREATE TABLE IF NOT EXISTS inbox_scan_cursors(key TEXT PRIMARY KEY, item TEXT NOT NULL, at REAL NOT NULL) WITHOUT ROWID;
             """),
         // Who resolved an item. Items resolved before this keep the column empty, and the Inbox says the resolver is unknown.
-        .init(594, "inbox: who resolved an item") { db in
+        // Numbered above every other feature's migrations, because a database already at a higher version would skip it. It was 594
+        // once, below the 600 to 603 of other stores, and databases at 603 never got the column. `MigrationOrderTests` checks this.
+        .init(604, "inbox: who resolved an item") { db in
             if try !TaskStore.columns(db, "task_suggestion_resolved").contains("resolved_by") {
                 try db.execute("ALTER TABLE task_suggestion_resolved ADD COLUMN resolved_by TEXT")
             }
