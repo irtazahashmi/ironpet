@@ -9,6 +9,7 @@ struct MoreView: View {
     let alerts: AlertsModel
     let automations: AutomationsModel
     let meetings: MeetingsModel
+    let uploads: MeetingUploadsModel
     let memory: MemoryModel
     let screen: ScreenModel
     let settings: PhoneSettingsModel
@@ -63,7 +64,7 @@ struct MoreView: View {
                 switch destination {
                 case .alerts: AlertsView(model: alerts)
                 case .automations: AutomationsView(model: automations)
-                case .meetings: MeetingsView(model: meetings)
+                case .meetings: MeetingsView(model: meetings, uploads: uploads)
                 case .memory: MemoryView(model: memory)
                 case .memoryPage(let id): MemoryPageView(model: memory, id: id)
                 case .screen: ScreenView(model: screen)

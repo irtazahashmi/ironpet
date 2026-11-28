@@ -104,7 +104,8 @@ final class RemoteServer {
     nonisolated static let uploadRoute = "/v1/uploads"
     nonisolated static let backgroundRoute = "/v1/settings/background"
     /// The routes that take a body past 1 MiB.
-    nonisolated static let largeBodyRoutes: Set<String> = [uploadRoute, backgroundRoute]
+    nonisolated static let meetingUploadRoute = "/v1/meeting-uploads/:id"
+    nonisolated static let largeBodyRoutes: Set<String> = [uploadRoute, backgroundRoute, meetingUploadRoute]
     /// The longest message the event socket reads from a device.
     nonisolated static let maxSocketMessage = 16 << 10
 
@@ -476,7 +477,7 @@ final class RemoteServer {
         }
     }
 
-    /// Meetings (phase 4). There is no route that starts a recording or serves audio.
+    /// Meetings (phase 4). There is no route that starts a recording or serves audio. The upload routes take audio from the phone.
     private func addMeetingRoutes(to router: Router<RemoteContext>) {
         router.get("/v1/meetings") { [self] _, context in await self.phoneFour(context) { api, _ in RemoteMeetings(api: api).list() } }
         router.get("/v1/meetings/state") { [self] _, context in await self.phoneFour(context) { api, _ in RemoteMeetings(api: api).state() } }
@@ -496,6 +497,33 @@ final class RemoteServer {
         router.post("/v1/meetings/:id/ask") { [self] _, context in
             let id = Self.parameter(context, "id")
             return await self.phoneFour(context) { api, _ in try RemoteMeetings(api: api).ask(id) }
+        }
+        // An audio file in parts of up to 4 MiB, each sent with the offset it starts at. The phone may ask how much the Mac holds and go
+        // on from there. `complete` checks the file and starts the import.
+        router.post("/v1/meeting-uploads") { [self] request, context in
+            let body = try await Self.object(request, context)
+            guard let id = body["id"] as? String, let name = body["fileName"] as? String, let size = (body["size"] as? NSNumber)?.int64Value else {
+                return Self.errorResponse(RemoteFailure.invalid("id, fileName and size are needed"))
+            }
+            return await self.phoneFour(context) { api, _ in try RemoteMeetings(api: api).beginUpload(id: id, fileName: name, size: size) }
+        }
+        router.get("/v1/meeting-uploads/:id") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.phoneFour(context) { api, _ in try RemoteMeetings(api: api).uploadStatus(id) }
+        }
+        router.put("/v1/meeting-uploads/:id") { [self] request, context in
+            guard context.device != nil else { return Self.error(401, "unauthorized", "unauthorized") }
+            let id = Self.parameter(context, "id")
+            guard let offset = Self.query(request)["offset"]?.first.flatMap({ Int64($0) }), offset >= 0 else {
+                return Self.errorResponse(RemoteFailure.invalid("offset is needed"))
+            }
+            let buffer = try await request.body.collect(upTo: RemoteUploads.maxBytes)
+            let data = Data(buffer.readableBytesView)
+            return await self.phoneFour(context) { api, _ in try RemoteMeetings(api: api).uploadPart(id, offset: offset, data: data) }
+        }
+        router.post("/v1/meeting-uploads/:id/complete") { [self] _, context in
+            let id = Self.parameter(context, "id")
+            return await self.phoneFour(context) { api, _ in try RemoteMeetings(api: api).completeUpload(id) }
         }
         router.delete("/v1/meetings/:id") { [self] _, context in
             let id = Self.parameter(context, "id")

@@ -27,6 +27,8 @@ targets:
         product: IronPetKit
       - target: IronPetWidget
         embed: true
+      - target: IronPetShare
+        embed: true
     # Mermaid diagrams in the chat: the Mac's mermaid.html plus the pinned mermaid.js that scripts/fetch_mermaid.sh downloads
     # (checked against its SHA-256) go into the app's resources. Offline the script copies nothing and diagrams show as code.
     preBuildScripts:
@@ -43,6 +45,9 @@ targets:
           fi
     entitlements:
       path: IronPetRemote/IronPetRemote.entitlements
+      # Shared with the share extension: audio shared from another app waits here for the app to send it.
+      properties:
+        com.apple.security.application-groups: [group.dev.ironpet.app]
     info:
       path: IronPetRemote/Info.plist
       properties:
@@ -97,6 +102,36 @@ targets:
         GENERATE_INFOPLIST_FILE: NO
         TARGETED_DEVICE_FAMILY: "1"
         LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
+  # The share sheet entry for audio (Voice Memos, a Zoom or Teams export). It copies the file into the app group, where the app finds it.
+  IronPetShare:
+    type: app-extension
+    platform: iOS
+    sources:
+      - IronPetShare
+    dependencies:
+      - package: IronPetKit
+        product: IronPetKit
+    entitlements:
+      path: IronPetShare/IronPetShare.entitlements
+      properties:
+        com.apple.security.application-groups: [group.dev.ironpet.app]
+    info:
+      path: IronPetShare/Info.plist
+      properties:
+        CFBundleDisplayName: IronPet
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        NSExtension:
+          NSExtensionPointIdentifier: com.apple.share-services
+          NSExtensionPrincipalClass: $(PRODUCT_MODULE_NAME).ShareViewController
+          NSExtensionAttributes:
+            NSExtensionActivationRule: SUBQUERY(extensionItems, $item, SUBQUERY($item.attachments, $attachment, ANY $attachment.registeredTypeIdentifiers UTI-CONFORMS-TO "public.audio").@count >= 1).@count >= 1
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.ironpet.app.share
+        GENERATE_INFOPLIST_FILE: NO
+        TARGETED_DEVICE_FAMILY: "1"
+        LD_RUNPATH_SEARCH_PATHS: "$(inherited) @executable_path/Frameworks @executable_path/../../Frameworks"
   IronPetRemoteTests:
     type: bundle.unit-test
     platform: iOS
@@ -133,6 +168,7 @@ schemes:
       targets:
         IronPetRemote: all
         IronPetWidget: all
+        IronPetShare: all
     test:
       targets:
         - IronPetRemoteTests

@@ -1,4 +1,5 @@
 import Foundation
+import IronPetKit
 #if canImport(Combine)
 import Combine
 #endif
@@ -18,9 +19,9 @@ package struct MeetingImportError: LocalizedError, Equatable {
 /// room recording. The transcript, speakers and summary therefore come from the pipeline a recording uses.
 @MainActor
 package final class MeetingImporter {
-    package nonisolated static let maxBytes: Int64 = 1_073_741_824
-    package nonisolated static let maxSeconds: Double = 4 * 3600
-    package nonisolated static let extensions = ["m4a", "mp3", "wav"]
+    package nonisolated static let maxBytes = MeetingUploadLimits.maxBytes
+    package nonisolated static let maxSeconds = MeetingUploadLimits.maxSeconds
+    package nonisolated static let extensions = MeetingUploadLimits.extensions
     /// What the transcript header calls the app.
     package nonisolated static let appName = "Imported audio"
 
@@ -105,20 +106,10 @@ package final class MeetingImporter {
     /// Refuses a file ironpet will not import. Checks the extension, the size and the length, in that order, so a
     /// large file of the wrong kind is refused for its kind.
     package func validate(_ file: URL) throws {
-        let ext = file.pathExtension.lowercased()
-        guard Self.extensions.contains(ext) else {
-            throw fail("ironpet imports m4a, mp3 and wav files. \(file.lastPathComponent) is not one of them.")
-        }
-        guard let size = fileSize(file) else { throw fail("Could not read \(file.lastPathComponent).") }
-        guard size <= Self.maxBytes else {
-            throw fail("\(file.lastPathComponent) is larger than the 1 GB limit for an imported file.")
-        }
-        guard let seconds = transcoder.duration(of: file) else {
-            throw fail("\(file.lastPathComponent) could not be read as audio.")
-        }
-        guard seconds <= Self.maxSeconds else {
-            throw fail("\(file.lastPathComponent) is longer than the 4 hour limit for an imported file.")
-        }
+        let name = file.lastPathComponent
+        if let refusal = MeetingUploadLimits.refusal(fileName: name, size: fileSize(file)) { throw fail(refusal) }
+        guard let seconds = transcoder.duration(of: file) else { throw fail(MeetingUploadLimits.notAudio(name)) }
+        guard seconds <= Self.maxSeconds else { throw fail(MeetingUploadLimits.tooLong(name)) }
     }
 
     private func fail(_ message: String) -> MeetingImportError {

@@ -239,6 +239,73 @@ final class RemotePhaseFourTests: XCTestCase {
         XCTAssertEqual(missing.status, 404)
     }
 
+    // MARK: Upload from the phone
+
+    private struct FixedLengthTranscoder: AudioTranscoder {
+        func wav(from file: URL, maxSeconds: Double) throws -> Data? { nil }
+        func duration(of file: URL) -> Double? { 3 }
+        func stream(from file: URL, body: ([Int16]) throws -> Void) throws -> Bool {
+            try body((0..<(3 * WAV.sampleRate)).map { Int16($0 / 20 % 2 == 0 ? 8000 : -8000) })
+            return true
+        }
+    }
+
+    private func put(_ path: String, _ data: Data, token: String?) async throws -> RemoteReply {
+        var request = URLRequest(url: URL(string: "http://127.0.0.1:\(h.port)\(path)")!)
+        request.httpMethod = "PUT"
+        if let token { request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization") }
+        request.httpBody = data
+        let (body, response) = try await h.session.data(for: request)
+        return RemoteReply(status: (response as! HTTPURLResponse).statusCode, data: body, headers: [:])
+    }
+
+    // S1, S3
+    func testAnAudioFileUploadedInPartsOverTheRoutesBecomesAMeeting() async throws {
+        library.importer.transcoder = FixedLengthTranscoder()
+        let before = library.meetings.count
+        h.api.meetings.uploads = MeetingUploads(folder: root.appendingPathComponent("uploads"))
+        let id = UUID().uuidString
+        let bytes = Data((0..<20).map { UInt8($0) })
+
+        let r1 = try await h.request("POST", "/v1/meeting-uploads", body: ["id": id, "fileName": "standup.m4a", "size": 20])
+        XCTAssertEqual(r1.status, 401)
+        let r2 = try await put("/v1/meeting-uploads/\(id)?offset=0", bytes, token: nil)
+        XCTAssertEqual(r2.status, 401)
+
+        let begun = try await post("/v1/meeting-uploads", ["id": id, "fileName": "standup.m4a", "size": 20])
+        XCTAssertEqual(begun.status, 200, String(decoding: begun.data, as: UTF8.self))
+        XCTAssertEqual(begun.json["received"] as? Int, 0)
+        let first = try await put("/v1/meeting-uploads/\(id)?offset=0", bytes.prefix(12), token: token)
+        XCTAssertEqual(first.json["received"] as? Int, 12)
+        let wrong = try await put("/v1/meeting-uploads/\(id)?offset=0", bytes.prefix(12), token: token)
+        XCTAssertEqual(wrong.status, 409, "a part sent again is refused")
+        let r3 = try await get("/v1/meeting-uploads/\(id)")
+        XCTAssertEqual(r3.json["received"] as? Int, 12, "the phone asks where to continue")
+        let r4 = try await post("/v1/meeting-uploads/\(id)/complete")
+        XCTAssertEqual(r4.status, 409, "a file that is not whole is not imported")
+        let r5 = try await put("/v1/meeting-uploads/\(id)?offset=12", bytes.suffix(8), token: token)
+        XCTAssertEqual(r5.json["received"] as? Int, 20)
+        let done = try await post("/v1/meeting-uploads/\(id)/complete")
+        XCTAssertEqual(done.status, 200, String(decoding: done.data, as: UTF8.self))
+        XCTAssertEqual(done.json["accepted"] as? String, id)
+        // The import runs after the answer. It makes the meeting's folder before it transcribes.
+        for _ in 0..<100 where library.meetings.count == before {
+            try await Task.sleep(nanoseconds: 50_000_000)
+            library.reload()
+        }
+        XCTAssertEqual(library.meetings.count, before + 1, "the upload became a meeting")
+    }
+
+    // S4
+    func testTheUploadRoutesRefuseTheWrongKindAndSizeWithTheMacsMessages() async throws {
+        let wrongKind = try await post("/v1/meeting-uploads", ["id": UUID().uuidString, "fileName": "talk.ogg", "size": 20])
+        XCTAssertEqual(wrongKind.status, 400)
+        XCTAssertTrue(String(decoding: wrongKind.data, as: UTF8.self).contains("m4a, mp3 and wav"))
+        let tooBig = try await post("/v1/meeting-uploads", ["id": UUID().uuidString, "fileName": "big.wav", "size": 1_073_741_825])
+        XCTAssertEqual(tooBig.status, 400)
+        XCTAssertTrue(String(decoding: tooBig.data, as: UTF8.self).contains("1 GB"))
+    }
+
     // MARK: Settings
 
     // S3

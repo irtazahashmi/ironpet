@@ -83,6 +83,7 @@ After the summary of a room recording or an imported file, the summary agent als
 - The audio goes to the transcription server from Settings → Voice, so tell the people on the recording. Video files are not imported.
 - When the audio was saved but the transcript or summary failed, the meeting stays in the list. **Regenerate** tries again.
 - One import or regeneration runs at a time. Several dropped files are imported one after another.
+- From the iPhone, **Upload** in the Meetings screen or the share sheet sends a file to this Mac, which imports it the same way and refuses it with the same messages. See [the iPhone page](/docs/iphone/#what-the-phone-shows).
 
 ### Regenerate
 

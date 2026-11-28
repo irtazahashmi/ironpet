@@ -155,6 +155,8 @@ package final class MeetingsAPI {
     package init(recorder: MeetingRecorder, library: MeetingLibrary) {
         self.recorder = recorder
         self.library = library
+        // Parts of an upload that never finished are of no use after two days.
+        uploads.removeStale(olderThan: 2 * 86400)
         forwarding = [
             recorder.changes.observe { [weak self] in self?.changes.send() },
             library.changes.observe { [weak self] in self?.changes.send() },
@@ -311,6 +313,61 @@ package final class MeetingsAPI {
             throw APIError.invalid(error.message)
         }
         return try get(record.id)
+    }
+
+    // MARK: Upload from the phone
+
+    /// Where parts of an upload wait until the file is whole. The app owner points it at a folder of its own.
+    package var uploads = MeetingUploads(folder: FileManager.default.temporaryDirectory.appendingPathComponent("ironpet-uploads"))
+
+    /// Uploads whose import started. A phone that lost the answer to `complete` asks again, and must neither import the file twice nor
+    /// send it again.
+    private var completedUploads: [String: (size: Int64, task: Task<Void, Never>)] = [:]
+
+    package func beginUpload(id: String, fileName: String, size: Int64) throws -> RemoteUploadStatus {
+        if let done = completedUploads[id.uppercased()], done.size == size { return RemoteUploadStatus(id: id.uppercased(), size: size, received: size) }
+        return try uploadCall { try uploads.begin(id: id, fileName: fileName, size: size) }
+    }
+
+    package func uploadStatus(id: String) throws -> RemoteUploadStatus { try uploadCall { try uploads.status(id: id) } }
+
+    package func appendUpload(id: String, offset: Int64, data: Data) throws -> RemoteUploadStatus {
+        try uploadCall { try uploads.append(id: id, offset: offset, data: data) }
+    }
+
+    /// Checks the whole file with the checks of the Mac's own import, then imports it in the background, after any import that is
+    /// running. Returning means the Mac holds every byte, which is when the phone may delete its copy. A refused file is deleted here.
+    /// Returns the task that ends when the import is done.
+    @discardableResult
+    package func completeUpload(id: String) throws -> Task<Void, Never> {
+        if let done = completedUploads[id.uppercased()] { return done.task }
+        let file = try uploadCall { try uploads.completed(id: id) }
+        do {
+            try library.importer.validate(file)
+        } catch let error as MeetingImportError {
+            uploads.discard(id: id)
+            throw APIError.invalid(error.message)
+        }
+        let previous = importTask
+        let task = Task { @MainActor [weak self] in
+            await previous?.value
+            guard let self else { return }
+            _ = try? await self.library.importer.importAudio(file: file, date: self.library.importer.now())
+            self.uploads.discard(id: id)
+        }
+        importTask = task
+        completedUploads[id.uppercased()] = (try uploadCall { try uploads.status(id: id).size }, task)
+        return task
+    }
+
+    private func uploadCall<T>(_ body: () throws -> T) throws -> T {
+        do { return try body() } catch let failure as MeetingUploads.Failure {
+            switch failure {
+            case .invalid(let message): throw APIError.invalid(message)
+            case .notFound: throw APIError.notFound("no upload with that id")
+            case .offset(let held): throw APIError.conflict("the Mac holds \(held) bytes of this upload")
+            }
+        }
     }
 
     /// Starts importing each file one after the other, for a drop on the list and for Open With. Returns the task, which
