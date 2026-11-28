@@ -6,7 +6,8 @@ import Combine
 
 /// A meeting as a client that cannot read the Mac's folders sees it.
 package struct MeetingInfo: Codable, Equatable, Identifiable {
-    package init(id: String, date: Date, preview: String, hasSummary: Bool, hasTranscript: Bool, hasAudio: Bool, active: Bool, ref: String? = nil) {
+    package init(id: String, date: Date, preview: String, hasSummary: Bool, hasTranscript: Bool, hasAudio: Bool, active: Bool, ref: String? = nil,
+                         room: Bool? = nil) {
         self.id = id
         self.ref = ref
         self.date = date
@@ -15,6 +16,7 @@ package struct MeetingInfo: Codable, Equatable, Identifiable {
         self.hasTranscript = hasTranscript
         self.hasAudio = hasAudio
         self.active = active
+        self.room = room
     }
 
     package var id: String
@@ -29,6 +31,8 @@ package struct MeetingInfo: Codable, Equatable, Identifiable {
     package var active: Bool
     /// The meeting's public id (`meeting_…`), from its marker file in the folder.
     package var ref: String?
+    /// True for a meeting recorded in a room. Absent from a Mac that does not know about rooms.
+    package var room: Bool?
 }
 
 package enum MeetingText: String, Codable {
@@ -154,7 +158,8 @@ package final class MeetingsAPI {
         return library.meetings.map { meeting in
             MeetingInfo(id: meeting.id, date: meeting.date, preview: meeting.preview, hasSummary: meeting.hasSummary,
                         hasTranscript: meeting.hasTranscript, hasAudio: meeting.hasAudio, active: meeting.folder == active,
-                        ref: records.flatMap { MeetingIdentity.ref(folder: meeting.folder, records: $0) })
+                        ref: records.flatMap { MeetingIdentity.ref(folder: meeting.folder, records: $0) },
+                        room: meeting.isRoom ? true : nil)
         }
     }
 
@@ -291,6 +296,8 @@ package final class MeetingsAPI {
     package var choice: AudioChoice { get { recorder.choice } set { recorder.choice = newValue } }
     package var notice: String? { recorder.notice }
     package var appName: String { recorder.appName }
+    /// The open meeting records the microphone alone.
+    package var isRoom: Bool { recorder.isRoom }
     package var startedAt: Date? { recorder.startedAt }
     /// The name of the folder the open meeting is saved in.
     package var folderLabel: String { recorder.folder?.lastPathComponent ?? "" }

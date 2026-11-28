@@ -1,14 +1,33 @@
 import Foundation
 
-/// Whose voice a line is: the microphone is "Me", the recorded app is "Them".
+/// Whose voice a line is: the microphone is "Me", the recorded app is "Them". A room meeting has one track, the
+/// microphone alone, called "Room" because several people speak into it.
 package enum MeetingTrack: String, CaseIterable, Comparable {
     case me = "Me"
     case them = "Them"
+    case room = "Room"
 
-    /// File prefix of a track's chunks: `mic-001.wav`, `them-001.wav`.
-    package var filePrefix: String { self == .me ? "mic" : "them" }
+    /// File prefix of a track's chunks: `mic-001.wav`, `them-001.wav`, `room-001.wav`.
+    package var filePrefix: String {
+        switch self {
+        case .me: return "mic"
+        case .them: return "them"
+        case .room: return "room"
+        }
+    }
 
-    package static func < (lhs: MeetingTrack, rhs: MeetingTrack) -> Bool { lhs == .me && rhs == .them }
+    /// Tracks that carry more than one voice, so speaker recognition splits them.
+    package var hasSeveralVoices: Bool { self != .me }
+
+    private var rank: Int {
+        switch self {
+        case .me: return 0
+        case .them: return 1
+        case .room: return 2
+        }
+    }
+
+    package static func < (lhs: MeetingTrack, rhs: MeetingTrack) -> Bool { lhs.rank < rhs.rank }
 }
 
 /// One line of the transcript, with `start` in seconds from the start of the meeting.
@@ -24,7 +43,7 @@ package struct MeetingLine: Equatable {
     package var track: MeetingTrack
     package var start: TimeInterval
     package var text: String
-    /// Which voice of the meeting spoke, when speaker recognition ran on this line's chunk. Only "Them" lines have one.
+    /// Which voice of the meeting spoke, when speaker recognition ran on this line's chunk. Only "Them" and "Room" lines have one.
     package var speakerId: Int?
     /// What the line shows in place of "Them": a name, or "Speaker 2" until the user names that voice.
     package var speaker: String?
@@ -69,11 +88,11 @@ package enum MeetingTranscript {
             let text = segment.text.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !isSilenceOnly(text) else { return nil }
             return MeetingLine(track: track, start: offset + max(0, segment.start), text: text,
-                               speakerId: track == .them ? speaker(for: segment, in: turns) : nil)
+                               speakerId: track.hasSeveralVoices ? speaker(for: segment, in: turns) : nil)
         }
     }
 
-    /// The speaker whose turns cover at least half of the segment. Anything less stays "Them".
+    /// The speaker whose turns cover at least half of the segment. Anything less keeps the track name.
     package static func speaker(for segment: TimedSegment, in turns: [SpeakerTurn]) -> Int? {
         let length = segment.end - segment.start
         guard length > 0 else { return nil }

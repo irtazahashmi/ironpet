@@ -29,6 +29,8 @@ final class TestControl {
         let meetingFrame: () -> CGRect
         /// The title of the pet menu's meeting item, or "" when the menu has none.
         let meetingMenuTitle: () -> String
+        /// The title of the pet menu's room item, or "" when the menu has none.
+        let meetingRoomMenuTitle: () -> String
         /// Whether the meeting bubble is on screen, and whether the pet shows its Recording button.
         let meetingUI: () -> (bubble: Bool, button: Bool)
         /// Closes the meeting bubble as the user would (`false`), or clicks the pet's Recording button (`true`).
@@ -532,7 +534,8 @@ final class TestControl {
     private func startMeeting(_ body: [String: Any]) -> Data {
         let meeting = actions.meeting
         guard ConfigStore.shared.config.meetings.enabled else { return Self.encode(["ok": false, "error": "meetings are off"]) }
-        let them = body["them"] as? String
+        let room = body["room"] as? Bool == true
+        let them = room ? nil : body["them"] as? String
         guard let mic = body["mic"] as? String, FileManager.default.fileExists(atPath: mic),
               them == nil || FileManager.default.fileExists(atPath: them!) else {
             return Self.encode(["ok": false, "error": "mic or them file is missing"])
@@ -541,7 +544,7 @@ final class TestControl {
         if let seconds = (body["chunkSeconds"] as? NSNumber)?.doubleValue, seconds > 0 { lengths = .test(seconds) }
         if let delay = (body["retrySeconds"] as? NSNumber)?.doubleValue { meeting.backoff = { _ in delay } }
         do {
-            try meeting.startTest(mic: URL(fileURLWithPath: mic), them: them.map { URL(fileURLWithPath: $0) },
+            try meeting.startTest(mic: URL(fileURLWithPath: mic), them: them.map { URL(fileURLWithPath: $0) }, room: room,
                                   appName: body["app"] as? String ?? "Test audio", lengths: lengths)
         } catch {
             return Self.encode(["ok": false, "error": error.localizedDescription])
@@ -579,10 +582,12 @@ final class TestControl {
             "lines": meeting.recentLines.map { "\($0.track.rawValue): \($0.text)" },
             "notice": meeting.notice ?? "",
             "app": meeting.appName,
-            "choices": meeting.apps.map(\.name) + ["All system audio"],
+            "choices": meeting.apps.map(\.name) + ["All system audio", AudioChoice.room.name],
             "selected": meeting.choice.name,
             "frame": [frame.minX, frame.minY, frame.width, frame.height],
             "menuTitle": actions.meetingMenuTitle(),
+            "roomMenuTitle": actions.meetingRoomMenuTitle(),
+            "room": meeting.isRoom,
             "callOffer": actions.callOffer(),
             "bubbleShown": actions.meetingUI().bubble,
             "recordingButton": actions.meetingUI().button,

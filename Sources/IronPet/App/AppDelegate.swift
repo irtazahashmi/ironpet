@@ -1234,6 +1234,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     return CGRect(x: frame.minX, y: screen.frame.height - frame.maxY, width: frame.width, height: frame.height)
                 },
                 meetingMenuTitle: { [weak self] in self?.meetingMenuItem()?.title ?? "" },
+                meetingRoomMenuTitle: { [weak self] in self?.roomMenuItem()?.title ?? "" },
                 meetingUI: { [weak self] in
                     ((self?.announcer.bubbles.bubbles.contains { $0.id == Self.meetingBubbleID }) == true,
                      self?.pet.view.recording == .hidden)
@@ -1681,8 +1682,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         meeting.showPicker()
     }
 
+    /// Opens the picker with Room chosen. The user still presses Start recording.
+    @objc private func startRoomMeeting(_ sender: Any?) {
+        meeting.showPicker()
+        guard meeting.phase == .choosing else { return }
+        meeting.choice = .room
+    }
+
     @objc private func stopMeeting(_ sender: Any?) {
         meeting.stop()
+    }
+
+    private func roomMenuItem() -> NSMenuItem? {
+        guard config.config.meetings.enabled, meeting.phase != .recording else { return nil }
+        let item = NSMenuItem(title: "Record meeting in the room", action: #selector(startRoomMeeting), keyEquivalent: "")
+        item.target = self
+        item.isEnabled = !meeting.isBusy
+        return item
     }
 
     private func meetingMenuItem() -> NSMenuItem? {
@@ -1712,7 +1728,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         login.state = LoginItem.isEnabled ? .on : .off
         let settings = NSMenuItem(title: "Settings…", action: #selector(showSettings(_:)), keyEquivalent: ",")
         for item in [system, login, settings] { item.target = self }
-        return [meetingMenuItem(), captureMenuItem(), settings, automationsMenuItem(), integrationsMenuItem(), system, login]
+        return [meetingMenuItem(), roomMenuItem(), captureMenuItem(), settings, automationsMenuItem(), integrationsMenuItem(), system, login]
             .compactMap { $0 } + versionMenuItems()
     }
 

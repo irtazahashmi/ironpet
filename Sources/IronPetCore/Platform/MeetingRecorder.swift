@@ -25,6 +25,8 @@ package protocol MeetingRecorder: AnyObject {
     var choice: AudioChoice { get set }
     var notice: String? { get }
     var appName: String { get }
+    /// The open meeting records the microphone alone, so there is one track and no Me or Them.
+    var isRoom: Bool { get }
     var startedAt: Date? { get }
     var folder: URL? { get }
     var myLevels: LevelBuffer { get }
@@ -64,6 +66,7 @@ package protocol MeetingRecorder: AnyObject {
 
 extension MeetingRecorder {
     package nonisolated var isSupported: Bool { true }
+    package var isRoom: Bool { false }
 }
 
 /// A recorder that cannot record. `MeetingsAPI` over it reports an idle meeting and refuses to start one.

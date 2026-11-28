@@ -74,6 +74,9 @@ final class SystemAudioSource: NSObject, TrackSource, SCStreamOutput, SCStreamDe
         switch choice {
         case .allSystemAudio:
             filter = SCContentFilter(display: display, excludingApplications: [], exceptingWindows: [])
+        case .room:
+            // A room meeting records the microphone only and never asks for a system audio source.
+            throw MeetingError.noDisplay
         case .app(let app):
             guard let running = content.applications.first(where: { $0.bundleIdentifier == app.bundleID }) else {
                 throw MeetingError.appNotRunning(app.name)
