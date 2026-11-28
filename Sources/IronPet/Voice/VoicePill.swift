@@ -40,8 +40,8 @@ struct VoicePillView: View {
                     .background(Color.primary.opacity(0.08), in: Circle())
             }
             .buttonStyle(.plain)
-            .help("Discard the message (Esc)")
-            .accessibilityLabel("Discard spoken message")
+            .help("End voice mode (Esc)")
+            .accessibilityLabel("End voice mode")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 9)
@@ -60,13 +60,14 @@ extension SpokenMessageRecorder.State {
         case .idle: return "Voice"
         case .listening: return "Listening…"
         case .transcribing: return "Got it…"
+        case .waiting: return "Waiting for the reply…"
         }
     }
 
     var symbol: String {
         switch self {
         case .idle, .listening: return SharedSymbols.microphoneActive
-        case .transcribing: return "ellipsis"
+        case .transcribing, .waiting: return "ellipsis"
         }
     }
 }

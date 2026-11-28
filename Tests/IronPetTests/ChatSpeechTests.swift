@@ -209,6 +209,37 @@ final class ChatSpeechTests: XCTestCase {
         XCTAssertEqual(quietChecks, 0, "the quiet check polls the microphone list, so it must not run while off")
     }
 
+    // MARK: Turn end for voice mode
+
+    func testSpokenTurnEndFiresOnceWhenTheReplyIsDone() async {
+        var ends: [Bool] = []
+        session.onSpokenTurnEnded = { ends.append($0) }
+        await say("status?")
+        XCTAssertEqual(ends, [])
+        await answer(0, "All green.")
+        XCTAssertEqual(ends, [false])
+    }
+
+    func testSpokenTurnEndWaitsForQueuedMessages() async {
+        var ends: [Bool] = []
+        session.onSpokenTurnEnded = { ends.append($0) }
+        await type("first")
+        await say("then this")
+        await answer(0, "First answer.")
+        XCTAssertEqual(ends, [], "a queued message is still to run")
+        await answer(1, "Second answer.")
+        XCTAssertEqual(ends, [false])
+    }
+
+    func testSpokenTurnEndReportsAFailure() async {
+        var ends: [Bool] = []
+        session.onSpokenTurnEnded = { ends.append($0) }
+        await say("status?")
+        await answer(0, "Partial", error: "agent crashed")
+        XCTAssertEqual(ends, [true])
+        XCTAssertTrue(session.items.contains { if case .error("agent crashed") = $0.kind { true } else { false } }, "the failure bubble shows as before")
+    }
+
     func testFailedTurnIsNotRead() async {
         await say("status?")
         await answer(0, "Partial", error: "agent crashed")

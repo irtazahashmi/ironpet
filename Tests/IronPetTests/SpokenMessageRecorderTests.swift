@@ -8,10 +8,11 @@ private final class FakeMic: ConversationListening {
     var onEvent: ((ConversationMicEvent) -> Void)?
     let levels = LevelBuffer()
     private(set) var started = false
+    private(set) var startCount = 0
     private(set) var stopped = false
     private(set) var cuts = 0
 
-    func start() throws { started = true }
+    func start() throws { started = true; startCount += 1 }
     func stop() { stopped = true }
     func cutNow() { cuts += 1 }
 
@@ -41,13 +42,12 @@ final class SpokenMessageRecorderTests: XCTestCase {
         recorder.microphoneAllowed = { true }
         recorder.makeMic = { [unowned self] in mic }
         recorder.transcribe = { wav in String(decoding: wav, as: UTF8.self) }
-        recorder.silenceSeconds = { 20 }
         sleeps = []
         recorder.endPauseSeconds = { 2.5 }
         recorder.silenceSleep = { [unowned self] seconds in
             sleeps.append(seconds)
             try await withCheckedThrowingContinuation { (gate: CheckedContinuation<Void, Error>) in
-                elapse = { gate.resume() }
+                elapse = { [unowned self] in elapse = nil; gate.resume() }
             }
         }
         recorder.quietCheckInterval = 3600
@@ -76,9 +76,9 @@ final class SpokenMessageRecorderTests: XCTestCase {
         elapse?()
         await settle()
         XCTAssertEqual(messages, ["what changed in the last hour"])
-        XCTAssertEqual(recorder.state, .idle)
+        XCTAssertEqual(recorder.state, .waiting, "the conversation goes on while the reply is written")
         XCTAssertTrue(mic.stopped, "the microphone closes once the message is complete")
-        XCTAssertEqual(ended, 1)
+        XCTAssertEqual(ended, 0)
     }
 
     func testAShortPauseInTheMiddleKeepsOneMessage() async {
@@ -162,21 +162,125 @@ final class SpokenMessageRecorderTests: XCTestCase {
         XCTAssertEqual(recorder.state, .idle)
     }
 
-    func testNothingSaidEndsListeningAfterTheSilenceTime() async {
+    func testSilenceNeverEndsVoiceMode() async {
         await listen()
         await settle()
+        XCTAssertTrue(sleeps.isEmpty, "no silence timer is armed")
         elapse?()
         await settle()
-        XCTAssertEqual(recorder.state, .idle)
-        XCTAssertEqual(messages, [])
+        XCTAssertEqual(recorder.state, .listening)
+        XCTAssertEqual(ended, 0)
+        await say("hello")
+        recorder.turnEnded(failed: false)
+        XCTAssertEqual(recorder.state, .listening)
+        elapse?()
+        await settle()
+        XCTAssertEqual(recorder.state, .listening, "silence after a reply keeps listening too")
+        XCTAssertEqual(ended, 0)
     }
 
-    func testSpeakingKeepsListeningOpenPastTheSilenceTime() async {
-        await listen()
-        await settle()
+    private func say(_ text: String) async {
         mic.startTalking()
+        mic.finishTalking(text)
+        await settle()
         elapse?()
         await settle()
+    }
+
+    func testListensAgainWhenTheSpokenSummaryEnds() async {
+        var speaking = true
+        recorder.isSpeaking = { speaking }
+        await listen()
+        await say("status?")
+        XCTAssertEqual(recorder.state, .waiting)
+        XCTAssertEqual(mic.startCount, 1)
+        recorder.turnEnded(failed: false)
+        XCTAssertEqual(recorder.state, .waiting, "the pet is still reading")
+        XCTAssertEqual(mic.startCount, 1, "the microphone stays closed while the summary plays")
+        recorder.speechEnded()
+        XCTAssertEqual(recorder.state, .waiting, "still speaking")
+        speaking = false
+        recorder.speechEnded()
+        XCTAssertEqual(recorder.state, .listening)
+        XCTAssertEqual(mic.startCount, 2)
+        XCTAssertEqual(ended, 0)
+    }
+
+    func testListensAgainAtOnceWhenTheReplyIsNotRead() async {
+        await listen()
+        await say("status?")
+        recorder.turnEnded(failed: false)
+        XCTAssertEqual(recorder.state, .listening)
+        XCTAssertEqual(mic.startCount, 2)
+    }
+
+    func testTheNextMessageGoesOutAndIsFollowedByListeningAgain() async {
+        await listen()
+        await say("first")
+        recorder.turnEnded(failed: false)
+        await say("second")
+        XCTAssertEqual(messages, ["first", "second"])
+        XCTAssertEqual(recorder.state, .waiting)
+        recorder.turnEnded(failed: false)
+        XCTAssertEqual(recorder.state, .listening)
+        XCTAssertEqual(mic.startCount, 3)
+    }
+
+    func testEscapeInAnyStateEndsVoiceModeForGood() async {
+        recorder.isSpeaking = { true }
+        await listen()
+        await say("one")
+        recorder.turnEnded(failed: false)
+        recorder.cancel()
+        XCTAssertEqual(recorder.state, .idle)
+        recorder.isSpeaking = { false }
+        recorder.speechEnded()
+        recorder.turnEnded(failed: false)
+        XCTAssertEqual(recorder.state, .idle)
+        XCTAssertEqual(mic.startCount, 1)
+        XCTAssertEqual(ended, 1)
+        // While transcribing: nothing is sent and nothing resumes.
+        recorder.transcribe = { _ in try await Task.sleep(for: .seconds(10)); return "late" }
+        await listen()
+        await say("two")
+        XCTAssertEqual(recorder.state, .transcribing)
+        recorder.cancel()
+        recorder.turnEnded(failed: false)
+        XCTAssertEqual(recorder.state, .idle)
+        XCTAssertEqual(messages, ["one"])
+    }
+
+    func testAFailedTurnEndsVoiceMode() async {
+        await listen()
+        await say("one")
+        recorder.turnEnded(failed: true)
+        XCTAssertEqual(recorder.state, .idle)
+        XCTAssertEqual(ended, 1)
+        XCTAssertEqual(mic.startCount, 1)
+    }
+
+    func testACallStartingDuringTheReplyEndsVoiceMode() async {
+        await listen()
+        await say("one")
+        recorder.quietReason = { "a call" }
+        recorder.turnEnded(failed: false)
+        XCTAssertEqual(recorder.state, .idle)
+        XCTAssertEqual(failures, ["Stopped listening: a call started."])
+        XCTAssertEqual(mic.startCount, 1)
+    }
+
+    func testAReplyWithNoSpokenMessageDoesNotStartListening() async {
+        recorder.turnEnded(failed: false)
+        recorder.speechEnded()
+        XCTAssertEqual(recorder.state, .idle)
+        XCTAssertEqual(mic.startCount, 0)
+    }
+
+    func testPressWhileWaitingListensAtOnce() async {
+        recorder.isSpeaking = { true }
+        await listen()
+        await say("one")
+        recorder.press()
         XCTAssertEqual(recorder.state, .listening)
     }
 

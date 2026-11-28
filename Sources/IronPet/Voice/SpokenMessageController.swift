@@ -4,9 +4,9 @@ import Combine
 import IronPetCore
 import IronPetKit
 
-/// Spoken messages in the app: the shortcut records one utterance and sends it to the primary chat as a message the user
-/// said aloud, Esc discards it, a pill by the pet shows the microphone, and jobs started during a spoken turn say aloud when
-/// they are done.
+/// Spoken messages in the app: the shortcut starts a conversation. Each utterance goes to the primary chat as a message the
+/// user said aloud, and the pet listens again once the reply is written and read. Esc or the pill's button ends it, a pill by
+/// the pet shows the microphone, and jobs started during a spoken turn say aloud when they are done.
 @MainActor
 final class SpokenMessageController {
     let recorder = SpokenMessageRecorder()
@@ -70,7 +70,7 @@ final class SpokenMessageController {
 
     /// The shortcut: starts listening, sends what has been said, or, while the pet is speaking, stops it and listens.
     func press() {
-        if !recorder.isActive, interruptSpeech() {
+        if !recorder.isActive || recorder.state == .waiting, interruptSpeech() {
             VoiceTiming.log("talk key: interrupted speech")
         }
         recorder.press()
@@ -82,6 +82,12 @@ final class SpokenMessageController {
         }
         pill.present(near: petFrame())
     }
+
+    /// The chat finished the turn of a spoken message, or failed or was stopped.
+    func turnEnded(failed: Bool) { recorder.turnEnded(failed: failed) }
+
+    /// The speaker's state changed. Listening resumes once it is quiet.
+    func speechChanged() { recorder.speechEnded() }
 
     private func ended() {
         escape = nil

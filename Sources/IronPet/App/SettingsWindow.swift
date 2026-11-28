@@ -684,10 +684,6 @@ private struct SpokenMessageSettings: View {
     var body: some View {
         Section {
             ShortcutRow(title: "Spoken message shortcut", path: \.voiceMode, model: model)
-            Stepper(value: Binding(get: { settings.silenceSeconds }, set: { value in store.update { $0.voiceMode.silenceSeconds = value } }),
-                    in: Config.VoiceMode.silenceRange, step: 5) {
-                Text("Stop listening after \(settings.silenceSeconds) s of silence")
-            }
             Stepper(value: Binding(get: { settings.endPauseSeconds }, set: { value in store.update { $0.voiceMode.endPauseSeconds = value } }),
                     in: Config.VoiceMode.endPauseRange, step: 0.5) {
                 Text("Send the message after \(settings.endPauseSeconds, specifier: "%.1f") s of silence")
@@ -697,7 +693,7 @@ private struct SpokenMessageSettings: View {
         } header: {
             Text("Talk to the chat")
         } footer: {
-            Text("Press the shortcut and talk. When you stop, or press it again, what you said is sent to the chat as a message, in the same conversation as the messages you type. The microphone is on only while listening, Esc discards the message, and pressing the shortcut while \(store.config.pet.name) speaks stops it and listens. It needs voice notes on, since the same server transcribes it, and it doesn't listen during calls and meeting recordings. Control+Shift+V is Paste and Match Style in many apps; choose another shortcut here if that matters to you. Jobs the chat starts while a reply is being read aloud say when they are done, failed or need an OK, unless Speak replies is Never.")
+            Text("Press the shortcut and talk. When you stop, or press it again, what you said is sent to the chat as a message, in the same conversation as the messages you type. After the reply, and after \(store.config.pet.name) has read it aloud, it listens again until you press Esc or the pill's button. The microphone is off while the reply is written and read, and pressing the shortcut while \(store.config.pet.name) speaks stops it and listens. It needs voice notes on, since the same server transcribes it, and it doesn't listen during calls and meeting recordings. Control+Shift+V is Paste and Match Style in many apps; choose another shortcut here if that matters to you. Jobs the chat starts while a reply is being read aloud say when they are done, failed or need an OK, unless Speak replies is Never.")
                 .font(.caption).foregroundStyle(.secondary)
         }
     }
