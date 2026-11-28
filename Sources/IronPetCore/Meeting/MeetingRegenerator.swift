@@ -245,7 +245,7 @@ package final class MeetingRegenerator {
         var lines: [MeetingLine] = []
         for (number, chunk) in work.enumerated() {
             progress = RegenerationProgress(stage: .transcribing(chunk: number + 1, of: work.count))
-            let splitter: SpeakerDiarizing? = chunk.track == .them && diarize ? diarizer : nil
+            let splitter: SpeakerDiarizing? = chunk.track.hasSeveralVoices && diarize ? diarizer : nil
             let segments: [TimedSegment]
             let speakers: ChunkDiarization?
             do {
@@ -279,7 +279,7 @@ package final class MeetingRegenerator {
         try MeetingFolderScan.scan(folder)
     }
 
-    /// A diarization failure is not a transcription failure: the lines stay "Them", as in a live meeting.
+    /// A diarization failure is not a transcription failure: the lines keep the track name, as in a live meeting.
     private nonisolated static func transcribe(_ chunk: ChunkInfo, make: () -> Transcriber,
                                                diarizer: SpeakerDiarizing?) async throws -> ([TimedSegment], ChunkDiarization?) {
         let transcriber = make()

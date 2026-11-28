@@ -50,6 +50,8 @@ final class MeetingController: ObservableObject {
     @Published private(set) var jobs: [MeetingJob] = []
     @Published private(set) var summary: SummaryState = .none
     @Published private(set) var appName = ""
+    /// The meeting records the microphone alone, so the panel shows one level row and the lines are not Me or Them.
+    @Published private(set) var isRoom = false
     /// The voices found in this meeting, for the "Who is this?" list.
     @Published private(set) var speakerTable = MeetingSpeakerTable()
     /// Names were given after the summary was written, so it still says "Speaker 1".
@@ -181,7 +183,7 @@ final class MeetingController: ObservableObject {
         setPhase(.idle)
     }
 
-    /// Starts recording from the picker: the microphone as Me and `choice` as Them.
+    /// Starts recording from the picker: the microphone as Me and `choice` as Them, or with Room the microphone alone.
     func start() {
         guard phase == .choosing, !starting else { return }
         if !UserDefaults.standard.bool(forKey: Self.consentKey) {
@@ -199,32 +201,42 @@ final class MeetingController: ObservableObject {
                 guard expected == generation else { return }
                 return fail("ironpet can't use the microphone. Allow it under System Settings → Privacy & Security → Microphone, then try again.")
             }
-            if !ScreenCapture.hasPermission {
+            // A room meeting listens to the microphone only, so the screen recording permission is neither checked nor asked.
+            let room = picked == .room
+            if !room, !ScreenCapture.hasPermission {
                 ScreenCapture.requestPermission()
                 return fail(MeetingError.captureDenied.localizedDescription)
             }
             guard expected == generation else { return }
-            let system = SystemAudioSource(choice: picked)
-            system.onStop = { [weak self] error in
-                Task { @MainActor in self?.sourceStopped(.them, error) }
+            var system: SystemAudioSource?
+            if !room {
+                let source = SystemAudioSource(choice: picked)
+                source.onStop = { [weak self] error in
+                    Task { @MainActor in self?.sourceStopped(.them, error) }
+                }
+                system = source
             }
             let mic = LocalTrack(MicrophoneSource())
             mic.onFailure = { [weak self] message in
                 Task { @MainActor in self?.micFailed(message) }
             }
-            await begin(mic: mic, them: system, appName: picked.name, lengths: ChunkLengths(), expected: expected)
+            await begin(mic: mic, them: system, room: room, appName: room ? AudioApps.roomMeetingName : picked.name,
+                        lengths: ChunkLengths(), expected: expected)
             if phase == .recording { rememberChoice(picked.key) }
         }
     }
 
     /// `--test-mode`: records from WAV files instead of live sources, through the same pipeline. With `them` nil,
-    /// the Them track is real: all system audio through ScreenCaptureKit.
-    func startTest(mic: URL, them: URL?, appName: String, lengths: ChunkLengths) throws {
+    /// the Them track is real: all system audio through ScreenCaptureKit. With `room`, the one file is the room
+    /// microphone and there is no Them track.
+    func startTest(mic: URL, them: URL?, room: Bool = false, appName: String, lengths: ChunkLengths) throws {
         guard isEnabled(), phase == .idle || phase == .done || phase == .choosing else { return }
         reset()
         let micSource = try FileSource(url: mic)
-        let themTrack: TrackSource
-        if let them {
+        let themTrack: TrackSource?
+        if room {
+            themTrack = nil
+        } else if let them {
             themTrack = LocalTrack(try FileSource(url: them))
         } else {
             guard ScreenCapture.hasPermission else { throw MeetingError.captureDenied }
@@ -235,11 +247,13 @@ final class MeetingController: ObservableObject {
         starting = true
         Task {
             defer { starting = false }
-            await begin(mic: LocalTrack(micSource), them: themTrack, appName: appName, lengths: lengths, expected: expected)
+            await begin(mic: LocalTrack(micSource), them: themTrack, room: room,
+                        appName: room ? AudioApps.roomMeetingName : appName, lengths: lengths, expected: expected)
         }
     }
 
-    private func begin(mic: TrackSource, them: TrackSource, appName: String, lengths: ChunkLengths, expected: Int) async {
+    private func begin(mic: TrackSource, them: TrackSource?, room: Bool, appName: String, lengths: ChunkLengths,
+                       expected: Int) async {
         // Cancelled while permissions were being checked.
         guard expected == generation else { return }
         let start = Date()
@@ -254,8 +268,10 @@ final class MeetingController: ObservableObject {
         self.folder = folder
         self.startedAt = start
         self.appName = appName
+        isRoom = room
         chunkLengths = lengths
-        let pairs: [(MeetingTrack, TrackSource, LevelBuffer)] = [(.me, mic, myLevels), (.them, them, theirLevels)]
+        var pairs: [(MeetingTrack, TrackSource, LevelBuffer)] = room ? [(.room, mic, myLevels)] : [(.me, mic, myLevels)]
+        if let them, !room { pairs.append((.them, them, theirLevels)) }
         for (track, source, _) in pairs {
             let recorder = TrackRecorder(track: track, folder: folder, chunker: Chunker(
                 minSamples: Int(lengths.minSeconds * Double(WAV.sampleRate)),
@@ -302,7 +318,7 @@ final class MeetingController: ObservableObject {
     /// The microphone died mid-meeting. The other track keeps recording, and the notice tells the user.
     private func micFailed(_ message: String) {
         guard phase == .recording else { return }
-        notice = "Your side of the call stopped recording. " + message
+        notice = (isRoom ? "The microphone stopped recording. " : "Your side of the call stopped recording. ") + message
         objectWillChange.send()
         didChange()
     }
@@ -453,9 +469,9 @@ final class MeetingController: ObservableObject {
         let chunk = jobs[index].chunk
         let make = makeTranscriber
         let generation = self.generation
-        // Only the other side of the call is split into speakers, and only when the feature is on and its models are
-        // already downloaded. Otherwise nothing is called.
-        let diarizer: SpeakerDiarizing? = chunk.track == .them && recogniseSpeakers() && speakerModelsReady() ? self.diarizer : nil
+        // Only the other side of the call, or the room, is split into speakers, and only when the feature is on and its
+        // models are already downloaded. Otherwise nothing is called.
+        let diarizer: SpeakerDiarizing? = chunk.track.hasSeveralVoices && recogniseSpeakers() && speakerModelsReady() ? self.diarizer : nil
         inFlight = Task.detached { [weak self] in
             let result: Result<[TimedSegment], Error>
             var speakers: ChunkDiarization?
@@ -463,7 +479,7 @@ final class MeetingController: ObservableObject {
                 let transcriber = make()
                 let wav = try Data(contentsOf: chunk.url)
                 result = .success(try await transcriber.transcribeSegments(wav: wav))
-                // A diarization failure is not a transcription failure: the lines stay "Them".
+                // A diarization failure is not a transcription failure: the lines keep the track name.
                 if let diarizer { speakers = try? await diarizer.diarize(wav: chunk.url) }
             } catch {
                 result = .failure(error)
@@ -481,7 +497,7 @@ final class MeetingController: ObservableObject {
         case .success(let segments):
             jobs[index].state = .done
             var turns: [SpeakerTurn] = []
-            if let speakers, chunk.track == .them {
+            if let speakers, chunk.track.hasSeveralVoices {
                 let ids = speakerTable.link(speakers, chunkURL: chunk.url, store: voiceStore.candidates)
                 for speaker in speakers.speakers {
                     guard let id = ids[speaker.localId] else { continue }
@@ -772,6 +788,7 @@ final class MeetingController: ObservableObject {
         folder = nil
         startedAt = nil
         appName = ""
+        isRoom = false
         finalPass = false
         pumping = false
         tickCount = 0
@@ -802,8 +819,8 @@ final class MeetingController: ObservableObject {
             server from Settings → Voice, and writes a transcript to ~/.ironpet/meetings. The audio files stay \
             there too.
 
-            Recording other people without their consent is illegal in many places. Tell everyone on the call \
-            before you start. The meeting panel stays on screen for as long as ironpet is recording.
+            Recording other people without their consent is illegal in many places. Tell everyone on the call, or in \
+            the room, before you start. The meeting panel stays on screen for as long as ironpet is recording.
             """
         alert.addButton(withTitle: "I Will Tell Them")
         alert.addButton(withTitle: "Cancel")

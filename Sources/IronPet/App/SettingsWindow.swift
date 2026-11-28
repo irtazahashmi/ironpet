@@ -736,7 +736,7 @@ private struct MeetingSettings: View {
                     Text(enableError).font(.caption).foregroundStyle(.red).textSelection(.enabled)
                 }
             } footer: {
-                Text("Off by default. Turning it on needs a voice server under Settings → Voice that passes Test connection. When on, \"Start meeting transcript\" appears in the pet's menu. It records your microphone as Me and one app's audio as Them, sends both to that server in chunks, and keeps the audio and transcript in ~/.ironpet/meetings. macOS asks for Screen & System Audio Recording the first time you start one. Tell everyone on the call.")
+                Text("Off by default. Turning it on needs a voice server under Settings → Voice that passes Test connection. When on, \"Start meeting transcript\" appears in the pet's menu. It records your microphone as Me and one app's audio as Them, sends both to that server in chunks, and keeps the audio and transcript in ~/.ironpet/meetings. macOS asks for Screen & System Audio Recording the first time you start one. \"Record meeting in the room\" in the same menu records only your microphone, like a voice recorder, and tells the speakers apart by voice, so it needs no Screen & System Audio Recording access. Tell everyone on the call or in the room.")
                     .font(.caption).foregroundStyle(.secondary)
             }
             Section {

@@ -19,13 +19,21 @@ Choose **Start meeting transcript…** from your pet's menu, or press the meetin
 
 While recording, a bubble next to your pet shows a recording dot, the elapsed time, a live level for Me (your microphone) and Them (the app), the last few transcript lines, and **Stop** and **Cancel**. Cancel asks first, then deletes the meeting folder. If you close the bubble (the × on hover), your pet shows a red **Recording** button until the meeting ends. Click it to show the bubble again.
 
+### Recording a meeting in the room
+
+To record people talking in the same room, choose **Record meeting in the room** from your pet's menu. It opens the same panel with **Room (microphone only)** preselected, and it stays the preselected choice next time. Room records only your microphone, like a voice recorder, so macOS is never asked for Screen & System Audio Recording and nothing is captured from the Mac. The consent notice still applies: tell everyone in the room.
+
+A room meeting has one level row, **Room**, instead of Me and Them. Its chunks are `room-001.wav` and so on. With **Recognise speakers in meetings** on and the models downloaded, ironpet splits each chunk into speakers and names them like the Them track (`Speaker 1: …`, or a stored voice name). Without that, every line reads `Room: …`. A meeting never downloads the models. The transcript header names the app `Room`, and **Transcribe again** splits the room track into speakers too.
+
+Room recording only starts when you start it.
+
 With **Offer to record calls** on (the default), when another app holds the microphone for about 10 seconds, your pet asks whether to record it. Nothing records until you click **Record**.
 
 ## Files
 
 Each meeting gets a folder in `~/.ironpet/meetings/<YYYY-MM-DD-HHmm>/` with:
 
-- 16 kHz mono WAV chunks, `mic-001.wav`, `them-001.wav` and so on
+- 16 kHz mono WAV chunks, `mic-001.wav` and `them-001.wav`, or `room-001.wav` for a room meeting
 - `transcript.md`
 - `summary.md`
 
@@ -89,7 +97,7 @@ While it runs, the row and the page header show "Transcribing chunk 2 of 5", the
 
 ## Recognising speakers
 
-With **Recognise speakers in meetings** on, ironpet splits the Them track into individual speakers on your Mac, after each chunk is transcribed. Lines read `Speaker 1: …` until you name the voice. The Me track is never split.
+With **Recognise speakers in meetings** on, ironpet splits the Them track into individual speakers on your Mac, after each chunk is transcribed. Lines read `Speaker 1: …` until you name the voice. The Me track is never split. A room meeting has no Me or Them, so its one Room track is split instead.
 
 ### Models
 

@@ -5,13 +5,14 @@ import Combine
 
 /// A past (or running) meeting: one folder under `~/.ironpet/meetings`.
 package struct MeetingRecord: Identifiable, Equatable {
-    package init(folder: URL, date: Date, preview: String, hasSummary: Bool, hasTranscript: Bool, hasAudio: Bool = false) {
+    package init(folder: URL, date: Date, preview: String, hasSummary: Bool, hasTranscript: Bool, hasAudio: Bool = false, isRoom: Bool = false) {
         self.folder = folder
         self.date = date
         self.preview = preview
         self.hasSummary = hasSummary
         self.hasTranscript = hasTranscript
         self.hasAudio = hasAudio
+        self.isRoom = isRoom
     }
 
     package let folder: URL
@@ -22,6 +23,8 @@ package struct MeetingRecord: Identifiable, Equatable {
     package let hasTranscript: Bool
     /// The folder still has `mic-NNN.wav` or `them-NNN.wav` chunks, so it can be transcribed again.
     package var hasAudio = false
+    /// Recorded in a room: the microphone alone, with the voices told apart by speaker recognition.
+    package var isRoom = false
 
     package var id: String { folder.lastPathComponent }
     package var transcriptURL: URL { folder.appendingPathComponent("transcript.md") }
@@ -94,8 +97,11 @@ package final class MeetingLibrary {
         let hasTranscript = FileManager.default.fileExists(atPath: transcript.path)
         let preview = (hasSummary ? head(of: summary) : hasTranscript ? head(of: transcript) : nil).flatMap(firstLine) ?? ""
         let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []
+        // A room meeting has `room-NNN.wav` chunks, and its transcript header names the app "Room".
+        let room = files.contains { MeetingFolderScan.chunkName($0)?.track == .room }
+            || (hasTranscript && MeetingFolderScan.appName(fromTranscript: head(of: transcript)) == AudioApps.roomMeetingName)
         return MeetingRecord(folder: folder, date: date, preview: preview, hasSummary: hasSummary, hasTranscript: hasTranscript,
-                             hasAudio: files.contains { MeetingFolderScan.chunkName($0) != nil })
+                             hasAudio: files.contains { MeetingFolderScan.chunkName($0) != nil }, isRoom: room)
     }
 
     /// `yyyy-MM-dd-HHmm`, with the `-2`, `-3` … suffix a second meeting in the same minute gets.

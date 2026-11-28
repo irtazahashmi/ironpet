@@ -107,13 +107,19 @@ struct MeetingView: View {
                     ForEach(controller.apps) { app in Text(app.name).tag(AudioChoice.app(app)) }
                     if !controller.apps.isEmpty { Divider() }
                     Text("All system audio").tag(AudioChoice.allSystemAudio)
+                    Divider()
+                    Text(AudioChoice.room.name).tag(AudioChoice.room)
                 }
                 .labelsHidden()
                 .accessibilityLabel("App to record")
             }
-            Text("Your microphone is recorded as Me and this audio as Them. Both go to the server from Settings → Voice. ironpet's own sound is left out.")
+            Text(controller.choice == .room
+                 ? "Room records only your microphone, like a voice recorder, and tells the speakers apart by voice. The audio goes to the server from Settings → Voice."
+                 : "Your microphone is recorded as Me and this audio as Them. Both go to the server from Settings → Voice. ironpet's own sound is left out.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
-            Text("Tell everyone on the call. Recording people without consent is illegal in many places.")
+            Text(controller.choice == .room
+                 ? "Tell everyone in the room. Recording people without consent is illegal in many places."
+                 : "Tell everyone on the call. Recording people without consent is illegal in many places.")
                 .font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             if let notice = controller.notice {
                 Text(notice).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
@@ -142,8 +148,12 @@ struct MeetingView: View {
             .accessibilityElement(children: .combine)
             .accessibilityLabel("Recording \(controller.appName)")
             VStack(spacing: 6) {
-                trackRow("Me", levels: controller.myLevels)
-                trackRow("Them", levels: controller.theirLevels)
+                if controller.isRoom {
+                    trackRow("Room", levels: controller.myLevels)
+                } else {
+                    trackRow("Me", levels: controller.myLevels)
+                    trackRow("Them", levels: controller.theirLevels)
+                }
             }
             chunkStatus
             lines

@@ -15,12 +15,15 @@ package struct AudioApp: Equatable, Identifiable, Hashable {
 package enum AudioChoice: Equatable, Hashable {
     case app(AudioApp)
     case allSystemAudio
+    /// The microphone alone, like a voice recorder. Nothing is captured from the Mac.
+    case room
 
     /// What `Config.Meetings.lastApp` stores.
     package var key: String {
         switch self {
         case .app(let app): return app.bundleID
         case .allSystemAudio: return AudioApps.allKey
+        case .room: return AudioApps.roomKey
         }
     }
 
@@ -28,6 +31,7 @@ package enum AudioChoice: Equatable, Hashable {
         switch self {
         case .app(let app): return app.name
         case .allSystemAudio: return "All system audio"
+        case .room: return "Room (microphone only)"
         }
     }
 }
@@ -35,6 +39,9 @@ package enum AudioChoice: Equatable, Hashable {
 /// Which apps the source picker lists and which one it starts on.
 package enum AudioApps {
     package static let allKey = "all"
+    package static let roomKey = "room"
+    /// The name a room meeting carries in `transcript.md`, where a call has the app's name.
+    package static let roomMeetingName = "Room"
 
     /// Meeting apps first, then browsers, each in the order they are preselected.
     package static let meetingApps = [
@@ -59,9 +66,10 @@ package enum AudioApps {
         }
     }
 
-    /// A running meeting app wins, then the choice from last time if it is still available, then a running browser,
-    /// then all system audio.
+    /// Room last time wins, so a user who records in a room stays on it. Otherwise a running meeting app wins, then
+    /// the choice from last time if it is still available, then a running browser, then all system audio.
     package static func preselect(from apps: [AudioApp], remembered: String) -> AudioChoice {
+        if remembered == roomKey { return .room }
         if let app = meetingApps.lazy.compactMap({ id in apps.first { $0.bundleID == id } }).first { return .app(app) }
         if remembered == allKey { return .allSystemAudio }
         if let app = apps.first(where: { $0.bundleID == remembered }) { return .app(app) }
