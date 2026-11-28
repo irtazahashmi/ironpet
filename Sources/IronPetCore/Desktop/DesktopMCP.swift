@@ -41,7 +41,8 @@ package enum DesktopMCP {
              "description": "Replace the value of a text field, text area or other settable element. Fails when the element's value cannot be set. For text at the caret use desktop_type.\n\n" + guide,
              "inputSchema": ["type": "object", "properties": ["ref": ref, "text": ["type": "string", "description": "The new value"]], "required": ["ref", "text"]]],
             ["name": "desktop_type",
-             "description": "Focus a text element and insert text at its caret (replacing the selection), or append it when the element only allows setting its whole value.\n\n" + guide,
+             "description": "Focus a text element and insert text at its caret (replacing the selection), or append it when the element only allows setting its whole value. "
+                + "The value is read back. When a web page ignores the write, the text is sent as key events. The result says which method worked and whether it was verified, and fails when the text did not land.\n\n" + guide,
              "inputSchema": ["type": "object", "properties": ["ref": ref, "text": ["type": "string", "description": "The text to insert"]], "required": ["ref", "text"]]],
             ["name": "desktop_focus",
              "description": "Give an element the keyboard focus, or raise a window to the front.\n\n" + guide,
@@ -78,10 +79,11 @@ package enum DesktopMCP {
                                             "amount": ["type": "integer", "minimum": 1, "maximum": DesktopMouse.maxScrollLines, "description": "Lines. Default \(DesktopMouse.defaultScrollLines)"]],
                              "required": ["direction"]]],
             ["name": "desktop_open_url",
-             "description": "Open an http or https address in a new browser tab. With browser (its name or bundle id) it opens there, otherwise in the frontmost browser, "
+             "description": "Open an http or https address in a new browser tab, or with tab \"current\" load it in the front tab of the browser's front window. With browser (its name or bundle id) it opens there, otherwise in the frontmost browser, "
                 + "otherwise in the default browser. Other schemes (file, javascript, mailto and so on) are refused, and so are addresses on hosts ironpet never reads.\n\n" + guide,
              "inputSchema": ["type": "object",
-                             "properties": ["url": text("A full address, such as https://example.com/path"), "browser": text("The browser, by name or bundle id. Default: the frontmost browser")],
+                             "properties": ["url": text("A full address, such as https://example.com/path"), "browser": text("The browser, by name or bundle id. Default: the frontmost browser"),
+                                            "tab": ["type": "string", "enum": ["new", "current"], "description": "new opens a tab (default). current reuses the front tab"]],
                              "required": ["url"]]],
             ["name": "desktop_select",
              "description": "Select an item. With text: pick the option with that text inside the element, such as an item of a popup button or combo box (it is opened for you), a row of a list, table or outline, a tab or a radio button. "

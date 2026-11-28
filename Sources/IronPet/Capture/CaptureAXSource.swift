@@ -115,7 +115,9 @@ final class AXCaptureSource: CaptureSource {
         defer { lock.unlock() }
         if let known = webBundles[url.path] { return known }
         let frameworks = (try? FileManager.default.contentsOfDirectory(atPath: url.appendingPathComponent("Contents/Frameworks").path)) ?? []
-        let web = frameworks.contains { name in
+        // A browser does not ship the Electron framework, so it is known by its bundle id.
+        let bundleId = Bundle(url: url)?.bundleIdentifier ?? ""
+        let web = CaptureFloor.isBrowser(bundleId) || frameworks.contains { name in
             let lower = name.lowercased()
             return lower == "electron framework.framework" || lower == "chromium embedded framework.framework"
         }
@@ -149,7 +151,11 @@ final class AXCaptureSource: CaptureSource {
         let element = AXUIElementCreateApplication(app.pid)
         AXUIElementSetMessagingTimeout(element, 0.5)
         // Chromium and Electron build their page tree only for a client that asks.
-        if isWebApp(app) { AXUIElementSetAttributeValue(element, "AXManualAccessibility" as CFString, kCFBooleanTrue) }
+        if isWebApp(app) {
+            AXUIElementSetAttributeValue(element, "AXManualAccessibility" as CFString, kCFBooleanTrue)
+            // A browser builds the full page tree, with the buttons of a React form, only for this switch too.
+            AXUIElementSetAttributeValue(element, "AXEnhancedUserInterface" as CFString, kCFBooleanTrue)
+        }
         return element
     }
 

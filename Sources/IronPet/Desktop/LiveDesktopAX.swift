@@ -163,6 +163,27 @@ final class LiveDesktopAX: DesktopAX {
         return true
     }
 
+    func typeText(_ text: String, to app: CaptureApp) -> Bool {
+        let source = CGEventSource(stateID: .privateState)
+        // Each character goes as a key event that carries its own Unicode string, so the layout does not matter. Chunks stay short because
+        // a key event holds a limited number of UTF-16 units.
+        let units = Array(text.utf16)
+        var index = 0
+        while index < units.count {
+            let chunk = Array(units[index..<min(index + 16, units.count)])
+            index += chunk.count
+            guard let down = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: true),
+                  let up = CGEvent(keyboardEventSource: source, virtualKey: 0, keyDown: false) else { return false }
+            down.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
+            up.keyboardSetUnicodeString(stringLength: chunk.count, unicodeString: chunk)
+            down.postToPid(app.pid)
+            Thread.sleep(forTimeInterval: 0.01)
+            up.postToPid(app.pid)
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        return true
+    }
+
     func frame(of element: DesktopElement) -> DesktopRect? {
         guard let el = ax(element) else { return nil }
         var position: CFTypeRef?, size: CFTypeRef?
@@ -249,6 +270,18 @@ final class LiveDesktopOpener: DesktopOpener {
         }
         return installed.first(where: { $0.0 == wanted || $0.1.lowercased() == wanted })
             ?? running.first(where: { $0.1.lowercased().contains(wanted) }) ?? installed.first(where: { $0.1.lowercased().contains(wanted) })
+    }
+
+    func navigate(_ url: URL, inBrowser bundleId: String) -> Bool {
+        // Browsers script their front tab, with "active tab" or "current tab" as the word. The first use asks the user for Automation access.
+        let address = url.absoluteString.replacingOccurrences(of: "\\", with: "\\\\").replacingOccurrences(of: "\"", with: "\\\"")
+        for tab in ["active tab", "current tab"] {
+            var error: NSDictionary?
+            guard let script = NSAppleScript(source: "tell application id \"\(bundleId)\" to set URL of \(tab) of front window to \"\(address)\"") else { continue }
+            script.executeAndReturnError(&error)
+            if error == nil { return true }
+        }
+        return false
     }
 
     func open(_ url: URL, inBrowser bundleId: String?) -> Bool {

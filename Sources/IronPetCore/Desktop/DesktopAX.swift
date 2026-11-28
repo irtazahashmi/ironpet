@@ -63,6 +63,8 @@ package protocol DesktopAX: AnyObject {
     func focusedElement(of app: CaptureApp) -> DesktopElement?
     /// Posts the key down and key up to the app's process only, never to the system-wide event stream. False when it could not post.
     func post(_ stroke: DesktopKeyStroke, to app: CaptureApp) -> Bool
+    /// Types the text into the app's focused element as key events, to the app's process only. False when it could not post.
+    func typeText(_ text: String, to app: CaptureApp) -> Bool
     /// The element's frame in screen points, or a window's. Nil when it has no position or is gone.
     func frame(of element: DesktopElement) -> DesktopRect?
     /// The element of the app under a screen point (an accessibility hit test). Nil when there is none.
@@ -96,6 +98,7 @@ package final class IdleDesktopAX: DesktopAX {
     package func activate(_ app: CaptureApp) {}
     package func focusedElement(of app: CaptureApp) -> DesktopElement? { nil }
     package func post(_ stroke: DesktopKeyStroke, to app: CaptureApp) -> Bool { false }
+    package func typeText(_ text: String, to app: CaptureApp) -> Bool { false }
     package func frame(of element: DesktopElement) -> DesktopRect? { nil }
     package func element(at point: DesktopPoint, in app: CaptureApp) -> DesktopElement? { nil }
     package func post(_ events: [DesktopMouseEvent], to app: CaptureApp) -> DesktopMouseOutcome { .failed }
@@ -110,6 +113,8 @@ package protocol DesktopOpener: AnyObject {
     func browser(matching query: String) -> (bundleId: String, name: String)?
     /// Opens the address in a new tab of the browser, or of the default browser when `bundleId` is nil.
     func open(_ url: URL, inBrowser bundleId: String?) -> Bool
+    /// Loads the address in the front tab of the browser's front window, without opening a tab. False when the browser cannot do it.
+    func navigate(_ url: URL, inBrowser bundleId: String) -> Bool
 }
 
 package final class IdleDesktopOpener: DesktopOpener {
@@ -118,4 +123,5 @@ package final class IdleDesktopOpener: DesktopOpener {
     package func frontmostBrowser() -> String? { nil }
     package func browser(matching query: String) -> (bundleId: String, name: String)? { nil }
     package func open(_ url: URL, inBrowser bundleId: String?) -> Bool { false }
+    package func navigate(_ url: URL, inBrowser bundleId: String) -> Bool { false }
 }

@@ -25,7 +25,7 @@ Agents get fourteen `desktop_*` MCP tools. The bundled `ironpet-desktop` skill t
 | `desktop_find(app, window?, role?, name?, value?)` | Lists the elements that match, each with a ref |
 | `desktop_press(ref)` | Performs the element's press action, or its default action (confirm, pick, open) |
 | `desktop_set_value(ref, text)` | Sets the value of a text field or other settable element |
-| `desktop_type(ref, text)` | Focuses the element and inserts text at the caret, or appends it when only the whole value can be set |
+| `desktop_type(ref, text)` | Focuses the element and inserts text at the caret, or appends it when only the whole value can be set. It reads the value back and, when a web page ignores the write, sends the text as key events. The result says which method worked and fails when the text did not land |
 | `desktop_focus(ref)` | Focuses an element, or raises a window |
 | `desktop_select(ref, text?)` | Picks the option with that text in a popup, combo box, list, table or outline. Without `text`, selects the element itself |
 | `desktop_check(ref, checked)` | Makes a checkbox, switch or radio button checked or unchecked. Does nothing when it's already in that state |
@@ -33,7 +33,7 @@ Agents get fourteen `desktop_*` MCP tools. The bundled `ironpet-desktop` skill t
 | `desktop_key(app, key, window?)` | Presses a key or combo, such as `return`, `escape`, `shift+tab` or `cmd+l`, in one app. The key goes to that app's process only |
 | `desktop_click(ref or app, window?, x?, y?, button?, count?, modifiers?)` | Clicks with the mouse, for controls that ignore `desktop_press`, such as the drop-downs of web pages. With `ref` it clicks the centre of the element. With `app` and `x`, `y` it clicks that point, in points from the window's top-left corner. `button` is `left` or `right`, `count` 2 is a double click, and `modifiers` lists `cmd`, `shift`, `opt` or `ctrl` |
 | `desktop_scroll(ref or app, window?, x?, y?, direction, amount?)` | Scrolls the mouse wheel over an element or over a window (its centre unless `x`, `y` are given). `direction` is `up`, `down`, `left` or `right`, and `amount` counts lines (default 3, at most 20) |
-| `desktop_open_url(url, browser?)` | Opens an http or https address in a new tab of the named browser, else the frontmost browser, else the default one |
+| `desktop_open_url(url, browser?, tab?)` | Opens an http or https address in a new tab (or, with `tab: "current"`, in the front tab) of the named browser, else the frontmost browser, else the default one |
 | `desktop_screenshot(app, window?)` | Takes a picture of one window, not the whole screen. Needs Screen Recording |
 
 A ref belongs to the last read of a window and works only while its element is unchanged, so an agent reads the window again after it acts. A tool that gets a stale or unknown ref says so and asks for a new snapshot. Two identical elements get refs ending in `~2`, `~3` and so on.
