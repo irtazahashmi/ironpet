@@ -95,6 +95,7 @@ cat > "$APP/Contents/Info.plist" <<'PLIST'
   <key>SUFeedURL</key><string>https://github.com/irtazahashmi/ironpet/releases/latest/download/appcast.xml</string>
   <key>SUVerifyUpdateBeforeExtraction</key><true/>
   <key>SUAllowsAutomaticUpdates</key><true/>
+  <key>CFBundleDocumentTypes</key><array><dict><key>CFBundleTypeName</key><string>Audio recording</string><key>CFBundleTypeRole</key><string>Viewer</string><key>LSHandlerRank</key><string>Alternate</string><key>LSItemContentTypes</key><array><string>com.apple.m4a-audio</string><string>public.mp3</string><string>com.microsoft.waveform-audio</string></array><key>CFBundleTypeExtensions</key><array><string>m4a</string><string>mp3</string><string>wav</string></array></dict></array>
   <key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>dev.ironpet.app.record</string><key>CFBundleURLSchemes</key><array><string>ironpet</string></array></dict></array>
   @SPARKLE@
   @DEV@

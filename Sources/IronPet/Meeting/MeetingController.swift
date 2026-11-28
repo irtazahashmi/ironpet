@@ -257,7 +257,7 @@ final class MeetingController: ObservableObject {
         // Cancelled while permissions were being checked.
         guard expected == generation else { return }
         let start = Date()
-        let folder = Self.newFolder(for: start, in: meetingsRoot)
+        let folder = MeetingLibrary.newFolder(for: start, in: meetingsRoot)
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         } catch {
@@ -797,17 +797,6 @@ final class MeetingController: ObservableObject {
         lastSummaryRequest = nil
         summaryNotified = []
         notice = nil
-    }
-
-    private static func newFolder(for date: Date, in root: URL) -> URL {
-        let base = MeetingTranscript.folderName(date)
-        var url = root.appendingPathComponent(base)
-        var suffix = 2
-        while FileManager.default.fileExists(atPath: url.path) {
-            url = root.appendingPathComponent("\(base)-\(suffix)")
-            suffix += 1
-        }
-        return url
     }
 
     /// The one-time notice before the first meeting.

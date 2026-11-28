@@ -161,6 +161,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         meetings.regenerator.diarizer = meeting.diarizer
         meetings.regenerator.speakerModelsReady = { MainActor.assumeIsolated { SpeakerModels.shared.isReady } }
         meetings.regenerator.voiceStore = voiceStore
+        meetings.importer.transcoder = platform.audio
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -1105,8 +1106,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     /// `ironpet://<id>` opens the record the id names. Other links, such as the pairing link for the phone, are not for the Mac.
+    /// An audio file from Open With is imported as a meeting.
     func application(_ application: NSApplication, open urls: [URL]) {
-        for url in urls {
+        if api.meetings.startImport(of: urls) != nil { pet.showWindow(.transcripts) }
+        for url in urls where !url.isFileURL {
             guard let id = RecordLinks.id(from: url) else { continue }
             guard let records = api.records else { return }
             switch records.resolve(id) {

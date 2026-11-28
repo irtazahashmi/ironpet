@@ -65,6 +65,16 @@ Action items marked `owner: Me` go to the [Inbox](/docs/inbox/#meetings), and on
 
 The Transcripts section of the ironpet window lists past meetings with their summary and transcript, **Ask** (with your pet's name), **Regenerate** and **Move to Trash**.
 
+### Import an audio file
+
+**Import**, at the top of the Transcripts section, turns an m4a, mp3 or wav file into a meeting, for example a recording from your phone or a voice recorder. Pick the file in the dialog, drop it on the list, or open it with ironpet from Finder (**Open With**). The meeting gets a transcript, speakers and a summary from the same steps as a room recording: ironpet cuts the audio into `room-NNN.wav` chunks in the meeting folder, transcribes them with the server and model from Settings → Voice, names the voices when **Recognise speakers in meetings** is on and the models are downloaded, and runs the summary agent. The transcript header names the app `Imported audio`.
+
+- The meeting's date is the file's creation date, or the time of the import when the file has none.
+- A file over 4 hours or 1 GB, or in another format, is refused with a message that names the limit. No meeting is created.
+- The audio goes to the transcription server from Settings → Voice, so tell the people on the recording. Video files are not imported.
+- When the audio was saved but the transcript or summary failed, the meeting stays in the list. **Regenerate** tries again.
+- One import or regeneration runs at a time. Several dropped files are imported one after another.
+
 ### Regenerate
 
 **Regenerate**, the circular arrow next to **Ask**, rebuilds a past meeting from its saved audio, for example after you named a voice or changed the transcription model. It has two choices:
