@@ -53,7 +53,8 @@ enum VoiceIntentError: Error, CustomLocalizedStringResourceConvertible {
 @available(iOS 18.0, *)
 struct StartVoiceModeIntent: AudioRecordingIntent {
     static let title: LocalizedStringResource = "Start voice mode"
-    static let description = IntentDescription("Starts listening. IronPet sends what you say to your pet's chat on your Mac and reads the summary of the reply aloud.")
+    // App Store Connect rejects intent metadata that names an Apple product (ITMS-90626), so no "Mac" or "iPhone" here.
+    static let description = IntentDescription("Starts listening. IronPet sends what you say to your pet's chat and reads the summary of the reply aloud.")
     static let openAppWhenRun = false
 
     @MainActor
