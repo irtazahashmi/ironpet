@@ -11,6 +11,9 @@
 #       ASC_KEY_FILE    path to the AuthKey_XXXX.p8 file
 #       ASC_KEY_ID      the key's ID
 #       ASC_ISSUER_ID   the issuer ID shown above the keys in App Store Connect
+#     The archive still signs with a development certificate. When the keychain has none, as on a GitHub runner, Xcode
+#     creates one through the key, and the script revokes it when it exits (scripts/ios_revoke_certificates.py), so the
+#     account doesn't fill up with certificates until Apple's limit stops an upload.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
@@ -35,6 +38,23 @@ fi
 
 ARCHIVE="build/ios/IronPetRemote-$BUILD.xcarchive"
 mkdir -p build/ios
+
+# The trap keeps the script's own exit status, and turns a successful upload into a failure when the revoke fails, so a
+# leaked certificate shows up in the run instead of at Apple's limit.
+if [ "$SET" -eq 3 ]; then
+  IDENTITIES=$(mktemp)
+  python3 scripts/ios_revoke_certificates.py snapshot "$IDENTITIES"
+  revoke_created_certificates() {
+    local status=$?
+    if ! python3 scripts/ios_revoke_certificates.py revoke "$IDENTITIES"; then
+      echo "error: could not revoke the signing certificate this build created; revoke it in developer.apple.com > Certificates" >&2
+      [ "$status" -ne 0 ] || status=1
+    fi
+    rm -f "$IDENTITIES"
+    exit "$status"
+  }
+  trap revoke_created_certificates EXIT
+fi
 
 (cd iOS && xcodegen generate -q)
 # ${AUTH[@]+...} because macOS's bash 3.2 treats an empty array as unset under `set -u`.

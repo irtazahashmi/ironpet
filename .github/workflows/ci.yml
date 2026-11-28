@@ -197,7 +197,7 @@ jobs:
       - name: Check scripts
         run: |
           for script in scripts/*.sh; do bash -n "$script"; done
-          python3 -m py_compile scripts/e2e.py scripts/gen_agent_catalog.py scripts/ios_ui_shards.py
+          python3 -m py_compile scripts/e2e.py scripts/gen_agent_catalog.py scripts/ios_ui_shards.py scripts/ios_revoke_certificates.py
 
   # Script syntax only, when scripts/ changed without a Mac rebuild (e.g. e2e.py).
   scripts:
@@ -210,7 +210,7 @@ jobs:
       - name: Check scripts
         run: |
           for script in scripts/*.sh; do bash -n "$script"; done
-          python3 -m py_compile scripts/e2e.py scripts/gen_agent_catalog.py scripts/ios_ui_shards.py
+          python3 -m py_compile scripts/e2e.py scripts/gen_agent_catalog.py scripts/ios_ui_shards.py scripts/ios_revoke_certificates.py
 
   # IronPet Remote for iOS, on a simulator. Three jobs run in parallel: the unit tests, and the UI tests in shards.
   # The shard lists live in scripts/ios_ui_shards.py. Each class runs in exactly one job.
