@@ -85,6 +85,14 @@ final class ACPBackendTests: XCTestCase {
                 update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "recording."}})
                 send({"jsonrpc": "2.0", "id": mid, "result": {"stopReason": "end_turn"}})
                 continue
+            if "COALESCE" in text:
+                for i in range(500):
+                    update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "a%d " % i}})
+                update({"sessionUpdate": "tool_call", "toolCallId": "tc", "title": "`ls`", "kind": "execute", "status": "pending", "rawInput": {"command": "ls"}})
+                for i in range(50):
+                    update({"sessionUpdate": "agent_message_chunk", "content": {"type": "text", "text": "b%d " % i}})
+                send({"jsonrpc": "2.0", "id": mid, "result": {"stopReason": "end_turn"}})
+                continue
             if "PERMISSION" in text:
                 update({"sessionUpdate": "tool_call", "toolCallId": "t1", "title": "`touch x`", "kind": "execute", "status": "pending", "rawInput": {"command": "touch x"}})
                 send({"jsonrpc": "2.0", "id": 900, "method": "session/request_permission", "params": {"sessionId": sid,
@@ -186,6 +194,28 @@ final class ACPBackendTests: XCTestCase {
 
     private func text(_ events: [AgentEvent]) -> String {
         events.compactMap { if case .assistant(let t) = $0 { return t } else { return nil } }.joined()
+    }
+
+    func testQuickChunksJoinIntoFewEventsAndKeepTheirOrderAroundATool() async {
+        let backend = ACPBackend(agent: agent, spawner: POSIXProcessSpawner())
+        let events = await run(backend, turn("COALESCE"))
+        let before = (0..<500).map { "a\($0) " }.joined(), after = (0..<50).map { "b\($0) " }.joined()
+        let kinds = events.compactMap { event -> String? in
+            switch event {
+            case .assistant(let t): return "text:" + t
+            case .toolStarted: return "tool"
+            case .finished: return "finished"
+            default: return nil
+            }
+        }
+        XCTAssertLessThan(kinds.count, 30, "551 chunks arrive within milliseconds, so they join into a few events")
+        let tool = kinds.firstIndex(of: "tool")
+        XCTAssertNotNil(tool)
+        guard let tool else { return }
+        XCTAssertEqual(kinds[..<tool].map { $0.dropFirst(5) }.joined(), before)
+        XCTAssertEqual(kinds[(tool + 1)...].filter { $0 != "finished" }.map { $0.dropFirst(5) }.joined(), after)
+        XCTAssertEqual(kinds.last, "finished")
+        backend.shutdown()
     }
 
     func testTurnStreamsTextAndReportsSessionAndModels() async {

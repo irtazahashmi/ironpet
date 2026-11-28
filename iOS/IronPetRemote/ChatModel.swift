@@ -253,6 +253,13 @@ final class ChatModel: SocketModel {
         if let last, last.kind == "assistant", last.text?.isEmpty == false { return false }
         return true
     }
+    /// The reply still being written: the newest item while a run goes and it is assistant text. Its time and speaker button wait for the run to end.
+    var streamingItemID: String? { Self.streamingItemID(running: running, last: displayItems.last) }
+
+    static func streamingItemID(running: Bool, last: RemoteChatItem?) -> String? {
+        guard running, let last, last.kind == "assistant" else { return nil }
+        return last.id
+    }
     var title: String { snapshot?.title ?? "Chat" }
 
     /// "Claude Code · demo-app · Working", for the header.

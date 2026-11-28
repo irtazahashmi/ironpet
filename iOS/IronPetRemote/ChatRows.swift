@@ -501,6 +501,18 @@ struct ReadAloud {
     }
 }
 
+/// The id of the reply that is still streaming. Its bubble hides the time and the speaker button until the run ends.
+private struct StreamingItemKey: EnvironmentKey {
+    static let defaultValue: String? = nil
+}
+
+extension EnvironmentValues {
+    var streamingItemID: String? {
+        get { self[StreamingItemKey.self] }
+        set { self[StreamingItemKey.self] = newValue }
+    }
+}
+
 /// The agent's reply: the pet's face beside the markdown, with the time under it and a speaker button that reads it aloud.
 struct AssistantBubble: View {
     let item: RemoteChatItem
@@ -509,6 +521,7 @@ struct AssistantBubble: View {
     var readAloud: ReadAloud?
     var find: RemoteChatFind.RowHighlight?
     @ChatScale(.caption1) private var scale
+    @Environment(\.streamingItemID) private var streamingItemID
 
     var body: some View {
         HStack(alignment: .top, spacing: 8) {
@@ -518,11 +531,13 @@ struct AssistantBubble: View {
                     .padding(.top, 3)
                     .accessibilityElement(children: .combine)
                     .accessibilityIdentifier("bubble-\(item.id)")
-                HStack(spacing: 8) {
-                    if let date = item.date {
-                        Text(ChatMetrics.timeFormatter.string(from: date)).font(.system(size: 10 * scale)).foregroundStyle(.tertiary)
+                if streamingItemID != item.id {
+                    HStack(spacing: 8) {
+                        if let date = item.date {
+                            Text(ChatMetrics.timeFormatter.string(from: date)).font(.system(size: 10 * scale)).foregroundStyle(.tertiary)
+                        }
+                        if let readAloud { SpeakButton(readAloud: readAloud, scale: scale) }
                     }
-                    if let readAloud { SpeakButton(readAloud: readAloud, scale: scale) }
                 }
             }
             Spacer(minLength: 30)

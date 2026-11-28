@@ -227,6 +227,7 @@ private struct Transcript: View {
                         })
                 }
                 .coordinateSpace(name: "content")
+                .environment(\.streamingItemID, model.streamingItemID)
                 .padding(.horizontal).padding(.vertical, 8)
             }
             // The first screen of a chat opens at its newest message. After that, `follow` decides whether new content scrolls.
